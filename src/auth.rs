@@ -431,7 +431,10 @@ impl BearerToken {
         }
 
         // Bearer スキームかどうかを先に確認（大文字小文字を区別しない）
-        let is_bearer_scheme = input.len() >= 6 && input[..6].eq_ignore_ascii_case("Bearer");
+        // get() を使用して UTF-8 バイト境界を安全にチェック
+        let is_bearer_scheme = input
+            .get(..6)
+            .is_some_and(|s| s.eq_ignore_ascii_case("Bearer"));
 
         if !is_bearer_scheme {
             return Err(AuthError::NotBearerScheme);
@@ -1093,6 +1096,25 @@ mod tests {
         let token = BearerToken::parse("Bearer abc.def.ghi").unwrap();
         assert_eq!(token.token(), "abc.def.ghi");
         assert_eq!(token.to_header_value(), "Bearer abc.def.ghi");
+    }
+
+    #[test]
+    fn test_bearer_token_parse_non_ascii() {
+        // マルチバイト UTF-8 文字を含む入力でパニックしないことを確認
+        // Fuzzing で発見されたクラッシュケース: バイト [228, 167, 167, 10, 228, 167, 167]
+        let input = "䧧\n䧧";
+        let result = BearerToken::parse(input);
+        assert!(result.is_err());
+
+        // 6 バイト未満のマルチバイト文字
+        let input2 = "日本語";
+        let result2 = BearerToken::parse(input2);
+        assert!(result2.is_err());
+
+        // 6 バイト以上だがバイト境界が文字境界でない場合
+        let input3 = "あいう"; // 9 バイト
+        let result3 = BearerToken::parse(input3);
+        assert!(result3.is_err());
     }
 
     #[test]
