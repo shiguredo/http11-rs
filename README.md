@@ -177,7 +177,7 @@ let bytes = response.encode();
 
 ### http11_client
 
-HTTPS クライアントの例です。
+HTTP/HTTPS クライアントの例です。
 
 ```bash
 cargo run -p http11_client -- https://example.com/
