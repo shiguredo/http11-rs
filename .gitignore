@@ -4,5 +4,5 @@ target/
 .claude/
 .codex/
 
-fuzz/artifacts/
-fuzz/corpus/
+# macOS
+.DS_Store
