@@ -1,0 +1,21 @@
+[package]
+name = "http11_server"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+shiguredo_http11 = { path = "../.." }
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "aws-lc-rs",
+] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "macros",
+] }
+tokio-rustls = "0.26"
+noargs = "0.4"

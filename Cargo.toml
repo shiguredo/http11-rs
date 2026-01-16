@@ -1,0 +1,22 @@
+[package]
+name = "shiguredo_http11"
+version = "2026.0.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Shiguredo Inc."]
+license = "Apache-2.0"
+description = "HTTP/1.1 Library"
+homepage = "https://github.com/shiguredo/http11-rs"
+repository = "https://github.com/shiguredo/http11-rs"
+readme = "README.md"
+
+[dependencies]
+
+[workspace]
+members = [
+    "examples/http11_client",
+    "examples/http11_server",
+    "examples/http11_reverse_proxy",
+    "pbt",
+]
+exclude = ["fuzz"]

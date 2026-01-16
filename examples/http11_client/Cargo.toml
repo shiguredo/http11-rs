@@ -1,0 +1,15 @@
+[package]
+name = "http11_client"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+shiguredo_http11 = { path = "../.." }
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "aws-lc-rs",
+] }
+rustls-platform-verifier = "0.6"
+noargs = "0.4"

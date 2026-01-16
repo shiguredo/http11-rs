@@ -1,0 +1,162 @@
+[package]
+name = "http11_fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.shiguredo_http11]
+path = ".."
+
+[[bin]]
+name = "fuzz_request_decoder"
+path = "fuzz_targets/fuzz_request_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_response_decoder"
+path = "fuzz_targets/fuzz_response_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_roundtrip"
+path = "fuzz_targets/fuzz_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_uri"
+path = "fuzz_targets/fuzz_uri.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_content_type"
+path = "fuzz_targets/fuzz_content_type.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_date"
+path = "fuzz_targets/fuzz_date.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_cookie"
+path = "fuzz_targets/fuzz_cookie.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_content_disposition"
+path = "fuzz_targets/fuzz_content_disposition.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_etag"
+path = "fuzz_targets/fuzz_etag.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_conditional"
+path = "fuzz_targets/fuzz_conditional.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_range"
+path = "fuzz_targets/fuzz_range.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_auth"
+path = "fuzz_targets/fuzz_auth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_accept"
+path = "fuzz_targets/fuzz_accept.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_content_headers"
+path = "fuzz_targets/fuzz_content_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_cache"
+path = "fuzz_targets/fuzz_cache.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_multipart"
+path = "fuzz_targets/fuzz_multipart.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_vary"
+path = "fuzz_targets/fuzz_vary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_chunked"
+path = "fuzz_targets/fuzz_chunked.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decoder_limits"
+path = "fuzz_targets/fuzz_decoder_limits.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_request_response_helpers"
+path = "fuzz_targets/fuzz_request_response_helpers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_percent_encoding"
+path = "fuzz_targets/fuzz_percent_encoding.rs"
+test = false
+doc = false
+bench = false

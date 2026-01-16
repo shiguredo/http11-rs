@@ -1,0 +1,38 @@
+use std::fmt;
+
+/// HTTP パースエラー
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Error {
+    /// 不正なデータ
+    InvalidData(String),
+    /// バッファサイズ超過
+    BufferOverflow { size: usize, limit: usize },
+    /// ヘッダー数超過
+    TooManyHeaders { count: usize, limit: usize },
+    /// ヘッダー行が長すぎる
+    HeaderLineTooLong { size: usize, limit: usize },
+    /// ボディサイズ超過
+    BodyTooLarge { size: usize, limit: usize },
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::InvalidData(msg) => write!(f, "invalid data: {}", msg),
+            Error::BufferOverflow { size, limit } => {
+                write!(f, "buffer overflow: {} > {}", size, limit)
+            }
+            Error::TooManyHeaders { count, limit } => {
+                write!(f, "too many headers: {} > {}", count, limit)
+            }
+            Error::HeaderLineTooLong { size, limit } => {
+                write!(f, "header line too long: {} > {}", size, limit)
+            }
+            Error::BodyTooLarge { size, limit } => {
+                write!(f, "body too large: {} > {}", size, limit)
+            }
+        }
+    }
+}
+
+impl std::error::Error for Error {}
