@@ -322,16 +322,21 @@ pub struct MultipartBuilder {
 }
 
 impl MultipartBuilder {
-    /// 新しいビルダーを作成
-    pub fn new() -> Self {
-        // ランダムな境界を生成 (簡易実装)
-        let boundary = format!(
-            "----FormBoundary{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        );
+    /// 乱数値を受け取って境界を生成する
+    ///
+    /// Sans I/O の原則に従い、乱数生成は呼び出し側の責任となる。
+    ///
+    /// # 例
+    ///
+    /// ```
+    /// use shiguredo_http11::multipart::MultipartBuilder;
+    ///
+    /// // 乱数値を渡して境界を生成
+    /// let builder = MultipartBuilder::new(12345678901234567890);
+    /// assert!(builder.boundary().starts_with("----FormBoundary"));
+    /// ```
+    pub fn new(random_value: u64) -> Self {
+        let boundary = format!("----FormBoundary{}", random_value);
         MultipartBuilder {
             boundary,
             parts: Vec::new(),
@@ -428,12 +433,6 @@ impl MultipartBuilder {
         result.extend_from_slice(b"--\r\n");
 
         result
-    }
-}
-
-impl Default for MultipartBuilder {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

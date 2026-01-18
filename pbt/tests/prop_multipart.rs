@@ -365,13 +365,16 @@ fn multipart_parser_clone() {
 // ========================================
 
 // MultipartBuilder::new のテスト
-#[test]
-fn multipart_builder_new() {
-    let builder = MultipartBuilder::new();
+proptest! {
+    #[test]
+    fn multipart_builder_new(random_value: u64) {
+        let builder = MultipartBuilder::new(random_value);
 
-    // ランダムな境界が生成される
-    assert!(builder.boundary().starts_with("----FormBoundary"));
-    assert!(builder.content_type().contains("multipart/form-data"));
+        // 境界が正しいフォーマットで生成される
+        let expected_boundary = format!("----FormBoundary{}", random_value);
+        prop_assert_eq!(builder.boundary(), expected_boundary.as_str());
+        prop_assert!(builder.content_type().contains("multipart/form-data"));
+    }
 }
 
 // MultipartBuilder::with_boundary のテスト
@@ -414,13 +417,6 @@ proptest! {
         prop_assert_eq!(parsed_part.name(), Some(name.as_str()));
         prop_assert_eq!(parsed_part.body_str(), Some(value.as_str()));
     }
-}
-
-// MultipartBuilder::Default のテスト
-#[test]
-fn multipart_builder_default() {
-    let builder = MultipartBuilder::default();
-    assert!(builder.boundary().starts_with("----FormBoundary"));
 }
 
 // ========================================
