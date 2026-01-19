@@ -2,7 +2,8 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder, encode_chunk, encode_chunks,
+    BodyKind, BodyProgress, DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder,
+    encode_chunk, encode_chunks,
 };
 
 // ========================================
@@ -88,7 +89,7 @@ fn header_obs_fold_space_error() {
     let data = b"GET / HTTP/1.1\r\n Header: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -96,7 +97,7 @@ fn header_obs_fold_tab_error() {
     let data = b"GET / HTTP/1.1\r\n\tHeader: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -104,7 +105,7 @@ fn header_contains_cr_error() {
     let data = b"GET / HTTP/1.1\r\nHead\rer: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -112,7 +113,7 @@ fn header_contains_lf_error() {
     let data = b"GET / HTTP/1.1\r\nHead\ner: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -120,7 +121,7 @@ fn header_missing_colon_error() {
     let data = b"GET / HTTP/1.1\r\nHeader value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -128,7 +129,7 @@ fn header_empty_name_error() {
     let data = b"GET / HTTP/1.1\r\n: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -136,7 +137,7 @@ fn header_name_with_space_error() {
     let data = b"GET / HTTP/1.1\r\nHead er: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -144,7 +145,7 @@ fn header_name_trailing_space_error() {
     let data = b"GET / HTTP/1.1\r\nHeader : value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -152,7 +153,7 @@ fn header_invalid_name_char_error() {
     let data = b"GET / HTTP/1.1\r\nHead@er: value\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -183,7 +184,7 @@ fn valid_header_name_chars() {
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         assert!(
-            decoder.decode().is_ok(),
+            decoder.decode_headers().is_ok(),
             "Header name '{}' should be valid",
             name
         );
@@ -199,7 +200,7 @@ fn transfer_encoding_and_content_length_error() {
     let data = b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 10\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -207,7 +208,7 @@ fn transfer_encoding_unsupported_error() {
     let data = b"GET / HTTP/1.1\r\nTransfer-Encoding: gzip\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -215,7 +216,7 @@ fn transfer_encoding_empty_token_error() {
     let data = b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked,,chunked\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -223,7 +224,7 @@ fn transfer_encoding_empty_value_error() {
     let data = b"GET / HTTP/1.1\r\nTransfer-Encoding: \r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -231,8 +232,26 @@ fn transfer_encoding_case_insensitive() {
     let data = b"HTTP/1.1 200 OK\r\ntransfer-encoding: CHUNKED\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.status_code, 200);
+    assert_eq!(body_kind, BodyKind::Chunked);
+
+    // ボディを読み取る
+    let mut body = Vec::new();
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -244,7 +263,7 @@ fn content_length_not_number_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: abc\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -252,7 +271,7 @@ fn content_length_empty_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: \r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -260,7 +279,7 @@ fn content_length_mismatch_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 10\r\nContent-Length: 20\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -268,8 +287,18 @@ fn content_length_match_ok() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(data) = decoder.peek_body() {
+        body.extend_from_slice(data);
+        let len = data.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 #[test]
@@ -277,8 +306,8 @@ fn content_length_zero_no_body() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 0\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert!(request.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(0));
 }
 
 #[test]
@@ -286,8 +315,18 @@ fn content_length_case_insensitive() {
     let data = b"GET / HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(data) = decoder.peek_body() {
+        body.extend_from_slice(data);
+        let len = data.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -299,7 +338,7 @@ fn request_line_missing_parts_error() {
     let data = b"GET /\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -307,7 +346,7 @@ fn request_line_empty_error() {
     let data = b"\r\nHost: example.com\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 // ========================================
@@ -319,7 +358,7 @@ fn status_line_missing_parts_error() {
     let data = b"HTTP/1.1\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -327,7 +366,7 @@ fn status_code_invalid_error() {
     let data = b"HTTP/1.1 abc OK\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -335,9 +374,9 @@ fn status_line_no_reason_phrase_ok() {
     let data = b"HTTP/1.1 200\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.status_code, 200);
-    assert_eq!(response.reason_phrase, "");
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.status_code, 200);
+    assert_eq!(head.reason_phrase, "");
 }
 
 // ========================================
@@ -350,8 +389,8 @@ fn head_response_with_content_length() {
     let mut decoder = ResponseDecoder::new();
     decoder.set_expect_no_body(true);
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 #[test]
@@ -360,8 +399,8 @@ fn head_response_with_transfer_encoding() {
     let mut decoder = ResponseDecoder::new();
     decoder.set_expect_no_body(true);
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 // ========================================
@@ -374,8 +413,8 @@ proptest! {
         let status_line = format!("HTTP/1.1 {} Continue\r\nContent-Length: 100\r\n\r\n", code);
         let mut decoder = ResponseDecoder::new();
         decoder.feed(status_line.as_bytes()).unwrap();
-        let response = decoder.decode().unwrap().unwrap();
-        prop_assert!(response.body.is_empty());
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
 
@@ -384,8 +423,8 @@ fn status_204_no_body() {
     let data = b"HTTP/1.1 204 No Content\r\nContent-Length: 100\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 #[test]
@@ -393,8 +432,8 @@ fn status_304_no_body() {
     let data = b"HTTP/1.1 304 Not Modified\r\nContent-Length: 100\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 // ========================================
@@ -406,7 +445,10 @@ fn chunked_invalid_size_error() {
     let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nXYZ\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
+    // consume_body でチャンクサイズを処理しようとするとエラー
+    assert!(decoder.consume_body(0).is_err());
 }
 
 #[test]
@@ -415,8 +457,24 @@ fn chunked_size_with_extension_ok() {
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5;ext=val\r\nhello\r\n0\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
+
+    let mut body = Vec::new();
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 #[test]
@@ -424,8 +482,30 @@ fn chunked_with_trailer_ok() {
     let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Trailer: value\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
+
+    let mut body = Vec::new();
+    let mut trailers = Vec::new();
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
+                trailers = t;
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
+                trailers = t;
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
+    assert_eq!(trailers.len(), 1);
+    assert_eq!(trailers[0].0, "X-Trailer");
+    assert_eq!(trailers[0].1, "value");
 }
 
 #[test]
@@ -433,8 +513,27 @@ fn chunked_with_multiple_trailers_ok() {
     let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Trailer1: value1\r\nX-Trailer2: value2\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    let mut body = Vec::new();
+    let mut trailers = Vec::new();
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
+                trailers = t;
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
+                trailers = t;
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
+    assert_eq!(trailers.len(), 2);
 }
 
 proptest! {
@@ -462,9 +561,24 @@ proptest! {
 
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&data).unwrap();
-        let response = decoder.decode().unwrap().unwrap();
+        let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let mut body = Vec::new();
+        loop {
+            if let Some(d) = decoder.peek_body() {
+                body.extend_from_slice(d);
+                let len = d.len();
+                if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                    break;
+                }
+            } else {
+                if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                    break;
+                }
+            }
+        }
         let expected: Vec<u8> = [chunk1, chunk2, chunk3].concat();
-        prop_assert_eq!(response.body, expected);
+        prop_assert_eq!(body, expected);
     }
 }
 
@@ -480,9 +594,24 @@ proptest! {
         decoder.feed(header).unwrap();
         decoder.feed(&encoded).unwrap();
 
-        let response = decoder.decode().unwrap().unwrap();
+        let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let mut body = Vec::new();
+        loop {
+            if let Some(d) = decoder.peek_body() {
+                body.extend_from_slice(d);
+                let len = d.len();
+                if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                    break;
+                }
+            } else {
+                if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                    break;
+                }
+            }
+        }
         let expected: Vec<u8> = non_empty_chunks.iter().flatten().copied().collect();
-        prop_assert_eq!(&response.body, &expected);
+        prop_assert_eq!(&body, &expected);
     }
 }
 
@@ -510,7 +639,7 @@ fn invalid_utf8_request_line_error() {
     let data = b"GET /\xff HTTP/1.1\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -518,7 +647,7 @@ fn invalid_utf8_header_error() {
     let data = b"GET / HTTP/1.1\r\nX-Header: \xff\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -526,7 +655,8 @@ fn invalid_utf8_chunk_size_error() {
     let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\xff\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(decoder.consume_body(0).is_err());
 }
 
 // ========================================
@@ -537,7 +667,7 @@ fn invalid_utf8_chunk_size_error() {
 fn incomplete_request_line() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(b"GET / HTTP/1.1").unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    assert!(decoder.decode_headers().unwrap().is_none());
 }
 
 #[test]
@@ -546,7 +676,7 @@ fn incomplete_headers() {
     decoder
         .feed(b"GET / HTTP/1.1\r\nHost: example.com")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    assert!(decoder.decode_headers().unwrap().is_none());
 }
 
 #[test]
@@ -555,7 +685,11 @@ fn incomplete_body() {
     decoder
         .feed(b"GET / HTTP/1.1\r\nContent-Length: 10\r\n\r\nhello")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(10));
+    // peek_body で 5 バイトしか返らない
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data.len(), 5);
 }
 
 #[test]
@@ -564,7 +698,9 @@ fn incomplete_chunk_size() {
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+    // チャンクサイズが不完全なので peek_body は None
+    assert!(decoder.peek_body().is_none());
 }
 
 #[test]
@@ -573,7 +709,12 @@ fn incomplete_chunk_data() {
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+    // consume_body(0) でチャンクサイズを処理
+    decoder.consume_body(0).unwrap();
+    // peek_body で 3 バイトしか返らない
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data.len(), 3);
 }
 
 #[test]
@@ -582,7 +723,17 @@ fn incomplete_trailer() {
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Trailer")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    // ボディを消費
+    decoder.consume_body(0).unwrap(); // チャンクサイズ処理
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data, b"hello");
+    decoder.consume_body(5).unwrap();
+
+    // トレーラーが不完全なので Complete にならない
+    let result = decoder.consume_body(0).unwrap();
+    assert_eq!(result, BodyProgress::Continue);
 }
 
 // ========================================
@@ -593,7 +744,8 @@ fn incomplete_trailer() {
 fn decoder_remaining() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(b"GET / HTTP/1.1\r\n\r\nextra").unwrap();
-    let _ = decoder.decode().unwrap();
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
     assert_eq!(decoder.remaining(), b"extra");
 }
 
@@ -669,7 +821,7 @@ proptest! {
         request.push_str("\r\n");
 
         decoder.feed(request.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -687,7 +839,7 @@ proptest! {
         let request = format!("GET / HTTP/1.1\r\nX-Long-Header: {}\r\n\r\n", long_value);
 
         decoder.feed(request.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -705,7 +857,7 @@ proptest! {
         let request = format!("POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n", body_size);
 
         decoder.feed(request.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -723,7 +875,8 @@ proptest! {
         let request = format!("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n", chunk_size);
 
         decoder.feed(request.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        let (_, _) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert!(decoder.consume_body(0).is_err());
     }
 }
 
@@ -777,7 +930,7 @@ proptest! {
         request.push_str("\r\n");
 
         decoder.feed(request.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_ok());
+        prop_assert!(decoder.decode_headers().is_ok());
     }
 }
 
@@ -791,12 +944,13 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
 
-        let body = vec![b'x'; max_body_size];
+        let body_data = vec![b'x'; max_body_size];
         let request = format!("POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n", max_body_size);
 
         decoder.feed(request.as_bytes()).unwrap();
-        decoder.feed(&body).unwrap();
-        prop_assert!(decoder.decode().is_ok());
+        decoder.feed(&body_data).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(max_body_size));
     }
 }
 
@@ -854,7 +1008,7 @@ proptest! {
         response.push_str("\r\n");
 
         decoder.feed(response.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -872,7 +1026,7 @@ proptest! {
         let response = format!("HTTP/1.1 200 OK\r\nX-Long-Header: {}\r\n\r\n", long_value);
 
         decoder.feed(response.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -890,7 +1044,7 @@ proptest! {
         let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body_size);
 
         decoder.feed(response.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        prop_assert!(decoder.decode_headers().is_err());
     }
 }
 
@@ -908,7 +1062,8 @@ proptest! {
         let response = format!("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n", chunk_size);
 
         decoder.feed(response.as_bytes()).unwrap();
-        prop_assert!(decoder.decode().is_err());
+        let (_, _) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert!(decoder.consume_body(0).is_err());
     }
 }
 
@@ -970,11 +1125,23 @@ proptest! {
 
         let mut decoder = RequestDecoder::new();
         decoder.feed(&encoded).unwrap();
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
-        prop_assert_eq!(&decoded.body, &request.body);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
+
+        // ボディを読み取る
+        let mut decoded_body = Vec::new();
+        if !matches!(body_kind, BodyKind::None) {
+            while let Some(data) = decoder.peek_body() {
+                decoded_body.extend_from_slice(data);
+                let len = data.len();
+                if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                    break;
+                }
+            }
+        }
+        prop_assert_eq!(&decoded_body, &request.body);
     }
 }
 
@@ -1000,13 +1167,24 @@ proptest! {
 
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&encoded).unwrap();
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(decoded.status_code, code);
-        prop_assert_eq!(&decoded.reason_phrase, &phrase);
+        prop_assert_eq!(head.status_code, code);
+        prop_assert_eq!(&head.reason_phrase, &phrase);
 
+        // ボディを読み取る
+        let mut decoded_body = Vec::new();
+        if !matches!(body_kind, BodyKind::None) {
+            while let Some(data) = decoder.peek_body() {
+                decoded_body.extend_from_slice(data);
+                let len = data.len();
+                if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                    break;
+                }
+            }
+        }
         if has_body {
-            prop_assert_eq!(&decoded.body, &response.body);
+            prop_assert_eq!(&decoded_body, &response.body);
         }
     }
 }
@@ -1025,10 +1203,10 @@ proptest! {
         for byte in &encoded {
             decoder.feed(std::slice::from_ref(byte)).unwrap();
         }
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
     }
 }
 
@@ -1042,9 +1220,9 @@ proptest! {
         for byte in &encoded {
             decoder.feed(std::slice::from_ref(byte)).unwrap();
         }
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(decoded.status_code, code);
+        prop_assert_eq!(head.status_code, code);
     }
 }
 
@@ -1060,18 +1238,31 @@ proptest! {
         let encoded = request.encode();
 
         let mut decoder = RequestDecoder::new();
-        let mut decoded = None;
+        let mut head_opt = None;
         for chunk in encoded.chunks(7) {
             decoder.feed(chunk).unwrap();
-            if let Ok(Some(req)) = decoder.decode() {
-                decoded = Some(req);
-                break;
+            if head_opt.is_none() {
+                if let Some(result) = decoder.decode_headers().unwrap() {
+                    head_opt = Some(result);
+                }
             }
         }
-        let decoded = decoded.expect("should decode");
+        let (head, body_kind) = head_opt.expect("should decode headers");
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.body, &body_data);
+        // ボディを読み取る
+        let mut decoded_body = Vec::new();
+        if !matches!(body_kind, BodyKind::None) {
+            while let Some(data) = decoder.peek_body() {
+                decoded_body.extend_from_slice(data);
+                let len = data.len();
+                if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                    break;
+                }
+            }
+        }
+
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&decoded_body, &body_data);
     }
 }
 
@@ -1088,10 +1279,16 @@ proptest! {
             let request = Request::new(&methods[i], &uris[i]);
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
-            let decoded = decoder.decode().unwrap().unwrap();
+            let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-            prop_assert_eq!(&decoded.method, &methods[i]);
-            prop_assert_eq!(&decoded.uri, &uris[i]);
+            prop_assert_eq!(&head.method, &methods[i]);
+            prop_assert_eq!(&head.uri, &uris[i]);
+
+            // 次のリクエストのためにリセット
+            decoder.reset();
+            // 残りのデータを再度 feed
+            let remaining = decoder.remaining().to_vec();
+            decoder.feed(&remaining).ok();
         }
     }
 }
@@ -1109,9 +1306,12 @@ proptest! {
             let response = Response::new(*code, "OK");
             let encoded = response.encode();
             decoder.feed(&encoded).unwrap();
-            let decoded = decoder.decode().unwrap().unwrap();
+            let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-            prop_assert_eq!(decoded.status_code, *code);
+            prop_assert_eq!(head.status_code, *code);
+
+            // 次のレスポンスのためにリセット
+            decoder.reset();
         }
     }
 }
@@ -1126,16 +1326,16 @@ proptest! {
         let mut decoder = RequestDecoder::new();
 
         let _ = decoder.feed(&garbage);
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
 
         decoder.reset();
         let request = Request::new(&method, &uri);
         let encoded = request.encode();
         decoder.feed(&encoded).unwrap();
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
     }
 }
 
@@ -1148,7 +1348,7 @@ proptest! {
     fn request_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..256)) {
         let mut decoder = RequestDecoder::new();
         let _ = decoder.feed_unchecked(&data);
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
     }
 }
 
@@ -1157,7 +1357,7 @@ proptest! {
     fn response_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..256)) {
         let mut decoder = ResponseDecoder::new();
         let _ = decoder.feed_unchecked(&data);
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
     }
 }
 
@@ -1171,7 +1371,7 @@ fn content_length_overflow_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 99999999999999999999999999999\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -1179,7 +1379,7 @@ fn content_length_negative_like_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: -1\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -1187,7 +1387,7 @@ fn content_length_with_spaces_error() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 1 2\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 // ========================================
@@ -1198,7 +1398,7 @@ fn content_length_with_spaces_error() {
 fn response_decoder_remaining() {
     let mut decoder = ResponseDecoder::new();
     decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nextra").unwrap();
-    let _ = decoder.decode().unwrap();
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(decoder.remaining(), b"extra");
 }
 
@@ -1219,8 +1419,18 @@ fn response_decoder_reset_expect_no_body() {
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
         .unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(data) = decoder.peek_body() {
+        body.extend_from_slice(data);
+        let len = data.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -1232,8 +1442,24 @@ fn chunked_request_body() {
     let data = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
+
+    let mut body = Vec::new();
+    loop {
+        if let Some(d) = decoder.peek_body() {
+            body.extend_from_slice(d);
+            let len = d.len();
+            if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 #[test]
@@ -1241,8 +1467,27 @@ fn chunked_request_with_trailer() {
     let data = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Checksum: abc\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    let mut body = Vec::new();
+    let mut trailers = Vec::new();
+    loop {
+        if let Some(d) = decoder.peek_body() {
+            body.extend_from_slice(d);
+            let len = d.len();
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
+                trailers = t;
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
+                trailers = t;
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
+    assert_eq!(trailers.len(), 1);
 }
 
 #[test]
@@ -1250,8 +1495,27 @@ fn chunked_request_with_multiple_trailers() {
     let data = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-A: 1\r\nX-B: 2\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    let mut body = Vec::new();
+    let mut trailers = Vec::new();
+    loop {
+        if let Some(d) = decoder.peek_body() {
+            body.extend_from_slice(d);
+            let len = d.len();
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
+                trailers = t;
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
+                trailers = t;
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
+    assert_eq!(trailers.len(), 2);
 }
 
 // ========================================
@@ -1263,8 +1527,8 @@ fn response_content_length_zero() {
     let data = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(0));
 }
 
 #[test]
@@ -1272,8 +1536,8 @@ fn response_no_content_length_no_transfer_encoding() {
     let data = b"HTTP/1.1 200 OK\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert!(response.body.is_empty());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 // ========================================
@@ -1285,9 +1549,9 @@ fn status_code_boundary_199() {
     let data = b"HTTP/1.1 199 Info\r\nContent-Length: 100\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
     // 1xx はボディなし
-    assert!(response.body.is_empty());
+    assert_eq!(body_kind, BodyKind::None);
 }
 
 #[test]
@@ -1295,8 +1559,18 @@ fn status_code_boundary_200() {
     let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(d) = decoder.peek_body() {
+        body.extend_from_slice(d);
+        let len = d.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 #[test]
@@ -1304,8 +1578,18 @@ fn status_code_boundary_203() {
     let data = b"HTTP/1.1 203 Non-Authoritative\r\nContent-Length: 5\r\n\r\nhello";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(d) = decoder.peek_body() {
+        body.extend_from_slice(d);
+        let len = d.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -1317,8 +1601,24 @@ fn multiple_transfer_encoding_chunked_ok() {
     let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
+
+    let mut body = Vec::new();
+    loop {
+        if let Some(d) = decoder.peek_body() {
+            body.extend_from_slice(d);
+            let len = d.len();
+            if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                break;
+            }
+        } else {
+            if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+                break;
+            }
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -1330,8 +1630,18 @@ fn header_value_leading_trailing_spaces() {
     let data = b"GET / HTTP/1.1\r\nContent-Length:   5   \r\n\r\nhello";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
-    assert_eq!(request.body, b"hello");
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+
+    let mut body = Vec::new();
+    while let Some(d) = decoder.peek_body() {
+        body.extend_from_slice(d);
+        let len = d.len();
+        if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            break;
+        }
+    }
+    assert_eq!(body, b"hello");
 }
 
 // ========================================
@@ -1344,7 +1654,9 @@ fn request_incomplete_chunk_size() {
     decoder
         .feed(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+    // チャンクサイズが不完全なので peek_body は None
+    assert!(decoder.peek_body().is_none());
 }
 
 #[test]
@@ -1353,7 +1665,12 @@ fn request_incomplete_chunk_data() {
     decoder
         .feed(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+    // consume_body(0) でチャンクサイズを処理
+    decoder.consume_body(0).unwrap();
+    // peek_body で 3 バイトしか返らない
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data.len(), 3);
 }
 
 #[test]
@@ -1362,7 +1679,17 @@ fn request_incomplete_trailer() {
     decoder
         .feed(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\nX-Trailer")
         .unwrap();
-    assert!(decoder.decode().unwrap().is_none());
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    // ボディを消費
+    decoder.consume_body(0).unwrap(); // チャンクサイズ処理
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data, b"hello");
+    decoder.consume_body(5).unwrap();
+
+    // トレーラーが不完全なので Complete にならない
+    let result = decoder.consume_body(0).unwrap();
+    assert_eq!(result, BodyProgress::Continue);
 }
 
 // ========================================
@@ -1374,7 +1701,7 @@ fn invalid_utf8_status_line_error() {
     let data = b"HTTP/1.1 200 \xff\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
 }
 
 #[test]
@@ -1382,5 +1709,47 @@ fn invalid_utf8_response_header_error() {
     let data = b"HTTP/1.1 200 OK\r\nX-Header: \xff\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
-    assert!(decoder.decode().is_err());
+    assert!(decoder.decode_headers().is_err());
+}
+
+// ========================================
+// decode_headers を2回呼ぶとエラー
+// ========================================
+
+#[test]
+fn decode_headers_twice_error() {
+    let data = b"GET / HTTP/1.1\r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+    let _ = decoder.decode_headers().unwrap().unwrap();
+    // 2回目はエラー
+    assert!(decoder.decode_headers().is_err());
+}
+
+#[test]
+fn response_decode_headers_twice_error() {
+    let data = b"HTTP/1.1 200 OK\r\n\r\n";
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(data).unwrap();
+    let _ = decoder.decode_headers().unwrap().unwrap();
+    // 2回目はエラー
+    assert!(decoder.decode_headers().is_err());
+}
+
+// ========================================
+// consume_body を decode_headers 前に呼ぶとエラー
+// ========================================
+
+#[test]
+fn consume_body_before_decode_headers_error() {
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(b"GET / HTTP/1.1\r\n\r\n").unwrap();
+    assert!(decoder.consume_body(0).is_err());
+}
+
+#[test]
+fn response_consume_body_before_decode_headers_error() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+    assert!(decoder.consume_body(0).is_err());
 }

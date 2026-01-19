@@ -1,4 +1,4 @@
-//! HTTP/1.1 リバースプロキシの例
+//! HTTP/1.1 リバースプロキシの例（ストリーミング対応）
 //!
 //! 使い方:
 //!   cargo run -p http11_reverse_proxy -- --port 8888 --upstream https://example.com
@@ -12,7 +12,8 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
-    DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder, encode_chunk, encode_chunks,
+    BodyKind, BodyProgress, DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder,
+    encode_response_headers,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream as TokioTcpStream};
@@ -91,9 +92,9 @@ async fn handle_client(
     upstream_host: &str,
     debug: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // クライアントからリクエストを受信
+    // クライアントからリクエストヘッダーを受信
     let mut decoder = RequestDecoder::new();
-    let request = loop {
+    let (req_head, req_body_kind) = loop {
         let mut buffer = vec![0u8; 4096];
         let n = socket.read(&mut buffer).await?;
         if n == 0 {
@@ -105,8 +106,8 @@ async fn handle_client(
         log_debug(debug, &format!("received bytes: {}", n));
 
         decoder.feed(&buffer)?;
-        if let Some(req) = decoder.decode()? {
-            break req;
+        if let Some(result) = decoder.decode_headers()? {
+            break result;
         }
     };
 
@@ -114,20 +115,44 @@ async fn handle_client(
         debug,
         &format!(
             "request line: {} {} {}",
-            request.method, request.uri, request.version
+            req_head.method, req_head.uri, req_head.version
         ),
     );
     log_debug(
         debug,
-        &format!("received headers: {}", request.headers.len()),
+        &format!("received headers: {}", req_head.headers.len()),
     );
 
+    // リクエストボディを収集（ストリーミングも可能だが、ここではシンプルに全部読む）
+    let mut request_body = Vec::new();
+    if !matches!(req_body_kind, BodyKind::None) {
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                request_body.extend_from_slice(data);
+                let len = data.len();
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { .. } => break,
+                    BodyProgress::Continue => {}
+                }
+            } else {
+                // データ不足、追加読み込み
+                let mut buffer = vec![0u8; 4096];
+                let n = socket.read(&mut buffer).await?;
+                if n == 0 {
+                    break;
+                }
+                buffer.truncate(n);
+                decoder.feed(&buffer)?;
+            }
+        }
+    }
+
     // アップストリームへプロキシリクエストを作成
-    let mut upstream_request = Request::new(&request.method, &request.uri);
+    let mut upstream_request = Request::new(&req_head.method, &req_head.uri);
 
     // ヘッダーをコピー (Host は除外)
-    for (name, value) in &request.headers {
-        if name.to_lowercase() != "host" {
+    for (name, value) in &req_head.headers {
+        if !name.eq_ignore_ascii_case("host") {
             upstream_request.add_header(name, value);
         }
     }
@@ -139,7 +164,7 @@ async fn handle_client(
     upstream_request.add_header("Connection", "close");
 
     // ボディをコピー
-    upstream_request.body = request.body.clone();
+    upstream_request.body = request_body;
     log_debug(
         debug,
         &format!(
@@ -148,44 +173,18 @@ async fn handle_client(
         ),
     );
 
-    // アップストリームへリクエストを送信
-    let mut upstream_response =
-        send_upstream_request(&upstream_request, upstream_host, debug).await?;
-    normalize_upstream_response(&mut upstream_response);
-
-    log_debug(
-        debug,
-        &format!(
-            "upstream response: {} {} {}",
-            upstream_response.version,
-            upstream_response.status_code,
-            upstream_response.reason_phrase
-        ),
-    );
-    log_debug(
-        debug,
-        &format!(
-            "upstream response body size: {}",
-            upstream_response.body.len()
-        ),
-    );
-
-    // クライアントへレスポンスを送信
-    let response_bytes = upstream_response.encode();
-    log_debug(
-        debug,
-        &format!("response bytes to client: {}", response_bytes.len()),
-    );
-    socket.write_all(&response_bytes).await?;
+    // アップストリームへリクエストを送信し、レスポンスをストリーミングで転送
+    stream_upstream_response(&mut socket, &upstream_request, upstream_host, debug).await?;
 
     Ok(())
 }
 
-async fn send_upstream_request(
+async fn stream_upstream_response(
+    downstream: &mut TokioTcpStream,
     request: &Request,
     upstream_host: &str,
     debug: bool,
-) -> Result<Response, Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error>> {
     // TLS 設定 (システムのプラットフォーム証明書ストアを使用)
     let config = ClientConfig::with_platform_verifier()?;
 
@@ -204,15 +203,15 @@ async fn send_upstream_request(
     );
     tls.write_all(&request_bytes)?;
 
-    // レスポンス受信
+    // レスポンスヘッダーを受信
     let mut decoder = ResponseDecoder::with_limits(DecoderLimits {
         max_buffer_size: 256 * 1024,
-        max_body_size: 5 * 1024 * 1024,
+        max_body_size: 50 * 1024 * 1024, // ストリーミングなので大きめに
         ..Default::default()
     });
     let mut buf = [0u8; 4096];
 
-    loop {
+    let (resp_head, body_kind) = loop {
         let n = match tls.read(&mut buf) {
             Ok(0) => return Err("接続が閉じられました".into()),
             Ok(n) => n,
@@ -223,46 +222,93 @@ async fn send_upstream_request(
         log_debug(debug, &format!("upstream received bytes: {}", n));
         decoder.feed(&buf[..n])?;
 
-        if let Some(response) = decoder.decode()? {
-            log_debug(
-                debug,
-                &format!("upstream response headers: {}", response.headers.len()),
-            );
-            log_debug(
-                debug,
-                &format!("upstream response body size: {}", response.body.len()),
-            );
-            return Ok(response);
+        if let Some(result) = decoder.decode_headers()? {
+            break result;
+        }
+    };
+
+    log_debug(
+        debug,
+        &format!(
+            "upstream response: {} {} {}",
+            resp_head.version, resp_head.status_code, resp_head.reason_phrase
+        ),
+    );
+    log_debug(
+        debug,
+        &format!("upstream response headers: {}", resp_head.headers.len()),
+    );
+
+    // クライアントへレスポンスヘッダーを送信
+    let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
+    for (name, value) in &resp_head.headers {
+        // Transfer-Encoding と Connection は除外して再設定
+        if !name.eq_ignore_ascii_case("Transfer-Encoding")
+            && !name.eq_ignore_ascii_case("Connection")
+        {
+            response_for_headers.add_header(name, value);
         }
     }
-}
+    response_for_headers.add_header("Connection", "close");
 
-fn normalize_upstream_response(response: &mut Response) {
-    if response.is_chunked() {
-        let chunked_body = if response.body.is_empty() {
-            encode_chunk(&[])
-        } else {
-            encode_chunks(&[response.body.as_slice()])
-        };
-        response.body = chunked_body;
-        response
-            .headers
-            .retain(|(name, _)| !name.eq_ignore_ascii_case("Content-Length"));
-        response
-            .headers
-            .retain(|(name, _)| !name.eq_ignore_ascii_case("Connection"));
-        response.add_header("Connection", "close");
-        return;
+    let header_bytes = encode_response_headers(&response_for_headers);
+    downstream.write_all(&header_bytes).await?;
+    log_debug(
+        debug,
+        &format!(
+            "sent response headers to client: {} bytes",
+            header_bytes.len()
+        ),
+    );
+
+    // ボディをストリーミング転送
+    let mut total_body_bytes = 0usize;
+    if !matches!(body_kind, BodyKind::None) {
+        loop {
+            // バッファにあるデータを転送
+            while let Some(data) = decoder.peek_body() {
+                downstream.write_all(data).await?;
+                total_body_bytes += data.len();
+                let len = data.len();
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { trailers } => {
+                        log_debug(
+                            debug,
+                            &format!(
+                                "body complete, total: {} bytes, trailers: {}",
+                                total_body_bytes,
+                                trailers.len()
+                            ),
+                        );
+                        return Ok(());
+                    }
+                    BodyProgress::Continue => {}
+                }
+            }
+
+            // データ不足、アップストリームから追加読み込み
+            let n = match tls.read(&mut buf) {
+                Ok(0) => {
+                    // 接続が閉じられた
+                    log_debug(debug, "upstream connection closed");
+                    break;
+                }
+                Ok(n) => n,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            };
+
+            log_debug(debug, &format!("upstream body bytes: {}", n));
+            decoder.feed(&buf[..n])?;
+        }
     }
 
-    // chunked 以外 は デコード 済み なので、ヘッダー を 正規化
-    response.headers.retain(|(name, _)| {
-        !name.eq_ignore_ascii_case("Transfer-Encoding")
-            && !name.eq_ignore_ascii_case("Content-Length")
-            && !name.eq_ignore_ascii_case("Connection")
-    });
-    response.add_header("Content-Length", &response.body.len().to_string());
-    response.add_header("Connection", "close");
+    log_debug(
+        debug,
+        &format!("response body streamed: {} bytes", total_body_bytes),
+    );
+
+    Ok(())
 }
 
 fn log_debug(enabled: bool, message: &str) {

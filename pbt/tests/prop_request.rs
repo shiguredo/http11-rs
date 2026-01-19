@@ -1,7 +1,7 @@
 //! Request 構造体のプロパティテスト (request.rs)
 
 use proptest::prelude::*;
-use shiguredo_http11::{Request, RequestDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, Request, RequestDecoder};
 
 // ========================================
 // Strategy 定義
@@ -96,11 +96,27 @@ proptest! {
 
         let mut decoder = RequestDecoder::new();
         decoder.feed(&encoded).unwrap();
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
-        prop_assert_eq!(&decoded.body, &request.body);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
+
+        let mut decoded_body = Vec::new();
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                while let Some(data) = decoder.peek_body() {
+                    decoded_body.extend_from_slice(data);
+                    let len = data.len();
+                    match decoder.consume_body(len).unwrap() {
+                        BodyProgress::Complete { .. } => break,
+                        BodyProgress::Continue => {}
+                    }
+                }
+            }
+            BodyKind::None => {}
+        }
+
+        prop_assert_eq!(&decoded_body, &request.body);
 
         // ヘッダー数は同じ (Content-Length が自動追加される可能性)
         if !body_data.is_empty()
@@ -108,9 +124,9 @@ proptest! {
                 .iter()
                 .any(|(n, _)| n.eq_ignore_ascii_case("Content-Length"))
         {
-            prop_assert_eq!(decoded.headers.len(), hdrs.len() + 1);
+            prop_assert_eq!(head.headers.len(), hdrs.len() + 1);
         } else {
-            prop_assert_eq!(decoded.headers.len(), hdrs.len());
+            prop_assert_eq!(head.headers.len(), hdrs.len());
         }
     }
 }
@@ -138,10 +154,10 @@ proptest! {
         for byte in &encoded {
             decoder.feed(std::slice::from_ref(byte)).unwrap();
         }
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
     }
 }
 
@@ -159,18 +175,42 @@ proptest! {
 
         // チャンクサイズで分割して feed し、デコード完了まで繰り返す
         let mut decoder = RequestDecoder::new();
-        let mut decoded = None;
+        let mut headers_decoded = false;
+        let mut body_kind = BodyKind::None;
+        let mut decoded_body = Vec::new();
+        let mut decoded_method = String::new();
+
         for chunk in encoded.chunks(7) {
             decoder.feed(chunk).unwrap();
-            if let Ok(Some(req)) = decoder.decode() {
-                decoded = Some(req);
-                break;
+
+            if !headers_decoded {
+                if let Ok(Some((head, kind))) = decoder.decode_headers() {
+                    headers_decoded = true;
+                    body_kind = kind;
+                    decoded_method = head.method;
+                }
+            }
+
+            if headers_decoded {
+                match body_kind {
+                    BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                        while let Some(data) = decoder.peek_body() {
+                            decoded_body.extend_from_slice(data);
+                            let len = data.len();
+                            match decoder.consume_body(len).unwrap() {
+                                BodyProgress::Complete { .. } => break,
+                                BodyProgress::Continue => {}
+                            }
+                        }
+                    }
+                    BodyKind::None => {}
+                }
             }
         }
-        let decoded = decoded.expect("should decode");
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.body, &body_data);
+        prop_assert!(headers_decoded, "should decode headers");
+        prop_assert_eq!(&decoded_method, &method);
+        prop_assert_eq!(&decoded_body, &body_data);
     }
 }
 
@@ -227,13 +267,16 @@ proptest! {
         let mut decoder = RequestDecoder::new();
 
         for i in 0..count {
+            if i > 0 {
+                decoder.reset();
+            }
             let request = Request::new(&methods[i], &uris[i]);
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
-            let decoded = decoder.decode().unwrap().unwrap();
+            let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-            prop_assert_eq!(&decoded.method, &methods[i]);
-            prop_assert_eq!(&decoded.uri, &uris[i]);
+            prop_assert_eq!(&head.method, &methods[i]);
+            prop_assert_eq!(&head.uri, &uris[i]);
         }
     }
 }
@@ -248,9 +291,9 @@ proptest! {
     fn request_decoder_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
         let mut decoder = RequestDecoder::new();
         let _ = decoder.feed(&data);
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
         // エラー後も再利用可能
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
     }
 }
 
@@ -266,17 +309,17 @@ proptest! {
 
         // 不正データを feed してエラーを発生させる
         let _ = decoder.feed(&garbage);
-        let _ = decoder.decode();
+        let _ = decoder.decode_headers();
 
         // リセットして正常なリクエストをデコード
         decoder.reset();
         let request = Request::new(&method, &uri);
         let encoded = request.encode();
         decoder.feed(&encoded).unwrap();
-        let decoded = decoder.decode().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&decoded.method, &method);
-        prop_assert_eq!(&decoded.uri, &uri);
+        prop_assert_eq!(&head.method, &method);
+        prop_assert_eq!(&head.uri, &uri);
     }
 }
 

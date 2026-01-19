@@ -2,7 +2,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{DecoderLimits, RequestDecoder, ResponseDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, RequestDecoder, ResponseDecoder};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzLimits {
@@ -27,9 +27,37 @@ fuzz_target!(|input: FuzzLimits| {
 
     let mut request_decoder = RequestDecoder::with_limits(limits.clone());
     let _ = request_decoder.feed(&input.data);
-    let _ = request_decoder.decode();
+    if let Ok(Some((_, body_kind))) = request_decoder.decode_headers() {
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                while let Some(body_data) = request_decoder.peek_body() {
+                    let len = body_data.len();
+                    match request_decoder.consume_body(len) {
+                        Ok(BodyProgress::Complete { .. }) => break,
+                        Ok(BodyProgress::Continue) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+            BodyKind::None => {}
+        }
+    }
 
     let mut response_decoder = ResponseDecoder::with_limits(limits);
     let _ = response_decoder.feed(&input.data);
-    let _ = response_decoder.decode();
+    if let Ok(Some((_, body_kind))) = response_decoder.decode_headers() {
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                while let Some(body_data) = response_decoder.peek_body() {
+                    let len = body_data.len();
+                    match response_decoder.consume_body(len) {
+                        Ok(BodyProgress::Complete { .. }) => break,
+                        Ok(BodyProgress::Continue) => {}
+                        Err(_) => break,
+                    }
+                }
+            }
+            BodyKind::None => {}
+        }
+    }
 });

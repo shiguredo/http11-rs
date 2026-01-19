@@ -3,8 +3,8 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::{
-    Request, RequestDecoder, Response, ResponseDecoder, encode_chunk, encode_chunks,
-    encode_request_headers, encode_response_headers,
+    encode_chunk, encode_chunks, encode_request_headers, encode_response_headers, BodyKind,
+    BodyProgress, Request, RequestDecoder, Response, ResponseDecoder,
 };
 
 #[derive(Arbitrary, Debug)]
@@ -31,37 +31,133 @@ fn concat_chunks(chunks: &[Vec<u8>]) -> Vec<u8> {
 
 fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     let mut decoder = RequestDecoder::new();
+    let mut decoded_body = Vec::new();
+    let mut headers_done = false;
+    let mut body_kind = BodyKind::None;
+
     for part in encoded.chunks(split_size) {
         if decoder.feed(part).is_err() {
             return None;
         }
-        match decoder.decode() {
-            Ok(Some(request)) => return Some(request.body),
-            Ok(None) => {}
+
+        if !headers_done {
+            match decoder.decode_headers() {
+                Ok(Some((_, kind))) => {
+                    headers_done = true;
+                    body_kind = kind;
+                }
+                Ok(None) => continue,
+                Err(_) => return None,
+            }
+        }
+
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                while let Some(body_data) = decoder.peek_body() {
+                    decoded_body.extend_from_slice(body_data);
+                    let len = body_data.len();
+                    match decoder.consume_body(len) {
+                        Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                        Ok(BodyProgress::Continue) => {}
+                        Err(_) => return None,
+                    }
+                }
+            }
+            BodyKind::None => return Some(decoded_body),
+        }
+    }
+
+    // 最後にもう一度チェック
+    if !headers_done {
+        match decoder.decode_headers() {
+            Ok(Some((_, kind))) => {
+                body_kind = kind;
+            }
+            Ok(None) => return None,
             Err(_) => return None,
         }
     }
-    match decoder.decode() {
-        Ok(Some(request)) => Some(request.body),
-        _ => None,
+
+    match body_kind {
+        BodyKind::ContentLength(_) | BodyKind::Chunked => {
+            while let Some(body_data) = decoder.peek_body() {
+                decoded_body.extend_from_slice(body_data);
+                let len = body_data.len();
+                match decoder.consume_body(len) {
+                    Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                    Ok(BodyProgress::Continue) => {}
+                    Err(_) => return None,
+                }
+            }
+            None
+        }
+        BodyKind::None => Some(decoded_body),
     }
 }
 
 fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     let mut decoder = ResponseDecoder::new();
+    let mut decoded_body = Vec::new();
+    let mut headers_done = false;
+    let mut body_kind = BodyKind::None;
+
     for part in encoded.chunks(split_size) {
         if decoder.feed(part).is_err() {
             return None;
         }
-        match decoder.decode() {
-            Ok(Some(response)) => return Some(response.body),
-            Ok(None) => {}
+
+        if !headers_done {
+            match decoder.decode_headers() {
+                Ok(Some((_, kind))) => {
+                    headers_done = true;
+                    body_kind = kind;
+                }
+                Ok(None) => continue,
+                Err(_) => return None,
+            }
+        }
+
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                while let Some(body_data) = decoder.peek_body() {
+                    decoded_body.extend_from_slice(body_data);
+                    let len = body_data.len();
+                    match decoder.consume_body(len) {
+                        Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                        Ok(BodyProgress::Continue) => {}
+                        Err(_) => return None,
+                    }
+                }
+            }
+            BodyKind::None => return Some(decoded_body),
+        }
+    }
+
+    // 最後にもう一度チェック
+    if !headers_done {
+        match decoder.decode_headers() {
+            Ok(Some((_, kind))) => {
+                body_kind = kind;
+            }
+            Ok(None) => return None,
             Err(_) => return None,
         }
     }
-    match decoder.decode() {
-        Ok(Some(response)) => Some(response.body),
-        _ => None,
+
+    match body_kind {
+        BodyKind::ContentLength(_) | BodyKind::Chunked => {
+            while let Some(body_data) = decoder.peek_body() {
+                decoded_body.extend_from_slice(body_data);
+                let len = body_data.len();
+                match decoder.consume_body(len) {
+                    Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                    Ok(BodyProgress::Continue) => {}
+                    Err(_) => return None,
+                }
+            }
+            None
+        }
+        BodyKind::None => Some(decoded_body),
     }
 }
 
