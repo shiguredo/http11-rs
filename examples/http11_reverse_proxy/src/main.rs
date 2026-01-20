@@ -538,6 +538,12 @@ async fn stream_response_on_connection(
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
+        // Content-Length と Transfer-Encoding は body_kind に基づいて後で設定する
+        if name.eq_ignore_ascii_case("content-length")
+            || name.eq_ignore_ascii_case("transfer-encoding")
+        {
+            continue;
+        }
         response_for_headers.add_header(name, value);
     }
 
@@ -652,7 +658,6 @@ async fn stream_response_on_connection(
 fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     const HOP_BY_HOP_HEADERS: &[&str] = &[
         "connection",
-        "content-length",
         "keep-alive",
         "proxy-authenticate",
         "proxy-authorization",
