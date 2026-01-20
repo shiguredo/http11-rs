@@ -1935,3 +1935,182 @@ fn request_chunked_invalid_crlf_error() {
     let result = decoder.consume_body(5);
     assert!(result.is_err());
 }
+
+// ========================================
+// Chunked Keep-Alive 連続デコードテスト (body_decoder.reset() の回帰テスト)
+// ========================================
+
+/// chunked レスポンスを連続してデコードする (decode() API)
+/// body_decoder.reset() が正しく呼ばれていることを検証
+#[test]
+fn decode_multiple_chunked_responses_keep_alive() {
+    let mut decoder = ResponseDecoder::new();
+
+    // 2 つの chunked レスポンスを作成
+    let resp1 = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+    let resp2 = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nworld\r\n0\r\n\r\n";
+
+    decoder.feed(resp1).unwrap();
+    decoder.feed(resp2).unwrap();
+
+    // 1 回目のデコード
+    let response1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(response1.body, b"hello");
+
+    // 2 回目のデコード (body_consumed がリセットされていないとここで問題が発生する可能性)
+    let response2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(response2.body, b"world");
+}
+
+/// chunked リクエストを連続してデコードする (decode() API)
+/// body_decoder.reset() が正しく呼ばれていることを検証
+#[test]
+fn decode_multiple_chunked_requests_keep_alive() {
+    let mut decoder = RequestDecoder::new();
+
+    // 2 つの chunked リクエストを作成
+    let req1 = b"POST /first HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+    let req2 =
+        b"POST /second HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nworld\r\n0\r\n\r\n";
+
+    decoder.feed(req1).unwrap();
+    decoder.feed(req2).unwrap();
+
+    // 1 回目のデコード
+    let request1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(request1.uri, "/first");
+    assert_eq!(request1.body, b"hello");
+
+    // 2 回目のデコード
+    let request2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(request2.uri, "/second");
+    assert_eq!(request2.body, b"world");
+}
+
+/// max_body_size 制限付きで chunked レスポンスを連続デコード
+/// body_consumed がリセットされていないと 2 回目で BodyTooLarge エラーになる
+#[test]
+fn decode_multiple_chunked_responses_with_body_limit() {
+    let limits = DecoderLimits {
+        max_body_size: 100, // 各メッセージのボディは 100 バイトまで
+        ..DecoderLimits::default()
+    };
+    let mut decoder = ResponseDecoder::with_limits(limits);
+
+    // 各 50 バイトのボディを持つ chunked レスポンス
+    let body1 = "x".repeat(50);
+    let body2 = "y".repeat(50);
+    let resp1 = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body1.len(),
+        body1
+    );
+    let resp2 = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body2.len(),
+        body2
+    );
+
+    decoder.feed(resp1.as_bytes()).unwrap();
+    decoder.feed(resp2.as_bytes()).unwrap();
+
+    // 1 回目のデコード: 50 バイト → body_consumed = 50
+    let response1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(response1.body.len(), 50);
+
+    // 2 回目のデコード: body_consumed がリセットされていれば 50 バイトで OK
+    // リセットされていないと 50 + 50 = 100 で制限ギリギリ、または超過
+    let response2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(response2.body.len(), 50);
+}
+
+/// max_body_size 制限付きで chunked リクエストを連続デコード
+#[test]
+fn decode_multiple_chunked_requests_with_body_limit() {
+    let limits = DecoderLimits {
+        max_body_size: 100,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = RequestDecoder::with_limits(limits);
+
+    let body1 = "a".repeat(50);
+    let body2 = "b".repeat(50);
+    let req1 = format!(
+        "POST /1 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body1.len(),
+        body1
+    );
+    let req2 = format!(
+        "POST /2 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+        body2.len(),
+        body2
+    );
+
+    decoder.feed(req1.as_bytes()).unwrap();
+    decoder.feed(req2.as_bytes()).unwrap();
+
+    let request1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(request1.body.len(), 50);
+
+    let request2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(request2.body.len(), 50);
+}
+
+proptest! {
+    #[test]
+    fn decode_multiple_chunked_responses_keep_alive_pbt(
+        bodies in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 1..64),
+            2..4
+        )
+    ) {
+        let mut decoder = ResponseDecoder::new();
+
+        // chunked レスポンスを生成してバッファに追加
+        let mut all_data = Vec::new();
+        for body_data in &bodies {
+            let mut data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
+            data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
+            data.extend(body_data);
+            data.extend(b"\r\n0\r\n\r\n");
+            all_data.extend(data);
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ
+        for body_data in &bodies {
+            let response = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(&response.body, body_data);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn decode_multiple_chunked_requests_keep_alive_pbt(
+        bodies in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 1..64),
+            2..4
+        )
+    ) {
+        let mut decoder = RequestDecoder::new();
+
+        // chunked リクエストを生成してバッファに追加
+        let mut all_data = Vec::new();
+        for (i, body_data) in bodies.iter().enumerate() {
+            let mut data = format!("POST /{} HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", i)
+                .into_bytes();
+            data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
+            data.extend(body_data);
+            data.extend(b"\r\n0\r\n\r\n");
+            all_data.extend(data);
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ
+        for body_data in &bodies {
+            let request = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(&request.body, body_data);
+        }
+    }
+}

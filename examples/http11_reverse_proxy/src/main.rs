@@ -241,13 +241,27 @@ async fn stream_upstream_response(
 
     // クライアントへレスポンスヘッダーを送信
     let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
+
+    // Connection ヘッダーに列挙されたヘッダー名を収集
+    let connection_headers: Vec<String> = resp_head
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
+        .flat_map(|(_, value)| {
+            value
+                .split(',')
+                .map(|s| s.trim().to_ascii_lowercase())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
     for (name, value) in &resp_head.headers {
-        // Transfer-Encoding と Connection は除外して再設定
-        if !name.eq_ignore_ascii_case("Transfer-Encoding")
-            && !name.eq_ignore_ascii_case("Connection")
-        {
-            response_for_headers.add_header(name, value);
+        // RFC 9110 Section 7.6.1: hop-by-hop ヘッダーを除外
+        // RFC 9112 Section 6.3: intermediary は Content-Length を削除すべき (MUST)
+        if is_hop_by_hop_header(name, &connection_headers) {
+            continue;
         }
+        response_for_headers.add_header(name, value);
     }
     response_for_headers.add_header("Connection", "close");
 
@@ -309,6 +323,39 @@ async fn stream_upstream_response(
     );
 
     Ok(())
+}
+
+/// RFC 9110 Section 7.6.1 で定義された hop-by-hop ヘッダーかどうかを判定
+///
+/// hop-by-hop ヘッダーは intermediary が転送してはならない
+fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
+    // RFC 9110 Section 7.6.1: 固定の hop-by-hop ヘッダー
+    // RFC 9112 Appendix C.2.2: Proxy-Connection も除外
+    const HOP_BY_HOP_HEADERS: &[&str] = &[
+        "connection",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "proxy-connection", // RFC 9112 Appendix C.2.2
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    ];
+
+    // RFC 9112 Section 6.3: Content-Length も除外すべき (intermediary が処理するため)
+    if name.eq_ignore_ascii_case("content-length") {
+        return true;
+    }
+
+    // 固定の hop-by-hop ヘッダーをチェック
+    let name_lower = name.to_ascii_lowercase();
+    if HOP_BY_HOP_HEADERS.contains(&name_lower.as_str()) {
+        return true;
+    }
+
+    // Connection ヘッダーに列挙されたヘッダーをチェック
+    connection_headers.contains(&name_lower)
 }
 
 fn log_debug(enabled: bool, message: &str) {

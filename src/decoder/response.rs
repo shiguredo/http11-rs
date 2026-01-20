@@ -358,6 +358,7 @@ impl ResponseDecoder {
         // Keep-Alive 対応: 次のレスポンスのために状態をリセット
         self.phase = DecodePhase::StartLine;
         self.decoded_body_kind = None;
+        self.body_decoder.reset();
         self.expect_no_body = false;
         self.status_code = 0;
 

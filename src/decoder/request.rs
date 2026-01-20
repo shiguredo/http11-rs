@@ -329,6 +329,7 @@ impl RequestDecoder {
         // Keep-Alive 対応: 次のリクエストのために状態をリセット
         self.phase = DecodePhase::StartLine;
         self.decoded_body_kind = None;
+        self.body_decoder.reset();
 
         Ok(Some(Request {
             method: head.method,
