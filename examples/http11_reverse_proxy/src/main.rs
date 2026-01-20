@@ -1,22 +1,157 @@
-//! HTTP/1.1 リバースプロキシの例（ストリーミング対応）
+//! HTTP/1.1 リバースプロキシの例（接続プール対応）
 //!
 //! 使い方:
 //!   cargo run -p http11_reverse_proxy -- --port 8888 --upstream https://example.com
 //!   curl http://localhost:8888/
 
-use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
-use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
     BodyKind, BodyProgress, DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder,
     encode_response_headers,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream as TokioTcpStream};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
+use tokio_rustls::TlsConnector;
+use tokio_rustls::client::TlsStream;
+
+/// 接続プールの設定
+#[derive(Debug, Clone)]
+struct PoolConfig {
+    /// ホストあたりの最大接続数
+    max_connections_per_host: usize,
+    /// アイドル接続のタイムアウト（秒）
+    idle_timeout_secs: u64,
+    /// 接続の最大生存時間（秒）
+    max_lifetime_secs: u64,
+}
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            max_connections_per_host: 10,
+            idle_timeout_secs: 60,
+            max_lifetime_secs: 300,
+        }
+    }
+}
+
+/// プールされた接続
+struct PooledConnection {
+    stream: TlsStream<TcpStream>,
+    created_at: Instant,
+    last_used: Instant,
+}
+
+impl PooledConnection {
+    fn new(stream: TlsStream<TcpStream>) -> Self {
+        let now = Instant::now();
+        Self {
+            stream,
+            created_at: now,
+            last_used: now,
+        }
+    }
+
+    /// 接続が有効かどうかを確認
+    fn is_valid(&self, config: &PoolConfig) -> bool {
+        let now = Instant::now();
+        let idle_duration = now.duration_since(self.last_used);
+        let lifetime = now.duration_since(self.created_at);
+
+        idle_duration < Duration::from_secs(config.idle_timeout_secs)
+            && lifetime < Duration::from_secs(config.max_lifetime_secs)
+    }
+}
+
+/// 接続プール
+struct ConnectionPool {
+    /// ホストごとのアイドル接続
+    idle_connections: HashMap<String, Vec<PooledConnection>>,
+    config: PoolConfig,
+    tls_connector: TlsConnector,
+}
+
+impl ConnectionPool {
+    fn new(tls_connector: TlsConnector, config: PoolConfig) -> Self {
+        Self {
+            idle_connections: HashMap::new(),
+            config,
+            tls_connector,
+        }
+    }
+
+    /// プールからアイドル接続を取得（ロック内で高速に実行）
+    fn try_acquire(&mut self, host: &str) -> Option<PooledConnection> {
+        if let Some(connections) = self.idle_connections.get_mut(host) {
+            while let Some(mut conn) = connections.pop() {
+                if conn.is_valid(&self.config) {
+                    conn.last_used = Instant::now();
+                    return Some(conn);
+                }
+                // 無効な接続は破棄
+            }
+        }
+        None
+    }
+
+    /// TLS コネクタを取得（ロック外で接続を作成するため）
+    fn tls_connector(&self) -> TlsConnector {
+        self.tls_connector.clone()
+    }
+
+    /// 接続をプールに返却
+    fn release(&mut self, host: &str, conn: PooledConnection) {
+        if !conn.is_valid(&self.config) {
+            return;
+        }
+
+        let connections = self.idle_connections.entry(host.to_string()).or_default();
+
+        // 最大接続数を超えている場合は破棄
+        if connections.len() >= self.config.max_connections_per_host {
+            return;
+        }
+
+        connections.push(conn);
+    }
+
+    /// 期限切れの接続を削除
+    fn cleanup_expired(&mut self) {
+        for connections in self.idle_connections.values_mut() {
+            connections.retain(|conn| conn.is_valid(&self.config));
+        }
+        self.idle_connections
+            .retain(|_, connections| !connections.is_empty());
+    }
+
+    /// プールの統計情報を取得
+    fn stats(&self) -> (usize, usize) {
+        let hosts = self.idle_connections.len();
+        let connections: usize = self.idle_connections.values().map(|v| v.len()).sum();
+        (hosts, connections)
+    }
+}
+
+/// 新規 TLS 接続を作成（ロック外で実行）
+async fn create_connection(
+    host: &str,
+    tls_connector: &TlsConnector,
+) -> Result<PooledConnection, Box<dyn std::error::Error + Send + Sync>> {
+    let server_name = ServerName::try_from(host.to_string())?;
+    let tcp_stream = TcpStream::connect((host, 443)).await?;
+    let tls_stream = tls_connector.connect(server_name, tcp_stream).await?;
+    Ok(PooledConnection::new(tls_stream))
+}
+
+/// 共有可能な接続プール
+type SharedPool = Arc<Mutex<ConnectionPool>>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -70,17 +205,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // upstream URL からホスト名を抽出
     let upstream_host = parse_upstream_url(&upstream_url)?;
 
+    // TLS 設定を事前に作成
+    let tls_config = Arc::new(ClientConfig::with_platform_verifier()?);
+    let tls_connector = TlsConnector::from(tls_config);
+
+    // 接続プールを作成
+    let pool_config = PoolConfig::default();
+    let pool = Arc::new(Mutex::new(ConnectionPool::new(
+        tls_connector,
+        pool_config.clone(),
+    )));
+
+    // 定期的なクリーンアップタスク
+    let cleanup_pool = pool.clone();
+    let cleanup_debug = debug;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        loop {
+            interval.tick().await;
+            let mut pool = cleanup_pool.lock().await;
+            pool.cleanup_expired();
+            if cleanup_debug {
+                let (hosts, conns) = pool.stats();
+                eprintln!(
+                    "[{}] POOL: cleanup done, {} hosts, {} connections",
+                    now_timestamp(),
+                    hosts,
+                    conns
+                );
+            }
+        }
+    });
+
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
 
     println!("リバースプロキシをバインド: {}", addr);
     println!("  http://localhost:{}/ -> {}/", port, upstream_url);
+    println!(
+        "  接続プール有効（最大 {} 接続/ホスト、アイドル {}秒、最大生存 {}秒）",
+        pool_config.max_connections_per_host,
+        pool_config.idle_timeout_secs,
+        pool_config.max_lifetime_secs
+    );
 
     loop {
         let (socket, _) = listener.accept().await?;
         let upstream_host = upstream_host.clone();
+        let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, &upstream_host, debug).await {
+            if let Err(e) = handle_client(socket, &upstream_host, pool, debug).await {
                 eprintln!("クライアント処理エラー: {}", e);
             }
         });
@@ -88,10 +262,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn handle_client(
-    mut socket: TokioTcpStream,
+    mut socket: TcpStream,
     upstream_host: &str,
+    pool: SharedPool,
     debug: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // クライアントからリクエストヘッダーを受信
     let mut decoder = RequestDecoder::new();
     let (req_head, req_body_kind) = loop {
@@ -123,7 +298,7 @@ async fn handle_client(
         &format!("received headers: {}", req_head.headers.len()),
     );
 
-    // リクエストボディを収集（ストリーミングも可能だが、ここではシンプルに全部読む）
+    // リクエストボディを収集
     let mut request_body = Vec::new();
     if !matches!(req_body_kind, BodyKind::None) {
         loop {
@@ -135,7 +310,6 @@ async fn handle_client(
                     BodyProgress::Continue => {}
                 }
             } else {
-                // データ不足、追加読み込み
                 let mut buffer = vec![0u8; 4096];
                 let n = socket.read(&mut buffer).await?;
                 if n == 0 {
@@ -175,14 +349,11 @@ async fn handle_client(
         upstream_request.add_header(name, value);
     }
 
-    // Host ヘッダーを アップストリームに設定
     upstream_request.add_header("Host", upstream_host);
-
-    // アップストリームへの接続は close で終了（シンプルさのため）
-    upstream_request.add_header("Connection", "close");
-
-    // ボディをコピー
+    // Keep-Alive を使用して接続を再利用
+    upstream_request.add_header("Connection", "keep-alive");
     upstream_request.body = request_body;
+
     log_debug(
         debug,
         &format!(
@@ -191,27 +362,90 @@ async fn handle_client(
         ),
     );
 
-    // アップストリームへリクエストを送信し、レスポンスをストリーミングで転送
-    stream_upstream_response(&mut socket, &upstream_request, upstream_host, debug).await?;
+    // 接続プールから接続を取得してリクエストを送信
+    let result = stream_upstream_response_pooled(
+        &mut socket,
+        &upstream_request,
+        upstream_host,
+        pool.clone(),
+        debug,
+    )
+    .await;
 
-    Ok(())
+    // エラーの場合はログに出力
+    if let Err(ref e) = result {
+        log_debug(debug, &format!("upstream error: {}", e));
+    }
+
+    result
 }
 
-async fn stream_upstream_response(
-    downstream: &mut TokioTcpStream,
+async fn stream_upstream_response_pooled(
+    downstream: &mut TcpStream,
     request: &Request,
     upstream_host: &str,
+    pool: SharedPool,
     debug: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // TLS 設定 (システムのプラットフォーム証明書ストアを使用)
-    let config = ClientConfig::with_platform_verifier()?;
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let start = Instant::now();
 
-    let server_name = ServerName::try_from(upstream_host.to_string())?;
+    // まずプールからアイドル接続を取得（ロックは短時間のみ保持）
+    let (mut conn, from_pool) = {
+        let mut pool_guard = pool.lock().await;
+        if let Some(conn) = pool_guard.try_acquire(upstream_host) {
+            (conn, true)
+        } else {
+            // プールにない場合は TLS コネクタを取得してロックを解放
+            let tls_connector = pool_guard.tls_connector();
+            drop(pool_guard); // 明示的にロックを解放
 
-    let conn = ClientConnection::new(Arc::new(config), server_name)?;
-    let sock = TcpStream::connect((upstream_host, 443))?;
-    let mut tls = StreamOwned::new(conn, sock);
-    log_debug(debug, &format!("TLS connected: {}", upstream_host));
+            // ロック外で新規接続を作成（時間がかかる処理）
+            let conn = create_connection(upstream_host, &tls_connector).await?;
+            (conn, false)
+        }
+    };
+
+    let acquire_time = start.elapsed();
+    log_debug(
+        debug,
+        &format!(
+            "acquired connection for: {} ({}ms, {})",
+            upstream_host,
+            acquire_time.as_millis(),
+            if from_pool { "from pool" } else { "new" }
+        ),
+    );
+
+    // リクエスト送信とレスポンス受信
+    let result = stream_response_on_connection(downstream, request, &mut conn.stream, debug).await;
+
+    // 接続を再利用するかどうかを判定
+    let should_reuse = match &result {
+        Ok(reuse) => *reuse,
+        Err(_) => false,
+    };
+
+    if should_reuse {
+        conn.last_used = Instant::now();
+        pool.lock().await.release(upstream_host, conn);
+        log_debug(debug, "connection returned to pool");
+    } else {
+        log_debug(debug, "connection closed (not reusable)");
+    }
+
+    result.map(|_| ())
+}
+
+/// 接続上でリクエストを送信しレスポンスを転送
+/// 戻り値: 接続を再利用可能かどうか
+async fn stream_response_on_connection(
+    downstream: &mut TcpStream,
+    request: &Request,
+    upstream: &mut TlsStream<TcpStream>,
+    debug: bool,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    // ダウンストリームをバッファリング（64KB バッファ）
+    let mut downstream = BufWriter::with_capacity(65536, downstream);
 
     // リクエスト送信
     let request_bytes = request.encode();
@@ -219,23 +453,21 @@ async fn stream_upstream_response(
         debug,
         &format!("upstream request bytes: {}", request_bytes.len()),
     );
-    tls.write_all(&request_bytes)?;
+    upstream.write_all(&request_bytes).await?;
 
     // レスポンスヘッダーを受信
     let mut decoder = ResponseDecoder::with_limits(DecoderLimits {
         max_buffer_size: 256 * 1024,
-        max_body_size: 50 * 1024 * 1024, // ストリーミングなので大きめに
+        max_body_size: 50 * 1024 * 1024,
         ..Default::default()
     });
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     let (resp_head, body_kind) = loop {
-        let n = match tls.read(&mut buf) {
-            Ok(0) => return Err("接続が閉じられました".into()),
-            Ok(n) => n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(e) => return Err(e.into()),
-        };
+        let n = upstream.read(&mut buf).await?;
+        if n == 0 {
+            return Err("接続が閉じられました".into());
+        }
 
         log_debug(debug, &format!("upstream received bytes: {}", n));
         decoder.feed(&buf[..n])?;
@@ -252,15 +484,19 @@ async fn stream_upstream_response(
             resp_head.version, resp_head.status_code, resp_head.reason_phrase
         ),
     );
-    log_debug(
-        debug,
-        &format!("upstream response headers: {}", resp_head.headers.len()),
-    );
+
+    // Connection ヘッダーを確認して再利用可能性を判定
+    let connection_close = resp_head.headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("Connection")
+            && value
+                .split(',')
+                .any(|v| v.trim().eq_ignore_ascii_case("close"))
+    });
+    let can_reuse = !connection_close && resp_head.version.ends_with("/1.1");
 
     // クライアントへレスポンスヘッダーを送信
     let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
 
-    // Connection ヘッダーに列挙されたヘッダー名を収集
     let connection_headers: Vec<String> = resp_head
         .headers
         .iter()
@@ -274,10 +510,6 @@ async fn stream_upstream_response(
         })
         .collect();
 
-    // ボディの転送方式を決定
-    // - Content-Length がある場合: そのまま転送
-    // - Chunked の場合: Chunked で転送
-    // - どちらもない場合: Connection: close で終端を示す
     let use_chunked = matches!(body_kind, BodyKind::Chunked);
     let content_length = match body_kind {
         BodyKind::ContentLength(len) => Some(len),
@@ -285,137 +517,140 @@ async fn stream_upstream_response(
     };
 
     for (name, value) in &resp_head.headers {
-        // RFC 9110 Section 7.6.1: hop-by-hop ヘッダーを除外
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
         response_for_headers.add_header(name, value);
     }
 
-    // ボディ長の指定
     if let Some(len) = content_length {
-        // Content-Length がある場合はそれを使用
         response_for_headers.add_header("Content-Length", &len.to_string());
         log_debug(debug, &format!("using Content-Length: {}", len));
     } else if use_chunked {
-        // Chunked の場合は Transfer-Encoding: chunked を設定
         response_for_headers.add_header("Transfer-Encoding", "chunked");
         log_debug(debug, "using Transfer-Encoding: chunked");
     } else if !matches!(body_kind, BodyKind::None) {
-        // ボディがあるのに長さが不明な場合は Connection: close で終端を示す
         response_for_headers.add_header("Connection", "close");
-        log_debug(debug, "using Connection: close (unknown body length)");
+        log_debug(debug, "using Connection: close");
     }
 
     let header_bytes = encode_response_headers(&response_for_headers);
     downstream.write_all(&header_bytes).await?;
-    log_debug(
-        debug,
-        &format!(
-            "sent response headers to client: {} bytes",
-            header_bytes.len()
-        ),
-    );
+    downstream.flush().await?;
 
     // ボディをストリーミング転送
     let mut total_body_bytes = 0usize;
     if !matches!(body_kind, BodyKind::None) {
-        loop {
-            // バッファにあるデータを転送
-            while let Some(data) = decoder.peek_body() {
-                if use_chunked {
-                    // Chunked 転送: チャンクサイズ + データ + CRLF
-                    let chunk_header = format!("{:x}\r\n", data.len());
-                    downstream.write_all(chunk_header.as_bytes()).await?;
-                    downstream.write_all(data).await?;
-                    downstream.write_all(b"\r\n").await?;
-                } else {
-                    // 通常転送: データをそのまま送信
-                    downstream.write_all(data).await?;
-                }
-                total_body_bytes += data.len();
-                let len = data.len();
-                match decoder.consume_body(len)? {
-                    BodyProgress::Complete { trailers } => {
+        'outer: loop {
+            loop {
+                match decoder.peek_body() {
+                    Some(data) => {
+                        let len = data.len();
                         if use_chunked {
-                            // 終端チャンクを送信
-                            downstream.write_all(b"0\r\n").await?;
-                            // トレーラーがあれば送信
-                            for (name, value) in &trailers {
-                                let trailer_line = format!("{}: {}\r\n", name, value);
-                                downstream.write_all(trailer_line.as_bytes()).await?;
-                            }
-                            downstream.write_all(b"\r\n").await?;
+                            let mut chunk = format!("{:x}\r\n", len).into_bytes();
+                            chunk.extend_from_slice(data);
+                            chunk.extend_from_slice(b"\r\n");
+                            downstream.write_all(&chunk).await?;
+                        } else {
+                            downstream.write_all(data).await?;
                         }
-                        log_debug(
-                            debug,
-                            &format!(
-                                "body complete, total: {} bytes, trailers: {}",
-                                total_body_bytes,
-                                trailers.len()
-                            ),
-                        );
-                        return Ok(());
+                        total_body_bytes += len;
+
+                        match decoder.consume_body(len)? {
+                            BodyProgress::Complete { trailers } => {
+                                if use_chunked {
+                                    let mut end_chunk = b"0\r\n".to_vec();
+                                    for (name, value) in &trailers {
+                                        end_chunk.extend_from_slice(
+                                            format!("{}: {}\r\n", name, value).as_bytes(),
+                                        );
+                                    }
+                                    end_chunk.extend_from_slice(b"\r\n");
+                                    downstream.write_all(&end_chunk).await?;
+                                }
+                                log_debug(
+                                    debug,
+                                    &format!("body complete, total: {} bytes", total_body_bytes),
+                                );
+                                break 'outer;
+                            }
+                            BodyProgress::Continue => {}
+                        }
                     }
-                    BodyProgress::Continue => {}
+                    None => {
+                        let remaining_before = decoder.remaining().len();
+                        match decoder.consume_body(0)? {
+                            BodyProgress::Complete { trailers } => {
+                                if use_chunked {
+                                    let mut end_chunk = b"0\r\n".to_vec();
+                                    for (name, value) in &trailers {
+                                        end_chunk.extend_from_slice(
+                                            format!("{}: {}\r\n", name, value).as_bytes(),
+                                        );
+                                    }
+                                    end_chunk.extend_from_slice(b"\r\n");
+                                    downstream.write_all(&end_chunk).await?;
+                                }
+                                log_debug(
+                                    debug,
+                                    &format!("body complete, total: {} bytes", total_body_bytes),
+                                );
+                                break 'outer;
+                            }
+                            BodyProgress::Continue => {
+                                if decoder.remaining().len() == remaining_before {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
-            // データ不足、アップストリームから追加読み込み
-            let n = match tls.read(&mut buf) {
-                Ok(0) => {
-                    // 接続が閉じられた
-                    if use_chunked {
-                        // 終端チャンクを送信
-                        downstream.write_all(b"0\r\n\r\n").await?;
-                    }
-                    log_debug(debug, "upstream connection closed");
-                    break;
+            let n = upstream.read(&mut buf).await?;
+            if n == 0 {
+                if use_chunked {
+                    downstream.write_all(b"0\r\n\r\n").await?;
                 }
-                Ok(n) => n,
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-                Err(e) => return Err(e.into()),
-            };
+                downstream.flush().await?;
+                log_debug(debug, "upstream connection closed");
+                return Ok(false); // 接続が閉じられたので再利用不可
+            }
 
             log_debug(debug, &format!("upstream body bytes: {}", n));
             decoder.feed(&buf[..n])?;
         }
     }
 
+    // バッファをフラッシュ
+    downstream.flush().await?;
+
     log_debug(
         debug,
         &format!("response body streamed: {} bytes", total_body_bytes),
     );
 
-    Ok(())
+    Ok(can_reuse)
 }
 
-/// RFC 9110 Section 7.6.1 で定義された hop-by-hop ヘッダーかどうかを判定
-///
-/// hop-by-hop ヘッダーは intermediary が転送してはならない
 fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
-    // RFC 9110 Section 7.6.1: 固定の hop-by-hop ヘッダー
-    // RFC 9112 Appendix C.2.2: Proxy-Connection も除外
     const HOP_BY_HOP_HEADERS: &[&str] = &[
         "connection",
-        "content-length", // intermediary が再設定するため除外
+        "content-length",
         "keep-alive",
         "proxy-authenticate",
         "proxy-authorization",
-        "proxy-connection", // RFC 9112 Appendix C.2.2
+        "proxy-connection",
         "te",
-        "trailer",
         "transfer-encoding",
         "upgrade",
     ];
 
-    // 固定の hop-by-hop ヘッダーをチェック
     let name_lower = name.to_ascii_lowercase();
     if HOP_BY_HOP_HEADERS.contains(&name_lower.as_str()) {
         return true;
     }
 
-    // Connection ヘッダーに列挙されたヘッダーをチェック
     connection_headers.contains(&name_lower)
 }
 
@@ -443,7 +678,6 @@ fn parse_upstream_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
         url
     };
 
-    // ホスト名部分を取得 (パス、クエリ、ポートを除外)
     let host = url_str
         .split('/')
         .next()
