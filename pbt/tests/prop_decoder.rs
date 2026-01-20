@@ -2060,7 +2060,7 @@ proptest! {
     #[test]
     fn decode_multiple_chunked_responses_keep_alive_pbt(
         bodies in proptest::collection::vec(
-            proptest::collection::vec(any::<u8>(), 1..64),
+            proptest::collection::vec(any::<u8>(), 0..64),
             2..4
         )
     ) {
@@ -2070,9 +2070,14 @@ proptest! {
         let mut all_data = Vec::new();
         for body_data in &bodies {
             let mut data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
-            data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
-            data.extend(body_data);
-            data.extend(b"\r\n0\r\n\r\n");
+            // 空ボディでない場合のみチャンクデータを追加
+            if !body_data.is_empty() {
+                data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
+                data.extend(body_data);
+                data.extend(b"\r\n");
+            }
+            // 終端チャンク
+            data.extend(b"0\r\n\r\n");
             all_data.extend(data);
         }
         decoder.feed(&all_data).unwrap();
@@ -2089,7 +2094,7 @@ proptest! {
     #[test]
     fn decode_multiple_chunked_requests_keep_alive_pbt(
         bodies in proptest::collection::vec(
-            proptest::collection::vec(any::<u8>(), 1..64),
+            proptest::collection::vec(any::<u8>(), 0..64),
             2..4
         )
     ) {
@@ -2100,9 +2105,14 @@ proptest! {
         for (i, body_data) in bodies.iter().enumerate() {
             let mut data = format!("POST /{} HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", i)
                 .into_bytes();
-            data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
-            data.extend(body_data);
-            data.extend(b"\r\n0\r\n\r\n");
+            // 空ボディでない場合のみチャンクデータを追加
+            if !body_data.is_empty() {
+                data.extend(format!("{:x}\r\n", body_data.len()).as_bytes());
+                data.extend(body_data);
+                data.extend(b"\r\n");
+            }
+            // 終端チャンク
+            data.extend(b"0\r\n\r\n");
             all_data.extend(data);
         }
         decoder.feed(&all_data).unwrap();

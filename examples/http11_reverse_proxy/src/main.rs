@@ -251,6 +251,7 @@ async fn stream_upstream_response(
             value
                 .split(',')
                 .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
         })
         .collect();
