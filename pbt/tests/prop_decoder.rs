@@ -287,7 +287,7 @@ fn content_length_match_ok() {
     let data = b"GET / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(body_kind, BodyKind::ContentLength(5));
 
     let mut body = Vec::new();
@@ -486,22 +486,17 @@ fn chunked_with_trailer_ok() {
     assert_eq!(body_kind, BodyKind::Chunked);
 
     let mut body = Vec::new();
-    let mut trailers = Vec::new();
-    loop {
+    let trailers = loop {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
-                trailers = t;
-                break;
+            if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
+                break trailers;
             }
-        } else {
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
-                trailers = t;
-                break;
-            }
+        } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            break trailers;
         }
-    }
+    };
     assert_eq!(body, b"hello");
     assert_eq!(trailers.len(), 1);
     assert_eq!(trailers[0].0, "X-Trailer");
@@ -516,22 +511,17 @@ fn chunked_with_multiple_trailers_ok() {
     let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
     let mut body = Vec::new();
-    let mut trailers = Vec::new();
-    loop {
+    let trailers = loop {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
-                trailers = t;
-                break;
+            if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
+                break trailers;
             }
-        } else {
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
-                trailers = t;
-                break;
-            }
+        } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            break trailers;
         }
-    }
+    };
     assert_eq!(body, b"hello");
     assert_eq!(trailers.len(), 2);
 }
@@ -1470,22 +1460,17 @@ fn chunked_request_with_trailer() {
     let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
     let mut body = Vec::new();
-    let mut trailers = Vec::new();
-    loop {
+    let trailers = loop {
         if let Some(d) = decoder.peek_body() {
             body.extend_from_slice(d);
             let len = d.len();
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
-                trailers = t;
-                break;
+            if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
+                break trailers;
             }
-        } else {
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
-                trailers = t;
-                break;
-            }
+        } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            break trailers;
         }
-    }
+    };
     assert_eq!(body, b"hello");
     assert_eq!(trailers.len(), 1);
 }
@@ -1498,22 +1483,17 @@ fn chunked_request_with_multiple_trailers() {
     let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
     let mut body = Vec::new();
-    let mut trailers = Vec::new();
-    loop {
+    let trailers = loop {
         if let Some(d) = decoder.peek_body() {
             body.extend_from_slice(d);
             let len = d.len();
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(len).unwrap() {
-                trailers = t;
-                break;
+            if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
+                break trailers;
             }
-        } else {
-            if let BodyProgress::Complete { trailers: t } = decoder.consume_body(0).unwrap() {
-                trailers = t;
-                break;
-            }
+        } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            break trailers;
         }
-    }
+    };
     assert_eq!(body, b"hello");
     assert_eq!(trailers.len(), 2);
 }

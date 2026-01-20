@@ -1,0 +1,346 @@
+//! HTTP レスポンスデコーダー
+
+use crate::error::Error;
+use crate::limits::DecoderLimits;
+use crate::response::Response;
+
+use super::body::{
+    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, resolve_body_headers,
+};
+use super::head::ResponseHead;
+use super::phase::DecodePhase;
+
+/// HTTP レスポンスデコーダー (Sans I/O)
+///
+/// クライアント側でサーバーからのレスポンスをパースする際に使用
+#[derive(Debug)]
+pub struct ResponseDecoder {
+    buf: Vec<u8>,
+    phase: DecodePhase,
+    start_line: Option<String>,
+    headers: Vec<(String, String)>,
+    body_decoder: BodyDecoder,
+    limits: DecoderLimits,
+    /// HEAD リクエストへのレスポンスかどうか
+    expect_no_body: bool,
+    /// ステータスコード（ヘッダーデコード後に保持）
+    status_code: u16,
+    /// decode() 用: デコード済みヘッダー
+    decoded_head: Option<ResponseHead>,
+    /// decode() 用: ボディ種別
+    decoded_body_kind: Option<BodyKind>,
+    /// decode() 用: デコード済みボディ
+    decoded_body: Vec<u8>,
+}
+
+impl Default for ResponseDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResponseDecoder {
+    /// 新しいデコーダーを作成
+    pub fn new() -> Self {
+        Self {
+            buf: Vec::new(),
+            phase: DecodePhase::StartLine,
+            start_line: None,
+            headers: Vec::new(),
+            body_decoder: BodyDecoder::new(),
+            limits: DecoderLimits::default(),
+            expect_no_body: false,
+            status_code: 0,
+            decoded_head: None,
+            decoded_body_kind: None,
+            decoded_body: Vec::new(),
+        }
+    }
+
+    /// 制限付きでデコーダーを作成
+    pub fn with_limits(limits: DecoderLimits) -> Self {
+        Self {
+            buf: Vec::new(),
+            phase: DecodePhase::StartLine,
+            start_line: None,
+            headers: Vec::new(),
+            body_decoder: BodyDecoder::new(),
+            limits,
+            expect_no_body: false,
+            status_code: 0,
+            decoded_head: None,
+            decoded_body_kind: None,
+            decoded_body: Vec::new(),
+        }
+    }
+
+    /// HEAD リクエストへのレスポンスとしてデコード (ボディなし)
+    pub fn set_expect_no_body(&mut self, expect_no_body: bool) {
+        self.expect_no_body = expect_no_body;
+    }
+
+    /// 制限設定を取得
+    pub fn limits(&self) -> &DecoderLimits {
+        &self.limits
+    }
+
+    /// バッファにデータを追加
+    pub fn feed(&mut self, data: &[u8]) -> Result<(), Error> {
+        let new_size = self.buf.len() + data.len();
+        if new_size > self.limits.max_buffer_size {
+            return Err(Error::BufferOverflow {
+                size: new_size,
+                limit: self.limits.max_buffer_size,
+            });
+        }
+        self.buf.extend_from_slice(data);
+        Ok(())
+    }
+
+    /// バッファにデータを追加 (制限チェックなし)
+    pub fn feed_unchecked(&mut self, data: &[u8]) {
+        self.buf.extend_from_slice(data);
+    }
+
+    /// バッファの残りデータを取得
+    pub fn remaining(&self) -> &[u8] {
+        &self.buf
+    }
+
+    /// デコーダーをリセット
+    pub fn reset(&mut self) {
+        self.buf.clear();
+        self.phase = DecodePhase::StartLine;
+        self.start_line = None;
+        self.headers.clear();
+        self.body_decoder.reset();
+        self.expect_no_body = false;
+        self.status_code = 0;
+        self.decoded_head = None;
+        self.decoded_body_kind = None;
+        self.decoded_body.clear();
+    }
+
+    /// ステータスコードからボディがあるかどうかを判定
+    fn status_has_body(status_code: u16) -> bool {
+        // 1xx, 204, 304 はボディなし
+        !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
+    }
+
+    /// ボディモードを決定
+    fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
+        let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
+
+        // HEAD リクエストへのレスポンス、または 1xx/204/304 はボディなし
+        if self.expect_no_body || !Self::status_has_body(status_code) {
+            return Ok(BodyKind::None);
+        }
+
+        if transfer_encoding_chunked {
+            return Ok(BodyKind::Chunked);
+        }
+
+        if let Some(len) = content_length {
+            if len > self.limits.max_body_size {
+                return Err(Error::BodyTooLarge {
+                    size: len,
+                    limit: self.limits.max_body_size,
+                });
+            }
+            return Ok(BodyKind::ContentLength(len));
+        }
+
+        Ok(BodyKind::None)
+    }
+
+    /// ヘッダーをデコード
+    ///
+    /// ヘッダーが完了したら `Some((ResponseHead, BodyKind))` を返す
+    /// データ不足の場合は `None` を返す
+    /// 既にヘッダーデコード済みの場合はエラー
+    pub fn decode_headers(&mut self) -> Result<Option<(ResponseHead, BodyKind)>, Error> {
+        loop {
+            match &self.phase {
+                DecodePhase::StartLine => {
+                    if let Some(pos) = find_line(&self.buf) {
+                        let line = String::from_utf8(self.buf[..pos].to_vec())
+                            .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        self.buf.drain(..pos + 2);
+
+                        // Parse: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
+                        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+                        if parts.len() < 2 {
+                            return Err(Error::InvalidData(format!(
+                                "invalid status line: {}",
+                                line
+                            )));
+                        }
+
+                        self.start_line = Some(line);
+                        self.phase = DecodePhase::Headers;
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                DecodePhase::Headers => {
+                    if let Some(pos) = find_line(&self.buf) {
+                        if pos == 0 {
+                            // Empty line - end of headers
+                            self.buf.drain(..2);
+
+                            // ステータスコードを取得
+                            let start_line = self.start_line.as_ref().ok_or_else(|| {
+                                Error::InvalidData("missing status line".to_string())
+                            })?;
+                            let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
+                            let status_code: u16 = parts[1].parse().map_err(|_| {
+                                Error::InvalidData(format!("invalid status code: {}", parts[1]))
+                            })?;
+
+                            self.status_code = status_code;
+                            let body_kind = self.determine_body_kind(status_code)?;
+
+                            // ヘッダー完了、ボディフェーズに遷移
+                            match body_kind {
+                                BodyKind::ContentLength(len) => {
+                                    if len > 0 {
+                                        self.phase =
+                                            DecodePhase::BodyContentLength { remaining: len };
+                                    } else {
+                                        self.phase = DecodePhase::Complete;
+                                    }
+                                }
+                                BodyKind::Chunked => {
+                                    self.phase = DecodePhase::BodyChunkedSize;
+                                }
+                                BodyKind::None => {
+                                    self.phase = DecodePhase::Complete;
+                                }
+                            }
+
+                            // ResponseHead を構築
+                            let start_line = self.start_line.take().unwrap();
+                            let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
+
+                            let head = ResponseHead {
+                                version: parts[0].to_string(),
+                                status_code,
+                                reason_phrase: parts.get(2).unwrap_or(&"").to_string(),
+                                headers: std::mem::take(&mut self.headers),
+                            };
+
+                            return Ok(Some((head, body_kind)));
+                        } else {
+                            // Check header line size limit
+                            if pos > self.limits.max_header_line_size {
+                                return Err(Error::HeaderLineTooLong {
+                                    size: pos,
+                                    limit: self.limits.max_header_line_size,
+                                });
+                            }
+
+                            // Check header count limit
+                            if self.headers.len() >= self.limits.max_headers_count {
+                                return Err(Error::TooManyHeaders {
+                                    count: self.headers.len() + 1,
+                                    limit: self.limits.max_headers_count,
+                                });
+                            }
+
+                            let line = String::from_utf8(self.buf[..pos].to_vec())
+                                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                            self.buf.drain(..pos + 2);
+
+                            let (name, value) = parse_header_line(&line)?;
+                            self.headers.push((name, value));
+                        }
+                    } else {
+                        return Ok(None);
+                    }
+                }
+                _ => {
+                    return Err(Error::InvalidData(
+                        "decode_headers called after headers already decoded".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// 利用可能なボディデータを覗く（ゼロコピー）
+    ///
+    /// `decode_headers()` 成功後に呼ぶ
+    /// データがある場合はスライスを返す
+    /// ボディがない場合や完了済みの場合は `None` を返す
+    pub fn peek_body(&self) -> Option<&[u8]> {
+        self.body_decoder.peek_body(&self.buf, &self.phase)
+    }
+
+    /// ボディデータを消費
+    ///
+    /// `peek_body()` で取得したデータを処理した後に呼ぶ
+    /// `len` は消費するバイト数
+    pub fn consume_body(&mut self, len: usize) -> Result<BodyProgress, Error> {
+        self.body_decoder
+            .consume_body(&mut self.buf, &mut self.phase, len, &self.limits)
+    }
+
+    /// レスポンス全体を一括でデコード
+    ///
+    /// ストリーミング API (`decode_headers()` / `peek_body()` / `consume_body()`) を
+    /// 内部で使用して、レスポンス全体をデコードする。
+    ///
+    /// データ不足の場合は `None` を返す。
+    /// ストリーミング API と混在使用するとエラーを返す。
+    pub fn decode(&mut self) -> Result<Option<Response>, Error> {
+        // ヘッダーがまだデコードされていない場合はデコード
+        if self.decoded_head.is_none() {
+            match self.phase {
+                DecodePhase::StartLine | DecodePhase::Headers => match self.decode_headers()? {
+                    Some((head, body_kind)) => {
+                        self.decoded_head = Some(head);
+                        self.decoded_body_kind = Some(body_kind);
+                    }
+                    None => return Ok(None),
+                },
+                _ => {
+                    return Err(Error::InvalidData(
+                        "decode cannot be mixed with streaming API".to_string(),
+                    ));
+                }
+            }
+        }
+
+        // ボディを読む
+        let body_kind = *self.decoded_body_kind.as_ref().unwrap();
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+                let chunk = self.peek_body().map(|data| data.to_vec());
+                match chunk {
+                    Some(data) => {
+                        let len = data.len();
+                        self.decoded_body.extend_from_slice(&data);
+                        match self.consume_body(len)? {
+                            BodyProgress::Complete { .. } => break,
+                            BodyProgress::Continue => {}
+                        }
+                    }
+                    None => return Ok(None),
+                }
+            },
+            BodyKind::None => {}
+        }
+
+        // Response を構築
+        let head = self.decoded_head.take().unwrap();
+        let body = std::mem::take(&mut self.decoded_body);
+
+        Ok(Some(Response {
+            version: head.version,
+            status_code: head.status_code,
+            reason_phrase: head.reason_phrase,
+            headers: head.headers,
+            body,
+        }))
+    }
+}
