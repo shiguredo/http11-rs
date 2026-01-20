@@ -1879,3 +1879,59 @@ fn decode_two_responses_keep_alive_simple() {
     let decoded2 = decoder.decode().unwrap().unwrap();
     assert_eq!(decoded2.status_code, 404);
 }
+
+// ========================================
+// チャンク CRLF 検証テスト
+// ========================================
+
+#[test]
+fn chunked_invalid_crlf_after_data_error() {
+    // チャンクデータ後に CRLF ではなく別のバイトがある
+    let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloXX";
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(data).unwrap();
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    // チャンクサイズを処理
+    decoder.consume_body(0).unwrap();
+    // チャンクデータを消費
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data, b"hello");
+    let result = decoder.consume_body(5);
+    // CRLF ではなく "XX" なのでエラー
+    assert!(result.is_err());
+}
+
+#[test]
+fn chunked_invalid_crlf_partial_then_error() {
+    // 部分的にデータを受け取り、その後 CRLF ではない
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello")
+        .unwrap();
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    // チャンクサイズを処理
+    decoder.consume_body(0).unwrap();
+    // チャンクデータを消費（CRLF はまだない）
+    decoder.consume_body(5).unwrap();
+
+    // 不正な CRLF を追加
+    decoder.feed(b"XX").unwrap();
+    let result = decoder.consume_body(0);
+    assert!(result.is_err());
+}
+
+#[test]
+fn request_chunked_invalid_crlf_error() {
+    let data = b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloXX";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+    let (_, _) = decoder.decode_headers().unwrap().unwrap();
+
+    decoder.consume_body(0).unwrap();
+    let data = decoder.peek_body().unwrap();
+    assert_eq!(data, b"hello");
+    let result = decoder.consume_body(5);
+    assert!(result.is_err());
+}

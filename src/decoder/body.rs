@@ -85,8 +85,9 @@ impl BodyDecoder {
             }
             DecodePhase::BodyChunkedDataCrlf
             | DecodePhase::ChunkedTrailer
-            | DecodePhase::Complete => None,
-            _ => None,
+            | DecodePhase::Complete
+            | DecodePhase::StartLine
+            | DecodePhase::Headers => None,
         }
     }
 
@@ -155,6 +156,12 @@ impl BodyDecoder {
                     *phase = DecodePhase::BodyChunkedDataCrlf;
                     // CRLF が既にバッファにあれば即座に処理
                     if buf.len() >= 2 {
+                        if buf[..2] != *b"\r\n" {
+                            return Err(Error::InvalidData(
+                                "invalid chunked encoding: expected CRLF after chunk data"
+                                    .to_string(),
+                            ));
+                        }
                         buf.drain(..2);
                         *phase = DecodePhase::BodyChunkedSize;
                     }
@@ -165,6 +172,11 @@ impl BodyDecoder {
             DecodePhase::BodyChunkedDataCrlf => {
                 // CRLF 待ち状態: バッファに CRLF があれば処理
                 if buf.len() >= 2 {
+                    if buf[..2] != *b"\r\n" {
+                        return Err(Error::InvalidData(
+                            "invalid chunked encoding: expected CRLF after chunk data".to_string(),
+                        ));
+                    }
                     buf.drain(..2);
                     *phase = DecodePhase::BodyChunkedSize;
                 }
@@ -183,7 +195,7 @@ impl BodyDecoder {
             DecodePhase::Complete => Ok(BodyProgress::Complete {
                 trailers: std::mem::take(&mut self.trailers),
             }),
-            _ => Err(Error::InvalidData(
+            DecodePhase::StartLine | DecodePhase::Headers => Err(Error::InvalidData(
                 "consume_body called before decode_headers".to_string(),
             )),
         }
