@@ -331,7 +331,8 @@ async fn handle_client(
             let mut buffer = vec![0u8; 4096];
             let n = socket.read(&mut buffer).await?;
             if n == 0 {
-                break;
+                // クライアントが切断した - 不完全なボディを upstream に送信してはいけない
+                return Err("client disconnected during request body".into());
             }
             buffer.truncate(n);
             decoder.feed(&buffer)?;
@@ -626,12 +627,10 @@ async fn stream_response_on_connection(
 
             let n = upstream.read(&mut buf).await?;
             if n == 0 {
-                if use_chunked {
-                    downstream.write_all(b"0\r\n\r\n").await?;
-                }
-                downstream.flush().await?;
-                log_debug(debug, "upstream connection closed");
-                return Ok(false); // 接続が閉じられたので再利用不可
+                // upstream が予期せず切断 - 終端チャンクを送らずにエラーを返す
+                // 不完全なレスポンスを完了扱いにしてはいけない
+                log_debug(debug, "upstream disconnected during response body");
+                return Err("upstream disconnected during response body".into());
             }
 
             log_debug(debug, &format!("upstream body bytes: {}", n));
