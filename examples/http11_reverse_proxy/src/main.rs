@@ -150,17 +150,35 @@ async fn handle_client(
     // アップストリームへプロキシリクエストを作成
     let mut upstream_request = Request::new(&req_head.method, &req_head.uri);
 
-    // ヘッダーをコピー (Host は除外)
+    // Connection ヘッダーに列挙されたヘッダー名を収集
+    let connection_headers: Vec<String> = req_head
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
+        .flat_map(|(_, value)| {
+            value
+                .split(',')
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+
+    // ヘッダーをコピー (hop-by-hop ヘッダーと Host は除外)
     for (name, value) in &req_head.headers {
-        if !name.eq_ignore_ascii_case("host") {
-            upstream_request.add_header(name, value);
+        if name.eq_ignore_ascii_case("host") {
+            continue;
         }
+        if is_hop_by_hop_header(name, &connection_headers) {
+            continue;
+        }
+        upstream_request.add_header(name, value);
     }
 
     // Host ヘッダーを アップストリームに設定
     upstream_request.add_header("Host", upstream_host);
 
-    // Connection を close に設定
+    // アップストリームへの接続は close で終了（シンプルさのため）
     upstream_request.add_header("Connection", "close");
 
     // ボディをコピー
@@ -256,15 +274,38 @@ async fn stream_upstream_response(
         })
         .collect();
 
+    // ボディの転送方式を決定
+    // - Content-Length がある場合: そのまま転送
+    // - Chunked の場合: Chunked で転送
+    // - どちらもない場合: Connection: close で終端を示す
+    let use_chunked = matches!(body_kind, BodyKind::Chunked);
+    let content_length = match body_kind {
+        BodyKind::ContentLength(len) => Some(len),
+        _ => None,
+    };
+
     for (name, value) in &resp_head.headers {
         // RFC 9110 Section 7.6.1: hop-by-hop ヘッダーを除外
-        // RFC 9112 Section 6.3: intermediary は Content-Length を削除すべき (MUST)
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
         response_for_headers.add_header(name, value);
     }
-    response_for_headers.add_header("Connection", "close");
+
+    // ボディ長の指定
+    if let Some(len) = content_length {
+        // Content-Length がある場合はそれを使用
+        response_for_headers.add_header("Content-Length", &len.to_string());
+        log_debug(debug, &format!("using Content-Length: {}", len));
+    } else if use_chunked {
+        // Chunked の場合は Transfer-Encoding: chunked を設定
+        response_for_headers.add_header("Transfer-Encoding", "chunked");
+        log_debug(debug, "using Transfer-Encoding: chunked");
+    } else if !matches!(body_kind, BodyKind::None) {
+        // ボディがあるのに長さが不明な場合は Connection: close で終端を示す
+        response_for_headers.add_header("Connection", "close");
+        log_debug(debug, "using Connection: close (unknown body length)");
+    }
 
     let header_bytes = encode_response_headers(&response_for_headers);
     downstream.write_all(&header_bytes).await?;
@@ -282,11 +323,30 @@ async fn stream_upstream_response(
         loop {
             // バッファにあるデータを転送
             while let Some(data) = decoder.peek_body() {
-                downstream.write_all(data).await?;
+                if use_chunked {
+                    // Chunked 転送: チャンクサイズ + データ + CRLF
+                    let chunk_header = format!("{:x}\r\n", data.len());
+                    downstream.write_all(chunk_header.as_bytes()).await?;
+                    downstream.write_all(data).await?;
+                    downstream.write_all(b"\r\n").await?;
+                } else {
+                    // 通常転送: データをそのまま送信
+                    downstream.write_all(data).await?;
+                }
                 total_body_bytes += data.len();
                 let len = data.len();
                 match decoder.consume_body(len)? {
                     BodyProgress::Complete { trailers } => {
+                        if use_chunked {
+                            // 終端チャンクを送信
+                            downstream.write_all(b"0\r\n").await?;
+                            // トレーラーがあれば送信
+                            for (name, value) in &trailers {
+                                let trailer_line = format!("{}: {}\r\n", name, value);
+                                downstream.write_all(trailer_line.as_bytes()).await?;
+                            }
+                            downstream.write_all(b"\r\n").await?;
+                        }
                         log_debug(
                             debug,
                             &format!(
@@ -305,6 +365,10 @@ async fn stream_upstream_response(
             let n = match tls.read(&mut buf) {
                 Ok(0) => {
                     // 接続が閉じられた
+                    if use_chunked {
+                        // 終端チャンクを送信
+                        downstream.write_all(b"0\r\n\r\n").await?;
+                    }
                     log_debug(debug, "upstream connection closed");
                     break;
                 }
@@ -334,6 +398,7 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     // RFC 9112 Appendix C.2.2: Proxy-Connection も除外
     const HOP_BY_HOP_HEADERS: &[&str] = &[
         "connection",
+        "content-length", // intermediary が再設定するため除外
         "keep-alive",
         "proxy-authenticate",
         "proxy-authorization",
@@ -343,11 +408,6 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
         "transfer-encoding",
         "upgrade",
     ];
-
-    // RFC 9112 Section 6.3: Content-Length も除外すべき (intermediary が処理するため)
-    if name.eq_ignore_ascii_case("content-length") {
-        return true;
-    }
 
     // 固定の hop-by-hop ヘッダーをチェック
     let name_lower = name.to_ascii_lowercase();
