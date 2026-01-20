@@ -21,10 +21,20 @@
 //! // ボディをストリーミングで読み取り
 //! let mut body = Vec::new();
 //! if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
-//!     while let Some(data) = decoder.peek_body() {
-//!         body.extend_from_slice(data);
-//!         let len = data.len();
-//!         if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+//!     loop {
+//!         if let Some(data) = decoder.peek_body() {
+//!             body.extend_from_slice(data);
+//!             let len = data.len();
+//!             if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+//!                 break;
+//!             }
+//!         } else {
+//!             // peek_body() が None でも consume_body(0) で状態遷移を試みる
+//!             // Chunked の場合、チャンクサイズ行や終端チャンクのパースが進む
+//!             if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+//!                 break;
+//!             }
+//!             // Continue の場合は追加データが必要（実際の使用ではネットワーク I/O が必要）
 //!             break;
 //!         }
 //!     }

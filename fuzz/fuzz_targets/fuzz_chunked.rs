@@ -52,8 +52,8 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
         }
 
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => {
-                while let Some(body_data) = decoder.peek_body() {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+                if let Some(body_data) = decoder.peek_body() {
                     decoded_body.extend_from_slice(body_data);
                     let len = body_data.len();
                     match decoder.consume_body(len) {
@@ -61,8 +61,15 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                         Ok(BodyProgress::Continue) => {}
                         Err(_) => return None,
                     }
+                } else {
+                    // peek_body() が None でも consume_body(0) で状態遷移を試みる
+                    match decoder.consume_body(0) {
+                        Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                        Ok(BodyProgress::Continue) => break, // 追加データが必要
+                        Err(_) => return None,
+                    }
                 }
-            }
+            },
             BodyKind::None => return Some(decoded_body),
         }
     }
@@ -79,8 +86,8 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     }
 
     match body_kind {
-        BodyKind::ContentLength(_) | BodyKind::Chunked => {
-            while let Some(body_data) = decoder.peek_body() {
+        BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+            if let Some(body_data) = decoder.peek_body() {
                 decoded_body.extend_from_slice(body_data);
                 let len = body_data.len();
                 match decoder.consume_body(len) {
@@ -88,9 +95,14 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     Ok(BodyProgress::Continue) => {}
                     Err(_) => return None,
                 }
+            } else {
+                match decoder.consume_body(0) {
+                    Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                    Ok(BodyProgress::Continue) => return None, // データ不足で不完全
+                    Err(_) => return None,
+                }
             }
-            None
-        }
+        },
         BodyKind::None => Some(decoded_body),
     }
 }
@@ -118,8 +130,8 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
         }
 
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => {
-                while let Some(body_data) = decoder.peek_body() {
+            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+                if let Some(body_data) = decoder.peek_body() {
                     decoded_body.extend_from_slice(body_data);
                     let len = body_data.len();
                     match decoder.consume_body(len) {
@@ -127,8 +139,15 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                         Ok(BodyProgress::Continue) => {}
                         Err(_) => return None,
                     }
+                } else {
+                    // peek_body() が None でも consume_body(0) で状態遷移を試みる
+                    match decoder.consume_body(0) {
+                        Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                        Ok(BodyProgress::Continue) => break, // 追加データが必要
+                        Err(_) => return None,
+                    }
                 }
-            }
+            },
             BodyKind::None => return Some(decoded_body),
         }
     }
@@ -145,8 +164,8 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     }
 
     match body_kind {
-        BodyKind::ContentLength(_) | BodyKind::Chunked => {
-            while let Some(body_data) = decoder.peek_body() {
+        BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+            if let Some(body_data) = decoder.peek_body() {
                 decoded_body.extend_from_slice(body_data);
                 let len = body_data.len();
                 match decoder.consume_body(len) {
@@ -154,9 +173,14 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     Ok(BodyProgress::Continue) => {}
                     Err(_) => return None,
                 }
+            } else {
+                match decoder.consume_body(0) {
+                    Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
+                    Ok(BodyProgress::Continue) => return None, // データ不足で不完全
+                    Err(_) => return None,
+                }
             }
-            None
-        }
+        },
         BodyKind::None => Some(decoded_body),
     }
 }

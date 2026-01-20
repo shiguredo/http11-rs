@@ -301,23 +301,40 @@ async fn handle_client(
     // リクエストボディを収集
     let mut request_body = Vec::new();
     if !matches!(req_body_kind, BodyKind::None) {
-        loop {
-            if let Some(data) = decoder.peek_body() {
-                request_body.extend_from_slice(data);
-                let len = data.len();
-                match decoder.consume_body(len)? {
-                    BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => {}
+        'outer: loop {
+            loop {
+                match decoder.peek_body() {
+                    Some(data) => {
+                        request_body.extend_from_slice(data);
+                        let len = data.len();
+                        match decoder.consume_body(len)? {
+                            BodyProgress::Complete { .. } => break 'outer,
+                            BodyProgress::Continue => {}
+                        }
+                    }
+                    None => {
+                        // peek_body() が None でも consume_body(0) で状態遷移を試みる
+                        let remaining_before = decoder.remaining().len();
+                        match decoder.consume_body(0)? {
+                            BodyProgress::Complete { .. } => break 'outer,
+                            BodyProgress::Continue => {
+                                if decoder.remaining().len() == remaining_before {
+                                    break; // 内側ループを抜けてデータ読み取り
+                                }
+                                // remaining が変化した場合は内側ループを継続
+                            }
+                        }
+                    }
                 }
-            } else {
-                let mut buffer = vec![0u8; 4096];
-                let n = socket.read(&mut buffer).await?;
-                if n == 0 {
-                    break;
-                }
-                buffer.truncate(n);
-                decoder.feed(&buffer)?;
             }
+
+            let mut buffer = vec![0u8; 4096];
+            let n = socket.read(&mut buffer).await?;
+            if n == 0 {
+                break;
+            }
+            buffer.truncate(n);
+            decoder.feed(&buffer)?;
         }
     }
 
