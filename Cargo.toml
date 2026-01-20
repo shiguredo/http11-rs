@@ -19,4 +19,3 @@ members = [
     "examples/http11_reverse_proxy",
     "pbt",
 ]
-exclude = ["fuzz"]
