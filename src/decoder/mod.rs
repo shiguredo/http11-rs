@@ -29,9 +29,9 @@
 //!                 break;
 //!             }
 //!         } else {
-//!             // peek_body() が None でも consume_body(0) で状態遷移を試みる
+//!             // peek_body() が None でも progress() で状態遷移を試みる
 //!             // Chunked の場合、チャンクサイズ行や終端チャンクのパースが進む
-//!             if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+//!             if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
 //!                 break;
 //!             }
 //!             // Continue の場合は追加データが必要（実際の使用ではネットワーク I/O が必要）

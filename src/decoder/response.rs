@@ -298,10 +298,24 @@ impl ResponseDecoder {
     /// ボディデータを消費
     ///
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
-    /// `len` は消費するバイト数
+    /// `len` は消費するバイト数 (1 以上)
     pub fn consume_body(&mut self, len: usize) -> Result<BodyProgress, Error> {
+        if len == 0 {
+            return Err(Error::InvalidData(
+                "consume_body(0) is not allowed, use progress() instead".to_string(),
+            ));
+        }
         self.body_decoder
             .consume_body(&mut self.buf, &mut self.phase, len, &self.limits)
+    }
+
+    /// 状態機械を進める (ボディデータは消費しない)
+    ///
+    /// Chunked エンコーディングの場合、チャンクサイズ行のパースや
+    /// 終端チャンクの処理を行う。
+    pub fn progress(&mut self) -> Result<BodyProgress, Error> {
+        self.body_decoder
+            .consume_body(&mut self.buf, &mut self.phase, 0, &self.limits)
     }
 
     /// レスポンス全体を一括でデコード
@@ -346,7 +360,7 @@ impl ResponseDecoder {
                 }
 
                 // データがない場合、状態機械を進める
-                match self.consume_body(0)? {
+                match self.progress()? {
                     BodyProgress::Complete { .. } => break,
                     BodyProgress::Continue => {
                         // 状態遷移後にデータが利用可能になったか確認

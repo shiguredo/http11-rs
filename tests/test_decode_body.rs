@@ -50,7 +50,7 @@
 //! このテストは、デコーダーを使うアプリケーションが参照すべき「期待される動作」を示す。
 //! アプリケーション開発者は、このテストを見て：
 //! - 不完全なボディでは `Complete` に到達しないこと
-//! - `peek_body()` が `None` を返しても `consume_body(0)` で状態遷移を試みる必要があること
+//! - `peek_body()` が `None` を返しても `progress()` で状態遷移を試みる必要があること
 //! - ループを抜けた後に `Complete` に到達したかを確認する必要があること
 //!
 //! を理解できる。
@@ -82,7 +82,7 @@ fn incomplete_content_length_body() {
                 BodyProgress::Continue => {}
             }
         } else {
-            match decoder.consume_body(0).unwrap() {
+            match decoder.progress().unwrap() {
                 BodyProgress::Complete { .. } => panic!("should not complete with incomplete body"),
                 BodyProgress::Continue => break, // データ不足
             }
@@ -118,9 +118,9 @@ fn incomplete_chunked_body() {
                 BodyProgress::Continue => {}
             }
         } else {
-            // peek_body() が None でも consume_body(0) で状態遷移を試みる
+            // peek_body() が None でも progress() で状態遷移を試みる
             let remaining_before = decoder.remaining().len();
-            match decoder.consume_body(0).unwrap() {
+            match decoder.progress().unwrap() {
                 BodyProgress::Complete { .. } => {
                     panic!("should not complete without terminating chunk")
                 }
@@ -161,7 +161,7 @@ fn complete_content_length_body() {
                 BodyProgress::Continue => {}
             }
         } else {
-            match decoder.consume_body(0).unwrap() {
+            match decoder.progress().unwrap() {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -199,9 +199,9 @@ fn complete_chunked_body() {
                 BodyProgress::Continue => {}
             }
         } else {
-            // peek_body() が None でも consume_body(0) で状態遷移を試みる
+            // peek_body() が None でも progress() で状態遷移を試みる
             let remaining_before = decoder.remaining().len();
-            match decoder.consume_body(0).unwrap() {
+            match decoder.progress().unwrap() {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;

@@ -62,8 +62,8 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                         Err(_) => return None,
                     }
                 } else {
-                    // peek_body() が None でも consume_body(0) で状態遷移を試みる
-                    match decoder.consume_body(0) {
+                    // peek_body() が None でも progress() で状態遷移を試みる
+                    match decoder.progress() {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
                         Ok(BodyProgress::Continue) => break, // 追加データが必要
                         Err(_) => return None,
@@ -96,7 +96,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     Err(_) => return None,
                 }
             } else {
-                match decoder.consume_body(0) {
+                match decoder.progress() {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
                     Ok(BodyProgress::Continue) => return None, // データ不足で不完全
                     Err(_) => return None,
@@ -140,8 +140,8 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                         Err(_) => return None,
                     }
                 } else {
-                    // peek_body() が None でも consume_body(0) で状態遷移を試みる
-                    match decoder.consume_body(0) {
+                    // peek_body() が None でも progress() で状態遷移を試みる
+                    match decoder.progress() {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
                         Ok(BodyProgress::Continue) => break, // 追加データが必要
                         Err(_) => return None,
@@ -174,7 +174,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     Err(_) => return None,
                 }
             } else {
-                match decoder.consume_body(0) {
+                match decoder.progress() {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
                     Ok(BodyProgress::Continue) => return None, // データ不足で不完全
                     Err(_) => return None,

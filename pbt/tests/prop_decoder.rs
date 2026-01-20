@@ -373,7 +373,7 @@ proptest! {
                 if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
                     break;
                 }
-            } else if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
                 break;
             }
         }
@@ -746,7 +746,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::Chunked);
-        prop_assert!(decoder.consume_body(0).is_err());
+        prop_assert!(decoder.progress().is_err());
     }
 }
 
@@ -776,7 +776,7 @@ proptest! {
                 if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
                     break;
                 }
-            } else if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
                 break;
             }
         }
@@ -810,7 +810,7 @@ proptest! {
                 if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
                     break trailers;
                 }
-            } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { trailers } = decoder.progress().unwrap() {
                 break trailers;
             }
         };
@@ -849,7 +849,7 @@ proptest! {
                 if let BodyProgress::Complete { trailers } = decoder.consume_body(len).unwrap() {
                     break trailers;
                 }
-            } else if let BodyProgress::Complete { trailers } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { trailers } = decoder.progress().unwrap() {
                 break trailers;
             }
         };
@@ -893,7 +893,7 @@ proptest! {
                 if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
                     break;
                 }
-            } else if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
                 break;
             }
         }
@@ -924,7 +924,7 @@ proptest! {
                 if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
                     break;
                 }
-            } else if let BodyProgress::Complete { .. } = decoder.consume_body(0).unwrap() {
+            } else if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
                 break;
             }
         }
@@ -998,7 +998,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&data).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(decoder.consume_body(0).is_err());
+        prop_assert!(decoder.progress().is_err());
     }
 }
 
@@ -1116,7 +1116,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
-        decoder.consume_body(0).unwrap(); // チャンクサイズを処理
+        decoder.progress().unwrap(); // チャンクサイズを処理
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, partial_data.as_bytes());
     }
@@ -1147,7 +1147,7 @@ proptest! {
                     break;
                 }
             } else {
-                let result = decoder.consume_body(0).unwrap();
+                let result = decoder.progress().unwrap();
                 // トレーラーが不完全なので Continue
                 prop_assert!(matches!(result, BodyProgress::Continue));
                 break;
@@ -1317,7 +1317,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
         // チャンクサイズ解析時にボディサイズ制限エラー
-        let result = decoder.consume_body(0);
+        let result = decoder.progress();
         prop_assert!(result.is_err());
     }
 }
@@ -1444,7 +1444,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
         // チャンクサイズ解析時にボディサイズ制限エラー
-        let result = decoder.consume_body(0);
+        let result = decoder.progress();
         prop_assert!(result.is_err());
     }
 }
@@ -1767,7 +1767,7 @@ proptest! {
         let _ = decoder.feed(&data);
         let _ = decoder.decode_headers();
         let _ = decoder.peek_body();
-        let _ = decoder.consume_body(0);
+        let _ = decoder.progress();
     }
 }
 
@@ -1778,7 +1778,7 @@ proptest! {
         let _ = decoder.feed(&data);
         let _ = decoder.decode_headers();
         let _ = decoder.peek_body();
-        let _ = decoder.consume_body(0);
+        let _ = decoder.progress();
     }
 }
 
@@ -1828,7 +1828,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         let data = format!("{} / HTTP/1.1\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.consume_body(0).is_err());
+        prop_assert!(decoder.progress().is_err());
     }
 }
 
@@ -1840,7 +1840,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         let data = format!("HTTP/1.1 {} OK\r\n\r\n", status_code);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.consume_body(0).is_err());
+        prop_assert!(decoder.progress().is_err());
     }
 }
 
@@ -1994,7 +1994,7 @@ proptest! {
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
         // チャンクサイズを処理
-        decoder.consume_body(0).unwrap();
+        decoder.progress().unwrap();
         // チャンクデータを消費
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, body_content.as_bytes());
@@ -2021,13 +2021,13 @@ proptest! {
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
         // チャンクサイズを処理
-        decoder.consume_body(0).unwrap();
+        decoder.progress().unwrap();
         // チャンクデータを消費（CRLF はまだない）
         decoder.consume_body(len).unwrap();
 
         // 不正な CRLF を追加
         decoder.feed(invalid_chars.as_bytes()).unwrap();
-        let result = decoder.consume_body(0);
+        let result = decoder.progress();
         prop_assert!(result.is_err());
     }
 }
@@ -2048,7 +2048,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
-        decoder.consume_body(0).unwrap();
+        decoder.progress().unwrap();
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, body_content.as_bytes());
         let result = decoder.consume_body(len);
@@ -2533,7 +2533,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
-        decoder.consume_body(0).unwrap();
+        decoder.progress().unwrap();
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, partial_data.as_bytes());
     }
@@ -2563,7 +2563,7 @@ proptest! {
                     break;
                 }
             } else {
-                let result = decoder.consume_body(0).unwrap();
+                let result = decoder.progress().unwrap();
                 prop_assert!(matches!(result, BodyProgress::Continue));
                 break;
             }

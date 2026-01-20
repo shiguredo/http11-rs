@@ -313,9 +313,9 @@ async fn handle_client(
                         }
                     }
                     None => {
-                        // peek_body() が None でも consume_body(0) で状態遷移を試みる
+                        // peek_body() が None でも progress() で状態遷移を試みる
                         let remaining_before = decoder.remaining().len();
-                        match decoder.consume_body(0)? {
+                        match decoder.progress()? {
                             BodyProgress::Complete { .. } => break 'outer,
                             BodyProgress::Continue => {
                                 if decoder.remaining().len() == remaining_before {
@@ -597,7 +597,7 @@ async fn stream_response_on_connection(
                     }
                     None => {
                         let remaining_before = decoder.remaining().len();
-                        match decoder.consume_body(0)? {
+                        match decoder.progress()? {
                             BodyProgress::Complete { trailers } => {
                                 if use_chunked {
                                     let mut end_chunk = b"0\r\n".to_vec();
