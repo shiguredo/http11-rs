@@ -1733,3 +1733,149 @@ fn response_consume_body_before_decode_headers_error() {
     decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
     assert!(decoder.consume_body(0).is_err());
 }
+
+// ========================================
+// decode() API の連続デコードテスト (Keep-Alive)
+// ========================================
+
+proptest! {
+    #[test]
+    fn decode_multiple_requests_keep_alive(
+        methods in proptest::collection::vec(http_method(), 2..5),
+        uris in proptest::collection::vec(http_uri(), 2..5)
+    ) {
+        let count = methods.len().min(uris.len());
+        let mut decoder = RequestDecoder::new();
+
+        // 全リクエストを一度にバッファに入れる
+        let mut all_data = Vec::new();
+        for i in 0..count {
+            let request = Request::new(&methods[i], &uris[i]);
+            all_data.extend(request.encode());
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ（reset() なし）
+        for i in 0..count {
+            let request = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(&request.method, &methods[i]);
+            prop_assert_eq!(&request.uri, &uris[i]);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn decode_multiple_requests_with_body_keep_alive(
+        bodies in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 0..64),
+            2..4
+        )
+    ) {
+        let mut decoder = RequestDecoder::new();
+
+        // 全リクエストを一度にバッファに入れる
+        let mut all_data = Vec::new();
+        for body_data in &bodies {
+            let mut request = Request::new("POST", "/");
+            request.body = body_data.clone();
+            all_data.extend(request.encode());
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ（reset() なし）
+        for body_data in &bodies {
+            let request = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(&request.body, body_data);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn decode_multiple_responses_keep_alive(
+        codes in proptest::collection::vec(
+            prop_oneof![200u16..=206, 300u16..=308, 400u16..=451, 500u16..=511],
+            2..5
+        )
+    ) {
+        let mut decoder = ResponseDecoder::new();
+
+        // 全レスポンスを一度にバッファに入れる
+        let mut all_data = Vec::new();
+        for code in &codes {
+            let response = Response::new(*code, "OK");
+            all_data.extend(response.encode());
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ（reset() なし）
+        for code in &codes {
+            let response = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(response.status_code, *code);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn decode_multiple_responses_with_body_keep_alive(
+        bodies in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 0..64),
+            2..4
+        )
+    ) {
+        let mut decoder = ResponseDecoder::new();
+
+        // 全レスポンスを一度にバッファに入れる
+        let mut all_data = Vec::new();
+        for body_data in &bodies {
+            let mut response = Response::new(200, "OK");
+            response.body = body_data.clone();
+            all_data.extend(response.encode());
+        }
+        decoder.feed(&all_data).unwrap();
+
+        // decode() を連続して呼ぶ（reset() なし）
+        for body_data in &bodies {
+            let response = decoder.decode().unwrap().unwrap();
+            prop_assert_eq!(&response.body, body_data);
+        }
+    }
+}
+
+#[test]
+fn decode_two_requests_keep_alive_simple() {
+    let mut decoder = RequestDecoder::new();
+
+    let req1 = Request::new("GET", "/first");
+    let req2 = Request::new("POST", "/second");
+
+    decoder.feed(&req1.encode()).unwrap();
+    decoder.feed(&req2.encode()).unwrap();
+
+    let decoded1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(decoded1.method, "GET");
+    assert_eq!(decoded1.uri, "/first");
+
+    let decoded2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(decoded2.method, "POST");
+    assert_eq!(decoded2.uri, "/second");
+}
+
+#[test]
+fn decode_two_responses_keep_alive_simple() {
+    let mut decoder = ResponseDecoder::new();
+
+    let resp1 = Response::new(200, "OK");
+    let resp2 = Response::new(404, "Not Found");
+
+    decoder.feed(&resp1.encode()).unwrap();
+    decoder.feed(&resp2.encode()).unwrap();
+
+    let decoded1 = decoder.decode().unwrap().unwrap();
+    assert_eq!(decoded1.status_code, 200);
+
+    let decoded2 = decoder.decode().unwrap().unwrap();
+    assert_eq!(decoded2.status_code, 404);
+}
