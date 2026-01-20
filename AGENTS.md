@@ -37,6 +37,11 @@
 - RFC 7230 は廃止されて RFC 9110 になってる
 - RFC 7231 は廃止されて RFC 9112 になってる
 
+## テストについて
+
+- pbt 以下に unittest を書かないこと
+- unittest は pbt で実現できないものだけを書くこと
+
 ## pre-commit
 
 - cargo fmt / cargo clippy / cargo check / cargo test を実行すること
