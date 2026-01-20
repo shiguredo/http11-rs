@@ -83,7 +83,9 @@ impl BodyDecoder {
                     None
                 }
             }
-            DecodePhase::ChunkedTrailer | DecodePhase::Complete => None,
+            DecodePhase::BodyChunkedDataCrlf
+            | DecodePhase::ChunkedTrailer
+            | DecodePhase::Complete => None,
             _ => None,
         }
     }
@@ -149,13 +151,23 @@ impl BodyDecoder {
                 self.body_consumed += len;
 
                 if *remaining == 0 {
-                    // チャンクデータ終了、CRLF をスキップ
+                    // チャンクデータ終了、CRLF 待ちへ遷移
+                    *phase = DecodePhase::BodyChunkedDataCrlf;
+                    // CRLF が既にバッファにあれば即座に処理
                     if buf.len() >= 2 {
                         buf.drain(..2);
                         *phase = DecodePhase::BodyChunkedSize;
                     }
                 }
 
+                Ok(BodyProgress::Continue)
+            }
+            DecodePhase::BodyChunkedDataCrlf => {
+                // CRLF 待ち状態: バッファに CRLF があれば処理
+                if buf.len() >= 2 {
+                    buf.drain(..2);
+                    *phase = DecodePhase::BodyChunkedSize;
+                }
                 Ok(BodyProgress::Continue)
             }
             DecodePhase::ChunkedTrailer => {

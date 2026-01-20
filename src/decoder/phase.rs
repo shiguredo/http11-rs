@@ -13,6 +13,8 @@ pub(crate) enum DecodePhase {
     BodyChunkedSize,
     /// ボディ読み取り中 (Chunked) - チャンクデータ待ち
     BodyChunkedData { remaining: usize },
+    /// ボディ読み取り中 (Chunked) - チャンクデータ後の CRLF 待ち
+    BodyChunkedDataCrlf,
     /// トレーラーヘッダー待ち
     ChunkedTrailer,
     /// 完了

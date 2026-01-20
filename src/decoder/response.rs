@@ -276,6 +276,15 @@ impl ResponseDecoder {
         self.body_decoder.peek_body(&self.buf, &self.phase)
     }
 
+    /// 利用可能なボディデータのバイト数を取得
+    fn available_body_len(&self) -> usize {
+        match &self.phase {
+            DecodePhase::BodyContentLength { remaining } => self.buf.len().min(*remaining),
+            DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
+            _ => 0,
+        }
+    }
+
     /// ボディデータを消費
     ///
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
@@ -315,17 +324,28 @@ impl ResponseDecoder {
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
-                let chunk = self.peek_body().map(|data| data.to_vec());
-                match chunk {
-                    Some(data) => {
-                        let len = data.len();
-                        self.decoded_body.extend_from_slice(&data);
-                        match self.consume_body(len)? {
-                            BodyProgress::Complete { .. } => break,
-                            BodyProgress::Continue => {}
-                        }
+                // 直接バッファから利用可能なデータ長を取得（コピーなし）
+                let available = self.available_body_len();
+                if available > 0 {
+                    // バッファから直接コピー
+                    self.decoded_body.extend_from_slice(&self.buf[..available]);
+                    match self.consume_body(available)? {
+                        BodyProgress::Complete { .. } => break,
+                        BodyProgress::Continue => continue,
                     }
-                    None => return Ok(None),
+                }
+
+                // データがない場合、状態機械を進める
+                match self.consume_body(0)? {
+                    BodyProgress::Complete { .. } => break,
+                    BodyProgress::Continue => {
+                        // 状態遷移後にデータが利用可能になったか確認
+                        if self.available_body_len() > 0 {
+                            continue;
+                        }
+                        // データ不足
+                        return Ok(None);
+                    }
                 }
             },
             BodyKind::None => {}
