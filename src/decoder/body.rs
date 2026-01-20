@@ -34,6 +34,8 @@ pub(crate) struct BodyDecoder {
     trailers: Vec<(String, String)>,
     /// ボディ内での消費済みバイト数
     body_consumed: usize,
+    /// トレーラー数
+    trailer_count: usize,
 }
 
 impl Default for BodyDecoder {
@@ -48,6 +50,7 @@ impl BodyDecoder {
         Self {
             trailers: Vec::new(),
             body_consumed: 0,
+            trailer_count: 0,
         }
     }
 
@@ -55,6 +58,7 @@ impl BodyDecoder {
     pub fn reset(&mut self) {
         self.trailers.clear();
         self.body_consumed = 0;
+        self.trailer_count = 0;
     }
 
     /// 利用可能なボディデータを覗く（ゼロコピー）
@@ -183,7 +187,7 @@ impl BodyDecoder {
                 Ok(BodyProgress::Continue)
             }
             DecodePhase::ChunkedTrailer => {
-                self.process_trailers(buf, phase)?;
+                self.process_trailers(buf, phase, limits)?;
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
@@ -224,7 +228,7 @@ impl BodyDecoder {
 
             if chunk_size == 0 {
                 *phase = DecodePhase::ChunkedTrailer;
-                return self.process_trailers(buf, phase);
+                return self.process_trailers(buf, phase, limits);
             } else {
                 let new_size = self.body_consumed + chunk_size;
                 if new_size > limits.max_body_size {
@@ -246,6 +250,7 @@ impl BodyDecoder {
         &mut self,
         buf: &mut Vec<u8>,
         phase: &mut DecodePhase,
+        limits: &DecoderLimits,
     ) -> Result<(), Error> {
         while matches!(phase, DecodePhase::ChunkedTrailer) {
             if let Some(pos) = find_line(buf) {
@@ -254,13 +259,30 @@ impl BodyDecoder {
                     *phase = DecodePhase::Complete;
                     return Ok(());
                 } else {
+                    // 行長制限チェック
+                    if pos > limits.max_header_line_size {
+                        return Err(Error::HeaderLineTooLong {
+                            size: pos,
+                            limit: limits.max_header_line_size,
+                        });
+                    }
+
+                    // 数制限チェック
+                    if self.trailer_count >= limits.max_headers_count {
+                        return Err(Error::TooManyHeaders {
+                            count: self.trailer_count + 1,
+                            limit: limits.max_headers_count,
+                        });
+                    }
+
                     let line = String::from_utf8(buf[..pos].to_vec())
                         .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
                     buf.drain(..pos + 2);
 
-                    if let Ok((name, value)) = parse_header_line(&line) {
-                        self.trailers.push((name, value));
-                    }
+                    // 不正なトレーラー行はエラーにする
+                    let (name, value) = parse_header_line(&line)?;
+                    self.trailers.push((name, value));
+                    self.trailer_count += 1;
                 }
             } else {
                 return Ok(());

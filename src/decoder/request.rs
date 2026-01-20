@@ -229,9 +229,17 @@ impl RequestDecoder {
                         return Ok(None);
                     }
                 }
+                DecodePhase::Complete => {
+                    // 完了状態から次のメッセージへ遷移
+                    self.phase = DecodePhase::StartLine;
+                    self.start_line = None;
+                    self.headers.clear();
+                    self.body_decoder.reset();
+                    continue;
+                }
                 _ => {
                     return Err(Error::InvalidData(
-                        "decode_headers called after headers already decoded".to_string(),
+                        "decode_headers called during body decoding".to_string(),
                     ));
                 }
             }

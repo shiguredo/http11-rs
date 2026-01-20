@@ -40,10 +40,19 @@ pub trait HttpHead {
     /// キープアライブ接続かどうかを判定
     fn is_keep_alive(&self) -> bool {
         if let Some(conn) = self.connection() {
-            if conn.eq_ignore_ascii_case("close") {
-                return false;
+            // カンマ区切りトークンリストとして解析
+            // close トークンがあれば false (close 優先)
+            let mut has_keep_alive = false;
+            for token in conn.split(',') {
+                let token = token.trim();
+                if token.eq_ignore_ascii_case("close") {
+                    return false;
+                }
+                if token.eq_ignore_ascii_case("keep-alive") {
+                    has_keep_alive = true;
+                }
             }
-            if conn.eq_ignore_ascii_case("keep-alive") {
+            if has_keep_alive {
                 return true;
             }
         }
@@ -58,8 +67,11 @@ pub trait HttpHead {
 
     /// Transfer-Encoding が chunked かどうかを判定
     fn is_chunked(&self) -> bool {
-        self.get_header("Transfer-Encoding")
-            .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+        self.get_header("Transfer-Encoding").is_some_and(|v| {
+            // カンマ区切りトークンリストとして解析
+            v.split(',')
+                .any(|token| token.trim().eq_ignore_ascii_case("chunked"))
+        })
     }
 }
 
