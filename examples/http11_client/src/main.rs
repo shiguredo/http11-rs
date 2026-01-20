@@ -106,7 +106,7 @@ fn http_request(
     stream.write_all(request_bytes)?;
 
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
         let n = stream.read(&mut buf)?;
@@ -141,7 +141,7 @@ fn https_request(
 
     // レスポンス受信
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
         let n = match tls.read(&mut buf) {

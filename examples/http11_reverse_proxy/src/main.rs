@@ -12,8 +12,8 @@ use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder,
-    encode_response_headers,
+    BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
+    ResponseDecoder, encode_response_headers,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
@@ -503,14 +503,8 @@ async fn stream_response_on_connection(
         ),
     );
 
-    // Connection ヘッダーを確認して再利用可能性を判定
-    let connection_close = resp_head.headers.iter().any(|(name, value)| {
-        name.eq_ignore_ascii_case("Connection")
-            && value
-                .split(',')
-                .any(|v| v.trim().eq_ignore_ascii_case("close"))
-    });
-    let can_reuse = !connection_close && resp_head.version.ends_with("/1.1");
+    // Keep-Alive かどうかで再利用可能性を判定
+    let can_reuse = resp_head.is_keep_alive();
 
     // クライアントへレスポンスヘッダーを送信
     let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
