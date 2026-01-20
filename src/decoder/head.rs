@@ -66,11 +66,16 @@ pub trait HttpHead {
     }
 
     /// Transfer-Encoding が chunked かどうかを判定
+    ///
+    /// RFC 9112: chunked のみの場合に true を返す。
+    /// chunked 以外のトークンがある場合は false を返す
+    /// (parse_transfer_encoding_chunked と整合)。
     fn is_chunked(&self) -> bool {
         self.get_header("Transfer-Encoding").is_some_and(|v| {
             // カンマ区切りトークンリストとして解析
-            v.split(',')
-                .any(|token| token.trim().eq_ignore_ascii_case("chunked"))
+            // chunked のみの場合に true (RFC 9112 準拠)
+            let tokens: Vec<&str> = v.split(',').map(|t| t.trim()).collect();
+            tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("chunked")
         })
     }
 }

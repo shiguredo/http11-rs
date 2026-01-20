@@ -2,8 +2,8 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, Request, RequestDecoder, Response, ResponseDecoder,
-    encode_chunk, encode_chunks,
+    BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
+    ResponseDecoder, ResponseHead, encode_chunk, encode_chunks,
 };
 
 // ========================================
@@ -1693,27 +1693,31 @@ fn invalid_utf8_response_header_error() {
 }
 
 // ========================================
-// decode_headers を2回呼ぶとエラー
+// decode_headers を2回呼んだ場合の挙動
 // ========================================
 
 #[test]
-fn decode_headers_twice_error() {
+fn decode_headers_twice_returns_none() {
+    // ボディなしメッセージの場合、Complete → StartLine 遷移で
+    // 2 回目の decode_headers は次のメッセージがなければ Ok(None) を返す
     let data = b"GET / HTTP/1.1\r\n\r\n";
     let mut decoder = RequestDecoder::new();
     decoder.feed(data).unwrap();
     let _ = decoder.decode_headers().unwrap().unwrap();
-    // 2回目はエラー
-    assert!(decoder.decode_headers().is_err());
+    // 2回目は次のメッセージがないので Ok(None)
+    assert!(decoder.decode_headers().unwrap().is_none());
 }
 
 #[test]
-fn response_decode_headers_twice_error() {
+fn response_decode_headers_twice_returns_none() {
+    // ボディなしメッセージの場合、Complete → StartLine 遷移で
+    // 2 回目の decode_headers は次のメッセージがなければ Ok(None) を返す
     let data = b"HTTP/1.1 200 OK\r\n\r\n";
     let mut decoder = ResponseDecoder::new();
     decoder.feed(data).unwrap();
     let _ = decoder.decode_headers().unwrap().unwrap();
-    // 2回目はエラー
-    assert!(decoder.decode_headers().is_err());
+    // 2回目は次のメッセージがないので Ok(None)
+    assert!(decoder.decode_headers().unwrap().is_none());
 }
 
 // ========================================
@@ -2122,5 +2126,205 @@ proptest! {
             let request = decoder.decode().unwrap().unwrap();
             prop_assert_eq!(&request.body, body_data);
         }
+    }
+}
+
+// ========================================
+// is_chunked() / is_keep_alive() トークン解析テスト
+// ========================================
+
+#[test]
+fn is_chunked_only_chunked_returns_true() {
+    // "chunked" のみの場合は true
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(head.is_chunked());
+}
+
+#[test]
+fn is_chunked_chunked_with_spaces_returns_true() {
+    // "  chunked  " (前後にスペース) の場合も true
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding:   chunked  \r\n\r\n")
+        .unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(head.is_chunked());
+}
+
+#[test]
+fn is_chunked_with_other_coding_returns_false() {
+    // "gzip, chunked" の場合は false (chunked のみではない)
+    // デコーダーは chunked 以外の Transfer-Encoding をエラーにするため、
+    // ResponseHead を直接構築してテスト
+    let head = ResponseHead {
+        version: "HTTP/1.1".to_string(),
+        status_code: 200,
+        reason_phrase: "OK".to_string(),
+        headers: vec![("Transfer-Encoding".to_string(), "gzip, chunked".to_string())],
+    };
+    // RFC 9112: chunked 以外のトークンがあるため false
+    assert!(!head.is_chunked());
+}
+
+#[test]
+fn is_chunked_other_coding_only_returns_false() {
+    // "gzip" のみの場合は false
+    // デコーダーは chunked 以外の Transfer-Encoding をエラーにするため、
+    // ResponseHead を直接構築してテスト
+    let head = ResponseHead {
+        version: "HTTP/1.1".to_string(),
+        status_code: 200,
+        reason_phrase: "OK".to_string(),
+        headers: vec![("Transfer-Encoding".to_string(), "gzip".to_string())],
+    };
+    assert!(!head.is_chunked());
+}
+
+#[test]
+fn is_chunked_no_header_returns_false() {
+    // Transfer-Encoding ヘッダーがない場合は false
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(!head.is_chunked());
+}
+
+#[test]
+fn is_keep_alive_close_returns_false() {
+    // "close" があれば false
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(!head.is_keep_alive());
+}
+
+#[test]
+fn is_keep_alive_keep_alive_returns_true() {
+    // "keep-alive" があれば true
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nConnection: keep-alive\r\n\r\n")
+        .unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(head.is_keep_alive());
+}
+
+#[test]
+fn is_keep_alive_default_http11_returns_true() {
+    // HTTP/1.1 のデフォルトは keep-alive
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(head.is_keep_alive());
+}
+
+#[test]
+fn is_keep_alive_default_http10_returns_false() {
+    // HTTP/1.0 のデフォルトは close
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.0 200 OK\r\n\r\n").unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(!head.is_keep_alive());
+}
+
+#[test]
+fn is_keep_alive_close_with_keep_alive_returns_false() {
+    // "keep-alive, close" の場合、close が優先されるため false
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nConnection: keep-alive, close\r\n\r\n")
+        .unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert!(!head.is_keep_alive());
+}
+
+// ========================================
+// decode_headers の Complete → StartLine 遷移テスト
+// ========================================
+
+#[test]
+fn decode_headers_complete_to_startline_with_next_message() {
+    // ボディなしメッセージ完了後、次のメッセージを処理できる
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(b"GET /first HTTP/1.1\r\n\r\n").unwrap();
+    decoder.feed(b"GET /second HTTP/1.1\r\n\r\n").unwrap();
+
+    // 1 回目
+    let (head1, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head1.uri, "/first");
+
+    // 2 回目 (Complete → StartLine 遷移して次のメッセージを処理)
+    let (head2, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head2.uri, "/second");
+}
+
+#[test]
+fn response_decode_headers_complete_to_startline_with_next_message() {
+    // ボディなしレスポンス完了後、次のメッセージを処理できる
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+    decoder.feed(b"HTTP/1.1 404 Not Found\r\n\r\n").unwrap();
+
+    // 1 回目
+    let (head1, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head1.status_code, 200);
+
+    // 2 回目 (Complete → StartLine 遷移して次のメッセージを処理)
+    let (head2, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head2.status_code, 404);
+}
+
+proptest! {
+    #[test]
+    fn is_chunked_consistency_with_body_kind(
+        use_chunked in any::<bool>()
+    ) {
+        // is_chunked() と BodyKind::Chunked の整合性を検証
+        let mut decoder = ResponseDecoder::new();
+        let data = if use_chunked {
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec()
+        } else {
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()
+        };
+        decoder.feed(&data).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+
+        // is_chunked() と BodyKind の整合性
+        if use_chunked {
+            prop_assert!(head.is_chunked());
+            prop_assert!(matches!(body_kind, BodyKind::Chunked));
+        } else {
+            prop_assert!(!head.is_chunked());
+            prop_assert!(!matches!(body_kind, BodyKind::Chunked));
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn decode_headers_multiple_no_body_messages(
+        count in 2..5usize
+    ) {
+        // 複数のボディなしメッセージを decode_headers で連続処理
+        let mut decoder = RequestDecoder::new();
+        for i in 0..count {
+            let data = format!("GET /{} HTTP/1.1\r\n\r\n", i);
+            decoder.feed(data.as_bytes()).unwrap();
+        }
+
+        for i in 0..count {
+            let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+            prop_assert_eq!(head.uri, format!("/{}", i));
+            prop_assert!(matches!(body_kind, BodyKind::None));
+        }
+
+        // 次のメッセージがなければ Ok(None)
+        prop_assert!(decoder.decode_headers().unwrap().is_none());
     }
 }
