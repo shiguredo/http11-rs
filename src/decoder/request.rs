@@ -326,6 +326,10 @@ impl RequestDecoder {
         let head = self.decoded_head.take().unwrap();
         let body = std::mem::take(&mut self.decoded_body);
 
+        // Keep-Alive 対応: 次のリクエストのために状態をリセット
+        self.phase = DecodePhase::StartLine;
+        self.decoded_body_kind = None;
+
         Ok(Some(Request {
             method: head.method,
             uri: head.uri,

@@ -355,6 +355,12 @@ impl ResponseDecoder {
         let head = self.decoded_head.take().unwrap();
         let body = std::mem::take(&mut self.decoded_body);
 
+        // Keep-Alive 対応: 次のレスポンスのために状態をリセット
+        self.phase = DecodePhase::StartLine;
+        self.decoded_body_kind = None;
+        self.expect_no_body = false;
+        self.status_code = 0;
+
         Ok(Some(Response {
             version: head.version,
             status_code: head.status_code,
