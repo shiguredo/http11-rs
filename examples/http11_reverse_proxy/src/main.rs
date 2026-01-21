@@ -592,6 +592,9 @@ async fn stream_response_on_connection(
     downstream.flush().await?;
 
     // close-delimited body の場合: upstream が閉じるまでデータを転送
+    // 注: ResponseDecoder の mark_eof() API を使わずに直接ストリーミング転送する理由:
+    // - ボディをメモリに蓄積せずにリアルタイムで downstream に転送するため
+    // - 大容量レスポンスでもメモリ効率が良い
     if is_close_delimited {
         log_debug(
             debug,

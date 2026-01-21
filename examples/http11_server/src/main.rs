@@ -257,9 +257,12 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
     // RFC 9110 準拠の Date ヘッダー (IMF-fixdate 形式)
     let date = format_http_date(now);
 
+    // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
+    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+
     match request.uri.as_str() {
         "/" => {
-            let body = r#"<!DOCTYPE html>
+            let body_content = r#"<!DOCTYPE html>
 <html>
 <head><title>shiguredo_http11 Server</title></head>
 <body>
@@ -272,26 +275,51 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
 </body>
 </html>
 "#;
+            let body_bytes = body_content.as_bytes();
 
             Response::new(200, "OK")
                 .header("Date", &date)
                 .header("Content-Type", "text/html; charset=utf-8")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.as_bytes().to_vec())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_bytes.to_vec()
+                })
+                .omit_content_length(true)
         }
         "/info" => {
-            let body = format!(
+            let body_content = format!(
                 r#"{{"server":"shiguredo_http11","version":"0.1.0","timestamp":{}}}"#,
                 now
             );
+            let body_bytes = body_content.as_bytes();
 
             Response::new(200, "OK")
                 .header("Date", &date)
                 .header("Content-Type", "application/json")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.into_bytes())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_content.into_bytes()
+                })
+                .omit_content_length(true)
         }
         "/echo" => {
+            // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
+            // (実際の GET レスポンスはリクエストに依存するため)
+            if is_head {
+                return Response::new(200, "OK")
+                    .header("Date", &date)
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .header("Content-Length", "0")
+                    .header("Server", "shiguredo_http11/0.1.0")
+                    .omit_content_length(true);
+            }
+
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
                 request.method, request.uri, request.version
@@ -317,12 +345,20 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
                 .body(body.into_bytes())
         }
         _ => {
-            let body = "404 Not Found\n";
+            let body_content = "404 Not Found\n";
+            let body_bytes = body_content.as_bytes();
+
             Response::new(404, "Not Found")
                 .header("Date", &date)
                 .header("Content-Type", "text/plain")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.as_bytes().to_vec())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_bytes.to_vec()
+                })
+                .omit_content_length(true)
         }
     }
 }

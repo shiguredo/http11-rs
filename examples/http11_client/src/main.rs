@@ -111,6 +111,11 @@ fn http_request(
     loop {
         let n = stream.read(&mut buf)?;
         if n == 0 {
+            // EOF: close-delimited body の場合は正常終了
+            decoder.mark_eof();
+            if let Some(response) = decoder.decode()? {
+                return Ok(response);
+            }
             return Err("Connection closed before response complete".into());
         }
 
@@ -145,7 +150,14 @@ fn https_request(
 
     loop {
         let n = match tls.read(&mut buf) {
-            Ok(0) => return Err("Connection closed before response complete".into()),
+            Ok(0) => {
+                // EOF: close-delimited body の場合は正常終了
+                decoder.mark_eof();
+                if let Some(response) = decoder.decode()? {
+                    return Ok(response);
+                }
+                return Err("Connection closed before response complete".into());
+            }
             Ok(n) => n,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
             Err(e) => return Err(e.into()),
