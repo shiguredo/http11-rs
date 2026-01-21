@@ -412,7 +412,13 @@ impl ResponseDecoder {
                 let available = self.available_body_len();
                 if available > 0 {
                     // max_body_size チェック (コピー前に行う)
-                    let new_size = self.decoded_body.len() + available;
+                    // checked_add でオーバーフローを検出し、オーバーフロー時も BodyTooLarge を返す
+                    let new_size = self.decoded_body.len().checked_add(available).ok_or(
+                        Error::BodyTooLarge {
+                            size: usize::MAX,
+                            limit: self.limits.max_body_size,
+                        },
+                    )?;
                     if new_size > self.limits.max_body_size {
                         return Err(Error::BodyTooLarge {
                             size: new_size,
