@@ -411,6 +411,14 @@ impl ResponseDecoder {
                 // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ
                 let available = self.available_body_len();
                 if available > 0 {
+                    // max_body_size チェック (コピー前に行う)
+                    let new_size = self.decoded_body.len() + available;
+                    if new_size > self.limits.max_body_size {
+                        return Err(Error::BodyTooLarge {
+                            size: new_size,
+                            limit: self.limits.max_body_size,
+                        });
+                    }
                     self.decoded_body.extend_from_slice(&self.buf[..available]);
                     self.consume_body(available)?;
                 }

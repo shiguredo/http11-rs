@@ -554,7 +554,8 @@ proptest! {
 proptest! {
     #[test]
     fn encode_response_omit_content_length(
-        status in 200..300u16,
+        // 204 No Content には Content-Length を送ってはならない (RFC 9110 Section 8.6)
+        status in (200u16..204).prop_union(205..300),
         content_length in 1usize..10000
     ) {
         // omit_content_length=true の場合、Content-Length は自動付与されない
