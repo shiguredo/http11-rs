@@ -356,9 +356,14 @@ async fn handle_client(
         })
         .collect();
 
-    // ヘッダーをコピー (hop-by-hop ヘッダーと Host は除外)
+    // ヘッダーをコピー (hop-by-hop ヘッダー、Host、Content-Length は除外)
+    // Content-Length は Transfer-Encoding 除外後に不整合が生じる可能性があるため除外し、
+    // encoder の自動設定に任せる (RFC 9112 Section 6.3 対応)
     for (name, value) in &req_head.headers {
         if name.eq_ignore_ascii_case("host") {
+            continue;
+        }
+        if name.eq_ignore_ascii_case("content-length") {
             continue;
         }
         if is_hop_by_hop_header(name, &connection_headers) {
@@ -435,7 +440,14 @@ async fn stream_upstream_response_pooled(
     );
 
     // リクエスト送信とレスポンス受信
-    let result = stream_response_on_connection(downstream, request, &mut conn.stream, debug).await;
+    let result = stream_response_on_connection(
+        downstream,
+        request,
+        &request.method,
+        &mut conn.stream,
+        debug,
+    )
+    .await;
 
     // 接続を再利用するかどうかを判定
     let should_reuse = match &result {
@@ -459,6 +471,7 @@ async fn stream_upstream_response_pooled(
 async fn stream_response_on_connection(
     downstream: &mut TcpStream,
     request: &Request,
+    method: &str,
     upstream: &mut TlsStream<TcpStream>,
     debug: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
@@ -479,6 +492,13 @@ async fn stream_response_on_connection(
         max_body_size: 50 * 1024 * 1024,
         ..Default::default()
     });
+
+    // RFC 9110 Section 9.3.2: HEAD レスポンスにはボディが存在しない
+    if method.eq_ignore_ascii_case("HEAD") {
+        decoder.set_expect_no_body(true);
+        log_debug(debug, "HEAD request: expecting no body in response");
+    }
+
     let mut buf = [0u8; 8192];
 
     let (resp_head, body_kind) = loop {
@@ -504,7 +524,21 @@ async fn stream_response_on_connection(
     );
 
     // Keep-Alive かどうかで再利用可能性を判定
-    let can_reuse = resp_head.is_keep_alive();
+    let mut can_reuse = resp_head.is_keep_alive();
+
+    // TODO: ライブラリ側で BodyKind::CloseDelimited のフルサポートを検討
+    // RFC 9112 Section 6.3: Content-Length も Transfer-Encoding: chunked もない場合、
+    // 接続が閉じるまでをボディとする (close-delimited body)
+    let is_close_delimited =
+        matches!(body_kind, BodyKind::None) && status_may_have_body(resp_head.status_code);
+
+    if is_close_delimited {
+        can_reuse = false;
+        log_debug(
+            debug,
+            "close-delimited body detected, connection will be closed",
+        );
+    }
 
     // クライアントへレスポンスヘッダーを送信
     let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
@@ -547,14 +581,43 @@ async fn stream_response_on_connection(
     } else if use_chunked {
         response_for_headers.add_header("Transfer-Encoding", "chunked");
         log_debug(debug, "using Transfer-Encoding: chunked");
-    } else if !matches!(body_kind, BodyKind::None) {
+    } else if is_close_delimited {
+        // close-delimited body: 接続が閉じるまでがボディ
         response_for_headers.add_header("Connection", "close");
-        log_debug(debug, "using Connection: close");
+        log_debug(debug, "using Connection: close (close-delimited body)");
     }
 
     let header_bytes = encode_response_headers(&response_for_headers);
     downstream.write_all(&header_bytes).await?;
     downstream.flush().await?;
+
+    // close-delimited body の場合: upstream が閉じるまでデータを転送
+    if is_close_delimited {
+        log_debug(
+            debug,
+            "streaming close-delimited body until connection closes",
+        );
+        let mut close_delimited_bytes = 0usize;
+        loop {
+            let n = upstream.read(&mut buf).await?;
+            if n == 0 {
+                // upstream が閉じた = ボディ終了
+                log_debug(
+                    debug,
+                    &format!(
+                        "close-delimited body complete, total: {} bytes",
+                        close_delimited_bytes
+                    ),
+                );
+                break;
+            }
+            downstream.write_all(&buf[..n]).await?;
+            close_delimited_bytes += n;
+            log_debug(debug, &format!("close-delimited body bytes: {}", n));
+        }
+        downstream.flush().await?;
+        return Ok(can_reuse);
+    }
 
     // ボディをストリーミング転送
     let mut total_body_bytes = 0usize;
@@ -667,6 +730,16 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     }
 
     connection_headers.contains(&name_lower)
+}
+
+/// ステータスコードがボディを持つ可能性があるか判定
+///
+/// RFC 9110 に基づき、以下のレスポンスはボディを持たない:
+/// - 1xx (情報レスポンス)
+/// - 204 No Content
+/// - 304 Not Modified
+fn status_may_have_body(status_code: u16) -> bool {
+    !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
 }
 
 fn log_debug(enabled: bool, message: &str) {

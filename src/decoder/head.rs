@@ -38,11 +38,17 @@ pub trait HttpHead {
     }
 
     /// キープアライブ接続かどうかを判定
+    ///
+    /// RFC 9110 Section 9.1: 複数の Connection ヘッダーはリストとして結合して処理する。
+    /// close トークンがいずれかのヘッダーに存在すれば false を返す。
     fn is_keep_alive(&self) -> bool {
-        if let Some(conn) = self.connection() {
+        // 全ての Connection ヘッダーを取得して検査
+        let connection_headers = self.get_headers("Connection");
+        let mut has_keep_alive = false;
+
+        for conn in connection_headers {
             // カンマ区切りトークンリストとして解析
-            // close トークンがあれば false (close 優先)
-            let mut has_keep_alive = false;
+            // close トークンがあれば即座に false (close 優先)
             for token in conn.split(',') {
                 let token = token.trim();
                 if token.eq_ignore_ascii_case("close") {
@@ -52,9 +58,10 @@ pub trait HttpHead {
                     has_keep_alive = true;
                 }
             }
-            if has_keep_alive {
-                return true;
-            }
+        }
+
+        if has_keep_alive {
+            return true;
         }
         self.version().ends_with("/1.1")
     }

@@ -2570,3 +2570,141 @@ proptest! {
         }
     }
 }
+
+// ========================================
+// 複数 Connection ヘッダーの is_keep_alive() PBT
+// RFC 9110 Section 9.1: 複数ヘッダーはリストとして結合して処理
+// ========================================
+
+proptest! {
+    #[test]
+    fn is_keep_alive_multiple_headers_all_keep_alive(
+        header_count in 2..5usize
+    ) {
+        // 複数の Connection: keep-alive ヘッダーがある場合は true
+        let headers: Vec<(String, String)> = (0..header_count)
+            .map(|_| ("Connection".to_string(), "keep-alive".to_string()))
+            .collect();
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+        prop_assert!(head.is_keep_alive());
+    }
+}
+
+proptest! {
+    #[test]
+    fn is_keep_alive_multiple_headers_close_in_later(
+        keep_alive_count in 1..4usize
+    ) {
+        // 最初に keep-alive、後に close がある場合は false (close 優先)
+        let mut headers: Vec<(String, String)> = (0..keep_alive_count)
+            .map(|_| ("Connection".to_string(), "keep-alive".to_string()))
+            .collect();
+        headers.push(("Connection".to_string(), "close".to_string()));
+
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+        prop_assert!(!head.is_keep_alive());
+    }
+}
+
+proptest! {
+    #[test]
+    fn is_keep_alive_multiple_headers_close_in_first(
+        keep_alive_count in 1..4usize
+    ) {
+        // 最初に close、後に keep-alive がある場合も false (close 優先)
+        let mut headers: Vec<(String, String)> = vec![("Connection".to_string(), "close".to_string())];
+        for _ in 0..keep_alive_count {
+            headers.push(("Connection".to_string(), "keep-alive".to_string()));
+        }
+
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+        prop_assert!(!head.is_keep_alive());
+    }
+}
+
+proptest! {
+    #[test]
+    fn is_keep_alive_multiple_headers_mixed_tokens(
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+        close_position in 0..3usize
+    ) {
+        // 複数のヘッダーに分散した keep-alive と close
+        // close がどの位置にあっても false
+        let mut headers: Vec<(String, String)> = vec![
+            ("Connection".to_string(), "keep-alive".to_string()),
+            ("Connection".to_string(), "keep-alive".to_string()),
+            ("Connection".to_string(), "keep-alive".to_string()),
+        ];
+        headers[close_position] = ("Connection".to_string(), "close".to_string());
+
+        let head = ResponseHead {
+            version: version.to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+        prop_assert!(!head.is_keep_alive());
+    }
+}
+
+proptest! {
+    #[test]
+    fn is_keep_alive_single_header_with_multiple_tokens(
+        close_first in any::<bool>()
+    ) {
+        // 単一ヘッダーに複数トークン (カンマ区切り)
+        let conn_value = if close_first {
+            "close, keep-alive".to_string()
+        } else {
+            "keep-alive, close".to_string()
+        };
+
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers: vec![("Connection".to_string(), conn_value)],
+        };
+        prop_assert!(!head.is_keep_alive());
+    }
+}
+
+proptest! {
+    #[test]
+    fn is_keep_alive_multiple_headers_no_connection_token(
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+        other_token in "[a-z]{1,8}"
+    ) {
+        // Connection ヘッダーはあるが keep-alive も close もない場合
+        // デフォルト動作（HTTP/1.1 は true、HTTP/1.0 は false）
+        let headers = vec![("Connection".to_string(), other_token)];
+
+        let head = ResponseHead {
+            version: version.to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+
+        if version == "HTTP/1.1" {
+            prop_assert!(head.is_keep_alive());
+        } else {
+            prop_assert!(!head.is_keep_alive());
+        }
+    }
+}
