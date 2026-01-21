@@ -218,3 +218,53 @@ fn complete_chunked_body() {
     assert!(completed);
     assert_eq!(body, b"hello");
 }
+
+/// close-delimited レスポンスの mark_eof テスト
+///
+/// upstream が接続を閉じた場合、mark_eof() を呼んで Complete に遷移することを確認する。
+#[test]
+fn close_delimited_mark_eof() {
+    let mut decoder = ResponseDecoder::new();
+    // Content-Length も Transfer-Encoding もない = close-delimited
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+    decoder.feed(b"hello world").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::CloseDelimited));
+
+    // ボディを読み取る
+    let mut body = Vec::new();
+    while let Some(data) = decoder.peek_body() {
+        body.extend_from_slice(data);
+        let len = data.len();
+        decoder.consume_body(len).unwrap();
+    }
+
+    // まだ Complete ではない (is_close_delimited() で確認)
+    assert!(decoder.is_close_delimited());
+
+    // EOF を通知
+    decoder.mark_eof();
+
+    // Complete に遷移 (is_close_delimited() が false になる)
+    assert!(!decoder.is_close_delimited());
+    assert_eq!(body, b"hello world");
+}
+
+/// close-delimited の decode() メソッドでの mark_eof テスト
+#[test]
+fn close_delimited_decode_with_mark_eof() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nbody data").unwrap();
+
+    // decode() はデータ不足で None を返す (close-delimited は mark_eof() が必要)
+    assert!(decoder.decode().unwrap().is_none());
+    assert!(decoder.is_close_delimited());
+
+    // EOF を通知
+    decoder.mark_eof();
+
+    // 再度 decode() を呼ぶと Response が返る
+    let response = decoder.decode().unwrap().unwrap();
+    assert_eq!(response.body, b"body data");
+}

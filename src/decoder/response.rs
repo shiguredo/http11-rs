@@ -441,6 +441,7 @@ impl ResponseDecoder {
             reason_phrase: head.reason_phrase,
             headers: head.headers,
             body,
+            omit_content_length: false,
         }))
     }
 }

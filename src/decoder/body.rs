@@ -219,6 +219,14 @@ impl BodyDecoder {
                 buf.drain(..len);
                 self.body_consumed += len;
 
+                // max_body_size チェック
+                if self.body_consumed > limits.max_body_size {
+                    return Err(Error::BodyTooLarge {
+                        size: self.body_consumed,
+                        limit: limits.max_body_size,
+                    });
+                }
+
                 // close-delimited は mark_eof() が呼ばれるまで Continue
                 Ok(BodyProgress::Continue)
             }

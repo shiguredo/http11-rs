@@ -402,14 +402,22 @@ proptest! {
     }
 }
 
-#[test]
-fn single_transfer_encoding_chunked_ok() {
-    // 単一の chunked ヘッダーは OK
-    let data = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
-    let mut decoder = ResponseDecoder::new();
-    decoder.feed(data.as_bytes()).unwrap();
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(body_kind, BodyKind::Chunked);
+proptest! {
+    #[test]
+    fn single_transfer_encoding_chunked_ok(
+        body in "[a-z]{1,100}"
+    ) {
+        // 単一の chunked ヘッダーは OK
+        let chunk_size = format!("{:x}", body.len());
+        let data = format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{}\r\n{}\r\n0\r\n\r\n",
+            chunk_size, body
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Chunked);
+    }
 }
 
 // ========================================
@@ -1456,6 +1464,52 @@ proptest! {
         // チャンクサイズ解析時にボディサイズ制限エラー
         let result = decoder.progress();
         prop_assert!(result.is_err());
+    }
+}
+
+proptest! {
+    #[test]
+    fn response_decoder_body_too_large_close_delimited(
+        body_size in 200..500usize
+    ) {
+        // close-delimited ボディでも max_body_size を超えるとエラー
+        let limits = DecoderLimits {
+            max_body_size: 100,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = ResponseDecoder::with_limits(limits);
+        // Content-Length も Transfer-Encoding もなし = close-delimited
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::CloseDelimited);
+
+        // ボディデータを追加
+        let body = vec![b'x'; body_size];
+        decoder.feed(&body).unwrap();
+
+        // ボディを消費していくと max_body_size 超過でエラー
+        let mut consumed = 0;
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                let len = data.len();
+                match decoder.consume_body(len) {
+                    Ok(_) => consumed += len,
+                    Err(shiguredo_http11::Error::BodyTooLarge { .. }) => {
+                        // max_body_size を超えた時点でエラー
+                        prop_assert!(consumed <= 100);
+                        return Ok(());
+                    }
+                    Err(e) => return Err(proptest::test_runner::TestCaseError::fail(format!(
+                        "unexpected error: {:?}",
+                        e
+                    ))),
+                }
+            } else {
+                break;
+            }
+        }
+        // ここに到達した場合は問題
+        prop_assert!(false, "expected BodyTooLarge error but consumed {} bytes", consumed);
     }
 }
 

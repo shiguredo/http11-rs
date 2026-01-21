@@ -64,10 +64,12 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
     // Content-Length (if not already set and not chunked)
     // RFC 9112: keep-alive を維持するために Content-Length または Transfer-Encoding が必要
     // 1xx/204/304 はボディがないため Content-Length を追加しない
+    // omit_content_length が true の場合は自動付与しない (HEAD レスポンス用)
     let status_has_body = !((100..200).contains(&response.status_code)
         || response.status_code == 204
         || response.status_code == 304);
     if status_has_body
+        && !response.omit_content_length
         && !response.has_header("Content-Length")
         && !response.has_header("Transfer-Encoding")
     {

@@ -551,6 +551,45 @@ proptest! {
     }
 }
 
+proptest! {
+    #[test]
+    fn encode_response_omit_content_length(
+        status in 200..300u16,
+        content_length in 1usize..10000
+    ) {
+        // omit_content_length=true の場合、Content-Length は自動付与されない
+        // HEAD レスポンス用: 明示的に Content-Length を設定する
+        let res = Response::new(status, "OK")
+            .header("Content-Length", &content_length.to_string())
+            .omit_content_length(true);
+        let encoded = encode_response(&res);
+        let encoded_str = String::from_utf8_lossy(&encoded);
+
+        // 明示的に設定した Content-Length は維持される
+        let cl_header = format!("Content-Length: {}\r\n", content_length);
+        prop_assert!(encoded_str.contains(&cl_header));
+        // ボディは空 (HEAD レスポンスなので)
+        prop_assert!(encoded_str.ends_with("\r\n\r\n"));
+    }
+}
+
+proptest! {
+    #[test]
+    fn encode_response_omit_content_length_no_header(
+        status in 200..204u16
+    ) {
+        // omit_content_length=true で Content-Length ヘッダーも設定しない場合
+        // Content-Length は自動付与されない (close-delimited になる)
+        let res = Response::new(status, "OK")
+            .omit_content_length(true);
+        let encoded = encode_response(&res);
+        let encoded_str = String::from_utf8_lossy(&encoded);
+
+        // Content-Length は含まれない
+        prop_assert!(!encoded_str.contains("Content-Length"));
+    }
+}
+
 #[test]
 fn encode_response_no_content_length_with_transfer_encoding() {
     // Transfer-Encoding がある場合は Content-Length を追加しない
