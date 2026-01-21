@@ -537,7 +537,10 @@ proptest! {
         let res = Response::new(status, phrase).body(data.clone());
         let encoded = encode_response(&res);
 
-        if !data.is_empty() {
+        // 1xx/204/304 はボディがないため Content-Length を追加しない
+        let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
+
+        if !data.is_empty() && status_has_body {
             // Content-Length が自動追加される
             let encoded_str = String::from_utf8_lossy(&encoded);
             let cl_header = format!("Content-Length: {}\r\n", data.len());

@@ -113,7 +113,8 @@ proptest! {
                     }
                 }
             }
-            BodyKind::None => {}
+            // リクエストでは CloseDelimited は使われない (RFC 9112)
+            BodyKind::CloseDelimited | BodyKind::None => {}
         }
 
         prop_assert_eq!(&decoded_body, &request.body);
@@ -203,7 +204,8 @@ proptest! {
                             }
                         }
                     }
-                    BodyKind::None => {}
+                    // リクエストでは CloseDelimited は使われない (RFC 9112)
+                    BodyKind::CloseDelimited | BodyKind::None => {}
                 }
             }
         }

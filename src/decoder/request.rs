@@ -170,6 +170,7 @@ impl RequestDecoder {
                             let body_kind = self.determine_body_kind()?;
 
                             // ヘッダー完了、ボディフェーズに遷移
+                            // RFC 9112: リクエストは close-delimited を使わない
                             match body_kind {
                                 BodyKind::ContentLength(len) => {
                                     if len > 0 {
@@ -182,7 +183,7 @@ impl RequestDecoder {
                                 BodyKind::Chunked => {
                                     self.phase = DecodePhase::BodyChunkedSize;
                                 }
-                                BodyKind::None => {
+                                BodyKind::CloseDelimited | BodyKind::None => {
                                     self.phase = DecodePhase::Complete;
                                 }
                             }
@@ -314,6 +315,7 @@ impl RequestDecoder {
         }
 
         // ボディを読む
+        // RFC 9112: リクエストは close-delimited を使わないため、CloseDelimited は None と同じ
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
@@ -341,7 +343,7 @@ impl RequestDecoder {
                     }
                 }
             },
-            BodyKind::None => {}
+            BodyKind::CloseDelimited | BodyKind::None => {}
         }
 
         // Request を構築

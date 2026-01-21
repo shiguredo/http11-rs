@@ -21,8 +21,12 @@ pub fn encode_request(request: &Request) -> Vec<u8> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // Content-Length (if body is present and not already set)
-    if !request.body.is_empty() && !request.has_header("Content-Length") {
+    // Content-Length (if body is present, not already set, and not chunked)
+    // RFC 9112: Transfer-Encoding と Content-Length は同時に送信してはならない
+    if !request.body.is_empty()
+        && !request.has_header("Content-Length")
+        && !request.has_header("Transfer-Encoding")
+    {
         buf.extend_from_slice(b"Content-Length: ");
         buf.extend_from_slice(request.body.len().to_string().as_bytes());
         buf.extend_from_slice(b"\r\n");
@@ -57,8 +61,13 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // Content-Length (if body is present, not already set, and not chunked)
-    if !response.body.is_empty()
+    // Content-Length (if not already set and not chunked)
+    // RFC 9112: keep-alive を維持するために Content-Length または Transfer-Encoding が必要
+    // 1xx/204/304 はボディがないため Content-Length を追加しない
+    let status_has_body = !((100..200).contains(&response.status_code)
+        || response.status_code == 204
+        || response.status_code == 304);
+    if status_has_body
         && !response.has_header("Content-Length")
         && !response.has_header("Transfer-Encoding")
     {

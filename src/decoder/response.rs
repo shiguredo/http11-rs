@@ -121,6 +121,23 @@ impl ResponseDecoder {
         self.decoded_body.clear();
     }
 
+    /// 接続終了を通知 (close-delimited ボディ用)
+    ///
+    /// close-delimited ボディを読み取り中に接続が閉じられた場合に呼び出す。
+    /// これにより、バッファ内の残りデータがボディとして確定し、Complete に遷移する。
+    ///
+    /// close-delimited 以外の状態で呼び出した場合は何もしない。
+    pub fn mark_eof(&mut self) {
+        if matches!(self.phase, DecodePhase::BodyCloseDelimited) {
+            self.phase = DecodePhase::Complete;
+        }
+    }
+
+    /// close-delimited ボディを読み取り中かどうかを判定
+    pub fn is_close_delimited(&self) -> bool {
+        matches!(self.phase, DecodePhase::BodyCloseDelimited)
+    }
+
     /// ステータスコードからボディがあるかどうかを判定
     fn status_has_body(status_code: u16) -> bool {
         // 1xx, 204, 304 はボディなし
@@ -128,6 +145,12 @@ impl ResponseDecoder {
     }
 
     /// ボディモードを決定
+    ///
+    /// RFC 9112 Section 6.3 の優先順位に従う:
+    /// 1. HEAD レスポンス、1xx/204/304 はボディなし
+    /// 2. Transfer-Encoding がある場合は chunked
+    /// 3. Content-Length がある場合は固定長
+    /// 4. それ以外は close-delimited (接続が閉じるまでがボディ)
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
         let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
 
@@ -150,7 +173,9 @@ impl ResponseDecoder {
             return Ok(BodyKind::ContentLength(len));
         }
 
-        Ok(BodyKind::None)
+        // RFC 9112: TE も CL もない場合は close-delimited
+        // 接続が閉じられるまでをボディとして扱う
+        Ok(BodyKind::CloseDelimited)
     }
 
     /// ヘッダーをデコード
@@ -212,6 +237,9 @@ impl ResponseDecoder {
                                 }
                                 BodyKind::Chunked => {
                                     self.phase = DecodePhase::BodyChunkedSize;
+                                }
+                                BodyKind::CloseDelimited => {
+                                    self.phase = DecodePhase::BodyCloseDelimited;
                                 }
                                 BodyKind::None => {
                                     self.phase = DecodePhase::Complete;
@@ -291,6 +319,7 @@ impl ResponseDecoder {
         match &self.phase {
             DecodePhase::BodyContentLength { remaining } => self.buf.len().min(*remaining),
             DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
+            DecodePhase::BodyCloseDelimited => self.buf.len(),
             _ => 0,
         }
     }
@@ -325,6 +354,12 @@ impl ResponseDecoder {
     ///
     /// データ不足の場合は `None` を返す。
     /// ストリーミング API と混在使用するとエラーを返す。
+    ///
+    /// ## close-delimited ボディの場合
+    ///
+    /// `BodyKind::CloseDelimited` の場合、接続が閉じられるまでがボディとなる。
+    /// `decode()` を使う場合は、接続終了後に `mark_eof()` を呼んでから
+    /// 再度 `decode()` を呼ぶ必要がある。
     pub fn decode(&mut self) -> Result<Option<Response>, Error> {
         // ヘッダーがまだデコードされていない場合はデコード
         if self.decoded_head.is_none() {
@@ -372,6 +407,20 @@ impl ResponseDecoder {
                     }
                 }
             },
+            BodyKind::CloseDelimited => {
+                // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ
+                let available = self.available_body_len();
+                if available > 0 {
+                    self.decoded_body.extend_from_slice(&self.buf[..available]);
+                    self.consume_body(available)?;
+                }
+
+                // mark_eof() が呼ばれて Complete になったか確認
+                if !matches!(self.phase, DecodePhase::Complete) {
+                    // まだ EOF でないのでデータ不足
+                    return Ok(None);
+                }
+            }
             BodyKind::None => {}
         }
 

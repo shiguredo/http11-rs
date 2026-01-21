@@ -12,6 +12,11 @@ pub enum BodyKind {
     ContentLength(usize),
     /// Transfer-Encoding: chunked
     Chunked,
+    /// 接続が閉じるまでがボディ (close-delimited)
+    ///
+    /// RFC 9112: レスポンスで Transfer-Encoding も Content-Length もない場合、
+    /// 接続が閉じられるまでをボディとして扱う
+    CloseDelimited,
     /// ボディなし
     None,
 }
@@ -86,6 +91,12 @@ impl BodyDecoder {
                 } else {
                     None
                 }
+            }
+            DecodePhase::BodyCloseDelimited => {
+                if buf.is_empty() {
+                    return None;
+                }
+                Some(buf)
             }
             DecodePhase::BodyChunkedDataCrlf
             | DecodePhase::ChunkedTrailer
@@ -195,6 +206,21 @@ impl BodyDecoder {
                     }),
                     _ => Ok(BodyProgress::Continue),
                 }
+            }
+            DecodePhase::BodyCloseDelimited => {
+                // close-delimited: バッファにあるデータをすべて消費可能
+                // Complete への遷移は mark_eof() で行う
+                if len > buf.len() {
+                    return Err(Error::InvalidData(
+                        "consume_body: len exceeds buffer".to_string(),
+                    ));
+                }
+
+                buf.drain(..len);
+                self.body_consumed += len;
+
+                // close-delimited は mark_eof() が呼ばれるまで Continue
+                Ok(BodyProgress::Continue)
             }
             DecodePhase::Complete => Ok(BodyProgress::Complete {
                 trailers: std::mem::take(&mut self.trailers),
@@ -347,11 +373,14 @@ pub(crate) fn is_token_char(b: u8) -> bool {
 }
 
 /// Transfer-Encoding ヘッダーを解析
+///
+/// RFC 9112: chunked は一度だけ指定可能で、最後のエンコーディングでなければならない
+/// 複数の Transfer-Encoding ヘッダーは連結して単一のリストとして扱う
 pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> Result<bool, Error> {
-    let mut found = false;
+    let mut chunked_count = 0;
+
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
-            found = true;
             let mut has_token = false;
             for token in value.split(',') {
                 let token = token.trim();
@@ -361,7 +390,16 @@ pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> R
                     ));
                 }
                 has_token = true;
-                if !token.eq_ignore_ascii_case("chunked") {
+
+                if token.eq_ignore_ascii_case("chunked") {
+                    chunked_count += 1;
+                    if chunked_count > 1 {
+                        return Err(Error::InvalidData(
+                            "invalid Transfer-Encoding: duplicate chunked".to_string(),
+                        ));
+                    }
+                } else {
+                    // chunked 以外のエンコーディングはサポートしない
                     return Err(Error::InvalidData(
                         "invalid Transfer-Encoding: unsupported coding".to_string(),
                     ));
@@ -374,7 +412,8 @@ pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> R
             }
         }
     }
-    Ok(found)
+
+    Ok(chunked_count == 1)
 }
 
 /// Content-Length ヘッダーを解析

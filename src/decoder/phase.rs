@@ -17,6 +17,8 @@ pub(crate) enum DecodePhase {
     BodyChunkedDataCrlf,
     /// トレーラーヘッダー待ち
     ChunkedTrailer,
+    /// ボディ読み取り中 (CloseDelimited) - 接続が閉じるまで
+    BodyCloseDelimited,
     /// 完了
     Complete,
 }

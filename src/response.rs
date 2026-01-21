@@ -106,14 +106,24 @@ impl Response {
     ///
     /// HTTP/1.1 ではデフォルトでキープアライブ
     /// HTTP/1.0 では Connection: keep-alive が必要
+    /// Connection ヘッダーはカンマ区切りのトークンリストとして扱う (RFC 9110)
     pub fn is_keep_alive(&self) -> bool {
-        if let Some(conn) = self.connection() {
-            if conn.eq_ignore_ascii_case("close") {
-                return false;
+        let mut has_keep_alive = false;
+        for (name, value) in &self.headers {
+            if name.eq_ignore_ascii_case("Connection") {
+                for token in value.split(',') {
+                    let token = token.trim();
+                    if token.eq_ignore_ascii_case("close") {
+                        return false;
+                    }
+                    if token.eq_ignore_ascii_case("keep-alive") {
+                        has_keep_alive = true;
+                    }
+                }
             }
-            if conn.eq_ignore_ascii_case("keep-alive") {
-                return true;
-            }
+        }
+        if has_keep_alive {
+            return true;
         }
         // HTTP/1.1 はデフォルトでキープアライブ
         self.version.ends_with("/1.1")
@@ -126,9 +136,22 @@ impl Response {
     }
 
     /// Transfer-Encoding が chunked かどうかを判定
+    ///
+    /// Transfer-Encoding リストの最後が chunked かどうかを確認する (RFC 9112)
+    /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
     pub fn is_chunked(&self) -> bool {
-        self.get_header("Transfer-Encoding")
-            .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+        let mut last_token: Option<&str> = None;
+        for (name, value) in &self.headers {
+            if name.eq_ignore_ascii_case("Transfer-Encoding") {
+                for token in value.split(',') {
+                    let token = token.trim();
+                    if !token.is_empty() {
+                        last_token = Some(token);
+                    }
+                }
+            }
+        }
+        last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
     }
 
     /// ステータスコードが情報レスポンス (1xx) か確認

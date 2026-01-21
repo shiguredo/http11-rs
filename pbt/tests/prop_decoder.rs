@@ -383,10 +383,10 @@ proptest! {
 
 proptest! {
     #[test]
-    fn multiple_transfer_encoding_chunked_ok(
-        count in 1..3usize
+    fn multiple_transfer_encoding_chunked_error(
+        count in 2..4usize
     ) {
-        // 複数の chunked ヘッダーは OK
+        // RFC 9112: chunked は一度だけ指定可能、重複はエラー
         let headers = (0..count)
             .map(|_| "Transfer-Encoding: chunked")
             .collect::<Vec<_>>()
@@ -397,9 +397,19 @@ proptest! {
         );
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::Chunked);
+        // 重複 chunked はエラーを返すべき
+        prop_assert!(decoder.decode_headers().is_err());
     }
+}
+
+#[test]
+fn single_transfer_encoding_chunked_ok() {
+    // 単一の chunked ヘッダーは OK
+    let data = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(data.as_bytes()).unwrap();
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Chunked);
 }
 
 // ========================================
@@ -1535,12 +1545,13 @@ proptest! {
     fn response_no_content_length_no_transfer_encoding(
         status_code in 200..204u16
     ) {
-        // Content-Length も Transfer-Encoding もない場合はボディなし
+        // RFC 9112: Content-Length も Transfer-Encoding もない場合は close-delimited
+        // (接続が閉じられるまでがボディ)
         let data = format!("HTTP/1.1 {} OK\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::None);
+        prop_assert_eq!(body_kind, BodyKind::CloseDelimited);
     }
 }
 
