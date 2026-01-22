@@ -25,10 +25,10 @@ fuzz_target!(|data: &[u8]| {
             let _ = normalize(&uri);
 
             // 相対 URI 解決 (base として使用)
-            if uri.is_absolute() {
-                if let Ok(relative) = Uri::parse("/test") {
-                    let _ = resolve(&uri, &relative);
-                }
+            if uri.is_absolute()
+                && let Ok(relative) = Uri::parse("/test")
+            {
+                let _ = resolve(&uri, &relative);
             }
         }
 

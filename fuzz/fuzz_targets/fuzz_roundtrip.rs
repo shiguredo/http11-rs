@@ -68,28 +68,28 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
         let encoded = request.encode();
 
         let mut decoder = RequestDecoder::new();
-        if decoder.feed(&encoded).is_ok() {
-            if let Ok(Some((head, body_kind))) = decoder.decode_headers() {
-                assert_eq!(head.method, fuzz_req.method);
-                assert_eq!(head.uri, fuzz_req.uri);
+        if decoder.feed(&encoded).is_ok()
+            && let Ok(Some((head, body_kind))) = decoder.decode_headers()
+        {
+            assert_eq!(head.method, fuzz_req.method);
+            assert_eq!(head.uri, fuzz_req.uri);
 
-                let mut decoded_body = Vec::new();
-                match body_kind {
-                    BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
-                        while let Some(body_data) = decoder.peek_body() {
-                            decoded_body.extend_from_slice(body_data);
-                            let len = body_data.len();
-                            match decoder.consume_body(len) {
-                                Ok(BodyProgress::Complete { .. }) => break,
-                                Ok(BodyProgress::Continue) => {}
-                                Err(_) => break,
-                            }
+            let mut decoded_body = Vec::new();
+            match body_kind {
+                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                    while let Some(body_data) = decoder.peek_body() {
+                        decoded_body.extend_from_slice(body_data);
+                        let len = body_data.len();
+                        match decoder.consume_body(len) {
+                            Ok(BodyProgress::Complete { .. }) => break,
+                            Ok(BodyProgress::Continue) => {}
+                            Err(_) => break,
                         }
                     }
-                    BodyKind::None => {}
                 }
-                assert_eq!(decoded_body, request.body);
+                BodyKind::None => {}
             }
+            assert_eq!(decoded_body, request.body);
         }
     }
 
@@ -123,29 +123,29 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
         let encoded = response.encode();
 
         let mut decoder = ResponseDecoder::new();
-        if decoder.feed(&encoded).is_ok() {
-            if let Ok(Some((head, body_kind))) = decoder.decode_headers() {
-                assert_eq!(head.status_code, fuzz_resp.status_code);
-                assert_eq!(head.reason_phrase, fuzz_resp.reason_phrase);
+        if decoder.feed(&encoded).is_ok()
+            && let Ok(Some((head, body_kind))) = decoder.decode_headers()
+        {
+            assert_eq!(head.status_code, fuzz_resp.status_code);
+            assert_eq!(head.reason_phrase, fuzz_resp.reason_phrase);
 
-                let mut decoded_body = Vec::new();
-                if has_body {
-                    match body_kind {
-                        BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
-                            while let Some(body_data) = decoder.peek_body() {
-                                decoded_body.extend_from_slice(body_data);
-                                let len = body_data.len();
-                                match decoder.consume_body(len) {
-                                    Ok(BodyProgress::Complete { .. }) => break,
-                                    Ok(BodyProgress::Continue) => {}
-                                    Err(_) => break,
-                                }
+            let mut decoded_body = Vec::new();
+            if has_body {
+                match body_kind {
+                    BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                        while let Some(body_data) = decoder.peek_body() {
+                            decoded_body.extend_from_slice(body_data);
+                            let len = body_data.len();
+                            match decoder.consume_body(len) {
+                                Ok(BodyProgress::Complete { .. }) => break,
+                                Ok(BodyProgress::Continue) => {}
+                                Err(_) => break,
                             }
                         }
-                        BodyKind::None => {}
                     }
-                    assert_eq!(decoded_body, response.body);
+                    BodyKind::None => {}
                 }
+                assert_eq!(decoded_body, response.body);
             }
         }
     }

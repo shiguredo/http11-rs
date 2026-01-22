@@ -7,21 +7,21 @@ fuzz_target!(|data: &[u8]| {
     let mut decoder = RequestDecoder::new();
 
     // データを一度に feed
-    if decoder.feed(data).is_ok() {
-        if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
-            match body_kind {
-                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
-                    while let Some(body_data) = decoder.peek_body() {
-                        let len = body_data.len();
-                        match decoder.consume_body(len) {
-                            Ok(BodyProgress::Complete { .. }) => break,
-                            Ok(BodyProgress::Continue) => {}
-                            Err(_) => break,
-                        }
+    if decoder.feed(data).is_ok()
+        && let Ok(Some((_, body_kind))) = decoder.decode_headers()
+    {
+        match body_kind {
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                while let Some(body_data) = decoder.peek_body() {
+                    let len = body_data.len();
+                    match decoder.consume_body(len) {
+                        Ok(BodyProgress::Complete { .. }) => break,
+                        Ok(BodyProgress::Continue) => {}
+                        Err(_) => break,
                     }
                 }
-                BodyKind::None => {}
             }
+            BodyKind::None => {}
         }
     }
 
