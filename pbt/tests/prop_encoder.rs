@@ -537,7 +537,10 @@ proptest! {
         let res = Response::new(status, phrase).body(data.clone());
         let encoded = encode_response(&res);
 
-        if !data.is_empty() {
+        // 1xx/204/304 はボディがないため Content-Length を追加しない
+        let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
+
+        if !data.is_empty() && status_has_body {
             // Content-Length が自動追加される
             let encoded_str = String::from_utf8_lossy(&encoded);
             let cl_header = format!("Content-Length: {}\r\n", data.len());
@@ -545,6 +548,47 @@ proptest! {
             // ボディが末尾にある
             prop_assert!(encoded.ends_with(&data));
         }
+    }
+}
+
+proptest! {
+    #[test]
+    fn encode_response_omit_content_length(
+        // 204 No Content には Content-Length を送ってはならない (RFC 9110 Section 8.6)
+        // 205 Reset Content もボディを持ってはならない (RFC 9110 Section 15.4.6)
+        status in (200u16..204).prop_union(206..300),
+        content_length in 1usize..10000
+    ) {
+        // omit_content_length=true の場合、Content-Length は自動付与されない
+        // HEAD レスポンス用: 明示的に Content-Length を設定する
+        let res = Response::new(status, "OK")
+            .header("Content-Length", &content_length.to_string())
+            .omit_content_length(true);
+        let encoded = encode_response(&res);
+        let encoded_str = String::from_utf8_lossy(&encoded);
+
+        // 明示的に設定した Content-Length は維持される
+        let cl_header = format!("Content-Length: {}\r\n", content_length);
+        prop_assert!(encoded_str.contains(&cl_header));
+        // ボディは空 (HEAD レスポンスなので)
+        prop_assert!(encoded_str.ends_with("\r\n\r\n"));
+    }
+}
+
+proptest! {
+    #[test]
+    fn encode_response_omit_content_length_no_header(
+        status in 200..204u16
+    ) {
+        // omit_content_length=true で Content-Length ヘッダーも設定しない場合
+        // Content-Length は自動付与されない (close-delimited になる)
+        let res = Response::new(status, "OK")
+            .omit_content_length(true);
+        let encoded = encode_response(&res);
+        let encoded_str = String::from_utf8_lossy(&encoded);
+
+        // Content-Length は含まれない
+        prop_assert!(!encoded_str.contains("Content-Length"));
     }
 }
 

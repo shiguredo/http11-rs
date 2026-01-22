@@ -17,7 +17,7 @@ use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use shiguredo_http11::{RequestDecoder, Response};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
@@ -163,16 +163,20 @@ fn load_tls_config(
 }
 
 async fn handle_client(
-    mut stream: TcpStream,
+    stream: TcpStream,
     peer_addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Connection from {}", peer_addr);
 
+    let (reader, writer) = stream.into_split();
+    let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
+    let mut writer = BufWriter::with_capacity(65536, writer);
+
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
-        let n = stream.read(&mut buf).await?;
+        let n = reader.read(&mut buf).await?;
         if n == 0 {
             println!("Connection closed by {}", peer_addr);
             break;
@@ -188,7 +192,8 @@ async fn handle_client(
 
             let response = build_response(&request);
             let response_bytes = response.encode();
-            stream.write_all(&response_bytes).await?;
+            writer.write_all(&response_bytes).await?;
+            writer.flush().await?;
 
             if !request.is_keep_alive() {
                 println!("Connection close requested by {}", peer_addr);
@@ -201,16 +206,20 @@ async fn handle_client(
 }
 
 async fn handle_tls_client(
-    mut stream: tokio_rustls::server::TlsStream<TcpStream>,
+    stream: tokio_rustls::server::TlsStream<TcpStream>,
     peer_addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("TLS connection from {}", peer_addr);
 
+    let (reader, writer) = tokio::io::split(stream);
+    let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
+    let mut writer = BufWriter::with_capacity(65536, writer);
+
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
-        let n = stream.read(&mut buf).await?;
+        let n = reader.read(&mut buf).await?;
         if n == 0 {
             println!("TLS connection closed by {}", peer_addr);
             break;
@@ -226,7 +235,8 @@ async fn handle_tls_client(
 
             let response = build_response(&request);
             let response_bytes = response.encode();
-            stream.write_all(&response_bytes).await?;
+            writer.write_all(&response_bytes).await?;
+            writer.flush().await?;
 
             if !request.is_keep_alive() {
                 println!("Connection close requested by {}", peer_addr);
@@ -244,9 +254,15 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
+    // RFC 9110 準拠の Date ヘッダー (IMF-fixdate 形式)
+    let date = format_http_date(now);
+
+    // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
+    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+
     match request.uri.as_str() {
         "/" => {
-            let body = r#"<!DOCTYPE html>
+            let body_content = r#"<!DOCTYPE html>
 <html>
 <head><title>shiguredo_http11 Server</title></head>
 <body>
@@ -259,24 +275,51 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
 </body>
 </html>
 "#;
+            let body_bytes = body_content.as_bytes();
 
             Response::new(200, "OK")
+                .header("Date", &date)
                 .header("Content-Type", "text/html; charset=utf-8")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.as_bytes().to_vec())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_bytes.to_vec()
+                })
+                .omit_content_length(true)
         }
         "/info" => {
-            let body = format!(
+            let body_content = format!(
                 r#"{{"server":"shiguredo_http11","version":"0.1.0","timestamp":{}}}"#,
                 now
             );
+            let body_bytes = body_content.as_bytes();
 
             Response::new(200, "OK")
+                .header("Date", &date)
                 .header("Content-Type", "application/json")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.into_bytes())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_content.into_bytes()
+                })
+                .omit_content_length(true)
         }
         "/echo" => {
+            // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
+            // (実際の GET レスポンスはリクエストに依存するため)
+            if is_head {
+                return Response::new(200, "OK")
+                    .header("Date", &date)
+                    .header("Content-Type", "text/plain; charset=utf-8")
+                    .header("Content-Length", "0")
+                    .header("Server", "shiguredo_http11/0.1.0")
+                    .omit_content_length(true);
+            }
+
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
                 request.method, request.uri, request.version
@@ -296,16 +339,84 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
             }
 
             Response::new(200, "OK")
+                .header("Date", &date)
                 .header("Content-Type", "text/plain; charset=utf-8")
                 .header("Server", "shiguredo_http11/0.1.0")
                 .body(body.into_bytes())
         }
         _ => {
-            let body = "404 Not Found\n";
+            let body_content = "404 Not Found\n";
+            let body_bytes = body_content.as_bytes();
+
             Response::new(404, "Not Found")
+                .header("Date", &date)
                 .header("Content-Type", "text/plain")
+                .header("Content-Length", &body_bytes.len().to_string())
                 .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.as_bytes().to_vec())
+                .body(if is_head {
+                    Vec::new()
+                } else {
+                    body_bytes.to_vec()
+                })
+                .omit_content_length(true)
         }
     }
+}
+
+/// RFC 9110 準拠の IMF-fixdate 形式で日付を生成
+fn format_http_date(timestamp: u64) -> String {
+    // 日曜日始まりの曜日配列
+    const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+
+    // Unix epoch (1970-01-01) は木曜日 (= 4)
+    let days_since_epoch = timestamp / 86400;
+    let day_of_week = ((days_since_epoch + 4) % 7) as usize;
+
+    // 年月日を計算
+    let mut remaining_days = days_since_epoch as i64;
+    let mut year = 1970i32;
+
+    loop {
+        let days_in_year = if is_leap_year(year) { 366 } else { 365 };
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+
+    let mut month = 0usize;
+    let days_in_months = if is_leap_year(year) {
+        [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    } else {
+        [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    };
+
+    for (i, &days) in days_in_months.iter().enumerate() {
+        if remaining_days < days as i64 {
+            month = i;
+            break;
+        }
+        remaining_days -= days as i64;
+    }
+
+    let day = remaining_days + 1;
+
+    // 時分秒を計算
+    let time_of_day = timestamp % 86400;
+    let hour = time_of_day / 3600;
+    let minute = (time_of_day % 3600) / 60;
+    let second = time_of_day % 60;
+
+    format!(
+        "{}, {:02} {} {} {:02}:{:02}:{:02} GMT",
+        DAYS[day_of_week], day, MONTHS[month], year, hour, minute, second
+    )
+}
+
+fn is_leap_year(year: i32) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }

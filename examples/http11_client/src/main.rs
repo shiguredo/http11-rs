@@ -106,11 +106,16 @@ fn http_request(
     stream.write_all(request_bytes)?;
 
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
         let n = stream.read(&mut buf)?;
         if n == 0 {
+            // EOF: close-delimited body の場合は正常終了
+            decoder.mark_eof();
+            if let Some(response) = decoder.decode()? {
+                return Ok(response);
+            }
             return Err("Connection closed before response complete".into());
         }
 
@@ -141,11 +146,18 @@ fn https_request(
 
     // レスポンス受信
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 8192];
 
     loop {
         let n = match tls.read(&mut buf) {
-            Ok(0) => return Err("Connection closed before response complete".into()),
+            Ok(0) => {
+                // EOF: close-delimited body の場合は正常終了
+                decoder.mark_eof();
+                if let Some(response) = decoder.decode()? {
+                    return Ok(response);
+                }
+                return Err("Connection closed before response complete".into());
+            }
             Ok(n) => n,
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
             Err(e) => return Err(e.into()),

@@ -11,6 +11,12 @@ pub struct Response {
     pub headers: Vec<(String, String)>,
     /// ボディ
     pub body: Vec<u8>,
+    /// Content-Length 自動付与を抑止するフラグ (HEAD レスポンス用)
+    ///
+    /// HEAD レスポンスでは実際のボディを送信しないが、GET と同じ Content-Length を
+    /// 返すべき (RFC 9110 Section 9.3.2)。このフラグを true にすると、
+    /// エンコーダーが Content-Length を自動付与しない。
+    pub omit_content_length: bool,
 }
 
 impl Response {
@@ -22,6 +28,7 @@ impl Response {
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
             body: Vec::new(),
+            omit_content_length: false,
         }
     }
 
@@ -33,7 +40,18 @@ impl Response {
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
             body: Vec::new(),
+            omit_content_length: false,
         }
+    }
+
+    /// Content-Length 自動付与を抑止する (ビルダーパターン)
+    ///
+    /// HEAD レスポンスで使用する。HEAD レスポンスではボディを送信しないが、
+    /// Content-Length は GET と同じ値を返すべき (RFC 9110 Section 9.3.2)。
+    /// このメソッドで true を設定し、明示的に Content-Length ヘッダーを追加する。
+    pub fn omit_content_length(mut self, omit: bool) -> Self {
+        self.omit_content_length = omit;
+        self
     }
 
     /// ヘッダーを追加 (ビルダーパターン)
@@ -106,14 +124,24 @@ impl Response {
     ///
     /// HTTP/1.1 ではデフォルトでキープアライブ
     /// HTTP/1.0 では Connection: keep-alive が必要
+    /// Connection ヘッダーはカンマ区切りのトークンリストとして扱う (RFC 9110)
     pub fn is_keep_alive(&self) -> bool {
-        if let Some(conn) = self.connection() {
-            if conn.eq_ignore_ascii_case("close") {
-                return false;
+        let mut has_keep_alive = false;
+        for (name, value) in &self.headers {
+            if name.eq_ignore_ascii_case("Connection") {
+                for token in value.split(',') {
+                    let token = token.trim();
+                    if token.eq_ignore_ascii_case("close") {
+                        return false;
+                    }
+                    if token.eq_ignore_ascii_case("keep-alive") {
+                        has_keep_alive = true;
+                    }
+                }
             }
-            if conn.eq_ignore_ascii_case("keep-alive") {
-                return true;
-            }
+        }
+        if has_keep_alive {
+            return true;
         }
         // HTTP/1.1 はデフォルトでキープアライブ
         self.version.ends_with("/1.1")
@@ -126,9 +154,22 @@ impl Response {
     }
 
     /// Transfer-Encoding が chunked かどうかを判定
+    ///
+    /// Transfer-Encoding リストの最後が chunked かどうかを確認する (RFC 9112)
+    /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
     pub fn is_chunked(&self) -> bool {
-        self.get_header("Transfer-Encoding")
-            .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+        let mut last_token: Option<&str> = None;
+        for (name, value) in &self.headers {
+            if name.eq_ignore_ascii_case("Transfer-Encoding") {
+                for token in value.split(',') {
+                    let token = token.trim();
+                    if !token.is_empty() {
+                        last_token = Some(token);
+                    }
+                }
+            }
+        }
+        last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
     }
 
     /// ステータスコードが情報レスポンス (1xx) か確認
