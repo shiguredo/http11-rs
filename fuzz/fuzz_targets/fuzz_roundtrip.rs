@@ -75,7 +75,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
 
                 let mut decoded_body = Vec::new();
                 match body_kind {
-                    BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                    BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                         while let Some(body_data) = decoder.peek_body() {
                             decoded_body.extend_from_slice(body_data);
                             let len = body_data.len();
@@ -131,7 +131,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                 let mut decoded_body = Vec::new();
                 if has_body {
                     match body_kind {
-                        BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                        BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                             while let Some(body_data) = decoder.peek_body() {
                                 decoded_body.extend_from_slice(body_data);
                                 let len = body_data.len();

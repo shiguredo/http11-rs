@@ -41,8 +41,7 @@ fn expected_content_length(headers: &[(String, String)]) -> Option<usize> {
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {
-    header_value(headers, "Transfer-Encoding")
-        .is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+    header_value(headers, "Transfer-Encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
 }
 
 fn expected_keep_alive(version: &str, connection: Option<&str>) -> bool {
@@ -124,8 +123,14 @@ fn exercise_response(input: FuzzResponse) {
 
     assert_eq!(response.is_success(), (200..300).contains(&status_code));
     assert_eq!(response.is_redirect(), (300..400).contains(&status_code));
-    assert_eq!(response.is_client_error(), (400..500).contains(&status_code));
-    assert_eq!(response.is_server_error(), (500..600).contains(&status_code));
+    assert_eq!(
+        response.is_client_error(),
+        (400..500).contains(&status_code)
+    );
+    assert_eq!(
+        response.is_server_error(),
+        (500..600).contains(&status_code)
+    );
     assert_eq!(
         response.is_informational(),
         (100..200).contains(&status_code)

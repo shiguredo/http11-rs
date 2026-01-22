@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::uri::{Uri, percent_decode, percent_encode, resolve, normalize};
+use shiguredo_http11::uri::{Uri, normalize, percent_decode, percent_encode, resolve};
 
 fuzz_target!(|data: &[u8]| {
     // UTF-8 文字列として解釈できる場合のみテスト

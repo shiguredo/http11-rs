@@ -29,7 +29,7 @@ fuzz_target!(|input: FuzzLimits| {
     let _ = request_decoder.feed(&input.data);
     if let Ok(Some((_, body_kind))) = request_decoder.decode_headers() {
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                 while let Some(body_data) = request_decoder.peek_body() {
                     let len = body_data.len();
                     match request_decoder.consume_body(len) {
@@ -47,7 +47,7 @@ fuzz_target!(|input: FuzzLimits| {
     let _ = response_decoder.feed(&input.data);
     if let Ok(Some((_, body_kind))) = response_decoder.decode_headers() {
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => {
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                 while let Some(body_data) = response_decoder.peek_body() {
                     let len = body_data.len();
                     match response_decoder.consume_body(len) {

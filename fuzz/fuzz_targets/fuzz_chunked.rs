@@ -3,8 +3,8 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::{
-    encode_chunk, encode_chunks, encode_request_headers, encode_response_headers, BodyKind,
-    BodyProgress, Request, RequestDecoder, Response, ResponseDecoder,
+    BodyKind, BodyProgress, Request, RequestDecoder, Response, ResponseDecoder, encode_chunk,
+    encode_chunks, encode_request_headers, encode_response_headers,
 };
 
 #[derive(Arbitrary, Debug)]
@@ -52,7 +52,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
         }
 
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => loop {
                 if let Some(body_data) = decoder.peek_body() {
                     decoded_body.extend_from_slice(body_data);
                     let len = body_data.len();
@@ -86,7 +86,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     }
 
     match body_kind {
-        BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+        BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => loop {
             if let Some(body_data) = decoder.peek_body() {
                 decoded_body.extend_from_slice(body_data);
                 let len = body_data.len();
@@ -130,7 +130,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
         }
 
         match body_kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => loop {
                 if let Some(body_data) = decoder.peek_body() {
                     decoded_body.extend_from_slice(body_data);
                     let len = body_data.len();
@@ -164,7 +164,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
     }
 
     match body_kind {
-        BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
+        BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => loop {
             if let Some(body_data) = decoder.peek_body() {
                 decoded_body.extend_from_slice(body_data);
                 let len = body_data.len();

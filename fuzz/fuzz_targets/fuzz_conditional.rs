@@ -1,7 +1,9 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::conditional::{IfMatch, IfModifiedSince, IfNoneMatch, IfRange, IfUnmodifiedSince};
+use shiguredo_http11::conditional::{
+    IfMatch, IfModifiedSince, IfNoneMatch, IfRange, IfUnmodifiedSince,
+};
 use shiguredo_http11::etag::EntityTag;
 
 fuzz_target!(|data: &[u8]| {

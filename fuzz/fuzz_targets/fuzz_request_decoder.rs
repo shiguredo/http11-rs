@@ -10,7 +10,7 @@ fuzz_target!(|data: &[u8]| {
     if decoder.feed(data).is_ok() {
         if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
             match body_kind {
-                BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                     while let Some(body_data) = decoder.peek_body() {
                         let len = body_data.len();
                         match decoder.consume_body(len) {
@@ -33,7 +33,7 @@ fuzz_target!(|data: &[u8]| {
         }
         if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
             match body_kind {
-                BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
                     while let Some(body_data) = decoder.peek_body() {
                         let len = body_data.len();
                         match decoder.consume_body(len) {

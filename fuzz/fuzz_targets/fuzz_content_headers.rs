@@ -4,7 +4,9 @@ use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::content_encoding::ContentEncoding;
 use shiguredo_http11::content_language::ContentLanguage;
 use shiguredo_http11::content_location::ContentLocation;
-use shiguredo_http11::digest_fields::{ContentDigest, ReprDigest, WantContentDigest, WantReprDigest};
+use shiguredo_http11::digest_fields::{
+    ContentDigest, ReprDigest, WantContentDigest, WantReprDigest,
+};
 use shiguredo_http11::expect::Expect;
 use shiguredo_http11::host::Host;
 use shiguredo_http11::trailer::Trailer;
