@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
+    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Request, RequestDecoder, Response,
     ResponseDecoder, ResponseHead, encode_chunk, encode_chunks,
 };
 
@@ -1189,7 +1189,9 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
         let data = "x".repeat(data_size);
-        prop_assert!(decoder.feed(data.as_bytes()).is_err());
+        let result = decoder.feed(data.as_bytes());
+        let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
+        prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
     }
 }
 
@@ -1207,7 +1209,9 @@ proptest! {
         if extra_bytes == 0 {
             prop_assert!(decoder.feed(data.as_bytes()).is_ok());
         } else {
-            prop_assert!(decoder.feed(data.as_bytes()).is_err());
+            let result = decoder.feed(data.as_bytes());
+            let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
+            prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
         }
     }
 }
@@ -1225,7 +1229,9 @@ proptest! {
         let header_value = "x".repeat(header_value_len);
         let data = format!("GET / HTTP/1.1\r\nX-Long: {}\r\n\r\n", header_value);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.decode_headers().is_err());
+        let result = decoder.decode_headers();
+        let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
+        prop_assert!(is_header_line_too_long, "expected HeaderLineTooLong, got {:?}", result);
     }
 }
 
@@ -1245,7 +1251,9 @@ proptest! {
             .join("\r\n");
         let data = format!("GET / HTTP/1.1\r\n{}\r\n\r\n", headers);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.decode_headers().is_err());
+        let result = decoder.decode_headers();
+        let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
+        prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
     }
 }
 
@@ -1270,7 +1278,9 @@ proptest! {
         if extra_headers == 0 {
             prop_assert!(decoder.decode_headers().is_ok());
         } else {
-            prop_assert!(decoder.decode_headers().is_err());
+            let result = decoder.decode_headers();
+            let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
+            prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
         }
     }
 }
@@ -1385,7 +1395,9 @@ proptest! {
         };
         let mut decoder = ResponseDecoder::with_limits(limits);
         let data = "x".repeat(data_size);
-        prop_assert!(decoder.feed(data.as_bytes()).is_err());
+        let result = decoder.feed(data.as_bytes());
+        let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
+        prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
     }
 }
 
@@ -1402,7 +1414,9 @@ proptest! {
         let header_value = "x".repeat(header_value_len);
         let data = format!("HTTP/1.1 200 OK\r\nX-Long: {}\r\n\r\n", header_value);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.decode_headers().is_err());
+        let result = decoder.decode_headers();
+        let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
+        prop_assert!(is_header_line_too_long, "expected HeaderLineTooLong, got {:?}", result);
     }
 }
 
@@ -1422,7 +1436,9 @@ proptest! {
             .join("\r\n");
         let data = format!("HTTP/1.1 200 OK\r\n{}\r\n\r\n", headers);
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.decode_headers().is_err());
+        let result = decoder.decode_headers();
+        let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
+        prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
     }
 }
 
@@ -1440,7 +1456,8 @@ proptest! {
         let data = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err());
+        let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
+        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
     }
 }
 
@@ -2771,5 +2788,63 @@ proptest! {
         } else {
             prop_assert!(!head.is_keep_alive());
         }
+    }
+}
+
+// ========================================
+// ChunkLineTooLong PBT
+// ========================================
+
+proptest! {
+    #[test]
+    fn response_decoder_chunk_line_too_long(
+        ext_len in 100..200usize
+    ) {
+        let limits = DecoderLimits {
+            max_chunk_line_size: 64,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = ResponseDecoder::with_limits(limits);
+        // Transfer-Encoding: chunked のレスポンス
+        decoder.feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n").unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Chunked);
+
+        // max_chunk_line_size を超える長いチャンク拡張を持つチャンクサイズ行
+        let ext = "x".repeat(ext_len);
+        let chunk_line = format!("5;ext={}\r\nhello\r\n0\r\n\r\n", ext);
+        decoder.feed(chunk_line.as_bytes()).unwrap();
+
+        // progress() でチャンクサイズ行をパースしようとするとエラー
+        let result = decoder.progress();
+        let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
+        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
+    }
+}
+
+proptest! {
+    #[test]
+    fn request_decoder_chunk_line_too_long(
+        ext_len in 100..200usize
+    ) {
+        let limits = DecoderLimits {
+            max_chunk_line_size: 64,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = RequestDecoder::with_limits(limits);
+        // Transfer-Encoding: chunked のリクエスト
+        decoder.feed(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n").unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Chunked);
+
+        // max_chunk_line_size を超える長いチャンク拡張を持つチャンクサイズ行
+        let ext = "x".repeat(ext_len);
+        let chunk_line = format!("5;ext={}\r\nhello\r\n0\r\n\r\n", ext);
+        decoder.feed(chunk_line.as_bytes()).unwrap();
+
+        // progress() でチャンクサイズ行をパースしようとするとエラー
+        let result = decoder.progress();
+        let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
+        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
     }
 }
