@@ -18,5 +18,5 @@ members = [
     "examples/http11_server",
     "examples/http11_reverse_proxy",
     "pbt",
-    "fuzz",
 ]
+exclude = ["fuzz"]
