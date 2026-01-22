@@ -29,9 +29,20 @@ fn header_name() -> impl Strategy<Value = String> {
     token_string(32)
 }
 
-// HTTP ヘッダー値 (CRLF を含まない)
+// HTTP ヘッダー値 (RFC 9110 Section 5.5)
+// field-vchar = VCHAR / obs-text
+// VCHAR = %x21-7E, obs-text = %x80-FF, SP = 0x20, HTAB = 0x09
+fn header_value_char() -> impl Strategy<Value = char> {
+    prop_oneof![
+        prop::char::range('!', '~'), // VCHAR: 0x21-0x7E
+        Just(' '),                   // SP: 0x20
+        Just('\t'),                  // HTAB: 0x09
+    ]
+}
+
 fn header_value() -> impl Strategy<Value = String> {
-    "[^\r\n]{0,64}".prop_filter("non-empty preferred", |s| !s.is_empty())
+    proptest::collection::vec(header_value_char(), 1..=64)
+        .prop_map(|chars| chars.into_iter().collect())
 }
 
 // HTTP メソッド

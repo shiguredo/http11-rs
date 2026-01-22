@@ -5,7 +5,8 @@ use crate::limits::DecoderLimits;
 use crate::response::Response;
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, resolve_body_headers,
+    BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_reason_phrase,
+    is_valid_status_code, parse_header_line, resolve_body_headers,
 };
 use super::head::ResponseHead;
 use super::phase::DecodePhase;
@@ -192,6 +193,13 @@ impl ResponseDecoder {
                             .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
                         self.buf.drain(..pos + 2);
 
+                        // CR/LF チェック (埋め込まれた改行を拒否)
+                        if line.contains('\r') || line.contains('\n') {
+                            return Err(Error::InvalidData(
+                                "invalid status line: contains CR/LF".to_string(),
+                            ));
+                        }
+
                         // Parse: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() < 2 {
@@ -199,6 +207,36 @@ impl ResponseDecoder {
                                 "invalid status line: {}",
                                 line
                             )));
+                        }
+
+                        // HTTP バージョンの検証 (RFC 9112 Section 2.3)
+                        if !is_valid_http_version(parts[0]) {
+                            return Err(Error::InvalidData(
+                                "invalid status line: invalid HTTP version".to_string(),
+                            ));
+                        }
+
+                        // ステータスコードの検証 (RFC 9110 Section 15)
+                        let status_code: u16 = parts[1].parse().map_err(|_| {
+                            Error::InvalidData(format!(
+                                "invalid status line: invalid status code: {}",
+                                parts[1]
+                            ))
+                        })?;
+                        if !is_valid_status_code(status_code) {
+                            return Err(Error::InvalidData(format!(
+                                "invalid status line: status code out of range: {}",
+                                status_code
+                            )));
+                        }
+
+                        // reason-phrase の検証 (RFC 9112 Section 4)
+                        if let Some(reason) = parts.get(2)
+                            && !is_valid_reason_phrase(reason)
+                        {
+                            return Err(Error::InvalidData(
+                                "invalid status line: invalid reason-phrase".to_string(),
+                            ));
                         }
 
                         self.start_line = Some(line);

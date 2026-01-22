@@ -40,8 +40,20 @@ fn header_name() -> impl Strategy<Value = String> {
     "[A-Za-z][A-Za-z0-9-]{0,31}".prop_map(|s| s)
 }
 
+// HTTP ヘッダー値 (RFC 9110 Section 5.5)
+// field-vchar = VCHAR / obs-text
+// VCHAR = %x21-7E, obs-text = %x80-FF, SP = 0x20, HTAB = 0x09
+fn header_value_char() -> impl Strategy<Value = char> {
+    prop_oneof![
+        prop::char::range('!', '~'), // VCHAR: 0x21-0x7E
+        Just(' '),                   // SP: 0x20
+        Just('\t'),                  // HTAB: 0x09
+    ]
+}
+
 fn header_value() -> impl Strategy<Value = String> {
-    "[^\r\n]{1,64}".prop_map(|s| s)
+    proptest::collection::vec(header_value_char(), 1..=64)
+        .prop_map(|chars| chars.into_iter().collect())
 }
 
 // ========================================

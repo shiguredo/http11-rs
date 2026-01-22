@@ -270,6 +270,14 @@ impl BodyDecoder {
         }
 
         if let Some(pos) = find_line(buf) {
+            // チャンクサイズ行の長さ制限チェック
+            if pos > limits.max_chunk_line_size {
+                return Err(Error::ChunkLineTooLong {
+                    size: pos,
+                    limit: limits.max_chunk_line_size,
+                });
+            }
+
             let line = String::from_utf8(buf[..pos].to_vec())
                 .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
             buf.drain(..pos + 2);
@@ -388,7 +396,15 @@ pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
         ));
     }
 
-    Ok((name.to_string(), value.trim().to_string()))
+    // ヘッダー値の検証 (RFC 9110 Section 5.5)
+    let trimmed_value = value.trim();
+    if !is_valid_field_value(trimmed_value) {
+        return Err(Error::InvalidData(
+            "invalid header line: invalid value (contains control characters)".to_string(),
+        ));
+    }
+
+    Ok((name.to_string(), trimmed_value.to_string()))
 }
 
 /// ヘッダー名が有効か確認
@@ -403,6 +419,71 @@ pub(crate) fn is_token_char(b: u8) -> bool {
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
         b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
     )
+}
+
+/// ヘッダー値に許可される文字か確認 (RFC 9110 Section 5.5)
+///
+/// field-value = *field-content
+/// field-vchar = VCHAR / obs-text
+/// VCHAR = %x21-7E (可視文字)
+/// obs-text = %x80-FF
+///
+/// SP (0x20) と HTAB (0x09) も許可される (field-content の一部)
+pub(crate) fn is_valid_field_vchar(b: u8) -> bool {
+    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
+}
+
+/// ヘッダー値が有効か確認 (RFC 9110 Section 5.5)
+///
+/// 制御文字 (0x00-0x08, 0x0A-0x1F, 0x7F) を含む場合は無効
+pub(crate) fn is_valid_field_value(value: &str) -> bool {
+    value.bytes().all(is_valid_field_vchar)
+}
+
+/// メソッド名が有効か確認 (RFC 9110 Section 9)
+///
+/// method = token
+pub(crate) fn is_valid_method(method: &str) -> bool {
+    !method.is_empty() && method.bytes().all(is_token_char)
+}
+
+/// HTTP バージョンが有効か確認 (RFC 9112 Section 2.3)
+///
+/// HTTP-version = HTTP-name "/" DIGIT "." DIGIT
+/// HTTP-name = %s"HTTP"
+///
+/// HTTP/1.0 または HTTP/1.1 のみ許可
+pub(crate) fn is_valid_http_version(version: &str) -> bool {
+    matches!(version, "HTTP/1.0" | "HTTP/1.1")
+}
+
+/// リクエストターゲット (URI) が有効か確認
+///
+/// NUL バイト (0x00) や制御文字を含む場合は無効
+/// RFC 9112 Section 3: request-target には制御文字を含めない
+pub(crate) fn is_valid_request_target(target: &str) -> bool {
+    !target.is_empty()
+        && target
+            .bytes()
+            .all(|b| matches!(b, 0x21..=0x7E | 0x80..=0xFF))
+}
+
+/// ステータスコードが有効か確認 (RFC 9110 Section 15)
+///
+/// ステータスコードは 3 桁の数字で、100-599 の範囲
+pub(crate) fn is_valid_status_code(code: u16) -> bool {
+    (100..=599).contains(&code)
+}
+
+/// reason-phrase が有効か確認 (RFC 9112 Section 4)
+///
+/// reason-phrase = 1*( HTAB / SP / VCHAR / obs-text )
+/// VCHAR = %x21-7E
+/// obs-text = %x80-FF
+pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
+    phrase
+        .bytes()
+        .all(|b| matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF))
 }
 
 /// Transfer-Encoding ヘッダーを解析

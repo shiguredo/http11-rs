@@ -13,6 +13,8 @@ pub enum Error {
     HeaderLineTooLong { size: usize, limit: usize },
     /// ボディサイズ超過
     BodyTooLarge { size: usize, limit: usize },
+    /// チャンクサイズ行が長すぎる
+    ChunkLineTooLong { size: usize, limit: usize },
 }
 
 impl fmt::Display for Error {
@@ -30,6 +32,9 @@ impl fmt::Display for Error {
             }
             Error::BodyTooLarge { size, limit } => {
                 write!(f, "body too large: {} > {}", size, limit)
+            }
+            Error::ChunkLineTooLong { size, limit } => {
+                write!(f, "chunk line too long: {} > {}", size, limit)
             }
         }
     }

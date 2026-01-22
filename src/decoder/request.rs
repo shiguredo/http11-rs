@@ -5,7 +5,8 @@ use crate::limits::DecoderLimits;
 use crate::request::Request;
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, resolve_body_headers,
+    BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_method,
+    is_valid_request_target, parse_header_line, resolve_body_headers,
 };
 use super::head::RequestHead;
 use super::phase::DecodePhase;
@@ -153,6 +154,27 @@ impl RequestDecoder {
                                 "invalid request line: {}",
                                 line
                             )));
+                        }
+
+                        // メソッド名の検証 (RFC 9110 Section 9)
+                        if !is_valid_method(parts[0]) {
+                            return Err(Error::InvalidData(
+                                "invalid request line: invalid method".to_string(),
+                            ));
+                        }
+
+                        // リクエストターゲットの検証 (RFC 9112 Section 3)
+                        if !is_valid_request_target(parts[1]) {
+                            return Err(Error::InvalidData(
+                                "invalid request line: invalid request-target".to_string(),
+                            ));
+                        }
+
+                        // HTTP バージョンの検証 (RFC 9112 Section 2.3)
+                        if !is_valid_http_version(parts[2]) {
+                            return Err(Error::InvalidData(
+                                "invalid request line: invalid HTTP version".to_string(),
+                            ));
                         }
 
                         self.start_line = Some(line);

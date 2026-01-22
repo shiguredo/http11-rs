@@ -16,6 +16,7 @@ fn decoder_limits_default_values() {
     assert_eq!(limits.max_headers_count, 100);
     assert_eq!(limits.max_header_line_size, 8 * 1024); // 8KB
     assert_eq!(limits.max_body_size, 10 * 1024 * 1024); // 10MB
+    assert_eq!(limits.max_chunk_line_size, 64); // 64 bytes
 }
 
 // unlimited のプロパティ: 各フィールドが usize::MAX
@@ -27,6 +28,7 @@ fn decoder_limits_unlimited_values() {
     assert_eq!(limits.max_headers_count, usize::MAX);
     assert_eq!(limits.max_header_line_size, usize::MAX);
     assert_eq!(limits.max_body_size, usize::MAX);
+    assert_eq!(limits.max_chunk_line_size, usize::MAX);
 }
 
 // Clone のプロパティ: クローンが元と等しい
@@ -36,13 +38,15 @@ proptest! {
         max_buffer_size in 1usize..1_000_000,
         max_headers_count in 1usize..1000,
         max_header_line_size in 1usize..100_000,
-        max_body_size in 1usize..100_000_000
+        max_body_size in 1usize..100_000_000,
+        max_chunk_line_size in 1usize..1000
     ) {
         let limits = DecoderLimits {
             max_buffer_size,
             max_headers_count,
             max_header_line_size,
             max_body_size,
+            max_chunk_line_size,
         };
 
         let cloned = limits.clone();
@@ -91,4 +95,5 @@ fn decoder_limits_debug() {
     assert!(debug_str.contains("max_headers_count"));
     assert!(debug_str.contains("max_header_line_size"));
     assert!(debug_str.contains("max_body_size"));
+    assert!(debug_str.contains("max_chunk_line_size"));
 }
