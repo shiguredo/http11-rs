@@ -1,12 +1,12 @@
-.PHONY: test pbt fuzzing fuzzing-list check clippy fmt clean
+.PHONY: test cover pbt pbt-cover fuzz fuzzing fuzzing-list check clippy fmt clean
 
-# 単体テストを実行する
+# 全テストを実行する
 test:
-	cargo test
+	cargo test --workspace
 
-# PBT を実行する
-pbt:
-	cargo test -p pbt
+# 全テストカバレッジ付きで実行する
+cover:
+	cargo llvm-cov --tests --workspace
 
 # PBT をカバレッジ付きで実行する
 pbt-with-cover:
