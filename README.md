@@ -64,6 +64,28 @@ let bytes = response.encode();
 // bytes を送信...
 ```
 
+### ストリーミングデコード
+
+大きなボディを扱う場合や、ボディを受信しながら処理したい場合はストリーミング API を使用します。
+
+- `decode_headers()` - ヘッダーをデコードして `(RequestHead/ResponseHead, BodyKind)` を返す
+- `peek_body()` - 利用可能なボディデータをゼロコピーで取得
+- `consume_body(len)` - ボディデータを消費して `BodyProgress` を返す
+- `progress()` - 状態機械を進める (Chunked のチャンクサイズ行パース等)
+- `mark_eof()` - 接続終了を通知 (close-delimited ボディ用、ResponseDecoder のみ)
+
+`BodyKind` はボディの種類を表します:
+
+- `ContentLength(usize)` - Content-Length による固定長
+- `Chunked` - Transfer-Encoding: chunked
+- `CloseDelimited` - 接続終了までがボディ (レスポンスのみ、RFC 9112)
+- `None` - ボディなし
+
+`BodyProgress` はデコードの進捗を表します:
+
+- `Continue` - 継続中
+- `Complete { trailers }` - 完了 (トレーラーヘッダーがある場合は含む)
+
 ## HTTP/1.1
 
 このライブラリが対応している HTTP/1.1 の仕組みです。
