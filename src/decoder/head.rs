@@ -77,13 +77,20 @@ pub trait HttpHead {
     /// RFC 9112: chunked のみの場合に true を返す。
     /// chunked 以外のトークンがある場合は false を返す
     /// (parse_transfer_encoding_chunked と整合)。
+    /// RFC 9110 Section 5.3: 複数の同名ヘッダーは結合して単一のリストとして扱う。
     fn is_chunked(&self) -> bool {
-        self.get_header("Transfer-Encoding").is_some_and(|v| {
-            // カンマ区切りトークンリストとして解析
-            // chunked のみの場合に true (RFC 9112 準拠)
-            let tokens: Vec<&str> = v.split(',').map(|t| t.trim()).collect();
-            tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("chunked")
-        })
+        let te_headers = self.get_headers("Transfer-Encoding");
+        if te_headers.is_empty() {
+            return false;
+        }
+        // 全ての Transfer-Encoding ヘッダーを結合してトークンリストを構築
+        let tokens: Vec<&str> = te_headers
+            .iter()
+            .flat_map(|v| v.split(',').map(|t| t.trim()))
+            .filter(|t| !t.is_empty())
+            .collect();
+        // chunked のみの場合に true (RFC 9112 準拠)
+        tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("chunked")
     }
 }
 

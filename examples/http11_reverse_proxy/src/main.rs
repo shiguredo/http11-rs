@@ -526,11 +526,9 @@ async fn stream_response_on_connection(
     // Keep-Alive かどうかで再利用可能性を判定
     let mut can_reuse = resp_head.is_keep_alive();
 
-    // TODO: ライブラリ側で BodyKind::CloseDelimited のフルサポートを検討
     // RFC 9112 Section 6.3: Content-Length も Transfer-Encoding: chunked もない場合、
     // 接続が閉じるまでをボディとする (close-delimited body)
-    let is_close_delimited =
-        matches!(body_kind, BodyKind::None) && status_may_have_body(resp_head.status_code);
+    let is_close_delimited = matches!(body_kind, BodyKind::CloseDelimited);
 
     if is_close_delimited {
         can_reuse = false;
@@ -557,8 +555,11 @@ async fn stream_response_on_connection(
         .collect();
 
     let use_chunked = matches!(body_kind, BodyKind::Chunked);
+    let is_head = method.eq_ignore_ascii_case("HEAD");
+    // HEAD の場合は元のヘッダーから Content-Length を取得 (RFC 9110 Section 9.3.2)
     let content_length = match body_kind {
         BodyKind::ContentLength(len) => Some(len),
+        BodyKind::None if is_head => resp_head.content_length(),
         _ => None,
     };
 
@@ -733,16 +734,6 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     }
 
     connection_headers.contains(&name_lower)
-}
-
-/// ステータスコードがボディを持つ可能性があるか判定
-///
-/// RFC 9110 に基づき、以下のレスポンスはボディを持たない:
-/// - 1xx (情報レスポンス)
-/// - 204 No Content
-/// - 304 Not Modified
-fn status_may_have_body(status_code: u16) -> bool {
-    !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
 }
 
 fn log_debug(enabled: bool, message: &str) {

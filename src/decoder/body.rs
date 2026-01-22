@@ -129,7 +129,13 @@ impl BodyDecoder {
 
                 buf.drain(..len);
                 *remaining -= len;
-                self.body_consumed += len;
+                self.body_consumed =
+                    self.body_consumed
+                        .checked_add(len)
+                        .ok_or(Error::BodyTooLarge {
+                            size: usize::MAX,
+                            limit: limits.max_body_size,
+                        })?;
 
                 if *remaining == 0 {
                     *phase = DecodePhase::Complete;
@@ -164,7 +170,13 @@ impl BodyDecoder {
 
                 buf.drain(..len);
                 *remaining -= len;
-                self.body_consumed += len;
+                self.body_consumed =
+                    self.body_consumed
+                        .checked_add(len)
+                        .ok_or(Error::BodyTooLarge {
+                            size: usize::MAX,
+                            limit: limits.max_body_size,
+                        })?;
 
                 if *remaining == 0 {
                     // チャンクデータ終了、CRLF 待ちへ遷移
@@ -216,16 +228,23 @@ impl BodyDecoder {
                     ));
                 }
 
-                buf.drain(..len);
-                self.body_consumed += len;
-
-                // max_body_size チェック
-                if self.body_consumed > limits.max_body_size {
+                // max_body_size チェック (加算前にオーバーフロー検出)
+                let new_size = self
+                    .body_consumed
+                    .checked_add(len)
+                    .ok_or(Error::BodyTooLarge {
+                        size: usize::MAX,
+                        limit: limits.max_body_size,
+                    })?;
+                if new_size > limits.max_body_size {
                     return Err(Error::BodyTooLarge {
-                        size: self.body_consumed,
+                        size: new_size,
                         limit: limits.max_body_size,
                     });
                 }
+
+                buf.drain(..len);
+                self.body_consumed = new_size;
 
                 // close-delimited は mark_eof() が呼ばれるまで Continue
                 Ok(BodyProgress::Continue)
@@ -264,7 +283,13 @@ impl BodyDecoder {
                 *phase = DecodePhase::ChunkedTrailer;
                 return self.process_trailers(buf, phase, limits);
             } else {
-                let new_size = self.body_consumed + chunk_size;
+                let new_size =
+                    self.body_consumed
+                        .checked_add(chunk_size)
+                        .ok_or(Error::BodyTooLarge {
+                            size: usize::MAX,
+                            limit: limits.max_body_size,
+                        })?;
                 if new_size > limits.max_body_size {
                     return Err(Error::BodyTooLarge {
                         size: new_size,
