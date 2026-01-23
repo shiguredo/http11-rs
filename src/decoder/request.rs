@@ -170,10 +170,19 @@ impl<D: Decompressor> RequestDecoder<D> {
     }
 
     /// ボディモードを決定
-    fn determine_body_kind(&self) -> Result<BodyKind, Error> {
+    ///
+    /// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
+    /// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする
+    fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
         let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
 
         if transfer_encoding_chunked {
+            // RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていない
+            if version == "HTTP/1.0" {
+                return Err(Error::InvalidData(
+                    "Transfer-Encoding is not defined in HTTP/1.0".to_string(),
+                ));
+            }
             return Ok(BodyKind::Chunked);
         }
 
@@ -275,7 +284,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 }
                             }
 
-                            let body_kind = self.determine_body_kind()?;
+                            let body_kind = self.determine_body_kind(version)?;
 
                             // ヘッダー完了、ボディフェーズに遷移
                             // RFC 9112: リクエストは close-delimited を使わない

@@ -268,3 +268,71 @@ fn close_delimited_decode_with_mark_eof() {
     let response = decoder.decode().unwrap().unwrap();
     assert_eq!(response.body, b"body data");
 }
+
+/// HTTP/1.0 リクエストで Transfer-Encoding が指定された場合のエラーテスト
+///
+/// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
+/// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする。
+#[test]
+fn http10_with_transfer_encoding_should_fail() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / HTTP/1.0\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Transfer-Encoding is not defined in HTTP/1.0"),
+        "unexpected error message: {}",
+        err
+    );
+}
+
+/// HTTP/1.1 リクエストで Transfer-Encoding が指定された場合は正常（対照テスト）
+#[test]
+fn http11_with_transfer_encoding_should_succeed() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok());
+    let (_, body_kind) = result.unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+}
+
+/// リクエストターゲットにパーセントエンコーディングされた null バイト (%00) が含まれる場合のエラーテスト
+///
+/// セキュリティ上の理由から、%00 (null バイト注入) は拒否する。
+#[test]
+fn request_target_with_percent_encoded_null_should_fail() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET /path%00file HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("invalid request-target"),
+        "unexpected error message: {}",
+        err
+    );
+}
+
+/// リクエストターゲットに %00 が含まれない場合は正常（対照テスト）
+#[test]
+fn request_target_without_percent_encoded_null_should_succeed() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET /path%20file HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok());
+}

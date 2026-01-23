@@ -461,11 +461,44 @@ pub(crate) fn is_valid_http_version(version: &str) -> bool {
 ///
 /// NUL バイト (0x00) や制御文字を含む場合は無効
 /// RFC 9112 Section 3: request-target には制御文字を含めない
+///
+/// また、パーセントエンコーディングされた NUL バイト (%00) も拒否する
+/// これはセキュリティ上の理由による（null バイト注入攻撃の防止）
 pub(crate) fn is_valid_request_target(target: &str) -> bool {
-    !target.is_empty()
-        && target
-            .bytes()
-            .all(|b| matches!(b, 0x21..=0x7E | 0x80..=0xFF))
+    if target.is_empty() {
+        return false;
+    }
+
+    // 生の制御文字のチェック
+    if !target
+        .bytes()
+        .all(|b| matches!(b, 0x21..=0x7E | 0x80..=0xFF))
+    {
+        return false;
+    }
+
+    // パーセントエンコーディングされた NUL バイト (%00) のチェック
+    // 大文字・小文字の両方をチェック
+    !contains_percent_encoded_null(target)
+}
+
+/// パーセントエンコーディングされた NUL バイト (%00) を含むかチェック
+fn contains_percent_encoded_null(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+
+    while i + 2 < len {
+        if bytes[i] == b'%' {
+            // %00 のチェック（大文字・小文字両方）
+            if bytes[i + 1] == b'0' && bytes[i + 2] == b'0' {
+                return true;
+            }
+        }
+        i += 1;
+    }
+
+    false
 }
 
 /// ステータスコードが有効か確認 (RFC 9110 Section 15)
