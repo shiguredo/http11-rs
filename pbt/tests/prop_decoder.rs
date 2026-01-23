@@ -2856,3 +2856,69 @@ proptest! {
         prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
     }
 }
+
+// ========================================
+// 小文字メソッドの拒否テスト
+// ========================================
+
+proptest! {
+    #![proptest_config(proptest::prelude::ProptestConfig::with_cases(100))]
+
+    /// 小文字メソッドが拒否されることを確認
+    #[test]
+    fn prop_lowercase_method_rejected(
+        method in prop_oneof![
+            Just("get"),
+            Just("post"),
+            Just("put"),
+            Just("delete"),
+            Just("Get"),
+            Just("Post"),
+            Just("gET"),
+        ]
+    ) {
+        let mut decoder = RequestDecoder::new();
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err(), "expected error for lowercase method '{}', got {:?}", method, result);
+    }
+
+    /// 大文字メソッドが許可されることを確認
+    #[test]
+    fn prop_uppercase_method_allowed(
+        method in prop_oneof![
+            Just("GET"),
+            Just("POST"),
+            Just("PUT"),
+            Just("DELETE"),
+            Just("HEAD"),
+            Just("OPTIONS"),
+            Just("PATCH"),
+        ]
+    ) {
+        let mut decoder = RequestDecoder::new();
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_ok(), "expected success for uppercase method '{}', got {:?}", method, result);
+    }
+
+    /// アンダースコアとハイフンを含むメソッドが許可されることを確認
+    #[test]
+    fn prop_method_with_underscore_hyphen_allowed(
+        method in prop_oneof![
+            Just("X-CUSTOM"),
+            Just("MY_METHOD"),
+            Just("GET_PARAMETER"),
+            Just("SET_PARAMETER"),
+            Just("X-MY-METHOD"),
+        ]
+    ) {
+        let mut decoder = RequestDecoder::new();
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_ok(), "expected success for method with underscore/hyphen '{}', got {:?}", method, result);
+    }
+}

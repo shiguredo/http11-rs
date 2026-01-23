@@ -440,11 +440,18 @@ pub(crate) fn is_valid_field_value(value: &str) -> bool {
     value.bytes().all(is_valid_field_vchar)
 }
 
-/// メソッド名が有効か確認 (RFC 9110 Section 9)
+/// メソッド名が有効か確認
 ///
-/// method = token
+/// RFC 9110 Section 9 では method = token と定義されているが、
+/// セキュリティ上の理由から大文字アルファベット、アンダースコア、ハイフンのみを許可する。
+/// 小文字メソッドは正当なクライアントが使用しないため拒否する。
+///
+/// アンダースコアは RTSP (RFC 7826) の GET_PARAMETER, SET_PARAMETER などで使用されるため許可する。
 pub(crate) fn is_valid_method(method: &str) -> bool {
-    !method.is_empty() && method.bytes().all(is_token_char)
+    !method.is_empty()
+        && method
+            .bytes()
+            .all(|b| matches!(b, b'A'..=b'Z' | b'_' | b'-'))
 }
 
 /// HTTP バージョンが有効か確認 (RFC 9112 Section 2.3)
