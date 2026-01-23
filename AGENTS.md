@@ -44,7 +44,7 @@
 
 ## pre-commit
 
-- cargo fmt / cargo clippy / cargo check / cargo test を実行すること
+- make fmt / make clippy / make check / make test を実行すること
 
 ## Rust
 
