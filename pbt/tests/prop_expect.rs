@@ -64,7 +64,7 @@ fn quoted_string_content() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn expect_error_display() {
+fn prop_expect_error_display() {
     let errors = [
         (ExpectError::Empty, "empty Expect header"),
         (ExpectError::InvalidFormat, "invalid Expect header format"),
@@ -78,13 +78,13 @@ fn expect_error_display() {
 }
 
 #[test]
-fn expect_error_is_error_trait() {
+fn prop_expect_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(ExpectError::Empty);
     assert_eq!(error.to_string(), "empty Expect header");
 }
 
 #[test]
-fn expect_error_clone_eq() {
+fn prop_expect_error_clone_eq() {
     let error = ExpectError::InvalidToken;
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -95,7 +95,7 @@ fn expect_error_clone_eq() {
 // ========================================
 
 #[test]
-fn expect_100_continue() {
+fn prop_expect_100_continue() {
     let expect = Expect::parse("100-continue").unwrap();
     assert!(expect.has_100_continue());
     assert_eq!(expect.items().len(), 1);
@@ -103,7 +103,7 @@ fn expect_100_continue() {
 }
 
 #[test]
-fn expect_100_continue_case_insensitive() {
+fn prop_expect_100_continue_case_insensitive() {
     // 大文字小文字を区別しない
     let expect = Expect::parse("100-CONTINUE").unwrap();
     assert!(expect.has_100_continue());
@@ -113,7 +113,7 @@ fn expect_100_continue_case_insensitive() {
 }
 
 #[test]
-fn expect_100_continue_roundtrip() {
+fn prop_expect_100_continue_roundtrip() {
     let input = "100-continue";
     let expect = Expect::parse(input).unwrap();
     let displayed = expect.to_string();
@@ -128,7 +128,7 @@ fn expect_100_continue_roundtrip() {
 
 proptest! {
     #[test]
-    fn expect_token_value_roundtrip(t in token(), v in token_value()) {
+    fn prop_expect_token_value_roundtrip(t in token(), v in token_value()) {
         let input = format!("{}={}", t, v);
         let expect = Expect::parse(&input).unwrap();
 
@@ -146,7 +146,7 @@ proptest! {
 // 引用符付き値
 proptest! {
     #[test]
-    fn expect_quoted_value_roundtrip(t in token(), v in quoted_string_content()) {
+    fn prop_expect_quoted_value_roundtrip(t in token(), v in quoted_string_content()) {
         let input = format!("{}=\"{}\"", t, v);
         let expect = Expect::parse(&input).unwrap();
 
@@ -167,7 +167,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn expect_multiple_items(
+    fn prop_expect_multiple_items(
         t1 in token(),
         v1 in token_value(),
         t2 in token()
@@ -191,7 +191,7 @@ proptest! {
 // 100-continue を含む複数 expectation
 proptest! {
     #[test]
-    fn expect_with_100_continue(t in token(), v in token_value()) {
+    fn prop_expect_with_100_continue(t in token(), v in token_value()) {
         let input = format!("{}={}, 100-continue", t, v);
         let expect = Expect::parse(&input).unwrap();
 
@@ -210,7 +210,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn expect_escaped_backslash() {
+fn prop_expect_escaped_backslash() {
     let input = r#"token="value\\with\\backslash""#;
     let expect = Expect::parse(input).unwrap();
     assert_eq!(expect.items()[0].value(), Some("value\\with\\backslash"));
@@ -222,7 +222,7 @@ fn expect_escaped_backslash() {
 }
 
 #[test]
-fn expect_escaped_quote() {
+fn prop_expect_escaped_quote() {
     let input = r#"token="value\"with\"quotes""#;
     let expect = Expect::parse(input).unwrap();
     assert_eq!(expect.items()[0].value(), Some("value\"with\"quotes"));
@@ -234,7 +234,7 @@ fn expect_escaped_quote() {
 }
 
 #[test]
-fn expect_mixed_escapes() {
+fn prop_expect_mixed_escapes() {
     let input = r#"token="\\\"mixed\\\"escapes\\""#;
     let expect = Expect::parse(input).unwrap();
     assert_eq!(expect.items()[0].value(), Some("\\\"mixed\\\"escapes\\"));
@@ -251,7 +251,7 @@ fn expect_mixed_escapes() {
 
 proptest! {
     #[test]
-    fn expectation_token_method(t in token()) {
+    fn prop_expectation_token_method(t in token()) {
         let input = format!("{}", t);
         let expect = Expect::parse(&input).unwrap();
 
@@ -261,7 +261,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn expectation_value_method(t in token(), v in token_value()) {
+    fn prop_expectation_value_method(t in token(), v in token_value()) {
         let input = format!("{}={}", t, v);
         let expect = Expect::parse(&input).unwrap();
 
@@ -270,13 +270,13 @@ proptest! {
 }
 
 #[test]
-fn expectation_value_none() {
+fn prop_expectation_value_none() {
     let expect = Expect::parse("token").unwrap();
     assert_eq!(expect.items()[0].value(), None);
 }
 
 #[test]
-fn expectation_is_100_continue() {
+fn prop_expectation_is_100_continue() {
     let expect = Expect::parse("100-continue").unwrap();
     assert!(expect.items()[0].is_100_continue());
 
@@ -289,7 +289,7 @@ fn expectation_is_100_continue() {
 // ========================================
 
 #[test]
-fn expect_parse_errors() {
+fn prop_expect_parse_errors() {
     // 空
     assert!(matches!(Expect::parse(""), Err(ExpectError::Empty)));
     assert!(matches!(Expect::parse("   "), Err(ExpectError::Empty)));
@@ -337,7 +337,7 @@ fn expect_parse_errors() {
 
 proptest! {
     #[test]
-    fn expect_display_roundtrip(t in token()) {
+    fn prop_expect_display_roundtrip(t in token()) {
         let input = t.clone();
         let expect = Expect::parse(&input).unwrap();
         let displayed = expect.to_string();
@@ -348,7 +348,7 @@ proptest! {
 }
 
 #[test]
-fn expectation_display_with_quoting() {
+fn prop_expectation_display_with_quoting() {
     // 引用符が必要な値
     let expect = Expect::parse("token=\"value with spaces\"").unwrap();
     let displayed = expect.to_string();
@@ -357,7 +357,7 @@ fn expectation_display_with_quoting() {
 }
 
 #[test]
-fn expectation_display_without_quoting() {
+fn prop_expectation_display_without_quoting() {
     // 引用符が不要な値
     let expect = Expect::parse("token=simple").unwrap();
     let displayed = expect.to_string();
@@ -370,7 +370,7 @@ fn expectation_display_without_quoting() {
 
 proptest! {
     #[test]
-    fn expect_clone_eq(t in token(), v in token_value()) {
+    fn prop_expect_clone_eq(t in token(), v in token_value()) {
         let input = format!("{}={}", t, v);
         let expect = Expect::parse(&input).unwrap();
         let cloned = expect.clone();
@@ -385,7 +385,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn expect_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
+    fn prop_expect_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
         if let Ok(s) = std::str::from_utf8(&data) {
             let _ = Expect::parse(s);
         }
@@ -397,7 +397,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn expect_value_with_comma() {
+fn prop_expect_value_with_comma() {
     // カンマは引用符で囲む必要がある
     let input = r#"token="value,with,commas""#;
     let expect = Expect::parse(input).unwrap();
@@ -410,7 +410,7 @@ fn expect_value_with_comma() {
 }
 
 #[test]
-fn expect_value_with_equals() {
+fn prop_expect_value_with_equals() {
     // = は引用符で囲む必要がある
     let input = r#"token="value=with=equals""#;
     let expect = Expect::parse(input).unwrap();
@@ -427,7 +427,7 @@ fn expect_value_with_equals() {
 // ========================================
 
 #[test]
-fn expect_whitespace_handling() {
+fn prop_expect_whitespace_handling() {
     // 前後の空白
     let expect = Expect::parse("  100-continue  ").unwrap();
     assert!(expect.has_100_continue());
@@ -443,7 +443,7 @@ fn expect_whitespace_handling() {
 // ========================================
 
 #[test]
-fn expect_quoted_with_special_chars() {
+fn prop_expect_quoted_with_special_chars() {
     // タブ文字
     let input = "token=\"value\twith\ttabs\"";
     let expect = Expect::parse(input).unwrap();
@@ -456,7 +456,7 @@ fn expect_quoted_with_special_chars() {
 
 proptest! {
     #[test]
-    fn expect_complex_roundtrip(
+    fn prop_expect_complex_roundtrip(
         t1 in token(),
         v1 in quoted_string_content(),
         t2 in token(),

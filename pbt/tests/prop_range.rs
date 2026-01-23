@@ -8,7 +8,7 @@ use shiguredo_http11::range::{AcceptRanges, ContentRange, Range, RangeError, Ran
 // ========================================
 
 #[test]
-fn range_error_display() {
+fn prop_range_error_display() {
     let errors = [
         (RangeError::Empty, "empty range header"),
         (RangeError::InvalidFormat, "invalid range header format"),
@@ -26,13 +26,13 @@ fn range_error_display() {
 }
 
 #[test]
-fn range_error_is_error_trait() {
+fn prop_range_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(RangeError::Empty);
     assert_eq!(error.to_string(), "empty range header");
 }
 
 #[test]
-fn range_error_clone_eq() {
+fn prop_range_error_clone_eq() {
     let error = RangeError::InvalidFormat;
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -45,7 +45,7 @@ fn range_error_clone_eq() {
 // RangeSpec::Range の Display
 proptest! {
     #[test]
-    fn range_spec_range_display(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_range_spec_range_display(start in 0u64..10000, end in 0u64..10000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
         let spec = RangeSpec::Range { start, end };
         let display = spec.to_string();
@@ -59,7 +59,7 @@ proptest! {
 // RangeSpec::FromStart の Display
 proptest! {
     #[test]
-    fn range_spec_from_start_display(start in 0u64..10000) {
+    fn prop_range_spec_from_start_display(start in 0u64..10000) {
         let spec = RangeSpec::FromStart { start };
         let display = spec.to_string();
 
@@ -72,7 +72,7 @@ proptest! {
 // RangeSpec::Suffix の Display
 proptest! {
     #[test]
-    fn range_spec_suffix_display(length in 1u64..10000) {
+    fn prop_range_spec_suffix_display(length in 1u64..10000) {
         let spec = RangeSpec::Suffix { length };
         let display = spec.to_string();
 
@@ -85,7 +85,7 @@ proptest! {
 // RangeSpec::Range の to_bounds
 proptest! {
     #[test]
-    fn range_spec_range_to_bounds(start in 0u64..1000, end in 0u64..1000, total in 1u64..2000) {
+    fn prop_range_spec_range_to_bounds(start in 0u64..1000, end in 0u64..1000, total in 1u64..2000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
         let spec = RangeSpec::Range { start, end };
 
@@ -100,7 +100,7 @@ proptest! {
 // RangeSpec::FromStart の to_bounds
 proptest! {
     #[test]
-    fn range_spec_from_start_to_bounds(start in 0u64..1000, total in 1u64..2000) {
+    fn prop_range_spec_from_start_to_bounds(start in 0u64..1000, total in 1u64..2000) {
         let spec = RangeSpec::FromStart { start };
 
         if start < total {
@@ -118,7 +118,7 @@ proptest! {
 // RangeSpec::Suffix の to_bounds
 proptest! {
     #[test]
-    fn range_spec_suffix_to_bounds(length in 1u64..1000, total in 1u64..2000) {
+    fn prop_range_spec_suffix_to_bounds(length in 1u64..1000, total in 1u64..2000) {
         let spec = RangeSpec::Suffix { length };
         let bounds = spec.to_bounds(total);
 
@@ -137,7 +137,7 @@ proptest! {
 
 // RangeSpec::Suffix length=0 のケース
 #[test]
-fn range_spec_suffix_zero_length() {
+fn prop_range_spec_suffix_zero_length() {
     let spec = RangeSpec::Suffix { length: 0 };
     assert!(spec.to_bounds(1000).is_none());
 }
@@ -145,7 +145,7 @@ fn range_spec_suffix_zero_length() {
 // total_length=0 のケース
 proptest! {
     #[test]
-    fn range_spec_to_bounds_zero_total(start in 0u64..1000, end in 0u64..1000) {
+    fn prop_range_spec_to_bounds_zero_total(start in 0u64..1000, end in 0u64..1000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let spec1 = RangeSpec::Range { start, end };
@@ -161,7 +161,7 @@ proptest! {
 // RangeSpec Clone/Copy/PartialEq
 proptest! {
     #[test]
-    fn range_spec_clone_eq(start in 0u64..1000, end in 0u64..1000) {
+    fn prop_range_spec_clone_eq(start in 0u64..1000, end in 0u64..1000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
         let spec = RangeSpec::Range { start, end };
         let cloned = spec;  // Copy
@@ -177,7 +177,7 @@ proptest! {
 // Range ヘッダーラウンドトリップ
 proptest! {
     #[test]
-    fn range_roundtrip(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_range_roundtrip(start in 0u64..10000, end in 0u64..10000) {
         // start <= end のみ有効
         let (start, end) = if start <= end {
             (start, end)
@@ -198,7 +198,7 @@ proptest! {
 // Range suffix ラウンドトリップ
 proptest! {
     #[test]
-    fn range_suffix_roundtrip(length in 1u64..10000) {
+    fn prop_range_suffix_roundtrip(length in 1u64..10000) {
         let input = format!("bytes=-{}", length);
         let range = Range::parse(&input).unwrap();
 
@@ -212,7 +212,7 @@ proptest! {
 // Range from-start ラウンドトリップ
 proptest! {
     #[test]
-    fn range_from_start_roundtrip(start in 0u64..10000) {
+    fn prop_range_from_start_roundtrip(start in 0u64..10000) {
         let input = format!("bytes={}-", start);
         let range = Range::parse(&input).unwrap();
 
@@ -226,7 +226,7 @@ proptest! {
 // RangeSpec to_bounds の正確性
 proptest! {
     #[test]
-    fn range_spec_to_bounds(start in 0u64..1000, end in 0u64..1000, total in 1u64..2000) {
+    fn prop_range_spec_to_bounds(start in 0u64..1000, end in 0u64..1000, total in 1u64..2000) {
         let (start, end) = if start <= end {
             (start, end)
         } else {
@@ -245,7 +245,7 @@ proptest! {
 // Content-Range ラウンドトリップ
 proptest! {
     #[test]
-    fn content_range_roundtrip(start in 0u64..10000, end in 0u64..10000, total in 1u64..20000) {
+    fn prop_content_range_roundtrip(start in 0u64..10000, end in 0u64..10000, total in 1u64..20000) {
         let (start, end) = if start <= end {
             (start, end)
         } else {
@@ -266,7 +266,7 @@ proptest! {
 // Range::is_bytes のテスト
 proptest! {
     #[test]
-    fn range_is_bytes(start in 0u64..1000, end in 0u64..1000) {
+    fn prop_range_is_bytes(start in 0u64..1000, end in 0u64..1000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         // bytes の場合
@@ -289,7 +289,7 @@ proptest! {
 // Range::first のテスト
 proptest! {
     #[test]
-    fn range_first(start in 0u64..1000, end in 0u64..1000) {
+    fn prop_range_first(start in 0u64..1000, end in 0u64..1000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes={}-{}", start, end);
@@ -309,7 +309,7 @@ proptest! {
 // 複数範囲のテスト
 proptest! {
     #[test]
-    fn range_multiple_ranges(
+    fn prop_range_multiple_ranges(
         start1 in 0u64..1000,
         end1 in 0u64..1000,
         start2 in 0u64..1000,
@@ -328,7 +328,7 @@ proptest! {
 // Range Clone/PartialEq
 proptest! {
     #[test]
-    fn range_clone_eq(start in 0u64..1000, end in 0u64..1000) {
+    fn prop_range_clone_eq(start in 0u64..1000, end in 0u64..1000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes={}-{}", start, end);
@@ -346,7 +346,7 @@ proptest! {
 // ContentRange::length のテスト
 proptest! {
     #[test]
-    fn content_range_length(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_content_range_length(start in 0u64..10000, end in 0u64..10000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let cr = ContentRange::new_bytes(start, end, Some(end + 100));
@@ -360,7 +360,7 @@ proptest! {
 // ContentRange::is_unsatisfied のテスト
 proptest! {
     #[test]
-    fn content_range_is_unsatisfied(total in 100u64..10000) {
+    fn prop_content_range_is_unsatisfied(total in 100u64..10000) {
         // 満たせる場合
         let cr = ContentRange::new_bytes(0, 99, Some(total));
         prop_assert!(!cr.is_unsatisfied());
@@ -374,7 +374,7 @@ proptest! {
 // ContentRange::unsatisfied のテスト
 proptest! {
     #[test]
-    fn content_range_unsatisfied(total in 100u64..10000) {
+    fn prop_content_range_unsatisfied(total in 100u64..10000) {
         let cr = ContentRange::unsatisfied("bytes", total);
 
         prop_assert_eq!(cr.unit(), "bytes");
@@ -389,7 +389,7 @@ proptest! {
 // ContentRange Display ラウンドトリップ (unsatisfied)
 proptest! {
     #[test]
-    fn content_range_unsatisfied_display_roundtrip(total in 100u64..10000) {
+    fn prop_content_range_unsatisfied_display_roundtrip(total in 100u64..10000) {
         let cr = ContentRange::unsatisfied("bytes", total);
         let displayed = cr.to_string();
         let reparsed = ContentRange::parse(&displayed).unwrap();
@@ -402,7 +402,7 @@ proptest! {
 // ContentRange パース (不明な長さ)
 proptest! {
     #[test]
-    fn content_range_unknown_length(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_content_range_unknown_length(start in 0u64..10000, end in 0u64..10000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes {}-{}/*", start, end);
@@ -417,7 +417,7 @@ proptest! {
 // ContentRange Clone/PartialEq
 proptest! {
     #[test]
-    fn content_range_clone_eq(start in 0u64..1000, end in 0u64..1000, total in 0u64..2000) {
+    fn prop_content_range_clone_eq(start in 0u64..1000, end in 0u64..1000, total in 0u64..2000) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
         let total = total.max(end + 1);
 
@@ -434,7 +434,7 @@ proptest! {
 
 // AcceptRanges::bytes のテスト
 #[test]
-fn accept_ranges_bytes() {
+fn prop_accept_ranges_bytes() {
     let ar = AcceptRanges::bytes();
     assert!(ar.accepts_bytes());
     assert!(!ar.is_none());
@@ -444,7 +444,7 @@ fn accept_ranges_bytes() {
 
 // AcceptRanges::none のテスト
 #[test]
-fn accept_ranges_none() {
+fn prop_accept_ranges_none() {
     let ar = AcceptRanges::none();
     assert!(!ar.accepts_bytes());
     assert!(ar.is_none());
@@ -454,7 +454,7 @@ fn accept_ranges_none() {
 
 // AcceptRanges ラウンドトリップ
 #[test]
-fn accept_ranges_bytes_roundtrip() {
+fn prop_accept_ranges_bytes_roundtrip() {
     let ar = AcceptRanges::bytes();
     let displayed = ar.to_string();
     let reparsed = AcceptRanges::parse(&displayed).unwrap();
@@ -463,7 +463,7 @@ fn accept_ranges_bytes_roundtrip() {
 
 // AcceptRanges Display
 #[test]
-fn accept_ranges_display() {
+fn prop_accept_ranges_display() {
     let ar = AcceptRanges::bytes();
     assert_eq!(ar.to_string(), "bytes");
 
@@ -473,7 +473,7 @@ fn accept_ranges_display() {
 
 // AcceptRanges 複数単位
 #[test]
-fn accept_ranges_multiple_units() {
+fn prop_accept_ranges_multiple_units() {
     let ar = AcceptRanges::parse("bytes, custom").unwrap();
     assert_eq!(ar.units().len(), 2);
     assert!(ar.accepts_bytes());
@@ -481,7 +481,7 @@ fn accept_ranges_multiple_units() {
 
 // AcceptRanges Clone/PartialEq
 #[test]
-fn accept_ranges_clone_eq() {
+fn prop_accept_ranges_clone_eq() {
     let ar = AcceptRanges::bytes();
     let cloned = ar.clone();
     assert_eq!(ar, cloned);
@@ -492,7 +492,7 @@ fn accept_ranges_clone_eq() {
 // ========================================
 
 #[test]
-fn range_parse_errors() {
+fn prop_range_parse_errors() {
     // 空
     assert!(matches!(Range::parse(""), Err(RangeError::Empty)));
 
@@ -531,7 +531,7 @@ fn range_parse_errors() {
 }
 
 #[test]
-fn content_range_parse_errors() {
+fn prop_content_range_parse_errors() {
     // 空
     assert!(matches!(ContentRange::parse(""), Err(RangeError::Empty)));
 
@@ -567,7 +567,7 @@ fn content_range_parse_errors() {
 }
 
 #[test]
-fn accept_ranges_parse_errors() {
+fn prop_accept_ranges_parse_errors() {
     // 空
     assert!(matches!(AcceptRanges::parse(""), Err(RangeError::Empty)));
 
@@ -584,7 +584,7 @@ fn accept_ranges_parse_errors() {
 
 proptest! {
     #[test]
-    fn range_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_range_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = Range::parse(&s);
         let _ = ContentRange::parse(&s);
         let _ = AcceptRanges::parse(&s);
@@ -594,7 +594,7 @@ proptest! {
 // RangeSpec to_bounds は全ての入力でパニックしない
 proptest! {
     #[test]
-    fn range_spec_to_bounds_no_panic(
+    fn prop_range_spec_to_bounds_no_panic(
         start in 0u64..u64::MAX / 2,
         end in 0u64..u64::MAX / 2,
         length in 0u64..u64::MAX / 2,

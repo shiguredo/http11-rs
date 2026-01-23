@@ -61,7 +61,7 @@ fn http_date_str() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn conditional_error_display() {
+fn prop_conditional_error_display() {
     let errors = [
         (ConditionalError::Empty, "empty conditional header"),
         (
@@ -84,7 +84,7 @@ fn conditional_error_display() {
 }
 
 #[test]
-fn conditional_error_is_error_trait() {
+fn prop_conditional_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(ConditionalError::Empty);
     assert_eq!(error.to_string(), "empty conditional header");
 }
@@ -96,7 +96,7 @@ fn conditional_error_is_error_trait() {
 // 単一 ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn if_match_single_roundtrip(tag in etag_value()) {
+    fn prop_if_match_single_roundtrip(tag in etag_value()) {
         let input = format!("\"{}\"", tag);
         let im = IfMatch::parse(&input).unwrap();
         prop_assert!(!im.is_any());
@@ -111,7 +111,7 @@ proptest! {
 // 複数 ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn if_match_multiple_roundtrip(tags in proptest::collection::vec(etag_value(), 1..4)) {
+    fn prop_if_match_multiple_roundtrip(tags in proptest::collection::vec(etag_value(), 1..4)) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -125,7 +125,7 @@ proptest! {
 
 // ワイルドカード
 #[test]
-fn if_match_wildcard() {
+fn prop_if_match_wildcard() {
     let im = IfMatch::parse("*").unwrap();
     assert!(im.is_any());
     assert!(im.matches(&EntityTag::strong("anything").unwrap()));
@@ -135,7 +135,7 @@ fn if_match_wildcard() {
 // matches 動作 (Strong 比較)
 proptest! {
     #[test]
-    fn if_match_matches_strong(tags in proptest::collection::vec(etag_value(), 1..4), check_tag in etag_value()) {
+    fn prop_if_match_matches_strong(tags in proptest::collection::vec(etag_value(), 1..4), check_tag in etag_value()) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -151,7 +151,7 @@ proptest! {
 // Weak ETag は If-Match では一致しない
 proptest! {
     #[test]
-    fn if_match_weak_not_match(tag in etag_value()) {
+    fn prop_if_match_weak_not_match(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
         let im = IfMatch::parse(&input).unwrap();
         let strong_etag = EntityTag::strong(&tag).unwrap();
@@ -168,7 +168,7 @@ proptest! {
 // 単一 ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn if_none_match_single_roundtrip(tag in etag_value()) {
+    fn prop_if_none_match_single_roundtrip(tag in etag_value()) {
         let input = format!("\"{}\"", tag);
         let inm = IfNoneMatch::parse(&input).unwrap();
         let displayed = inm.to_string();
@@ -181,7 +181,7 @@ proptest! {
 // 複数 ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn if_none_match_multiple_roundtrip(tags in proptest::collection::vec(etag_value(), 1..4)) {
+    fn prop_if_none_match_multiple_roundtrip(tags in proptest::collection::vec(etag_value(), 1..4)) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -195,7 +195,7 @@ proptest! {
 
 // ワイルドカード
 #[test]
-fn if_none_match_wildcard() {
+fn prop_if_none_match_wildcard() {
     let inm = IfNoneMatch::parse("*").unwrap();
     assert!(inm.is_any());
     // * は全てに一致するので、どの ETag でも処理しない
@@ -205,7 +205,7 @@ fn if_none_match_wildcard() {
 // matches 動作 (Weak 比較)
 proptest! {
     #[test]
-    fn if_none_match_matches_weak(tags in proptest::collection::vec(etag_value(), 1..4), check_tag in etag_value()) {
+    fn prop_if_none_match_matches_weak(tags in proptest::collection::vec(etag_value(), 1..4), check_tag in etag_value()) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -221,7 +221,7 @@ proptest! {
 // Weak ETag は If-None-Match で一致する
 proptest! {
     #[test]
-    fn if_none_match_weak_match(tag in etag_value()) {
+    fn prop_if_none_match_weak_match(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
         let inm = IfNoneMatch::parse(&input).unwrap();
         let strong_etag = EntityTag::strong(&tag).unwrap();
@@ -239,7 +239,7 @@ proptest! {
 // ラウンドトリップ
 proptest! {
     #[test]
-    fn if_modified_since_roundtrip(date_str in http_date_str()) {
+    fn prop_if_modified_since_roundtrip(date_str in http_date_str()) {
         let ims = IfModifiedSince::parse(&date_str).unwrap();
         let displayed = ims.to_string();
         let reparsed = IfModifiedSince::parse(&displayed).unwrap();
@@ -256,7 +256,7 @@ proptest! {
 // is_modified
 proptest! {
     #[test]
-    fn if_modified_since_is_modified(date_str in http_date_str()) {
+    fn prop_if_modified_since_is_modified(date_str in http_date_str()) {
         let ims = IfModifiedSince::parse(&date_str).unwrap();
         let same_date = ims.date();
 
@@ -267,7 +267,7 @@ proptest! {
 
 // パースエラー
 #[test]
-fn if_modified_since_parse_errors() {
+fn prop_if_modified_since_parse_errors() {
     assert!(matches!(
         IfModifiedSince::parse("invalid date"),
         Err(ConditionalError::DateError)
@@ -285,7 +285,7 @@ fn if_modified_since_parse_errors() {
 // ラウンドトリップ
 proptest! {
     #[test]
-    fn if_unmodified_since_roundtrip(date_str in http_date_str()) {
+    fn prop_if_unmodified_since_roundtrip(date_str in http_date_str()) {
         let ius = IfUnmodifiedSince::parse(&date_str).unwrap();
         let displayed = ius.to_string();
         let reparsed = IfUnmodifiedSince::parse(&displayed).unwrap();
@@ -298,7 +298,7 @@ proptest! {
 
 // パースエラー
 #[test]
-fn if_unmodified_since_parse_errors() {
+fn prop_if_unmodified_since_parse_errors() {
     assert!(matches!(
         IfUnmodifiedSince::parse("invalid date"),
         Err(ConditionalError::DateError)
@@ -312,7 +312,7 @@ fn if_unmodified_since_parse_errors() {
 // ETag ラウンドトリップ (Strong)
 proptest! {
     #[test]
-    fn if_range_strong_etag_roundtrip(tag in etag_value()) {
+    fn prop_if_range_strong_etag_roundtrip(tag in etag_value()) {
         let input = format!("\"{}\"", tag);
         let ir = IfRange::parse(&input).unwrap();
 
@@ -331,7 +331,7 @@ proptest! {
 // ETag ラウンドトリップ (Weak)
 proptest! {
     #[test]
-    fn if_range_weak_etag_roundtrip(tag in etag_value()) {
+    fn prop_if_range_weak_etag_roundtrip(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
         let ir = IfRange::parse(&input).unwrap();
 
@@ -349,7 +349,7 @@ proptest! {
 // 日付ラウンドトリップ
 proptest! {
     #[test]
-    fn if_range_date_roundtrip(date_str in http_date_str()) {
+    fn prop_if_range_date_roundtrip(date_str in http_date_str()) {
         let ir = IfRange::parse(&date_str).unwrap();
 
         prop_assert!(ir.is_date());
@@ -369,7 +369,7 @@ proptest! {
 
 // パースエラー
 #[test]
-fn if_range_parse_errors() {
+fn prop_if_range_parse_errors() {
     // 空
     assert!(matches!(IfRange::parse(""), Err(ConditionalError::Empty)));
     assert!(matches!(
@@ -387,7 +387,7 @@ fn if_range_parse_errors() {
 // 小文字の w/ もパースできる
 proptest! {
     #[test]
-    fn if_range_weak_lowercase(tag in etag_value()) {
+    fn prop_if_range_weak_lowercase(tag in etag_value()) {
         let input = format!("w/\"{}\"", tag);
         let ir = IfRange::parse(&input).unwrap();
 
@@ -402,7 +402,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
+    fn prop_if_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -414,7 +414,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_none_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
+    fn prop_if_none_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -426,7 +426,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_modified_since_clone_eq(date_str in http_date_str()) {
+    fn prop_if_modified_since_clone_eq(date_str in http_date_str()) {
         let ims = IfModifiedSince::parse(&date_str).unwrap();
         let cloned = ims.clone();
         prop_assert_eq!(ims, cloned);
@@ -435,7 +435,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_unmodified_since_clone_eq(date_str in http_date_str()) {
+    fn prop_if_unmodified_since_clone_eq(date_str in http_date_str()) {
         let ius = IfUnmodifiedSince::parse(&date_str).unwrap();
         let cloned = ius.clone();
         prop_assert_eq!(ius, cloned);
@@ -444,7 +444,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_range_clone_eq(etag_str in any_etag_str()) {
+    fn prop_if_range_clone_eq(etag_str in any_etag_str()) {
         let ir = IfRange::parse(&etag_str).unwrap();
         let cloned = ir.clone();
         prop_assert_eq!(ir, cloned);
@@ -457,35 +457,35 @@ proptest! {
 
 proptest! {
     #[test]
-    fn if_match_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_if_match_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = IfMatch::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn if_none_match_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_if_none_match_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = IfNoneMatch::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn if_modified_since_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_if_modified_since_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = IfModifiedSince::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn if_unmodified_since_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_if_unmodified_since_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = IfUnmodifiedSince::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn if_range_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_if_range_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = IfRange::parse(&s);
     }
 }

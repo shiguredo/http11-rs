@@ -40,7 +40,7 @@ fn param_value() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn auth_error_display() {
+fn prop_auth_error_display() {
     let errors = [
         (AuthError::Empty, "empty authorization header"),
         (AuthError::InvalidFormat, "invalid authorization format"),
@@ -70,7 +70,7 @@ fn auth_error_display() {
 }
 
 #[test]
-fn auth_error_is_error_trait() {
+fn prop_auth_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(AuthError::Empty);
     assert_eq!(error.to_string(), "empty authorization header");
 }
@@ -82,7 +82,7 @@ fn auth_error_is_error_trait() {
 // BearerToken ラウンドトリップ
 proptest! {
     #[test]
-    fn bearer_token_roundtrip(token in token68_string(1, 64)) {
+    fn prop_bearer_token_roundtrip(token in token68_string(1, 64)) {
         let bearer = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
         let header = bearer.to_header_value();
         let reparsed = BearerToken::parse(&header).unwrap();
@@ -95,7 +95,7 @@ proptest! {
 // BearerToken Display
 proptest! {
     #[test]
-    fn bearer_token_display(token in token68_string(1, 32)) {
+    fn prop_bearer_token_display(token in token68_string(1, 32)) {
         let bearer = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
         let display = bearer.to_string();
 
@@ -105,7 +105,7 @@ proptest! {
 
 // BearerToken パースエラー
 #[test]
-fn bearer_token_parse_errors() {
+fn prop_bearer_token_parse_errors() {
     // 空
     assert!(matches!(BearerToken::parse(""), Err(AuthError::Empty)));
     // Bearer スキームでない
@@ -133,7 +133,7 @@ fn bearer_token_parse_errors() {
 // 大文字小文字を区別しない
 proptest! {
     #[test]
-    fn bearer_token_case_insensitive(token in token68_string(1, 32)) {
+    fn prop_bearer_token_case_insensitive(token in token68_string(1, 32)) {
         let lower = BearerToken::parse(&format!("bearer {}", token)).unwrap();
         let upper = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
 
@@ -144,7 +144,7 @@ proptest! {
 // 任意の文字列で BearerToken パースがパニックしない
 proptest! {
     #[test]
-    fn bearer_token_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_bearer_token_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = BearerToken::parse(&s);
     }
 }
@@ -156,7 +156,7 @@ proptest! {
 // BearerChallenge ラウンドトリップ
 proptest! {
     #[test]
-    fn bearer_challenge_roundtrip(realm in param_value(), error in prop_oneof![Just("invalid_token"), Just("invalid_request"), Just("insufficient_scope")]) {
+    fn prop_bearer_challenge_roundtrip(realm in param_value(), error in prop_oneof![Just("invalid_token"), Just("invalid_request"), Just("insufficient_scope")]) {
         let header = format!("Bearer realm=\"{}\", error=\"{}\"", realm, error);
         let challenge = BearerChallenge::parse(&header).unwrap();
 
@@ -168,7 +168,7 @@ proptest! {
 // BearerChallenge Display
 proptest! {
     #[test]
-    fn bearer_challenge_display(realm in param_value()) {
+    fn prop_bearer_challenge_display(realm in param_value()) {
         let header = format!("Bearer realm=\"{}\"", realm);
         let challenge = BearerChallenge::parse(&header).unwrap();
         let display = challenge.to_string();
@@ -180,7 +180,7 @@ proptest! {
 // 任意の文字列で BearerChallenge パースがパニックしない
 proptest! {
     #[test]
-    fn bearer_challenge_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_bearer_challenge_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = BearerChallenge::parse(&s);
     }
 }
@@ -192,7 +192,7 @@ proptest! {
 // DigestAuth ラウンドトリップ
 proptest! {
     #[test]
-    fn digest_auth_roundtrip(
+    fn prop_digest_auth_roundtrip(
         username in param_value(),
         realm in param_value(),
         nonce in param_value(),
@@ -220,7 +220,7 @@ proptest! {
 // DigestAuth Display
 proptest! {
     #[test]
-    fn digest_auth_display(
+    fn prop_digest_auth_display(
         username in param_value(),
         realm in param_value(),
         nonce in param_value(),
@@ -240,7 +240,7 @@ proptest! {
 
 // DigestAuth パースエラー
 #[test]
-fn digest_auth_parse_errors() {
+fn prop_digest_auth_parse_errors() {
     // 空
     assert!(matches!(DigestAuth::parse(""), Err(AuthError::Empty)));
     // Digest スキームでない
@@ -258,7 +258,7 @@ fn digest_auth_parse_errors() {
 // param で大文字小文字を区別しない
 proptest! {
     #[test]
-    fn digest_auth_param_case_insensitive(
+    fn prop_digest_auth_param_case_insensitive(
         username in param_value(),
         realm in param_value(),
         nonce in param_value(),
@@ -279,7 +279,7 @@ proptest! {
 // 任意の文字列で DigestAuth パースがパニックしない
 proptest! {
     #[test]
-    fn digest_auth_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_digest_auth_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = DigestAuth::parse(&s);
     }
 }
@@ -291,7 +291,7 @@ proptest! {
 // DigestChallenge ラウンドトリップ
 proptest! {
     #[test]
-    fn digest_challenge_roundtrip(realm in param_value(), nonce in param_value()) {
+    fn prop_digest_challenge_roundtrip(realm in param_value(), nonce in param_value()) {
         let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
         let challenge = DigestChallenge::parse(&header).unwrap();
 
@@ -307,7 +307,7 @@ proptest! {
 // DigestChallenge Display
 proptest! {
     #[test]
-    fn digest_challenge_display(realm in param_value(), nonce in param_value()) {
+    fn prop_digest_challenge_display(realm in param_value(), nonce in param_value()) {
         let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
         let challenge = DigestChallenge::parse(&header).unwrap();
         let display = challenge.to_string();
@@ -318,7 +318,7 @@ proptest! {
 
 // DigestChallenge パースエラー
 #[test]
-fn digest_challenge_parse_errors() {
+fn prop_digest_challenge_parse_errors() {
     // 空
     assert!(matches!(DigestChallenge::parse(""), Err(AuthError::Empty)));
     // Digest スキームでない
@@ -336,7 +336,7 @@ fn digest_challenge_parse_errors() {
 // 任意の文字列で DigestChallenge パースがパニックしない
 proptest! {
     #[test]
-    fn digest_challenge_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_digest_challenge_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = DigestChallenge::parse(&s);
     }
 }
@@ -348,7 +348,7 @@ proptest! {
 // Authorization::Basic ラウンドトリップ
 proptest! {
     #[test]
-    fn authorization_basic_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
+    fn prop_authorization_basic_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
         let auth = BasicAuth::new(&username, &password);
         let header = auth.to_header_value();
         let parsed = Authorization::parse(&header).unwrap();
@@ -365,7 +365,7 @@ proptest! {
 // Authorization::Bearer ラウンドトリップ
 proptest! {
     #[test]
-    fn authorization_bearer_roundtrip(token in token68_string(1, 32)) {
+    fn prop_authorization_bearer_roundtrip(token in token68_string(1, 32)) {
         let header = format!("Bearer {}", token);
         let parsed = Authorization::parse(&header).unwrap();
 
@@ -384,7 +384,7 @@ proptest! {
 // Authorization::Digest ラウンドトリップ
 proptest! {
     #[test]
-    fn authorization_digest_roundtrip(
+    fn prop_authorization_digest_roundtrip(
         username in param_value(),
         realm in param_value(),
         nonce in param_value(),
@@ -412,7 +412,7 @@ proptest! {
 // Authorization Display
 proptest! {
     #[test]
-    fn authorization_display(token in token68_string(1, 32)) {
+    fn prop_authorization_display(token in token68_string(1, 32)) {
         let header = format!("Bearer {}", token);
         let parsed = Authorization::parse(&header).unwrap();
         let display = parsed.to_string();
@@ -423,7 +423,7 @@ proptest! {
 
 // Authorization パースエラー
 #[test]
-fn authorization_parse_errors() {
+fn prop_authorization_parse_errors() {
     // 空
     assert!(matches!(Authorization::parse(""), Err(AuthError::Empty)));
     // 不明なスキーム
@@ -435,7 +435,7 @@ fn authorization_parse_errors() {
 
 // 大文字小文字を区別しない
 #[test]
-fn authorization_case_insensitive() {
+fn prop_authorization_case_insensitive() {
     assert!(Authorization::parse("basic dXNlcjpwYXNz").is_ok());
     assert!(Authorization::parse("Basic dXNlcjpwYXNz").is_ok());
     assert!(Authorization::parse("bearer token123").is_ok());
@@ -457,7 +457,7 @@ fn authorization_case_insensitive() {
 // 任意の文字列で Authorization パースがパニックしない
 proptest! {
     #[test]
-    fn authorization_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_authorization_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = Authorization::parse(&s);
     }
 }
@@ -469,7 +469,7 @@ proptest! {
 // AuthChallenge::Basic ラウンドトリップ
 proptest! {
     #[test]
-    fn auth_challenge_basic_roundtrip(realm in param_value()) {
+    fn prop_auth_challenge_basic_roundtrip(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
         let parsed = AuthChallenge::parse(&header).unwrap();
 
@@ -488,7 +488,7 @@ proptest! {
 // AuthChallenge::Bearer ラウンドトリップ
 proptest! {
     #[test]
-    fn auth_challenge_bearer_roundtrip(realm in param_value()) {
+    fn prop_auth_challenge_bearer_roundtrip(realm in param_value()) {
         let header = format!("Bearer realm=\"{}\"", realm);
         let parsed = AuthChallenge::parse(&header).unwrap();
 
@@ -507,7 +507,7 @@ proptest! {
 // AuthChallenge::Digest ラウンドトリップ
 proptest! {
     #[test]
-    fn auth_challenge_digest_roundtrip(realm in param_value(), nonce in param_value()) {
+    fn prop_auth_challenge_digest_roundtrip(realm in param_value(), nonce in param_value()) {
         let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
         let parsed = AuthChallenge::parse(&header).unwrap();
 
@@ -527,7 +527,7 @@ proptest! {
 // AuthChallenge Display
 proptest! {
     #[test]
-    fn auth_challenge_display(realm in param_value()) {
+    fn prop_auth_challenge_display(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
         let parsed = AuthChallenge::parse(&header).unwrap();
         let display = parsed.to_string();
@@ -538,7 +538,7 @@ proptest! {
 
 // AuthChallenge パースエラー
 #[test]
-fn auth_challenge_parse_errors() {
+fn prop_auth_challenge_parse_errors() {
     // 空
     assert!(matches!(AuthChallenge::parse(""), Err(AuthError::Empty)));
     // 不明なスキーム
@@ -550,7 +550,7 @@ fn auth_challenge_parse_errors() {
 
 // 大文字小文字を区別しない
 #[test]
-fn auth_challenge_case_insensitive() {
+fn prop_auth_challenge_case_insensitive() {
     assert!(AuthChallenge::parse("basic realm=\"test\"").is_ok());
     assert!(AuthChallenge::parse("Basic realm=\"test\"").is_ok());
     assert!(AuthChallenge::parse("bearer realm=\"test\"").is_ok());
@@ -562,7 +562,7 @@ fn auth_challenge_case_insensitive() {
 // 任意の文字列で AuthChallenge パースがパニックしない
 proptest! {
     #[test]
-    fn auth_challenge_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_auth_challenge_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = AuthChallenge::parse(&s);
     }
 }
@@ -574,7 +574,7 @@ proptest! {
 // ProxyAuthorization ラウンドトリップ
 proptest! {
     #[test]
-    fn proxy_authorization_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
+    fn prop_proxy_authorization_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
         let auth = BasicAuth::new(&username, &password);
         let header = auth.to_header_value();
         let proxy_auth = ProxyAuthorization::parse(&header).unwrap();
@@ -595,7 +595,7 @@ proptest! {
 // ProxyAuthorization Display
 proptest! {
     #[test]
-    fn proxy_authorization_display(token in token68_string(1, 32)) {
+    fn prop_proxy_authorization_display(token in token68_string(1, 32)) {
         let header = format!("Bearer {}", token);
         let proxy_auth = ProxyAuthorization::parse(&header).unwrap();
         let display = proxy_auth.to_string();
@@ -607,7 +607,7 @@ proptest! {
 // 任意の文字列で ProxyAuthorization パースがパニックしない
 proptest! {
     #[test]
-    fn proxy_authorization_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_proxy_authorization_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ProxyAuthorization::parse(&s);
     }
 }
@@ -619,7 +619,7 @@ proptest! {
 // ProxyAuthenticate ラウンドトリップ
 proptest! {
     #[test]
-    fn proxy_authenticate_roundtrip(realm in param_value()) {
+    fn prop_proxy_authenticate_roundtrip(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
         let proxy_auth = ProxyAuthenticate::parse(&header).unwrap();
 
@@ -638,7 +638,7 @@ proptest! {
 // ProxyAuthenticate Display
 proptest! {
     #[test]
-    fn proxy_authenticate_display(realm in param_value()) {
+    fn prop_proxy_authenticate_display(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
         let proxy_auth = ProxyAuthenticate::parse(&header).unwrap();
         let display = proxy_auth.to_string();
@@ -650,7 +650,7 @@ proptest! {
 // 任意の文字列で ProxyAuthenticate パースがパニックしない
 proptest! {
     #[test]
-    fn proxy_authenticate_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_proxy_authenticate_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ProxyAuthenticate::parse(&s);
     }
 }
@@ -662,7 +662,7 @@ proptest! {
 // BasicAuth Display
 proptest! {
     #[test]
-    fn basic_auth_display(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
+    fn prop_basic_auth_display(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
         let auth = BasicAuth::new(&username, &password);
         let display = auth.to_string();
 
@@ -674,7 +674,7 @@ proptest! {
 // WwwAuthenticate to_header_value
 proptest! {
     #[test]
-    fn www_authenticate_to_header_value(realm in param_value()) {
+    fn prop_www_authenticate_to_header_value(realm in param_value()) {
         let auth = WwwAuthenticate::basic(&realm);
         let header_value = auth.to_header_value();
         let display = auth.to_string();

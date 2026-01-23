@@ -113,7 +113,7 @@ fn transfer_encoding_token() -> impl Strategy<Value = String> {
 
 proptest! {
     #[test]
-    fn header_obs_fold_space_error(
+    fn prop_header_obs_fold_space_error(
         header_name in "[A-Za-z]{1,16}",
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
@@ -127,7 +127,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_obs_fold_tab_error(
+    fn prop_header_obs_fold_tab_error(
         header_name in "[A-Za-z]{1,16}",
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
@@ -141,7 +141,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_contains_cr_error(
+    fn prop_header_contains_cr_error(
         prefix in "[A-Za-z]{1,8}",
         suffix in "[A-Za-z]{1,8}"
     ) {
@@ -155,7 +155,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_contains_lf_error(
+    fn prop_header_contains_lf_error(
         prefix in "[A-Za-z]{1,8}",
         suffix in "[A-Za-z]{1,8}"
     ) {
@@ -169,7 +169,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_missing_colon_error(
+    fn prop_header_missing_colon_error(
         header_name in "[A-Za-z]{1,16}",
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
@@ -183,7 +183,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_empty_name_error(
+    fn prop_header_empty_name_error(
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // 空のヘッダー名はエラー
@@ -196,7 +196,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_name_with_space_error(
+    fn prop_header_name_with_space_error(
         prefix in "[A-Za-z]{1,8}",
         suffix in "[A-Za-z]{1,8}"
     ) {
@@ -210,7 +210,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_name_trailing_space_error(
+    fn prop_header_name_trailing_space_error(
         header_name in "[A-Za-z]{1,16}"
     ) {
         // ヘッダー名の後にスペースがあるとエラー
@@ -223,7 +223,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_invalid_name_char_error(
+    fn prop_header_invalid_name_char_error(
         prefix in "[A-Za-z]{1,8}",
         invalid_char in invalid_header_name_char(),
         suffix in "[A-Za-z]{1,8}"
@@ -238,7 +238,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn valid_header_name_chars(
+    fn prop_valid_header_name_chars(
         prefix in "[A-Za-z]{1,8}",
         special_char in valid_header_name_special_char(),
         suffix in "[A-Za-z]{1,8}"
@@ -254,7 +254,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn header_value_leading_trailing_spaces(
+    fn prop_header_value_leading_trailing_spaces(
         header_name in "[A-Za-z]{1,16}",
         value in "[A-Za-z0-9]{1,16}",
         leading_spaces in 0..4usize,
@@ -285,7 +285,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn transfer_encoding_and_content_length_error(
+    fn prop_transfer_encoding_and_content_length_error(
         content_length in 1..1000usize
     ) {
         // Transfer-Encoding と Content-Length の両方があるとエラー
@@ -301,7 +301,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn transfer_encoding_unsupported_error(
+    fn prop_transfer_encoding_unsupported_error(
         coding in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked"))
     ) {
         // chunked 以外の Transfer-Encoding はエラー
@@ -314,7 +314,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn transfer_encoding_empty_token_error(
+    fn prop_transfer_encoding_empty_token_error(
         before_comma in 0..3usize,
         after_comma in 0..3usize
     ) {
@@ -332,7 +332,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn transfer_encoding_empty_value_error(
+    fn prop_transfer_encoding_empty_value_error(
         method in http_method()
     ) {
         // 空の Transfer-Encoding はエラー
@@ -345,7 +345,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn transfer_encoding_case_insensitive(
+    fn prop_transfer_encoding_case_insensitive(
         chunked_case in prop_oneof![
             Just("chunked"),
             Just("CHUNKED"),
@@ -383,7 +383,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn multiple_transfer_encoding_chunked_error(
+    fn prop_multiple_transfer_encoding_chunked_error(
         count in 2..4usize
     ) {
         // RFC 9112: chunked は一度だけ指定可能、重複はエラー
@@ -404,7 +404,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn single_transfer_encoding_chunked_ok(
+    fn prop_single_transfer_encoding_chunked_ok(
         body in "[a-z]{1,100}"
     ) {
         // 単一の chunked ヘッダーは OK
@@ -426,7 +426,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_not_number_error(
+    fn prop_content_length_not_number_error(
         invalid_value in "[a-zA-Z]{1,8}"
     ) {
         // 数字でない Content-Length はエラー
@@ -439,7 +439,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_empty_error(
+    fn prop_content_length_empty_error(
         method in http_method()
     ) {
         // 空の Content-Length はエラー
@@ -452,7 +452,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_mismatch_error(
+    fn prop_content_length_mismatch_error(
         len1 in 1..100usize,
         len2 in 101..200usize
     ) {
@@ -469,7 +469,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_match_ok(
+    fn prop_content_length_match_ok(
         length in 1..100usize,
         body_content in "[a-z]{1,100}"
     ) {
@@ -502,7 +502,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_zero_no_body(
+    fn prop_content_length_zero_no_body(
         method in http_method()
     ) {
         // Content-Length: 0 はボディなし
@@ -516,7 +516,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_length_case_insensitive(
+    fn prop_content_length_case_insensitive(
         header_case in prop_oneof![
             Just("Content-Length"),
             Just("content-length"),
@@ -551,7 +551,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_line_missing_parts_error(
+    fn prop_request_line_missing_parts_error(
         method in http_method(),
         uri in http_uri()
     ) {
@@ -565,7 +565,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_line_empty_error(
+    fn prop_request_line_empty_error(
         header_name in "[A-Za-z]{1,16}",
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
@@ -583,7 +583,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_line_missing_parts_error(
+    fn prop_status_line_missing_parts_error(
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // ステータスコードがないステータス行はエラー
@@ -596,7 +596,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_code_invalid_error(
+    fn prop_status_code_invalid_error(
         invalid_code in "[a-zA-Z]{1,5}"
     ) {
         // 数字でないステータスコードはエラー
@@ -609,7 +609,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_line_no_reason_phrase_ok(
+    fn prop_status_line_no_reason_phrase_ok(
         status_code in 200..600u16
     ) {
         // reason phrase なしは OK
@@ -628,7 +628,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn head_response_with_content_length(
+    fn prop_head_response_with_content_length(
         content_length in 1..10000usize
     ) {
         // HEAD レスポンスは Content-Length があってもボディなし
@@ -643,7 +643,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn head_response_with_transfer_encoding(
+    fn prop_head_response_with_transfer_encoding(
         status_code in 200..400u16
     ) {
         // HEAD レスポンスは Transfer-Encoding があってもボディなし
@@ -662,7 +662,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_1xx_no_body(
+    fn prop_status_1xx_no_body(
         code in 100u16..200,
         content_length in 1..1000usize
     ) {
@@ -677,7 +677,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_204_no_body(
+    fn prop_status_204_no_body(
         content_length in 1..1000usize
     ) {
         // 204 No Content はボディなし
@@ -691,7 +691,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_304_no_body(
+    fn prop_status_304_no_body(
         content_length in 1..1000usize
     ) {
         // 304 Not Modified はボディなし
@@ -705,7 +705,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_code_boundary_199(
+    fn prop_status_code_boundary_199(
         code in 100u16..200
     ) {
         // 199 以下は 1xx
@@ -720,7 +720,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_code_boundary_200(
+    fn prop_status_code_boundary_200(
         code in 200u16..300
     ) {
         // 200-299 は成功
@@ -737,7 +737,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn status_code_boundary_203(
+    fn prop_status_code_boundary_203(
         code in 200u16..204
     ) {
         // 200-203 はボディあり可能
@@ -755,7 +755,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_invalid_size_error(
+    fn prop_chunked_invalid_size_error(
         invalid_size in "[G-Zg-z]{1,5}"
     ) {
         // 無効なチャンクサイズはエラー
@@ -770,7 +770,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_size_with_extension_ok(
+    fn prop_chunked_size_with_extension_ok(
         body_content in "[a-z]{1,32}",
         ext_name in "[a-z]{1,8}",
         ext_value in "[a-z0-9]{1,8}"
@@ -804,7 +804,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_with_trailer_ok(
+    fn prop_chunked_with_trailer_ok(
         body_content in "[a-z]{1,32}",
         trailer_name in "[A-Za-z]{1,16}",
         trailer_value in "[a-z0-9]{1,16}"
@@ -841,7 +841,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_with_multiple_trailers_ok(
+    fn prop_chunked_with_multiple_trailers_ok(
         body_content in "[a-z]{1,32}",
         trailer_count in 1..4usize
     ) {
@@ -878,7 +878,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_multiple_chunks(
+    fn prop_chunked_multiple_chunks(
         chunk1 in proptest::collection::vec(any::<u8>(), 1..64),
         chunk2 in proptest::collection::vec(any::<u8>(), 1..64),
         chunk3 in proptest::collection::vec(any::<u8>(), 1..64)
@@ -922,7 +922,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_roundtrip(chunks in proptest::collection::vec(body(), 1..5)) {
+    fn prop_chunked_roundtrip(chunks in proptest::collection::vec(body(), 1..5)) {
         let non_empty_chunks: Vec<Vec<u8>> = chunks.into_iter().filter(|c| !c.is_empty()).collect();
         let chunk_refs: Vec<&[u8]> = non_empty_chunks.iter().map(|c| c.as_slice()).collect();
         let encoded = encode_chunks(&chunk_refs);
@@ -953,7 +953,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_chunk_valid(data in body()) {
+    fn prop_encode_chunk_valid(data in body()) {
         let chunk = encode_chunk(&data);
 
         if data.is_empty() {
@@ -972,7 +972,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn invalid_utf8_request_line_error(
+    fn prop_invalid_utf8_request_line_error(
         method in http_method(),
         invalid_byte in 128u8..=255
     ) {
@@ -988,7 +988,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn invalid_utf8_header_error(
+    fn prop_invalid_utf8_header_error(
         header_name in "[A-Za-z]{1,16}",
         invalid_byte in 128u8..=255
     ) {
@@ -1006,7 +1006,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn invalid_utf8_chunk_size_error(
+    fn prop_invalid_utf8_chunk_size_error(
         invalid_byte in 128u8..=255
     ) {
         // 無効な UTF-8 バイトを含むチャンクサイズはエラー
@@ -1022,7 +1022,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn invalid_utf8_status_line_error(
+    fn prop_invalid_utf8_status_line_error(
         invalid_byte in 128u8..=255
     ) {
         // 無効な UTF-8 バイトを含むステータス行はエラー
@@ -1037,7 +1037,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn invalid_utf8_response_header_error(
+    fn prop_invalid_utf8_response_header_error(
         header_name in "[A-Za-z]{1,16}",
         invalid_byte in 128u8..=255
     ) {
@@ -1059,7 +1059,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_request_line(
+    fn prop_incomplete_request_line(
         method in http_method(),
         uri in http_uri()
     ) {
@@ -1073,7 +1073,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_headers(
+    fn prop_incomplete_headers(
         header_name in "[A-Za-z]{1,16}",
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
@@ -1087,7 +1087,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_body(
+    fn prop_incomplete_body(
         body_length in 10..100usize,
         partial_length in 1..10usize
     ) {
@@ -1106,7 +1106,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_chunk_size(
+    fn prop_incomplete_chunk_size(
         size in 1..100usize
     ) {
         // 不完全なチャンクサイズ行は None
@@ -1121,7 +1121,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_chunk_data(
+    fn prop_incomplete_chunk_data(
         chunk_size in 10..100usize,
         partial_size in 1..10usize
     ) {
@@ -1142,7 +1142,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn incomplete_trailer(
+    fn prop_incomplete_trailer(
         body_content in "[a-z]{1,32}",
         trailer_name in "[A-Za-z]{1,16}"
     ) {
@@ -1180,7 +1180,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_buffer_overflow(
+    fn prop_request_decoder_buffer_overflow(
         data_size in 1000..2000usize
     ) {
         let limits = DecoderLimits {
@@ -1197,7 +1197,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_exact_buffer_limit(
+    fn prop_request_decoder_exact_buffer_limit(
         extra_bytes in 0..10usize
     ) {
         let limits = DecoderLimits {
@@ -1218,7 +1218,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_header_line_too_long(
+    fn prop_request_decoder_header_line_too_long(
         header_value_len in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1237,7 +1237,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_too_many_headers(
+    fn prop_request_decoder_too_many_headers(
         header_count in 20..50usize
     ) {
         let limits = DecoderLimits {
@@ -1259,7 +1259,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_exact_header_count(
+    fn prop_request_decoder_exact_header_count(
         extra_headers in 0..5usize
     ) {
         let max_count = 10;
@@ -1289,7 +1289,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_body_too_large_content_length(
+    fn prop_request_decoder_body_too_large_content_length(
         body_size in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1308,7 +1308,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_exact_body_size(
+    fn prop_request_decoder_exact_body_size(
         extra_bytes in 0..10usize
     ) {
         let max_size = 100;
@@ -1331,7 +1331,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_body_too_large_chunked(
+    fn prop_request_decoder_body_too_large_chunked(
         chunk_size in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1354,7 +1354,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_feed_unchecked_no_limit(
+    fn prop_request_decoder_feed_unchecked_no_limit(
         data_size in 1000..2000usize
     ) {
         let limits = DecoderLimits {
@@ -1371,7 +1371,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_limits_getter(
+    fn prop_request_decoder_limits_getter(
         max_buffer_size in 100..1000usize,
         max_body_size in 100..1000usize
     ) {
@@ -1388,7 +1388,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_buffer_overflow(
+    fn prop_response_decoder_buffer_overflow(
         data_size in 1000..2000usize
     ) {
         let limits = DecoderLimits {
@@ -1405,7 +1405,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_header_line_too_long(
+    fn prop_response_decoder_header_line_too_long(
         header_value_len in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1424,7 +1424,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_too_many_headers(
+    fn prop_response_decoder_too_many_headers(
         header_count in 20..50usize
     ) {
         let limits = DecoderLimits {
@@ -1446,7 +1446,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_body_too_large_content_length(
+    fn prop_response_decoder_body_too_large_content_length(
         body_size in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1465,7 +1465,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_body_too_large_chunked(
+    fn prop_response_decoder_body_too_large_chunked(
         chunk_size in 200..500usize
     ) {
         let limits = DecoderLimits {
@@ -1488,7 +1488,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_body_too_large_close_delimited(
+    fn prop_response_decoder_body_too_large_close_delimited(
         body_size in 200..500usize
     ) {
         // close-delimited ボディでも max_body_size を超えるとエラー
@@ -1534,7 +1534,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_feed_unchecked_no_limit(
+    fn prop_response_decoder_feed_unchecked_no_limit(
         data_size in 1000..2000usize
     ) {
         let limits = DecoderLimits {
@@ -1550,7 +1550,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_limits_getter(
+    fn prop_response_decoder_limits_getter(
         max_buffer_size in 100..1000usize,
         max_body_size in 100..1000usize
     ) {
@@ -1567,7 +1567,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_remaining(
+    fn prop_response_decoder_remaining(
         data_len in 10..100usize
     ) {
         let mut decoder = ResponseDecoder::new();
@@ -1579,7 +1579,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_reset(
+    fn prop_response_decoder_reset(
         // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
         status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
@@ -1594,7 +1594,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_reset_expect_no_body(
+    fn prop_response_decoder_reset_expect_no_body(
         // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
         status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
@@ -1615,7 +1615,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_no_content_length_no_transfer_encoding(
+    fn prop_response_no_content_length_no_transfer_encoding(
         status_code in 200..204u16
     ) {
         // RFC 9112: Content-Length も Transfer-Encoding もない場合は close-delimited
@@ -1630,7 +1630,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_content_length_zero(
+    fn prop_response_content_length_zero(
         status_code in 200..204u16
     ) {
         // Content-Length: 0 はボディなし
@@ -1648,7 +1648,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn multiple_requests_same_decoder(
+    fn prop_multiple_requests_same_decoder(
         methods in proptest::collection::vec(http_method(), 2..5),
         uris in proptest::collection::vec(http_uri(), 2..5)
     ) {
@@ -1670,7 +1670,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn multiple_responses_same_decoder(
+    fn prop_multiple_responses_same_decoder(
         status_codes in proptest::collection::vec(status_code(), 2..5)
     ) {
         let mut decoder = ResponseDecoder::new();
@@ -1688,7 +1688,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decoder_reuse_after_error(
+    fn prop_decoder_reuse_after_error(
         valid_method in http_method(),
         valid_uri in http_uri()
     ) {
@@ -1712,7 +1712,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn streaming_decode_request(
+    fn prop_streaming_decode_request(
         method in http_method(),
         uri in http_uri(),
         header_count in 0..5usize
@@ -1737,7 +1737,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn streaming_decode_request_with_body(
+    fn prop_streaming_decode_request_with_body(
         method in prop_oneof![Just("POST"), Just("PUT")],
         body_content in "[a-z]{1,100}"
     ) {
@@ -1766,7 +1766,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn streaming_decode_response(
+    fn prop_streaming_decode_response(
         status_code in status_code(),
         body_content in "[a-z]{1,100}"
     ) {
@@ -1794,7 +1794,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_roundtrip(
+    fn prop_request_roundtrip(
         method in http_method(),
         uri in http_uri(),
         body_data in body()
@@ -1819,7 +1819,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_roundtrip(
+    fn prop_response_roundtrip(
         status in status_code(),
         reason in reason_phrase(),
         body_data in body()
@@ -1848,7 +1848,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
+    fn prop_request_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
         let mut decoder = RequestDecoder::new();
         let _ = decoder.feed(&data);
         let _ = decoder.decode_headers();
@@ -1859,7 +1859,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
+    fn prop_response_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
         let mut decoder = ResponseDecoder::new();
         let _ = decoder.feed(&data);
         let _ = decoder.decode_headers();
@@ -1874,7 +1874,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_headers_twice_returns_none(
+    fn prop_decode_headers_twice_returns_none(
         uri in "[a-z]{1,10}"
     ) {
         // ボディなしメッセージの場合、2 回目の decode_headers は Ok(None)
@@ -1889,7 +1889,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decode_headers_twice_returns_none(
+    fn prop_response_decode_headers_twice_returns_none(
         status_code in 200..600u16
     ) {
         // ボディなしレスポンスの場合、2 回目の decode_headers は Ok(None)
@@ -1908,7 +1908,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn consume_body_before_decode_headers_error(
+    fn prop_consume_body_before_decode_headers_error(
         method in http_method()
     ) {
         let mut decoder = RequestDecoder::new();
@@ -1920,7 +1920,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_consume_body_before_decode_headers_error(
+    fn prop_response_consume_body_before_decode_headers_error(
         status_code in 200..600u16
     ) {
         let mut decoder = ResponseDecoder::new();
@@ -1936,7 +1936,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_requests_keep_alive(
+    fn prop_decode_multiple_requests_keep_alive(
         methods in proptest::collection::vec(http_method(), 2..5),
         uris in proptest::collection::vec(http_uri(), 2..5)
     ) {
@@ -1963,7 +1963,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_requests_with_body_keep_alive(
+    fn prop_decode_multiple_requests_with_body_keep_alive(
         bodies in proptest::collection::vec(
             proptest::collection::vec(any::<u8>(), 0..64),
             2..4
@@ -1991,7 +1991,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_responses_keep_alive(
+    fn prop_decode_multiple_responses_keep_alive(
         status_codes in proptest::collection::vec(status_code(), 2..5)
     ) {
         let mut decoder = ResponseDecoder::new();
@@ -2014,7 +2014,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_two_requests_keep_alive_simple(
+    fn prop_decode_two_requests_keep_alive_simple(
         method1 in http_method(),
         uri1 in http_uri(),
         method2 in http_method(),
@@ -2042,7 +2042,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_two_responses_keep_alive_simple(
+    fn prop_decode_two_responses_keep_alive_simple(
         code1 in status_code(),
         code2 in status_code()
     ) {
@@ -2068,7 +2068,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_invalid_crlf_after_data_error(
+    fn prop_chunked_invalid_crlf_after_data_error(
         body_content in "[a-z]{5,10}",
         invalid_char1 in prop::char::range('A', 'Z'),
         invalid_char2 in prop::char::range('A', 'Z')
@@ -2096,7 +2096,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn chunked_invalid_crlf_partial_then_error(
+    fn prop_chunked_invalid_crlf_partial_then_error(
         body_content in "[a-z]{5,10}",
         invalid_chars in "[A-Z]{2,4}"
     ) {
@@ -2124,7 +2124,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_chunked_invalid_crlf_error(
+    fn prop_request_chunked_invalid_crlf_error(
         body_content in "[a-z]{5,10}",
         invalid_chars in "[A-Z]{2,4}"
     ) {
@@ -2152,7 +2152,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_responses_keep_alive(
+    fn prop_decode_multiple_chunked_responses_keep_alive(
         body1 in "[a-z]{1,32}",
         body2 in "[a-z]{1,32}"
     ) {
@@ -2183,7 +2183,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_requests_keep_alive(
+    fn prop_decode_multiple_chunked_requests_keep_alive(
         body1 in "[a-z]{1,32}",
         body2 in "[a-z]{1,32}"
     ) {
@@ -2216,7 +2216,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_responses_with_body_limit(
+    fn prop_decode_multiple_chunked_responses_with_body_limit(
         body1_len in 10..50usize,
         body2_len in 10..50usize
     ) {
@@ -2252,7 +2252,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_requests_with_body_limit(
+    fn prop_decode_multiple_chunked_requests_with_body_limit(
         body1_len in 10..50usize,
         body2_len in 10..50usize
     ) {
@@ -2286,7 +2286,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_responses_keep_alive_pbt(
+    fn prop_decode_multiple_chunked_responses_keep_alive_pbt(
         bodies in proptest::collection::vec(
             proptest::collection::vec(any::<u8>(), 0..64),
             2..4
@@ -2320,7 +2320,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_multiple_chunked_requests_keep_alive_pbt(
+    fn prop_decode_multiple_chunked_requests_keep_alive_pbt(
         bodies in proptest::collection::vec(
             proptest::collection::vec(any::<u8>(), 0..64),
             2..4
@@ -2359,7 +2359,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_chunked_only_chunked_token(
+    fn prop_is_chunked_only_chunked_token(
         leading_spaces in 0..4usize,
         trailing_spaces in 0..4usize
     ) {
@@ -2381,7 +2381,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_chunked_with_other_token_returns_false(
+    fn prop_is_chunked_with_other_token_returns_false(
         other_token in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked")),
         chunked_first in any::<bool>()
     ) {
@@ -2403,7 +2403,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_chunked_other_token_only_returns_false(
+    fn prop_is_chunked_other_token_only_returns_false(
         token in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked"))
     ) {
         // chunked 以外のトークンのみの場合は false
@@ -2419,7 +2419,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_chunked_no_header_returns_false(
+    fn prop_is_chunked_no_header_returns_false(
         status_code in 200..600u16
     ) {
         // Transfer-Encoding ヘッダーがない場合は false
@@ -2435,7 +2435,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_chunked_consistency_with_body_kind(
+    fn prop_is_chunked_consistency_with_body_kind(
         use_chunked in any::<bool>()
     ) {
         // is_chunked() と BodyKind::Chunked の整合性を検証
@@ -2464,7 +2464,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_close_token_returns_false(
+    fn prop_is_keep_alive_close_token_returns_false(
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "close" トークンがあれば false
@@ -2480,7 +2480,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_keep_alive_token_returns_true(
+    fn prop_is_keep_alive_keep_alive_token_returns_true(
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "keep-alive" トークンがあれば true
@@ -2496,7 +2496,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_default_by_version(
+    fn prop_is_keep_alive_default_by_version(
         status_code in 200..600u16
     ) {
         // HTTP/1.1 のデフォルトは keep-alive、HTTP/1.0 のデフォルトは close
@@ -2520,7 +2520,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_close_priority_over_keep_alive(
+    fn prop_is_keep_alive_close_priority_over_keep_alive(
         keep_alive_first in any::<bool>()
     ) {
         // close と keep-alive が両方ある場合、close が優先される
@@ -2545,7 +2545,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn decode_headers_multiple_no_body_messages(
+    fn prop_decode_headers_multiple_no_body_messages(
         count in 2..5usize
     ) {
         // 複数のボディなしメッセージを decode_headers で連続処理
@@ -2568,7 +2568,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_decode_headers_multiple_no_body_messages(
+    fn prop_response_decode_headers_multiple_no_body_messages(
         count in 2..5usize,
         base_status in 200..400u16
     ) {
@@ -2596,7 +2596,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_incomplete_chunk_size(
+    fn prop_request_incomplete_chunk_size(
         size in 1..100usize
     ) {
         // 不完全なチャンクサイズ行は None
@@ -2610,7 +2610,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_incomplete_chunk_data(
+    fn prop_request_incomplete_chunk_data(
         chunk_size in 10..100usize,
         partial_size in 1..10usize
     ) {
@@ -2631,7 +2631,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_incomplete_trailer(
+    fn prop_request_incomplete_trailer(
         body_content in "[a-z]{1,32}",
         trailer_name in "[A-Za-z]{1,16}"
     ) {
@@ -2668,7 +2668,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_multiple_headers_all_keep_alive(
+    fn prop_is_keep_alive_multiple_headers_all_keep_alive(
         header_count in 2..5usize
     ) {
         // 複数の Connection: keep-alive ヘッダーがある場合は true
@@ -2687,7 +2687,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_multiple_headers_close_in_later(
+    fn prop_is_keep_alive_multiple_headers_close_in_later(
         keep_alive_count in 1..4usize
     ) {
         // 最初に keep-alive、後に close がある場合は false (close 優先)
@@ -2708,7 +2708,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_multiple_headers_close_in_first(
+    fn prop_is_keep_alive_multiple_headers_close_in_first(
         keep_alive_count in 1..4usize
     ) {
         // 最初に close、後に keep-alive がある場合も false (close 優先)
@@ -2729,7 +2729,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_multiple_headers_mixed_tokens(
+    fn prop_is_keep_alive_multiple_headers_mixed_tokens(
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
         close_position in 0..3usize
     ) {
@@ -2754,7 +2754,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_single_header_with_multiple_tokens(
+    fn prop_is_keep_alive_single_header_with_multiple_tokens(
         close_first in any::<bool>()
     ) {
         // 単一ヘッダーに複数トークン (カンマ区切り)
@@ -2776,7 +2776,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn is_keep_alive_multiple_headers_no_connection_token(
+    fn prop_is_keep_alive_multiple_headers_no_connection_token(
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
         other_token in "[a-z]{1,8}"
     ) {

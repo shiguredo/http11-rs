@@ -10,7 +10,7 @@ use shiguredo_http11::date::HttpDate;
 // IMF-fixdate のラウンドトリップ
 proptest! {
     #[test]
-    fn http_date_roundtrip(day in 1u8..=28, month in 1u8..=12, year in 1970u16..=2100, hour in 0u8..=23, minute in 0u8..=59, second in 0u8..=59) {
+    fn prop_http_date_roundtrip(day in 1u8..=28, month in 1u8..=12, year in 1970u16..=2100, hour in 0u8..=23, minute in 0u8..=59, second in 0u8..=59) {
         let dow_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         let month_names = [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -44,7 +44,7 @@ proptest! {
 // 任意の文字列で HTTP-date パースがパニックしない
 proptest! {
     #[test]
-    fn http_date_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_http_date_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = HttpDate::parse(&s);
     }
 }
@@ -52,7 +52,7 @@ proptest! {
 // 有効な時刻の境界値
 proptest! {
     #[test]
-    fn http_date_time_boundaries(hour in prop_oneof![Just(0u8), Just(12), Just(23)], minute in prop_oneof![Just(0u8), Just(30), Just(59)], second in prop_oneof![Just(0u8), Just(30), Just(59)]) {
+    fn prop_http_date_time_boundaries(hour in prop_oneof![Just(0u8), Just(12), Just(23)], minute in prop_oneof![Just(0u8), Just(30), Just(59)], second in prop_oneof![Just(0u8), Just(30), Just(59)]) {
         let date_str = format!(
             "Sun, 06 Nov 1994 {:02}:{:02}:{:02} GMT",
             hour, minute, second

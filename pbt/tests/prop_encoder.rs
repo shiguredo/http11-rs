@@ -107,7 +107,7 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 // ========================================
 
 #[test]
-fn request_new() {
+fn prop_request_new() {
     let req = Request::new("GET", "/");
     assert_eq!(req.method, "GET");
     assert_eq!(req.uri, "/");
@@ -118,7 +118,7 @@ fn request_new() {
 
 proptest! {
     #[test]
-    fn request_new_with_method_and_uri(method in http_method(), uri in uri()) {
+    fn prop_request_new_with_method_and_uri(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri);
         prop_assert_eq!(req.method, method);
         prop_assert_eq!(req.uri, uri);
@@ -128,7 +128,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_with_version(method in http_method(), uri in uri(), version in http_version()) {
+    fn prop_request_with_version(method in http_method(), uri in uri(), version in http_version()) {
         let req = Request::with_version(method, &uri, version);
         prop_assert_eq!(req.method, method);
         prop_assert_eq!(req.uri, uri);
@@ -138,7 +138,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_header_builder(name in header_name(), value in header_value()) {
+    fn prop_request_header_builder(name in header_name(), value in header_value()) {
         let req = Request::new("GET", "/").header(&name, &value);
         prop_assert_eq!(req.headers.len(), 1);
         prop_assert_eq!(&req.headers[0].0, &name);
@@ -148,7 +148,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_body_builder(data in body()) {
+    fn prop_request_body_builder(data in body()) {
         let req = Request::new("POST", "/").body(data.clone());
         prop_assert_eq!(req.body, data);
     }
@@ -156,7 +156,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_add_header(name in header_name(), value in header_value()) {
+    fn prop_request_add_header(name in header_name(), value in header_value()) {
         let mut req = Request::new("GET", "/");
         req.add_header(&name, &value);
         prop_assert_eq!(req.headers.len(), 1);
@@ -167,7 +167,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_get_header(name in header_name(), value in header_value()) {
+    fn prop_request_get_header(name in header_name(), value in header_value()) {
         let req = Request::new("GET", "/").header(&name, &value);
         prop_assert_eq!(req.get_header(&name), Some(value.as_str()));
         prop_assert_eq!(req.get_header(&name.to_uppercase()), Some(value.as_str()));
@@ -176,7 +176,7 @@ proptest! {
 }
 
 #[test]
-fn request_get_headers() {
+fn prop_request_get_headers() {
     let req = Request::new("GET", "/")
         .header("Accept", "text/html")
         .header("Accept", "application/json");
@@ -188,7 +188,7 @@ fn request_get_headers() {
 
 proptest! {
     #[test]
-    fn request_has_header(name in header_name(), value in header_value()) {
+    fn prop_request_has_header(name in header_name(), value in header_value()) {
         let req = Request::new("GET", "/").header(&name, &value);
         prop_assert!(req.has_header(&name));
         prop_assert!(req.has_header(&name.to_uppercase()));
@@ -198,7 +198,7 @@ proptest! {
 }
 
 #[test]
-fn request_is_keep_alive() {
+fn prop_request_is_keep_alive() {
     // HTTP/1.1 はデフォルトで keep-alive
     let req = Request::new("GET", "/");
     assert!(req.is_keep_alive());
@@ -221,7 +221,7 @@ fn request_is_keep_alive() {
 }
 
 #[test]
-fn request_content_length() {
+fn prop_request_content_length() {
     let req = Request::new("POST", "/").header("Content-Length", "100");
     assert_eq!(req.content_length(), Some(100));
 
@@ -230,7 +230,7 @@ fn request_content_length() {
 }
 
 #[test]
-fn request_is_chunked() {
+fn prop_request_is_chunked() {
     let req = Request::new("POST", "/").header("Transfer-Encoding", "chunked");
     assert!(req.is_chunked());
 
@@ -242,7 +242,7 @@ fn request_is_chunked() {
 }
 
 #[test]
-fn request_connection() {
+fn prop_request_connection() {
     let req = Request::new("GET", "/").header("Connection", "keep-alive");
     assert_eq!(req.connection(), Some("keep-alive"));
 
@@ -252,7 +252,7 @@ fn request_connection() {
 
 proptest! {
     #[test]
-    fn request_clone_eq(method in http_method(), uri in uri()) {
+    fn prop_request_clone_eq(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri);
         let cloned = req.clone();
         prop_assert_eq!(req, cloned);
@@ -264,7 +264,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn response_new() {
+fn prop_response_new() {
     let res = Response::new(200, "OK");
     assert_eq!(res.version, "HTTP/1.1");
     assert_eq!(res.status_code, 200);
@@ -275,7 +275,7 @@ fn response_new() {
 
 proptest! {
     #[test]
-    fn response_new_with_status(status in status_code(), phrase in reason_phrase()) {
+    fn prop_response_new_with_status(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         prop_assert_eq!(res.status_code, status);
         prop_assert_eq!(res.reason_phrase, phrase);
@@ -285,7 +285,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_with_version(version in http_version(), status in status_code(), phrase in reason_phrase()) {
+    fn prop_response_with_version(version in http_version(), status in status_code(), phrase in reason_phrase()) {
         let res = Response::with_version(version, status, phrase);
         prop_assert_eq!(res.version, version);
         prop_assert_eq!(res.status_code, status);
@@ -295,7 +295,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_header_builder(name in header_name(), value in header_value()) {
+    fn prop_response_header_builder(name in header_name(), value in header_value()) {
         let res = Response::new(200, "OK").header(&name, &value);
         prop_assert_eq!(res.headers.len(), 1);
         prop_assert_eq!(&res.headers[0].0, &name);
@@ -305,7 +305,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_body_builder(data in body()) {
+    fn prop_response_body_builder(data in body()) {
         let res = Response::new(200, "OK").body(data.clone());
         prop_assert_eq!(res.body, data);
     }
@@ -313,7 +313,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_add_header(name in header_name(), value in header_value()) {
+    fn prop_response_add_header(name in header_name(), value in header_value()) {
         let mut res = Response::new(200, "OK");
         res.add_header(&name, &value);
         prop_assert_eq!(res.headers.len(), 1);
@@ -324,7 +324,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_get_header(name in header_name(), value in header_value()) {
+    fn prop_response_get_header(name in header_name(), value in header_value()) {
         let res = Response::new(200, "OK").header(&name, &value);
         prop_assert_eq!(res.get_header(&name), Some(value.as_str()));
         prop_assert_eq!(res.get_header(&name.to_uppercase()), Some(value.as_str()));
@@ -333,7 +333,7 @@ proptest! {
 }
 
 #[test]
-fn response_get_headers() {
+fn prop_response_get_headers() {
     let res = Response::new(200, "OK")
         .header("Set-Cookie", "a=1")
         .header("Set-Cookie", "b=2");
@@ -345,7 +345,7 @@ fn response_get_headers() {
 
 proptest! {
     #[test]
-    fn response_has_header(name in header_name(), value in header_value()) {
+    fn prop_response_has_header(name in header_name(), value in header_value()) {
         let res = Response::new(200, "OK").header(&name, &value);
         prop_assert!(res.has_header(&name));
         prop_assert!(res.has_header(&name.to_uppercase()));
@@ -355,7 +355,7 @@ proptest! {
 }
 
 #[test]
-fn response_status_categories() {
+fn prop_response_status_categories() {
     // 1xx
     assert!(Response::new(100, "Continue").is_informational());
     assert!(Response::new(101, "Switching Protocols").is_informational());
@@ -382,7 +382,7 @@ fn response_status_categories() {
 }
 
 #[test]
-fn response_is_keep_alive() {
+fn prop_response_is_keep_alive() {
     // HTTP/1.1 はデフォルトで keep-alive
     let res = Response::new(200, "OK");
     assert!(res.is_keep_alive());
@@ -401,7 +401,7 @@ fn response_is_keep_alive() {
 }
 
 #[test]
-fn response_content_length() {
+fn prop_response_content_length() {
     let res = Response::new(200, "OK").header("Content-Length", "100");
     assert_eq!(res.content_length(), Some(100));
 
@@ -410,7 +410,7 @@ fn response_content_length() {
 }
 
 #[test]
-fn response_is_chunked() {
+fn prop_response_is_chunked() {
     let res = Response::new(200, "OK").header("Transfer-Encoding", "chunked");
     assert!(res.is_chunked());
 
@@ -423,7 +423,7 @@ fn response_is_chunked() {
 
 proptest! {
     #[test]
-    fn response_clone_eq(status in status_code(), phrase in reason_phrase()) {
+    fn prop_response_clone_eq(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let cloned = res.clone();
         prop_assert_eq!(res, cloned);
@@ -436,7 +436,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_request_basic(method in http_method(), uri in uri()) {
+    fn prop_encode_request_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri);
         let encoded = encode_request(&req);
 
@@ -450,7 +450,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_request_with_headers(
+    fn prop_encode_request_with_headers(
         method in http_method(),
         uri in uri(),
         header_name in header_name(),
@@ -467,7 +467,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
+    fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
         let req = Request::new(method, &uri).body(data.clone());
         let encoded = encode_request(&req);
 
@@ -483,7 +483,7 @@ proptest! {
 }
 
 #[test]
-fn encode_request_with_existing_content_length() {
+fn prop_encode_request_with_existing_content_length() {
     // Content-Length が既に設定されている場合は追加しない
     let req = Request::new("POST", "/")
         .header("Content-Length", "5")
@@ -502,7 +502,7 @@ fn encode_request_with_existing_content_length() {
 
 proptest! {
     #[test]
-    fn encode_response_basic(status in status_code(), phrase in reason_phrase()) {
+    fn prop_encode_response_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let encoded = encode_response(&res);
 
@@ -516,7 +516,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_response_with_headers(
+    fn prop_encode_response_with_headers(
         status in status_code(),
         phrase in reason_phrase(),
         header_name in header_name(),
@@ -533,7 +533,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
+    fn prop_encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
         let res = Response::new(status, phrase).body(data.clone());
         let encoded = encode_response(&res);
 
@@ -553,7 +553,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_response_omit_content_length(
+    fn prop_encode_response_omit_content_length(
         // 204 No Content には Content-Length を送ってはならない (RFC 9110 Section 8.6)
         // 205 Reset Content もボディを持ってはならない (RFC 9110 Section 15.4.6)
         status in (200u16..204).prop_union(206..300),
@@ -577,7 +577,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn encode_response_omit_content_length_no_header(
+    fn prop_encode_response_omit_content_length_no_header(
         status in 200..204u16
     ) {
         // omit_content_length=true で Content-Length ヘッダーも設定しない場合
@@ -593,7 +593,7 @@ proptest! {
 }
 
 #[test]
-fn encode_response_no_content_length_with_transfer_encoding() {
+fn prop_encode_response_no_content_length_with_transfer_encoding() {
     // Transfer-Encoding がある場合は Content-Length を追加しない
     let res = Response::new(200, "OK")
         .header("Transfer-Encoding", "chunked")
@@ -610,7 +610,7 @@ fn encode_response_no_content_length_with_transfer_encoding() {
 
 proptest! {
     #[test]
-    fn encode_chunk_non_empty(data in proptest::collection::vec(prop::num::u8::ANY, 1..64)) {
+    fn prop_encode_chunk_non_empty(data in proptest::collection::vec(prop::num::u8::ANY, 1..64)) {
         let encoded = encode_chunk(&data);
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -627,7 +627,7 @@ proptest! {
 }
 
 #[test]
-fn encode_chunk_empty() {
+fn prop_encode_chunk_empty() {
     // 空データは終端チャンク
     let encoded = encode_chunk(&[]);
     assert_eq!(encoded, b"0\r\n\r\n");
@@ -639,7 +639,7 @@ fn encode_chunk_empty() {
 
 proptest! {
     #[test]
-    fn encode_chunks_basic(count in 1usize..=5usize) {
+    fn prop_encode_chunks_basic(count in 1usize..=5usize) {
         let chunks: Vec<&[u8]> = (0..count).map(|_| b"test".as_ref()).collect();
         let encoded = encode_chunks(&chunks);
 
@@ -653,14 +653,14 @@ proptest! {
 }
 
 #[test]
-fn encode_chunks_empty_list() {
+fn prop_encode_chunks_empty_list() {
     // 空リストでも終端チャンクは出力
     let encoded = encode_chunks(&[]);
     assert_eq!(encoded, b"0\r\n\r\n");
 }
 
 #[test]
-fn encode_chunks_various_sizes() {
+fn prop_encode_chunks_various_sizes() {
     let chunks: Vec<&[u8]> = vec![b"a", b"bb", b"ccc", b"dddd"];
     let encoded = encode_chunks(&chunks);
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -678,7 +678,7 @@ fn encode_chunks_various_sizes() {
 
 proptest! {
     #[test]
-    fn encode_request_headers_basic(method in http_method(), uri in uri()) {
+    fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
             .header("Host", "example.com");
         let encoded = encode_request_headers(&req);
@@ -696,7 +696,7 @@ proptest! {
 }
 
 #[test]
-fn encode_request_headers_ignores_body() {
+fn prop_encode_request_headers_ignores_body() {
     let req = Request::new("POST", "/").body(b"hello world".to_vec());
     let encoded = encode_request_headers(&req);
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -713,7 +713,7 @@ fn encode_request_headers_ignores_body() {
 
 proptest! {
     #[test]
-    fn encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
+    fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
             .header("Content-Type", "text/html");
         let encoded = encode_response_headers(&res);
@@ -730,7 +730,7 @@ proptest! {
 }
 
 #[test]
-fn encode_response_headers_ignores_body() {
+fn prop_encode_response_headers_ignores_body() {
     let res = Response::new(200, "OK").body(b"hello world".to_vec());
     let encoded = encode_response_headers(&res);
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -745,7 +745,7 @@ fn encode_response_headers_ignores_body() {
 
 proptest! {
     #[test]
-    fn request_encode_method(method in http_method(), uri in uri()) {
+    fn prop_request_encode_method(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri);
         let encoded = req.encode();
         prop_assert_eq!(encoded, encode_request(&req));
@@ -754,7 +754,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_encode_method(status in status_code(), phrase in reason_phrase()) {
+    fn prop_response_encode_method(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let encoded = res.encode();
         prop_assert_eq!(encoded, encode_response(&res));
@@ -767,7 +767,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_encode_headers_method(method in http_method(), uri in uri()) {
+    fn prop_request_encode_headers_method(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri);
         let encoded = req.encode_headers();
         prop_assert_eq!(encoded, encode_request_headers(&req));
@@ -776,7 +776,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_encode_headers_method(status in status_code(), phrase in reason_phrase()) {
+    fn prop_response_encode_headers_method(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let encoded = res.encode_headers();
         prop_assert_eq!(encoded, encode_response_headers(&res));

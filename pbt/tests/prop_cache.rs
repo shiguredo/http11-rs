@@ -45,7 +45,7 @@ fn cache_directive_with_value() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn cache_error_display() {
+fn prop_cache_error_display() {
     let errors = [
         (CacheError::Empty, "empty cache header"),
         (CacheError::InvalidFormat, "invalid cache header format"),
@@ -59,7 +59,7 @@ fn cache_error_display() {
 }
 
 #[test]
-fn cache_error_is_error_trait() {
+fn prop_cache_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(CacheError::Empty);
     assert_eq!(error.to_string(), "empty cache header");
 }
@@ -71,7 +71,7 @@ fn cache_error_is_error_trait() {
 // max-age ラウンドトリップ
 proptest! {
     #[test]
-    fn cache_control_max_age_roundtrip(max_age in seconds()) {
+    fn prop_cache_control_max_age_roundtrip(max_age in seconds()) {
         let cc = CacheControl::new().with_max_age(max_age);
         let header = cc.to_string();
         let reparsed = CacheControl::parse(&header).unwrap();
@@ -83,7 +83,7 @@ proptest! {
 // s-maxage ラウンドトリップ
 proptest! {
     #[test]
-    fn cache_control_s_maxage_roundtrip(s_maxage in seconds()) {
+    fn prop_cache_control_s_maxage_roundtrip(s_maxage in seconds()) {
         let cc = CacheControl::new().with_s_maxage(s_maxage);
         let header = cc.to_string();
         let reparsed = CacheControl::parse(&header).unwrap();
@@ -95,7 +95,7 @@ proptest! {
 // 複合ラウンドトリップ
 proptest! {
     #[test]
-    fn cache_control_combined_roundtrip(
+    fn prop_cache_control_combined_roundtrip(
         max_age in seconds(),
         is_public in any::<bool>(),
         no_cache in any::<bool>(),
@@ -125,7 +125,7 @@ proptest! {
 // 全ディレクティブのラウンドトリップ
 proptest! {
     #[test]
-    fn cache_control_all_directives_roundtrip(
+    fn prop_cache_control_all_directives_roundtrip(
         max_age in prop::option::of(seconds()),
         s_maxage in prop::option::of(seconds()),
         no_cache in any::<bool>(),
@@ -173,7 +173,7 @@ proptest! {
 // is_cacheable の正確性
 proptest! {
     #[test]
-    fn cache_control_is_cacheable(
+    fn prop_cache_control_is_cacheable(
         max_age in prop::option::of(seconds()),
         s_maxage in prop::option::of(seconds()),
         no_store in any::<bool>(),
@@ -203,7 +203,7 @@ proptest! {
 // 単一ディレクティブのパース
 proptest! {
     #[test]
-    fn cache_control_single_directive(directive in cache_directive()) {
+    fn prop_cache_control_single_directive(directive in cache_directive()) {
         let cc = CacheControl::parse(directive).unwrap();
 
         match directive {
@@ -225,7 +225,7 @@ proptest! {
 // 値付きディレクティブのパース
 proptest! {
     #[test]
-    fn cache_control_directive_with_value(directive in cache_directive_with_value()) {
+    fn prop_cache_control_directive_with_value(directive in cache_directive_with_value()) {
         let result = CacheControl::parse(&directive);
         prop_assert!(result.is_ok());
     }
@@ -234,7 +234,7 @@ proptest! {
 // 大文字小文字混在
 proptest! {
     #[test]
-    fn cache_control_case_insensitive(max_age in 0u64..86400) {
+    fn prop_cache_control_case_insensitive(max_age in 0u64..86400) {
         let inputs = [
             format!("MAX-AGE={}", max_age),
             format!("Max-Age={}", max_age),
@@ -251,7 +251,7 @@ proptest! {
 
 // max-stale 値なし
 #[test]
-fn cache_control_max_stale_without_value() {
+fn prop_cache_control_max_stale_without_value() {
     let cc = CacheControl::parse("max-stale").unwrap();
     assert_eq!(cc.max_stale(), Some(u64::MAX));
 }
@@ -259,7 +259,7 @@ fn cache_control_max_stale_without_value() {
 // max-stale 値あり
 proptest! {
     #[test]
-    fn cache_control_max_stale_with_value(seconds in 0u64..86400) {
+    fn prop_cache_control_max_stale_with_value(seconds in 0u64..86400) {
         let input = format!("max-stale={}", seconds);
         let cc = CacheControl::parse(&input).unwrap();
         prop_assert_eq!(cc.max_stale(), Some(seconds));
@@ -269,7 +269,7 @@ proptest! {
 // min-fresh
 proptest! {
     #[test]
-    fn cache_control_min_fresh(seconds in 0u64..86400) {
+    fn prop_cache_control_min_fresh(seconds in 0u64..86400) {
         let input = format!("min-fresh={}", seconds);
         let cc = CacheControl::parse(&input).unwrap();
         prop_assert_eq!(cc.min_fresh(), Some(seconds));
@@ -279,7 +279,7 @@ proptest! {
 // stale-while-revalidate
 proptest! {
     #[test]
-    fn cache_control_stale_while_revalidate(seconds in 0u64..86400) {
+    fn prop_cache_control_stale_while_revalidate(seconds in 0u64..86400) {
         let input = format!("stale-while-revalidate={}", seconds);
         let cc = CacheControl::parse(&input).unwrap();
         prop_assert_eq!(cc.stale_while_revalidate(), Some(seconds));
@@ -289,7 +289,7 @@ proptest! {
 // stale-if-error
 proptest! {
     #[test]
-    fn cache_control_stale_if_error(seconds in 0u64..86400) {
+    fn prop_cache_control_stale_if_error(seconds in 0u64..86400) {
         let input = format!("stale-if-error={}", seconds);
         let cc = CacheControl::parse(&input).unwrap();
         prop_assert_eq!(cc.stale_if_error(), Some(seconds));
@@ -298,7 +298,7 @@ proptest! {
 
 // パースエラー
 #[test]
-fn cache_control_parse_errors() {
+fn prop_cache_control_parse_errors() {
     // 空文字列はデフォルトの CacheControl として扱う
     let cc = CacheControl::parse("").unwrap();
     assert_eq!(cc, CacheControl::default());
@@ -319,7 +319,7 @@ fn cache_control_parse_errors() {
 // to_header_value
 proptest! {
     #[test]
-    fn cache_control_to_header_value(ma in seconds()) {
+    fn prop_cache_control_to_header_value(ma in seconds()) {
         let cc = CacheControl::new().with_max_age(ma);
         let header = cc.to_header_value();
         let expected = format!("max-age={}", ma);
@@ -329,7 +329,7 @@ proptest! {
 
 // Default trait
 #[test]
-fn cache_control_default() {
+fn prop_cache_control_default() {
     let cc = CacheControl::default();
     assert_eq!(cc.max_age(), None);
     assert!(!cc.is_no_cache());
@@ -339,7 +339,7 @@ fn cache_control_default() {
 // Clone と PartialEq
 proptest! {
     #[test]
-    fn cache_control_clone_eq(max_age in prop::option::of(seconds()), is_public in any::<bool>()) {
+    fn prop_cache_control_clone_eq(max_age in prop::option::of(seconds()), is_public in any::<bool>()) {
         let mut cc = CacheControl::new();
         if let Some(ma) = max_age {
             cc = cc.with_max_age(ma);
@@ -360,7 +360,7 @@ proptest! {
 // Age ラウンドトリップ
 proptest! {
     #[test]
-    fn age_roundtrip(secs in seconds()) {
+    fn prop_age_roundtrip(secs in seconds()) {
         let age = Age::new(secs);
         let header = age.to_string();
         let reparsed = Age::parse(&header).unwrap();
@@ -371,7 +371,7 @@ proptest! {
 
 // Age 0
 #[test]
-fn age_zero() {
+fn prop_age_zero() {
     let age = Age::new(0);
     assert_eq!(age.seconds(), 0);
     assert_eq!(age.to_string(), "0");
@@ -382,7 +382,7 @@ fn age_zero() {
 
 // Age パースエラー
 #[test]
-fn age_parse_errors() {
+fn prop_age_parse_errors() {
     // 空
     assert!(matches!(Age::parse(""), Err(CacheError::Empty)));
     assert!(matches!(Age::parse("   "), Err(CacheError::Empty)));
@@ -396,7 +396,7 @@ fn age_parse_errors() {
 // Age to_header_value
 proptest! {
     #[test]
-    fn age_to_header_value(secs in seconds()) {
+    fn prop_age_to_header_value(secs in seconds()) {
         let age = Age::new(secs);
         prop_assert_eq!(age.to_header_value(), secs.to_string());
     }
@@ -405,7 +405,7 @@ proptest! {
 // Age Clone と PartialEq
 proptest! {
     #[test]
-    fn age_clone_eq(secs in seconds()) {
+    fn prop_age_clone_eq(secs in seconds()) {
         let age = Age::new(secs);
         let cloned = age.clone();
         prop_assert_eq!(age, cloned);
@@ -419,7 +419,7 @@ proptest! {
 // Expires ラウンドトリップ
 proptest! {
     #[test]
-    fn expires_roundtrip(
+    fn prop_expires_roundtrip(
         day in 1u8..=28,
         month in 1u8..=12,
         year in 1990u16..=2100,
@@ -455,7 +455,7 @@ proptest! {
 
 // Expires パースエラー
 #[test]
-fn expires_parse_errors() {
+fn prop_expires_parse_errors() {
     // 不正な日付形式
     assert!(matches!(
         Expires::parse("invalid date"),
@@ -469,7 +469,7 @@ fn expires_parse_errors() {
 
 // Expires to_header_value
 #[test]
-fn expires_to_header_value() {
+fn prop_expires_to_header_value() {
     let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
     let header = expires.to_header_value();
     assert!(header.contains("1994"));
@@ -478,7 +478,7 @@ fn expires_to_header_value() {
 
 // Expires Clone と PartialEq
 #[test]
-fn expires_clone_eq() {
+fn prop_expires_clone_eq() {
     let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
     let cloned = expires.clone();
     assert_eq!(expires, cloned);
@@ -490,21 +490,21 @@ fn expires_clone_eq() {
 
 proptest! {
     #[test]
-    fn cache_control_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_cache_control_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = CacheControl::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn age_parse_no_panic(s in "[ -~]{0,32}") {
+    fn prop_age_parse_no_panic(s in "[ -~]{0,32}") {
         let _ = Age::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn expires_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_expires_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = Expires::parse(&s);
     }
 }

@@ -9,7 +9,7 @@ use shiguredo_http11::DecoderLimits;
 
 // Default のプロパティ: 各フィールドが期待値を持つ
 #[test]
-fn decoder_limits_default_values() {
+fn prop_decoder_limits_default_values() {
     let limits = DecoderLimits::default();
 
     assert_eq!(limits.max_buffer_size, 64 * 1024); // 64KB
@@ -21,7 +21,7 @@ fn decoder_limits_default_values() {
 
 // unlimited のプロパティ: 各フィールドが usize::MAX
 #[test]
-fn decoder_limits_unlimited_values() {
+fn prop_decoder_limits_unlimited_values() {
     let limits = DecoderLimits::unlimited();
 
     assert_eq!(limits.max_buffer_size, usize::MAX);
@@ -34,7 +34,7 @@ fn decoder_limits_unlimited_values() {
 // Clone のプロパティ: クローンが元と等しい
 proptest! {
     #[test]
-    fn decoder_limits_clone_eq(
+    fn prop_decoder_limits_clone_eq(
         max_buffer_size in 1usize..1_000_000,
         max_headers_count in 1usize..1000,
         max_header_line_size in 1usize..100_000,
@@ -57,7 +57,7 @@ proptest! {
 // PartialEq のプロパティ
 proptest! {
     #[test]
-    fn decoder_limits_partial_eq(
+    fn prop_decoder_limits_partial_eq(
         max_buffer_size in 1usize..1_000_000,
         max_headers_count in 1usize..1000
     ) {
@@ -86,7 +86,7 @@ proptest! {
 
 // Debug trait のテスト
 #[test]
-fn decoder_limits_debug() {
+fn prop_decoder_limits_debug() {
     let limits = DecoderLimits::default();
     let debug_str = format!("{:?}", limits);
 

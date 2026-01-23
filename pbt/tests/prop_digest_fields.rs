@@ -74,7 +74,7 @@ fn base64_encode(input: &[u8]) -> String {
 // ========================================
 
 #[test]
-fn digest_fields_error_display() {
+fn prop_digest_fields_error_display() {
     let errors = [
         (DigestFieldsError::Empty, "empty digest field"),
         (
@@ -102,13 +102,13 @@ fn digest_fields_error_display() {
 }
 
 #[test]
-fn digest_fields_error_is_error_trait() {
+fn prop_digest_fields_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(DigestFieldsError::Empty);
     assert_eq!(error.to_string(), "empty digest field");
 }
 
 #[test]
-fn digest_fields_error_clone_eq() {
+fn prop_digest_fields_error_clone_eq() {
     let error = DigestFieldsError::InvalidFormat;
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -121,7 +121,7 @@ fn digest_fields_error_clone_eq() {
 // 単一のダイジェストパース
 proptest! {
     #[test]
-    fn content_digest_parse_single(
+    fn prop_content_digest_parse_single(
         algorithm in valid_algorithm(),
         data in digest_bytes()
     ) {
@@ -137,7 +137,7 @@ proptest! {
 // 複数のダイジェストパース
 proptest! {
     #[test]
-    fn content_digest_parse_multiple(
+    fn prop_content_digest_parse_multiple(
         data1 in digest_bytes(),
         data2 in digest_bytes()
     ) {
@@ -155,7 +155,7 @@ proptest! {
 // get メソッド
 proptest! {
     #[test]
-    fn content_digest_get(
+    fn prop_content_digest_get(
         algorithm in valid_algorithm(),
         data in digest_bytes()
     ) {
@@ -176,7 +176,7 @@ proptest! {
 // Display ラウンドトリップ
 proptest! {
     #[test]
-    fn content_digest_display_roundtrip(data in digest_bytes()) {
+    fn prop_content_digest_display_roundtrip(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -192,7 +192,7 @@ proptest! {
 // DigestEntry の Display
 proptest! {
     #[test]
-    fn digest_entry_display(
+    fn prop_digest_entry_display(
         algorithm in valid_algorithm(),
         data in digest_bytes()
     ) {
@@ -210,7 +210,7 @@ proptest! {
 // DigestValue::bytes
 proptest! {
     #[test]
-    fn digest_value_bytes(data in digest_bytes()) {
+    fn prop_digest_value_bytes(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -224,7 +224,7 @@ proptest! {
 // DigestValue の Display
 proptest! {
     #[test]
-    fn digest_value_display(data in digest_bytes()) {
+    fn prop_digest_value_display(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -243,7 +243,7 @@ proptest! {
 // 単一のダイジェストパース
 proptest! {
     #[test]
-    fn repr_digest_parse_single(
+    fn prop_repr_digest_parse_single(
         algorithm in valid_algorithm(),
         data in digest_bytes()
     ) {
@@ -259,7 +259,7 @@ proptest! {
 // 複数のダイジェストパース
 proptest! {
     #[test]
-    fn repr_digest_parse_multiple(
+    fn prop_repr_digest_parse_multiple(
         data1 in digest_bytes(),
         data2 in digest_bytes()
     ) {
@@ -275,7 +275,7 @@ proptest! {
 // get メソッド
 proptest! {
     #[test]
-    fn repr_digest_get(
+    fn prop_repr_digest_get(
         algorithm in valid_algorithm(),
         data in digest_bytes()
     ) {
@@ -291,7 +291,7 @@ proptest! {
 // Display ラウンドトリップ
 proptest! {
     #[test]
-    fn repr_digest_display_roundtrip(data in digest_bytes()) {
+    fn prop_repr_digest_display_roundtrip(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -310,7 +310,7 @@ proptest! {
 // 単一の優先度パース
 proptest! {
     #[test]
-    fn want_content_digest_parse_single(
+    fn prop_want_content_digest_parse_single(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -326,7 +326,7 @@ proptest! {
 // 複数の優先度パース
 proptest! {
     #[test]
-    fn want_content_digest_parse_multiple(
+    fn prop_want_content_digest_parse_multiple(
         weight1 in valid_weight(),
         weight2 in valid_weight()
     ) {
@@ -342,7 +342,7 @@ proptest! {
 // get メソッド
 proptest! {
     #[test]
-    fn want_content_digest_get(
+    fn prop_want_content_digest_get(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -358,7 +358,7 @@ proptest! {
 // Display ラウンドトリップ
 proptest! {
     #[test]
-    fn want_content_digest_display_roundtrip(
+    fn prop_want_content_digest_display_roundtrip(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -375,7 +375,7 @@ proptest! {
 // DigestPreference の Display
 proptest! {
     #[test]
-    fn digest_preference_display(
+    fn prop_digest_preference_display(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -395,7 +395,7 @@ proptest! {
 // 単一の優先度パース
 proptest! {
     #[test]
-    fn want_repr_digest_parse_single(
+    fn prop_want_repr_digest_parse_single(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -411,7 +411,7 @@ proptest! {
 // 複数の優先度パース
 proptest! {
     #[test]
-    fn want_repr_digest_parse_multiple(
+    fn prop_want_repr_digest_parse_multiple(
         weight1 in valid_weight(),
         weight2 in valid_weight()
     ) {
@@ -425,7 +425,7 @@ proptest! {
 // get メソッド
 proptest! {
     #[test]
-    fn want_repr_digest_get(
+    fn prop_want_repr_digest_get(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -440,7 +440,7 @@ proptest! {
 // Display ラウンドトリップ
 proptest! {
     #[test]
-    fn want_repr_digest_display_roundtrip(
+    fn prop_want_repr_digest_display_roundtrip(
         algorithm in valid_algorithm(),
         weight in valid_weight()
     ) {
@@ -459,7 +459,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn content_digest_parse_errors() {
+fn prop_content_digest_parse_errors() {
     // 空
     assert!(matches!(
         ContentDigest::parse(""),
@@ -510,7 +510,7 @@ fn content_digest_parse_errors() {
 }
 
 #[test]
-fn want_digest_parse_errors() {
+fn prop_want_digest_parse_errors() {
     // 空
     assert!(matches!(
         WantContentDigest::parse(""),
@@ -543,7 +543,7 @@ fn want_digest_parse_errors() {
 }
 
 #[test]
-fn byte_sequence_trailing_content_error() {
+fn prop_byte_sequence_trailing_content_error() {
     // : の後に余分な内容がある
     assert!(matches!(
         ContentDigest::parse("sha-256=:YWJj:extra"),
@@ -557,7 +557,7 @@ fn byte_sequence_trailing_content_error() {
 
 proptest! {
     #[test]
-    fn content_digest_clone_eq(data in digest_bytes()) {
+    fn prop_content_digest_clone_eq(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -570,7 +570,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn repr_digest_clone_eq(data in digest_bytes()) {
+    fn prop_repr_digest_clone_eq(data in digest_bytes()) {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
@@ -583,7 +583,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn want_content_digest_clone_eq(weight in valid_weight()) {
+    fn prop_want_content_digest_clone_eq(weight in valid_weight()) {
         let input = format!("sha-256={}", weight);
 
         let want = WantContentDigest::parse(&input).unwrap();
@@ -595,7 +595,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn want_repr_digest_clone_eq(weight in valid_weight()) {
+    fn prop_want_repr_digest_clone_eq(weight in valid_weight()) {
         let input = format!("sha-256={}", weight);
 
         let want = WantReprDigest::parse(&input).unwrap();
@@ -611,28 +611,28 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_digest_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_content_digest_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ContentDigest::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ReprDigest::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn want_content_digest_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_want_content_digest_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = WantContentDigest::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn want_repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_want_repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = WantReprDigest::parse(&s);
     }
 }
@@ -643,7 +643,7 @@ proptest! {
 
 // 大文字アルゴリズム名 (正規化される)
 #[test]
-fn algorithm_case_normalization() {
+fn prop_algorithm_case_normalization() {
     let digest = ContentDigest::parse("SHA-256=:YWJj:").unwrap();
     assert_eq!(digest.items()[0].algorithm(), "sha-256");
     assert!(digest.get("sha-256").is_some());
@@ -652,7 +652,7 @@ fn algorithm_case_normalization() {
 
 // 空白を含む入力
 #[test]
-fn whitespace_handling() {
+fn prop_whitespace_handling() {
     // 前後の空白
     let digest = ContentDigest::parse("  sha-256=:YWJj:  ").unwrap();
     assert_eq!(digest.items().len(), 1);
@@ -664,7 +664,7 @@ fn whitespace_handling() {
 
 // 境界値の優先度
 #[test]
-fn preference_boundary_values() {
+fn prop_preference_boundary_values() {
     // 最小値
     let want = WantContentDigest::parse("sha-256=0").unwrap();
     assert_eq!(want.get("sha-256"), Some(0));

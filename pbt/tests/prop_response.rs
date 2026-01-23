@@ -63,7 +63,7 @@ fn header_value() -> impl Strategy<Value = String> {
 // new() はデフォルトで HTTP/1.1
 proptest! {
     #[test]
-    fn response_new_default_version(code in status_code(), phrase in reason_phrase()) {
+    fn prop_response_new_default_version(code in status_code(), phrase in reason_phrase()) {
         let response = Response::new(code, &phrase);
 
         prop_assert_eq!(&response.version, "HTTP/1.1");
@@ -77,7 +77,7 @@ proptest! {
 // with_version() でカスタムバージョン
 proptest! {
     #[test]
-    fn response_with_version(version in http_version(), code in status_code(), phrase in reason_phrase()) {
+    fn prop_response_with_version(version in http_version(), code in status_code(), phrase in reason_phrase()) {
         let response = Response::with_version(&version, code, &phrase);
 
         prop_assert_eq!(&response.version, &version);
@@ -95,7 +95,7 @@ proptest! {
 // header() ビルダー
 proptest! {
     #[test]
-    fn response_header_builder(code in status_code(), name in header_name(), value in header_value()) {
+    fn prop_response_header_builder(code in status_code(), name in header_name(), value in header_value()) {
         let response = Response::new(code, "OK").header(&name, &value);
 
         prop_assert_eq!(response.headers.len(), 1);
@@ -107,7 +107,7 @@ proptest! {
 // 複数の header() チェーン
 proptest! {
     #[test]
-    fn response_header_builder_chain(code in status_code(), headers in proptest::collection::vec((header_name(), header_value()), 1..5)) {
+    fn prop_response_header_builder_chain(code in status_code(), headers in proptest::collection::vec((header_name(), header_value()), 1..5)) {
         let mut response = Response::new(code, "OK");
         for (name, value) in &headers {
             response = response.header(name, value);
@@ -124,7 +124,7 @@ proptest! {
 // body() ビルダー
 proptest! {
     #[test]
-    fn response_body_builder(code in status_code(), body_data in proptest::collection::vec(any::<u8>(), 0..256)) {
+    fn prop_response_body_builder(code in status_code(), body_data in proptest::collection::vec(any::<u8>(), 0..256)) {
         let response = Response::new(code, "OK").body(body_data.clone());
 
         prop_assert_eq!(&response.body, &body_data);
@@ -134,7 +134,7 @@ proptest! {
 // header() と body() の組み合わせ
 proptest! {
     #[test]
-    fn response_builder_combined(code in status_code(), name in header_name(), value in header_value(), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
+    fn prop_response_builder_combined(code in status_code(), name in header_name(), value in header_value(), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
         let response = Response::new(code, "OK")
             .header(&name, &value)
             .body(body_data.clone());
@@ -152,7 +152,7 @@ proptest! {
 // get_header() は大文字小文字を区別しない
 proptest! {
     #[test]
-    fn response_get_header_case_insensitive(code in status_code(), value in header_value()) {
+    fn prop_response_get_header_case_insensitive(code in status_code(), value in header_value()) {
         let response = Response::new(code, "OK")
             .header("Content-Type", &value);
 
@@ -165,7 +165,7 @@ proptest! {
 // get_header() は存在しないヘッダーで None
 proptest! {
     #[test]
-    fn response_get_header_missing(code in status_code()) {
+    fn prop_response_get_header_missing(code in status_code()) {
         let response = Response::new(code, "OK");
 
         prop_assert_eq!(response.get_header("X-Not-Exists"), None);
@@ -175,7 +175,7 @@ proptest! {
 // get_headers() は複数の同名ヘッダーをすべて取得
 proptest! {
     #[test]
-    fn response_get_headers_multiple(code in status_code(), values in proptest::collection::vec(header_value(), 1..5)) {
+    fn prop_response_get_headers_multiple(code in status_code(), values in proptest::collection::vec(header_value(), 1..5)) {
         let mut response = Response::new(code, "OK");
         for value in &values {
             response = response.header("Set-Cookie", value);
@@ -192,7 +192,7 @@ proptest! {
 // get_headers() は大文字小文字を区別しない
 proptest! {
     #[test]
-    fn response_get_headers_case_insensitive(code in status_code(), value in header_value()) {
+    fn prop_response_get_headers_case_insensitive(code in status_code(), value in header_value()) {
         let response = Response::new(code, "OK")
             .header("Set-Cookie", &value);
 
@@ -204,7 +204,7 @@ proptest! {
 // has_header() の動作確認
 proptest! {
     #[test]
-    fn response_has_header(code in status_code(), name in header_name(), value in header_value()) {
+    fn prop_response_has_header(code in status_code(), name in header_name(), value in header_value()) {
         let response = Response::new(code, "OK").header(&name, &value);
 
         prop_assert!(response.has_header(&name));
@@ -221,7 +221,7 @@ proptest! {
 // connection() はヘッダー値を返す
 proptest! {
     #[test]
-    fn response_connection_header(code in status_code(), conn_value in prop_oneof![Just("keep-alive"), Just("close"), Just("Keep-Alive"), Just("Close")]) {
+    fn prop_response_connection_header(code in status_code(), conn_value in prop_oneof![Just("keep-alive"), Just("close"), Just("Keep-Alive"), Just("Close")]) {
         let response = Response::new(code, "OK").header("Connection", conn_value);
 
         prop_assert_eq!(response.connection(), Some(conn_value));
@@ -231,7 +231,7 @@ proptest! {
 // is_keep_alive() - HTTP/1.1 はデフォルトでキープアライブ
 proptest! {
     #[test]
-    fn response_is_keep_alive_http11_default(code in status_code()) {
+    fn prop_response_is_keep_alive_http11_default(code in status_code()) {
         let response = Response::new(code, "OK");
 
         prop_assert!(response.is_keep_alive(), "HTTP/1.1 should default to keep-alive");
@@ -241,7 +241,7 @@ proptest! {
 // is_keep_alive() - Connection: close で無効化
 proptest! {
     #[test]
-    fn response_is_keep_alive_close(code in status_code()) {
+    fn prop_response_is_keep_alive_close(code in status_code()) {
         let response = Response::new(code, "OK").header("Connection", "close");
 
         prop_assert!(!response.is_keep_alive());
@@ -251,7 +251,7 @@ proptest! {
 // is_keep_alive() - HTTP/1.0 はデフォルトで close
 proptest! {
     #[test]
-    fn response_is_keep_alive_http10_default(code in status_code()) {
+    fn prop_response_is_keep_alive_http10_default(code in status_code()) {
         let response = Response::with_version("HTTP/1.0", code, "OK");
 
         prop_assert!(!response.is_keep_alive(), "HTTP/1.0 should default to close");
@@ -261,7 +261,7 @@ proptest! {
 // is_keep_alive() - HTTP/1.0 で Connection: keep-alive
 proptest! {
     #[test]
-    fn response_is_keep_alive_http10_keepalive(code in status_code()) {
+    fn prop_response_is_keep_alive_http10_keepalive(code in status_code()) {
         let response = Response::with_version("HTTP/1.0", code, "OK")
             .header("Connection", "keep-alive");
 
@@ -276,7 +276,7 @@ proptest! {
 // content_length() は数値を返す
 proptest! {
     #[test]
-    fn response_content_length(code in status_code(), len in 0usize..1_000_000) {
+    fn prop_response_content_length(code in status_code(), len in 0usize..1_000_000) {
         let response = Response::new(code, "OK")
             .header("Content-Length", &len.to_string());
 
@@ -287,7 +287,7 @@ proptest! {
 // content_length() は不正な値で None
 proptest! {
     #[test]
-    fn response_content_length_invalid(code in status_code()) {
+    fn prop_response_content_length_invalid(code in status_code()) {
         let response = Response::new(code, "OK")
             .header("Content-Length", "not-a-number");
 
@@ -298,7 +298,7 @@ proptest! {
 // content_length() はヘッダーなしで None
 proptest! {
     #[test]
-    fn response_content_length_missing(code in status_code()) {
+    fn prop_response_content_length_missing(code in status_code()) {
         let response = Response::new(code, "OK");
 
         prop_assert_eq!(response.content_length(), None);
@@ -308,7 +308,7 @@ proptest! {
 // is_chunked() の動作確認
 proptest! {
     #[test]
-    fn response_is_chunked(code in status_code()) {
+    fn prop_response_is_chunked(code in status_code()) {
         let response_chunked = Response::new(code, "OK")
             .header("Transfer-Encoding", "chunked");
         let response_not_chunked = Response::new(code, "OK");
@@ -324,7 +324,7 @@ proptest! {
 // is_chunked() は大文字小文字を区別しない
 proptest! {
     #[test]
-    fn response_is_chunked_case_insensitive(code in status_code(), chunked in prop_oneof![Just("chunked"), Just("Chunked"), Just("CHUNKED")]) {
+    fn prop_response_is_chunked_case_insensitive(code in status_code(), chunked in prop_oneof![Just("chunked"), Just("Chunked"), Just("CHUNKED")]) {
         let response = Response::new(code, "OK")
             .header("Transfer-Encoding", chunked);
 
@@ -339,7 +339,7 @@ proptest! {
 // is_informational() は 1xx で true
 proptest! {
     #[test]
-    fn response_is_informational(code in 100u16..200) {
+    fn prop_response_is_informational(code in 100u16..200) {
         let response = Response::new(code, "Info");
 
         prop_assert!(response.is_informational());
@@ -353,7 +353,7 @@ proptest! {
 // is_success() は 2xx で true
 proptest! {
     #[test]
-    fn response_is_success(code in 200u16..300) {
+    fn prop_response_is_success(code in 200u16..300) {
         let response = Response::new(code, "Success");
 
         prop_assert!(!response.is_informational());
@@ -367,7 +367,7 @@ proptest! {
 // is_redirect() は 3xx で true
 proptest! {
     #[test]
-    fn response_is_redirect(code in 300u16..400) {
+    fn prop_response_is_redirect(code in 300u16..400) {
         let response = Response::new(code, "Redirect");
 
         prop_assert!(!response.is_informational());
@@ -381,7 +381,7 @@ proptest! {
 // is_client_error() は 4xx で true
 proptest! {
     #[test]
-    fn response_is_client_error(code in 400u16..500) {
+    fn prop_response_is_client_error(code in 400u16..500) {
         let response = Response::new(code, "Client Error");
 
         prop_assert!(!response.is_informational());
@@ -395,7 +395,7 @@ proptest! {
 // is_server_error() は 5xx で true
 proptest! {
     #[test]
-    fn response_is_server_error(code in 500u16..600) {
+    fn prop_response_is_server_error(code in 500u16..600) {
         let response = Response::new(code, "Server Error");
 
         prop_assert!(!response.is_informational());
@@ -412,7 +412,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn response_clone_eq(code in status_code(), phrase in reason_phrase(), headers in proptest::collection::vec((header_name(), header_value()), 0..5), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
+    fn prop_response_clone_eq(code in status_code(), phrase in reason_phrase(), headers in proptest::collection::vec((header_name(), header_value()), 0..5), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
         let mut response = Response::new(code, &phrase);
         for (name, value) in &headers {
             response = response.header(name, value);

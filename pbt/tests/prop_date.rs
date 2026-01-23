@@ -109,7 +109,7 @@ fn normal_second() -> impl Strategy<Value = u8> {
 // ========================================
 
 #[test]
-fn date_error_display() {
+fn prop_date_error_display() {
     let errors = [
         (DateError::Empty, "empty date"),
         (DateError::InvalidFormat, "invalid date format"),
@@ -129,13 +129,13 @@ fn date_error_display() {
 }
 
 #[test]
-fn date_error_is_error_trait() {
+fn prop_date_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(DateError::Empty);
     assert_eq!(error.to_string(), "empty date");
 }
 
 #[test]
-fn date_error_clone_eq() {
+fn prop_date_error_clone_eq() {
     let error = DateError::InvalidFormat;
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -146,7 +146,7 @@ fn date_error_clone_eq() {
 // ========================================
 
 #[test]
-fn day_of_week_short_name() {
+fn prop_day_of_week_short_name() {
     let days = [
         (DayOfWeek::Sunday, "Sun"),
         (DayOfWeek::Monday, "Mon"),
@@ -164,7 +164,7 @@ fn day_of_week_short_name() {
 
 proptest! {
     #[test]
-    fn day_of_week_clone_eq(dow in day_of_week()) {
+    fn prop_day_of_week_clone_eq(dow in day_of_week()) {
         let cloned = dow.clone();
         prop_assert_eq!(dow, cloned);
     }
@@ -177,7 +177,7 @@ proptest! {
 // IMF-fixdate のラウンドトリップ
 proptest! {
     #[test]
-    fn http_date_imf_fixdate_roundtrip(
+    fn prop_http_date_imf_fixdate_roundtrip(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -203,7 +203,7 @@ proptest! {
 // IMF-fixdate パース
 proptest! {
     #[test]
-    fn http_date_parse_imf_fixdate(
+    fn prop_http_date_parse_imf_fixdate(
         dow_name in day_name_short(),
         day in valid_day(),
         month_str in month_name(),
@@ -235,7 +235,7 @@ proptest! {
 // RFC 850 パース
 proptest! {
     #[test]
-    fn http_date_parse_rfc850(
+    fn prop_http_date_parse_rfc850(
         dow_name in day_name_long(),
         day in valid_day(),
         month_str in month_name(),
@@ -262,7 +262,7 @@ proptest! {
 // RFC 850 2桁年の変換
 proptest! {
     #[test]
-    fn http_date_rfc850_year_conversion(
+    fn prop_http_date_rfc850_year_conversion(
         year in rfc850_year()
     ) {
         let date_str = format!(
@@ -284,7 +284,7 @@ proptest! {
 // asctime パース
 proptest! {
     #[test]
-    fn http_date_parse_asctime(
+    fn prop_http_date_parse_asctime(
         dow_name in day_name_short(),
         month_str in month_name(),
         day in valid_day(),
@@ -316,7 +316,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn http_date_new_valid(
+    fn prop_http_date_new_valid(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -342,7 +342,7 @@ proptest! {
 // 無効な日
 proptest! {
     #[test]
-    fn http_date_new_invalid_day(
+    fn prop_http_date_new_invalid_day(
         dow in day_of_week(),
         month in valid_month(),
         year in valid_year(),
@@ -356,7 +356,7 @@ proptest! {
 // 無効な月
 proptest! {
     #[test]
-    fn http_date_new_invalid_month(
+    fn prop_http_date_new_invalid_month(
         dow in day_of_week(),
         day in valid_day(),
         year in valid_year(),
@@ -370,7 +370,7 @@ proptest! {
 // 無効な時
 proptest! {
     #[test]
-    fn http_date_new_invalid_hour(
+    fn prop_http_date_new_invalid_hour(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -385,7 +385,7 @@ proptest! {
 // 無効な分
 proptest! {
     #[test]
-    fn http_date_new_invalid_minute(
+    fn prop_http_date_new_invalid_minute(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -400,7 +400,7 @@ proptest! {
 // 無効な秒
 proptest! {
     #[test]
-    fn http_date_new_invalid_second(
+    fn prop_http_date_new_invalid_second(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -417,7 +417,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn http_date_leap_second() {
+fn prop_http_date_leap_second() {
     // 60秒 (うるう秒) は許可
     let date = HttpDate::parse("Sun, 06 Nov 1994 23:59:60 GMT").unwrap();
     assert_eq!(date.second(), 60);
@@ -433,7 +433,7 @@ fn http_date_leap_second() {
 
 proptest! {
     #[test]
-    fn http_date_display_format(
+    fn prop_http_date_display_format(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -457,7 +457,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn http_date_parse_errors() {
+fn prop_http_date_parse_errors() {
     // 空
     assert!(matches!(HttpDate::parse(""), Err(DateError::Empty)));
     assert!(matches!(HttpDate::parse("   "), Err(DateError::Empty)));
@@ -531,7 +531,7 @@ fn http_date_parse_errors() {
 
 // 不正な時刻形式
 #[test]
-fn http_date_invalid_time_format() {
+fn prop_http_date_invalid_time_format() {
     // コロンがない
     assert!(HttpDate::parse("Sun, 06 Nov 1994 084937 GMT").is_err());
 
@@ -545,7 +545,7 @@ fn http_date_invalid_time_format() {
 
 proptest! {
     #[test]
-    fn http_date_clone_eq(
+    fn prop_http_date_clone_eq(
         dow in day_of_week(),
         day in valid_day(),
         month in valid_month(),
@@ -565,7 +565,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn http_date_all_months() {
+fn prop_http_date_all_months() {
     let months = [
         (1, "Jan"),
         (2, "Feb"),
@@ -593,7 +593,7 @@ fn http_date_all_months() {
 // ========================================
 
 #[test]
-fn http_date_all_days_of_week() {
+fn prop_http_date_all_days_of_week() {
     let days = [
         (DayOfWeek::Sunday, "Sun"),
         (DayOfWeek::Monday, "Mon"),
@@ -635,7 +635,7 @@ fn http_date_all_days_of_week() {
 
 proptest! {
     #[test]
-    fn http_date_trim_whitespace(
+    fn prop_http_date_trim_whitespace(
         dow_name in day_name_short(),
         day in valid_day(),
         month_str in month_name(),
@@ -659,14 +659,14 @@ proptest! {
 
 proptest! {
     #[test]
-    fn http_date_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_http_date_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = HttpDate::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn http_date_parse_no_panic_extended(s in ".{0,128}") {
+    fn prop_http_date_parse_no_panic_extended(s in ".{0,128}") {
         let _ = HttpDate::parse(&s);
     }
 }
@@ -676,7 +676,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn http_date_boundary_values() {
+fn prop_http_date_boundary_values() {
     // 最小値
     let date = HttpDate::new(DayOfWeek::Sunday, 1, 1, 1, 0, 0, 0).unwrap();
     assert_eq!(date.day(), 1);
@@ -701,14 +701,14 @@ fn http_date_boundary_values() {
 // ========================================
 
 #[test]
-fn http_date_rfc850_format_errors() {
+fn prop_http_date_rfc850_format_errors() {
     // 不正な日-月-年 形式
     assert!(HttpDate::parse("Sunday, 06-Nov 08:49:37 GMT").is_err());
     assert!(HttpDate::parse("Sunday, 06-Nov-94-extra 08:49:37 GMT").is_err());
 }
 
 #[test]
-fn http_date_rfc850_with_4digit_year() {
+fn prop_http_date_rfc850_with_4digit_year() {
     // RFC 850 形式でも 4 桁年は許可される (そのまま使用)
     let date = HttpDate::parse("Sunday, 06-Nov-1994 08:49:37 GMT").unwrap();
     assert_eq!(date.year(), 1994);

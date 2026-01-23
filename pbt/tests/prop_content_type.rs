@@ -85,7 +85,7 @@ fn value_needing_quotes() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn content_type_error_display() {
+fn prop_content_type_error_display() {
     let errors = [
         (ContentTypeError::Empty, "empty Content-Type"),
         (ContentTypeError::InvalidMediaType, "invalid media type"),
@@ -99,13 +99,13 @@ fn content_type_error_display() {
 }
 
 #[test]
-fn content_type_error_is_error_trait() {
+fn prop_content_type_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(ContentTypeError::Empty);
     assert_eq!(error.to_string(), "empty Content-Type");
 }
 
 #[test]
-fn content_type_error_clone_eq() {
+fn prop_content_type_error_clone_eq() {
     let error = ContentTypeError::InvalidMediaType;
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -118,7 +118,7 @@ fn content_type_error_clone_eq() {
 // Content-Type パースのラウンドトリップ
 proptest! {
     #[test]
-    fn content_type_roundtrip(media_type in "[a-z]{1,16}", subtype in "[a-z0-9-]{1,16}") {
+    fn prop_content_type_roundtrip(media_type in "[a-z]{1,16}", subtype in "[a-z0-9-]{1,16}") {
         let ct_str = format!("{}/{}", media_type, subtype);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.media_type(), media_type.as_str());
@@ -129,7 +129,7 @@ proptest! {
 // 一般的なメディアタイプのパース
 proptest! {
     #[test]
-    fn content_type_common_types(
+    fn prop_content_type_common_types(
         media_type in common_media_type(),
         subtype in common_subtype()
     ) {
@@ -143,7 +143,7 @@ proptest! {
 // トークン文字を使用したメディアタイプ
 proptest! {
     #[test]
-    fn content_type_token_chars(
+    fn prop_content_type_token_chars(
         media_type in valid_token(),
         subtype in valid_token()
     ) {
@@ -159,7 +159,7 @@ proptest! {
 // mime_type() のテスト
 proptest! {
     #[test]
-    fn content_type_mime_type(media_type in "[a-z]{1,8}", subtype in "[a-z]{1,8}") {
+    fn prop_content_type_mime_type(media_type in "[a-z]{1,8}", subtype in "[a-z]{1,8}") {
         let ct = ContentType::parse(&format!("{}/{}", media_type, subtype)).unwrap();
         let expected = format!("{}/{}", media_type, subtype);
         prop_assert_eq!(ct.mime_type(), expected);
@@ -173,7 +173,7 @@ proptest! {
 // charset パラメータ付き Content-Type
 proptest! {
     #[test]
-    fn content_type_with_charset(
+    fn prop_content_type_with_charset(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z0-9-]{1,8}",
         charset in "[a-zA-Z0-9-]{1,16}"
@@ -187,7 +187,7 @@ proptest! {
 // 一般的な charset 値
 proptest! {
     #[test]
-    fn content_type_common_charsets(charset in charset_value()) {
+    fn prop_content_type_common_charsets(charset in charset_value()) {
         let ct_str = format!("text/html; charset={}", charset);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.charset(), Some(charset));
@@ -197,7 +197,7 @@ proptest! {
 // 引用符付き charset
 proptest! {
     #[test]
-    fn content_type_quoted_charset(charset in "[a-zA-Z0-9-]{1,16}") {
+    fn prop_content_type_quoted_charset(charset in "[a-zA-Z0-9-]{1,16}") {
         let ct_str = format!("text/html; charset=\"{}\"", charset);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.charset(), Some(charset.as_str()));
@@ -211,7 +211,7 @@ proptest! {
 // boundary パラメータ付き multipart
 proptest! {
     #[test]
-    fn content_type_multipart_boundary(boundary in boundary_value()) {
+    fn prop_content_type_multipart_boundary(boundary in boundary_value()) {
         let ct_str = format!("multipart/form-data; boundary={}", boundary);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert!(ct.is_form_data());
@@ -222,7 +222,7 @@ proptest! {
 // 引用符付き boundary
 proptest! {
     #[test]
-    fn content_type_quoted_boundary(boundary in boundary_value()) {
+    fn prop_content_type_quoted_boundary(boundary in boundary_value()) {
         let ct_str = format!("multipart/form-data; boundary=\"{}\"", boundary);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.boundary(), Some(boundary.as_str()));
@@ -232,7 +232,7 @@ proptest! {
 // multipart/mixed
 proptest! {
     #[test]
-    fn content_type_multipart_mixed(boundary in boundary_value()) {
+    fn prop_content_type_multipart_mixed(boundary in boundary_value()) {
         let ct_str = format!("multipart/mixed; boundary={}", boundary);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert!(ct.is_multipart());
@@ -248,7 +248,7 @@ proptest! {
 // charset と boundary の両方
 proptest! {
     #[test]
-    fn content_type_multiple_params(
+    fn prop_content_type_multiple_params(
         charset in "[a-zA-Z0-9-]{1,8}",
         boundary in boundary_value()
     ) {
@@ -265,7 +265,7 @@ proptest! {
 // パラメータの順序が異なる場合
 proptest! {
     #[test]
-    fn content_type_params_order(
+    fn prop_content_type_params_order(
         charset in "[a-zA-Z0-9-]{1,8}",
         boundary in boundary_value()
     ) {
@@ -282,7 +282,7 @@ proptest! {
 // カスタムパラメータ
 proptest! {
     #[test]
-    fn content_type_custom_param(
+    fn prop_content_type_custom_param(
         name in "[a-z]{1,8}",
         value in "[a-zA-Z0-9-]{1,16}"
     ) {
@@ -299,7 +299,7 @@ proptest! {
 // スペースを含む引用符付き値
 proptest! {
     #[test]
-    fn content_type_quoted_value_with_space(
+    fn prop_content_type_quoted_value_with_space(
         word1 in "[a-z]{1,4}",
         word2 in "[a-z]{1,4}"
     ) {
@@ -313,7 +313,7 @@ proptest! {
 // セミコロンを含む引用符付き値
 proptest! {
     #[test]
-    fn content_type_quoted_value_with_semicolon(
+    fn prop_content_type_quoted_value_with_semicolon(
         part1 in "[a-z]{1,4}",
         part2 in "[a-z]{1,4}"
     ) {
@@ -327,7 +327,7 @@ proptest! {
 // エスケープされた引用符を含む値
 proptest! {
     #[test]
-    fn content_type_escaped_quote(word in "[a-z]{1,8}") {
+    fn prop_content_type_escaped_quote(word in "[a-z]{1,8}") {
         let ct_str = format!("text/plain; name=\"{}\\\"{}\"", word, word);
         let ct = ContentType::parse(&ct_str).unwrap();
         let expected = format!("{}\"{}",word, word);
@@ -338,7 +338,7 @@ proptest! {
 // エスケープされたバックスラッシュ
 proptest! {
     #[test]
-    fn content_type_escaped_backslash(word in "[a-z]{1,8}") {
+    fn prop_content_type_escaped_backslash(word in "[a-z]{1,8}") {
         let ct_str = format!("text/plain; name=\"{}\\\\{}\"", word, word);
         let ct = ContentType::parse(&ct_str).unwrap();
         let expected = format!("{}\\{}", word, word);
@@ -353,7 +353,7 @@ proptest! {
 // Content-Type 表示のラウンドトリップ
 proptest! {
     #[test]
-    fn content_type_display_roundtrip(
+    fn prop_content_type_display_roundtrip(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z0-9-]{1,8}"
     ) {
@@ -368,7 +368,7 @@ proptest! {
 // パラメータ付き Display のラウンドトリップ
 proptest! {
     #[test]
-    fn content_type_display_with_param_roundtrip(
+    fn prop_content_type_display_with_param_roundtrip(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}",
         param_value in "[a-zA-Z0-9-]{1,16}"
@@ -386,7 +386,7 @@ proptest! {
 // 引用符が必要な値の Display ラウンドトリップ
 proptest! {
     #[test]
-    fn content_type_display_quoted_roundtrip(
+    fn prop_content_type_display_quoted_roundtrip(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}",
         value in value_needing_quotes()
@@ -406,7 +406,7 @@ proptest! {
 // is_text()
 proptest! {
     #[test]
-    fn content_type_is_text(subtype in "[a-z]{1,8}") {
+    fn prop_content_type_is_text(subtype in "[a-z]{1,8}") {
         let ct = ContentType::parse(&format!("text/{}", subtype)).unwrap();
         prop_assert!(ct.is_text());
     }
@@ -415,7 +415,7 @@ proptest! {
 // is_text() の否定
 proptest! {
     #[test]
-    fn content_type_is_not_text(
+    fn prop_content_type_is_not_text(
         media_type in prop_oneof![Just("application"), Just("image"), Just("audio"), Just("video")],
         subtype in "[a-z]{1,8}"
     ) {
@@ -426,7 +426,7 @@ proptest! {
 
 // is_json()
 #[test]
-fn content_type_is_json() {
+fn prop_content_type_is_json() {
     assert!(ContentType::parse("application/json").unwrap().is_json());
     assert!(ContentType::parse("APPLICATION/JSON").unwrap().is_json());
     assert!(!ContentType::parse("text/json").unwrap().is_json());
@@ -436,7 +436,7 @@ fn content_type_is_json() {
 // is_multipart()
 proptest! {
     #[test]
-    fn content_type_is_multipart(subtype in "[a-z]{1,8}") {
+    fn prop_content_type_is_multipart(subtype in "[a-z]{1,8}") {
         let ct = ContentType::parse(&format!("multipart/{}", subtype)).unwrap();
         prop_assert!(ct.is_multipart());
     }
@@ -444,7 +444,7 @@ proptest! {
 
 // is_form_data()
 #[test]
-fn content_type_is_form_data() {
+fn prop_content_type_is_form_data() {
     assert!(
         ContentType::parse("multipart/form-data")
             .unwrap()
@@ -464,7 +464,7 @@ fn content_type_is_form_data() {
 
 // is_form_urlencoded()
 #[test]
-fn content_type_is_form_urlencoded() {
+fn prop_content_type_is_form_urlencoded() {
     assert!(
         ContentType::parse("application/x-www-form-urlencoded")
             .unwrap()
@@ -489,7 +489,7 @@ fn content_type_is_form_urlencoded() {
 // メディアタイプは大文字小文字を正規化
 proptest! {
     #[test]
-    fn content_type_case_insensitive(
+    fn prop_content_type_case_insensitive(
         media_type in "[A-Z]{1,8}",
         subtype in "[A-Z0-9-]{1,8}"
     ) {
@@ -505,7 +505,7 @@ proptest! {
 // パラメータ名は大文字小文字を正規化、値は保持
 proptest! {
     #[test]
-    fn content_type_param_case(
+    fn prop_content_type_param_case(
         param_name in "[A-Z]{1,8}",
         param_value in "[A-Za-z0-9]{1,8}"
     ) {
@@ -526,7 +526,7 @@ proptest! {
 // 前後の空白
 proptest! {
     #[test]
-    fn content_type_trim_whitespace(
+    fn prop_content_type_trim_whitespace(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}"
     ) {
@@ -540,7 +540,7 @@ proptest! {
 // パラメータ周りの空白
 proptest! {
     #[test]
-    fn content_type_param_whitespace(
+    fn prop_content_type_param_whitespace(
         param_value in "[a-zA-Z0-9]{1,8}"
     ) {
         let ct_str = format!("text/plain  ;  charset  =  {}", param_value);
@@ -554,7 +554,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn content_type_parse_errors() {
+fn prop_content_type_parse_errors() {
     // 空
     assert!(matches!(
         ContentType::parse(""),
@@ -611,7 +611,7 @@ fn content_type_parse_errors() {
 // 不正な文字を含むメディアタイプ
 proptest! {
     #[test]
-    fn content_type_invalid_media_type_char(
+    fn prop_content_type_invalid_media_type_char(
         media_type in "[a-z]{1,4}",
         invalid_char in prop_oneof![Just(' '), Just('/'), Just('('), Just(')'), Just('<'), Just('>')],
         subtype in "[a-z]{1,4}"
@@ -628,7 +628,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_type_clone_eq(
+    fn prop_content_type_clone_eq(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}",
         charset in "[a-z]{1,8}"
@@ -646,7 +646,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_type_new_with_params(
+    fn prop_content_type_new_with_params(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}",
         charset in "[a-z]{1,8}",
@@ -666,7 +666,7 @@ proptest! {
 // parameters() アクセサ
 proptest! {
     #[test]
-    fn content_type_parameters_accessor(
+    fn prop_content_type_parameters_accessor(
         media_type in "[a-z]{1,8}",
         subtype in "[a-z]{1,8}",
         value1 in "[a-z]{1,8}",
@@ -692,7 +692,7 @@ proptest! {
 // 任意の文字列で Content-Type パースがパニックしない
 proptest! {
     #[test]
-    fn content_type_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_content_type_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = ContentType::parse(&s);
     }
 }
@@ -700,7 +700,7 @@ proptest! {
 // より広範な入力でパニックしない
 proptest! {
     #[test]
-    fn content_type_parse_no_panic_extended(s in ".{0,128}") {
+    fn prop_content_type_parse_no_panic_extended(s in ".{0,128}") {
         let _ = ContentType::parse(&s);
     }
 }
@@ -710,7 +710,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn content_type_edge_cases() {
+fn prop_content_type_edge_cases() {
     // 末尾のセミコロン
     let ct = ContentType::parse("text/html;").unwrap();
     assert_eq!(ct.mime_type(), "text/html");
@@ -727,7 +727,7 @@ fn content_type_edge_cases() {
 
 // セミコロンを含む引用符付き値のパース確認
 #[test]
-fn content_type_semicolon_in_quoted_value() {
+fn prop_content_type_semicolon_in_quoted_value() {
     // セミコロンを含む引用符付き値
     let ct = ContentType::parse("text/plain; name=\"a;b\"").unwrap();
     assert_eq!(ct.parameter("name"), Some("a;b"));
@@ -740,14 +740,14 @@ fn content_type_semicolon_in_quoted_value() {
 
 // 引用符のみの値
 #[test]
-fn content_type_quote_only_value() {
+fn prop_content_type_quote_only_value() {
     let ct = ContentType::parse("text/plain; name=\"\\\"\"").unwrap();
     assert_eq!(ct.parameter("name"), Some("\""));
 }
 
 // 空の引用符付き値
 #[test]
-fn content_type_empty_quoted_value() {
+fn prop_content_type_empty_quoted_value() {
     let ct = ContentType::parse("text/plain; name=\"\"").unwrap();
     assert_eq!(ct.parameter("name"), Some(""));
 }

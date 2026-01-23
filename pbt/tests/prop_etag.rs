@@ -10,7 +10,7 @@ use shiguredo_http11::etag::{EntityTag, parse_etag_list};
 // Strong ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn etag_strong_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
+    fn prop_etag_strong_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
         let etag = EntityTag::strong(&tag).unwrap();
         let displayed = etag.to_string();
         let reparsed = EntityTag::parse(&displayed).unwrap();
@@ -23,7 +23,7 @@ proptest! {
 // Weak ETag のラウンドトリップ
 proptest! {
     #[test]
-    fn etag_weak_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
+    fn prop_etag_weak_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
         let etag = EntityTag::weak(&tag).unwrap();
         let displayed = etag.to_string();
         let reparsed = EntityTag::parse(&displayed).unwrap();
@@ -36,7 +36,7 @@ proptest! {
 // Strong 比較の正確性
 proptest! {
     #[test]
-    fn etag_strong_compare(tag1 in "[a-zA-Z0-9]{1,16}", tag2 in "[a-zA-Z0-9]{1,16}", weak1 in any::<bool>(), weak2 in any::<bool>()) {
+    fn prop_etag_strong_compare(tag1 in "[a-zA-Z0-9]{1,16}", tag2 in "[a-zA-Z0-9]{1,16}", weak1 in any::<bool>(), weak2 in any::<bool>()) {
         let e1 = if weak1 {
             EntityTag::weak(&tag1)
         } else {
@@ -59,7 +59,7 @@ proptest! {
 // Weak 比較の正確性
 proptest! {
     #[test]
-    fn etag_weak_compare(tag1 in "[a-zA-Z0-9]{1,16}", tag2 in "[a-zA-Z0-9]{1,16}", weak1 in any::<bool>(), weak2 in any::<bool>()) {
+    fn prop_etag_weak_compare(tag1 in "[a-zA-Z0-9]{1,16}", tag2 in "[a-zA-Z0-9]{1,16}", weak1 in any::<bool>(), weak2 in any::<bool>()) {
         let e1 = if weak1 {
             EntityTag::weak(&tag1)
         } else {
@@ -82,7 +82,7 @@ proptest! {
 // ETag リストのパース
 proptest! {
     #[test]
-    fn etag_list_roundtrip(tags in proptest::collection::vec("[a-zA-Z0-9]{1,8}", 1..5)) {
+    fn prop_etag_list_roundtrip(tags in proptest::collection::vec("[a-zA-Z0-9]{1,8}", 1..5)) {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
@@ -98,7 +98,7 @@ proptest! {
 // 任意の文字列で ETag パースがパニックしない
 proptest! {
     #[test]
-    fn etag_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_etag_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = EntityTag::parse(&s);
     }
 }
@@ -106,7 +106,7 @@ proptest! {
 // 任意の文字列で ETag リストパースがパニックしない
 proptest! {
     #[test]
-    fn etag_list_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_etag_list_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = parse_etag_list(&s);
     }
 }

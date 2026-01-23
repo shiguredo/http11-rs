@@ -54,7 +54,7 @@ fn ipv6_addr() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn host_error_display() {
+fn prop_host_error_display() {
     let errors = [
         (HostError::Empty, "empty Host header"),
         (HostError::InvalidFormat, "invalid Host header format"),
@@ -68,7 +68,7 @@ fn host_error_display() {
 }
 
 #[test]
-fn host_error_is_error_trait() {
+fn prop_host_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(HostError::Empty);
     assert_eq!(error.to_string(), "empty Host header");
 }
@@ -80,7 +80,7 @@ fn host_error_is_error_trait() {
 // ホスト名ラウンドトリップ
 proptest! {
     #[test]
-    fn host_hostname_roundtrip(name in hostname()) {
+    fn prop_host_hostname_roundtrip(name in hostname()) {
         let host = Host::parse(&name).unwrap();
         prop_assert_eq!(host.host(), name.as_str());
         prop_assert_eq!(host.port(), None);
@@ -95,7 +95,7 @@ proptest! {
 // ホスト名 + ポートラウンドトリップ
 proptest! {
     #[test]
-    fn host_hostname_port_roundtrip(name in hostname(), port in valid_port()) {
+    fn prop_host_hostname_port_roundtrip(name in hostname(), port in valid_port()) {
         let input = format!("{}:{}", name, port);
         let host = Host::parse(&input).unwrap();
 
@@ -116,7 +116,7 @@ proptest! {
 // IPv4 ラウンドトリップ
 proptest! {
     #[test]
-    fn host_ipv4_roundtrip(addr in ipv4_addr()) {
+    fn prop_host_ipv4_roundtrip(addr in ipv4_addr()) {
         let host = Host::parse(&addr).unwrap();
 
         prop_assert_eq!(host.host(), addr.as_str());
@@ -128,7 +128,7 @@ proptest! {
 // IPv4 + ポートラウンドトリップ
 proptest! {
     #[test]
-    fn host_ipv4_port_roundtrip(addr in ipv4_addr(), port in valid_port()) {
+    fn prop_host_ipv4_port_roundtrip(addr in ipv4_addr(), port in valid_port()) {
         let input = format!("{}:{}", addr, port);
         let host = Host::parse(&input).unwrap();
 
@@ -144,7 +144,7 @@ proptest! {
 // IPv6 ラウンドトリップ
 proptest! {
     #[test]
-    fn host_ipv6_roundtrip(addr in ipv6_addr()) {
+    fn prop_host_ipv6_roundtrip(addr in ipv6_addr()) {
         let input = format!("[{}]", addr);
         let host = Host::parse(&input).unwrap();
 
@@ -157,7 +157,7 @@ proptest! {
 // IPv6 + ポートラウンドトリップ
 proptest! {
     #[test]
-    fn host_ipv6_port_roundtrip(addr in ipv6_addr(), port in valid_port()) {
+    fn prop_host_ipv6_port_roundtrip(addr in ipv6_addr(), port in valid_port()) {
         let input = format!("[{}]:{}", addr, port);
         let host = Host::parse(&input).unwrap();
 
@@ -172,7 +172,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn host_parse_errors() {
+fn prop_host_parse_errors() {
     // 空
     assert!(matches!(Host::parse(""), Err(HostError::Empty)));
     assert!(matches!(Host::parse("   "), Err(HostError::Empty)));
@@ -234,7 +234,7 @@ fn host_parse_errors() {
 // パーセントエンコーディングを含むホスト名
 proptest! {
     #[test]
-    fn host_percent_encoded(hex1 in "[0-9A-Fa-f]{2}", hex2 in "[0-9A-Fa-f]{2}") {
+    fn prop_host_percent_encoded(hex1 in "[0-9A-Fa-f]{2}", hex2 in "[0-9A-Fa-f]{2}") {
         let input = format!("example%{}.test%{}", hex1, hex2);
         let host = Host::parse(&input).unwrap();
 
@@ -244,7 +244,7 @@ proptest! {
 
 // sub-delims を含むホスト名
 #[test]
-fn host_with_sub_delims() {
+fn prop_host_with_sub_delims() {
     let sub_delims = ["!", "$", "&", "'", "(", ")", "*", "+", ",", ";", "="];
     for delim in sub_delims {
         let input = format!("example{}test.com", delim);
@@ -258,7 +258,7 @@ fn host_with_sub_delims() {
 // ========================================
 
 #[test]
-fn host_ipvfuture() {
+fn prop_host_ipvfuture() {
     // IPvFuture の基本形式: v{HEXDIG}+.{unreserved | sub-delims | ":"} +
     let result = Host::parse("[v1.test]");
     assert!(result.is_ok());
@@ -280,7 +280,7 @@ fn host_ipvfuture() {
 
 // ポート番号の境界値
 #[test]
-fn host_port_boundary() {
+fn prop_host_port_boundary() {
     // 最小値
     let host = Host::parse("example.com:1").unwrap();
     assert_eq!(host.port(), Some(1));
@@ -300,7 +300,7 @@ fn host_port_boundary() {
 
 proptest! {
     #[test]
-    fn host_clone_eq(name in hostname(), port in prop::option::of(valid_port())) {
+    fn prop_host_clone_eq(name in hostname(), port in prop::option::of(valid_port())) {
         let input = if let Some(p) = port {
             format!("{}:{}", name, p)
         } else {
@@ -319,7 +319,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn host_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_host_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = Host::parse(&s);
     }
 }

@@ -123,7 +123,7 @@ fn header_misc_base64_encode(input: &[u8]) -> String {
 // Content-Encoding のラウンドトリップ
 proptest! {
     #[test]
-    fn content_encoding_roundtrip(tokens in proptest::collection::vec(header_misc_token_string(8), 1..5)) {
+    fn prop_content_encoding_roundtrip(tokens in proptest::collection::vec(header_misc_token_string(8), 1..5)) {
         let header = tokens.join(", ");
         let parsed = ContentEncoding::parse(&header).unwrap();
         let displayed = parsed.to_string();
@@ -135,7 +135,7 @@ proptest! {
 // Content-Language のラウンドトリップ
 proptest! {
     #[test]
-    fn content_language_roundtrip(tags in proptest::collection::vec(header_misc_language_tag(), 1..4)) {
+    fn prop_content_language_roundtrip(tags in proptest::collection::vec(header_misc_language_tag(), 1..4)) {
         let header = tags.join(", ");
         let parsed = ContentLanguage::parse(&header).unwrap();
         let displayed = parsed.to_string();
@@ -147,7 +147,7 @@ proptest! {
 // Content-Location のラウンドトリップ
 proptest! {
     #[test]
-    fn content_location_roundtrip(value in header_misc_content_location_value()) {
+    fn prop_content_location_roundtrip(value in header_misc_content_location_value()) {
         let parsed = ContentLocation::parse(&value).unwrap();
         let displayed = parsed.to_string();
         let reparsed = ContentLocation::parse(&displayed).unwrap();
@@ -158,7 +158,7 @@ proptest! {
 // Host のラウンドトリップ
 proptest! {
     #[test]
-    fn host_roundtrip(value in header_misc_host_value()) {
+    fn prop_host_roundtrip(value in header_misc_host_value()) {
         let parsed = Host::parse(&value).unwrap();
         let displayed = parsed.to_string();
         let reparsed = Host::parse(&displayed).unwrap();
@@ -169,7 +169,7 @@ proptest! {
 // Trailer のラウンドトリップ
 proptest! {
     #[test]
-    fn trailer_roundtrip(tokens in proptest::collection::vec(header_misc_token_string(8), 1..5)) {
+    fn prop_trailer_roundtrip(tokens in proptest::collection::vec(header_misc_token_string(8), 1..5)) {
         let header = tokens.join(", ");
         let parsed = Trailer::parse(&header).unwrap();
         let displayed = parsed.to_string();
@@ -181,7 +181,7 @@ proptest! {
 // Vary のラウンドトリップ
 proptest! {
     #[test]
-    fn vary_roundtrip(value in prop_oneof![Just("*".to_string()), proptest::collection::vec(header_misc_token_string(8), 1..5).prop_map(|tokens| tokens.join(", "))]) {
+    fn prop_vary_roundtrip(value in prop_oneof![Just("*".to_string()), proptest::collection::vec(header_misc_token_string(8), 1..5).prop_map(|tokens| tokens.join(", "))]) {
         let parsed = Vary::parse(&value).unwrap();
         let displayed = parsed.to_string();
         let reparsed = Vary::parse(&displayed).unwrap();
@@ -192,7 +192,7 @@ proptest! {
 // Expect のラウンドトリップ
 proptest! {
     #[test]
-    fn expect_roundtrip(items in proptest::collection::vec((header_misc_expect_token(), prop::option::of(header_misc_token_string(8))), 1..4)) {
+    fn prop_expect_roundtrip(items in proptest::collection::vec((header_misc_expect_token(), prop::option::of(header_misc_token_string(8))), 1..4)) {
         let mut parts = Vec::new();
         let mut expected_has_100 = false;
 
@@ -219,7 +219,7 @@ proptest! {
 // Upgrade のラウンドトリップ
 proptest! {
     #[test]
-    fn upgrade_roundtrip(items in proptest::collection::vec((header_misc_token_string(8), prop::option::of(header_misc_token_string(8))), 1..4)) {
+    fn prop_upgrade_roundtrip(items in proptest::collection::vec((header_misc_token_string(8), prop::option::of(header_misc_token_string(8))), 1..4)) {
         let first_protocol = items[0].0.clone();
         let mut parts = Vec::new();
 
@@ -243,7 +243,7 @@ proptest! {
 // Digest Fields のラウンドトリップ
 proptest! {
     #[test]
-    fn content_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), proptest::collection::vec(any::<u8>(), 0..32)), 1..4)) {
+    fn prop_content_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), proptest::collection::vec(any::<u8>(), 0..32)), 1..4)) {
         let mut parts = Vec::new();
         for (algorithm, bytes) in entries {
             let encoded = header_misc_base64_encode(&bytes);
@@ -259,7 +259,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn repr_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), proptest::collection::vec(any::<u8>(), 0..32)), 1..4)) {
+    fn prop_repr_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), proptest::collection::vec(any::<u8>(), 0..32)), 1..4)) {
         let mut parts = Vec::new();
         for (algorithm, bytes) in entries {
             let encoded = header_misc_base64_encode(&bytes);
@@ -275,7 +275,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn want_content_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), 0u8..=10), 1..4)) {
+    fn prop_want_content_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), 0u8..=10), 1..4)) {
         let header = entries
             .iter()
             .map(|(algorithm, weight)| format!("{}={}", algorithm, weight))
@@ -290,7 +290,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn want_repr_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), 0u8..=10), 1..4)) {
+    fn prop_want_repr_digest_roundtrip(entries in proptest::collection::vec((header_misc_digest_algorithm_token(), 0u8..=10), 1..4)) {
         let header = entries
             .iter()
             .map(|(algorithm, weight)| format!("{}={}", algorithm, weight))
@@ -306,7 +306,7 @@ proptest! {
 // 追加ヘッダーのパースがパニックしない
 proptest! {
     #[test]
-    fn extra_header_parse_no_panic(s in "[ -~]{0,64}") {
+    fn prop_extra_header_parse_no_panic(s in "[ -~]{0,64}") {
         let _ = ContentLanguage::parse(&s);
         let _ = ContentLocation::parse(&s);
         let _ = Host::parse(&s);

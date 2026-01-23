@@ -89,7 +89,7 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 
 proptest! {
     #[test]
-    fn request_roundtrip(
+    fn prop_request_roundtrip(
         method in http_method(),
         uri in http_uri(),
         hdrs in headers(),
@@ -151,7 +151,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn streaming_decode_request(
+    fn prop_streaming_decode_request(
         method in http_method(),
         uri in http_uri(),
         hdrs in headers()
@@ -179,7 +179,7 @@ proptest! {
 // ボディ付きリクエストのストリーミングデコード
 proptest! {
     #[test]
-    fn streaming_decode_request_with_body(
+    fn prop_streaming_decode_request_with_body(
         method in http_method(),
         uri in http_uri(),
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
@@ -237,7 +237,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn keep_alive_http11_default(method in http_method(), uri in http_uri()) {
+    fn prop_keep_alive_http11_default(method in http_method(), uri in http_uri()) {
         let request = Request::new(&method, &uri);
         prop_assert!(
             request.is_keep_alive(),
@@ -254,7 +254,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn keep_alive_http10_default(method in http_method(), uri in http_uri()) {
+    fn prop_keep_alive_http10_default(method in http_method(), uri in http_uri()) {
         let request = Request::with_version(&method, &uri, "HTTP/1.0");
         prop_assert!(
             !request.is_keep_alive(),
@@ -276,7 +276,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn multiple_requests_same_decoder(
+    fn prop_multiple_requests_same_decoder(
         methods in proptest::collection::vec(http_method(), 2..5),
         uris in proptest::collection::vec(http_uri(), 2..5)
     ) {
@@ -306,7 +306,7 @@ proptest! {
 // 任意のバイト列を feed してもパニックしない
 proptest! {
     #[test]
-    fn request_decoder_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
+    fn prop_request_decoder_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
         let mut decoder = RequestDecoder::new();
         let _ = decoder.feed(&data);
         let _ = decoder.decode_headers();
@@ -318,7 +318,7 @@ proptest! {
 // エラー後にデコーダーをリセットして再利用できる
 proptest! {
     #[test]
-    fn decoder_reuse_after_error(
+    fn prop_decoder_reuse_after_error(
         garbage in proptest::collection::vec(any::<u8>(), 1..64),
         method in http_method(),
         uri in http_uri()
@@ -348,7 +348,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_new_creates_valid_request(method in http_method(), uri in http_uri()) {
+    fn prop_request_new_creates_valid_request(method in http_method(), uri in http_uri()) {
         let request = Request::new(&method, &uri);
 
         prop_assert_eq!(&request.method, &method);
@@ -361,7 +361,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_with_version(method in http_method(), uri in http_uri()) {
+    fn prop_request_with_version(method in http_method(), uri in http_uri()) {
         let request10 = Request::with_version(&method, &uri, "HTTP/1.0");
         let request11 = Request::with_version(&method, &uri, "HTTP/1.1");
 
@@ -372,7 +372,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_header_builder_pattern(
+    fn prop_request_header_builder_pattern(
         method in http_method(),
         uri in http_uri(),
         name in header_name(),
@@ -388,7 +388,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_body_builder_pattern(
+    fn prop_request_body_builder_pattern(
         method in http_method(),
         uri in http_uri(),
         body_data in body()
@@ -401,7 +401,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_get_header_case_insensitive(
+    fn prop_request_get_header_case_insensitive(
         method in http_method(),
         uri in http_uri(),
         value in header_value()
@@ -417,7 +417,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_get_headers_case_insensitive_multiple(
+    fn prop_request_get_headers_case_insensitive_multiple(
         method in http_method(),
         uri in http_uri(),
         value1 in header_value(),
@@ -440,7 +440,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn request_clone_eq(
+    fn prop_request_clone_eq(
         method in http_method(),
         uri in http_uri(),
         hdrs in headers(),
@@ -463,7 +463,7 @@ proptest! {
 }
 
 #[test]
-fn request_debug() {
+fn prop_request_debug() {
     let request = Request::new("GET", "/test").header("Host", "example.com");
     let debug_str = format!("{:?}", request);
 

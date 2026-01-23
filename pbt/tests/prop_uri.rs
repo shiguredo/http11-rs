@@ -87,7 +87,7 @@ fn userinfo() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn uri_error_display() {
+fn prop_uri_error_display() {
     let errors = [
         (UriError::Empty, "empty URI"),
         (UriError::InvalidPercentEncoding, "invalid percent encoding"),
@@ -104,13 +104,13 @@ fn uri_error_display() {
 }
 
 #[test]
-fn uri_error_is_error_trait() {
+fn prop_uri_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(UriError::Empty);
     assert_eq!(error.to_string(), "empty URI");
 }
 
 #[test]
-fn uri_error_clone_eq() {
+fn prop_uri_error_clone_eq() {
     let error = UriError::InvalidCharacter('x');
     let cloned = error.clone();
     assert_eq!(error, cloned);
@@ -123,7 +123,7 @@ fn uri_error_clone_eq() {
 // パーセントエンコード/デコードのラウンドトリップ
 proptest! {
     #[test]
-    fn percent_encode_decode_roundtrip(s in "[ -~]{0,64}") {
+    fn prop_percent_encode_decode_roundtrip(s in "[ -~]{0,64}") {
         let encoded = percent_encode(&s);
         let decoded = percent_decode(&encoded).unwrap();
         prop_assert_eq!(decoded, s);
@@ -133,7 +133,7 @@ proptest! {
 // UTF-8 文字列のパーセントエンコード/デコードのラウンドトリップ
 proptest! {
     #[test]
-    fn percent_encode_decode_utf8_roundtrip(s in "\\PC{0,32}") {
+    fn prop_percent_encode_decode_utf8_roundtrip(s in "\\PC{0,32}") {
         let encoded = percent_encode(&s);
         let decoded = percent_decode(&encoded).unwrap();
         prop_assert_eq!(decoded, s);
@@ -143,7 +143,7 @@ proptest! {
 // パーセントエンコードされた文字列は安全な文字のみを含む
 proptest! {
     #[test]
-    fn percent_encode_safe_chars(s in "\\PC{0,32}") {
+    fn prop_percent_encode_safe_chars(s in "\\PC{0,32}") {
         let encoded = percent_encode(&s);
         for c in encoded.chars() {
             prop_assert!(
@@ -158,7 +158,7 @@ proptest! {
 // パス用エンコードは `/` を保持
 proptest! {
     #[test]
-    fn percent_encode_path_preserves_slash(s in "[a-zA-Z0-9/]{1,32}") {
+    fn prop_percent_encode_path_preserves_slash(s in "[a-zA-Z0-9/]{1,32}") {
         let encoded = percent_encode_path(&s);
         prop_assert_eq!(s.matches('/').count(), encoded.matches('/').count());
     }
@@ -167,7 +167,7 @@ proptest! {
 // パス用エンコードは特殊文字をエンコード
 proptest! {
     #[test]
-    fn percent_encode_path_encodes_special(s in "[a-zA-Z0-9 ?#]{1,32}") {
+    fn prop_percent_encode_path_encodes_special(s in "[a-zA-Z0-9 ?#]{1,32}") {
         let encoded = percent_encode_path(&s);
         // スペース、?, # はエンコードされる
         prop_assert!(!encoded.contains(' '));
@@ -179,7 +179,7 @@ proptest! {
 // クエリ用エンコードは `=` と `&` を保持
 proptest! {
     #[test]
-    fn percent_encode_query_preserves_special(s in "[a-zA-Z0-9=&]{1,32}") {
+    fn prop_percent_encode_query_preserves_special(s in "[a-zA-Z0-9=&]{1,32}") {
         let encoded = percent_encode_query(&s);
         prop_assert_eq!(s.matches('=').count(), encoded.matches('=').count());
         prop_assert_eq!(s.matches('&').count(), encoded.matches('&').count());
@@ -189,7 +189,7 @@ proptest! {
 // クエリ用エンコードは他の特殊文字をエンコード
 proptest! {
     #[test]
-    fn percent_encode_query_encodes_other_special(s in "[a-zA-Z0-9 #]{1,32}") {
+    fn prop_percent_encode_query_encodes_other_special(s in "[a-zA-Z0-9 #]{1,32}") {
         let encoded = percent_encode_query(&s);
         prop_assert!(!encoded.contains(' '));
         prop_assert!(!encoded.contains('#'));
@@ -199,7 +199,7 @@ proptest! {
 // percent_decode_bytes のラウンドトリップ
 proptest! {
     #[test]
-    fn percent_decode_bytes_roundtrip(data in proptest::collection::vec(any::<u8>(), 0..64)) {
+    fn prop_percent_decode_bytes_roundtrip(data in proptest::collection::vec(any::<u8>(), 0..64)) {
         // バイト列をエンコード
         let encoded: String = data
             .iter()
@@ -219,7 +219,7 @@ proptest! {
 
 // percent_decode のエラーケース
 #[test]
-fn percent_decode_errors() {
+fn prop_percent_decode_errors() {
     // 不完全なエンコーディング
     assert!(matches!(
         percent_decode("%"),
@@ -243,7 +243,7 @@ fn percent_decode_errors() {
 
 // percent_decode の InvalidUtf8 エラー
 #[test]
-fn percent_decode_invalid_utf8() {
+fn prop_percent_decode_invalid_utf8() {
     // 無効な UTF-8 シーケンス
     assert!(matches!(
         percent_decode("%FF%FE"),
@@ -257,14 +257,14 @@ fn percent_decode_invalid_utf8() {
 
 // 空 URI のエラー
 #[test]
-fn uri_parse_empty() {
+fn prop_uri_parse_empty() {
     assert!(matches!(Uri::parse(""), Err(UriError::Empty)));
 }
 
 // 有効な絶対 URI のパース
 proptest! {
     #[test]
-    fn uri_parse_absolute(s in scheme(), h in hostname(), p in path()) {
+    fn prop_uri_parse_absolute(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -279,7 +279,7 @@ proptest! {
 // ポート付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_port(s in scheme(), h in hostname(), pt in port(), p in path()) {
+    fn prop_uri_parse_with_port(s in scheme(), h in hostname(), pt in port(), p in path()) {
         let uri_str = format!("{}://{}:{}{}", s, h, pt, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -293,7 +293,7 @@ proptest! {
 // IPv4 ホスト付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_ipv4_host(addr in ipv4(), p in path()) {
+    fn prop_uri_parse_ipv4_host(addr in ipv4(), p in path()) {
         let uri_str = format!("http://{}{}", addr, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -305,7 +305,7 @@ proptest! {
 // IPv6 ホスト付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_ipv6_host(addr in ipv6(), p in path()) {
+    fn prop_uri_parse_ipv6_host(addr in ipv6(), p in path()) {
         let uri_str = format!("http://{}{}", addr, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -317,7 +317,7 @@ proptest! {
 // IPv6 ホスト + ポート付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_ipv6_with_port(addr in ipv6(), pt in port(), p in path()) {
+    fn prop_uri_parse_ipv6_with_port(addr in ipv6(), pt in port(), p in path()) {
         let uri_str = format!("http://{}:{}{}", addr, pt, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -329,7 +329,7 @@ proptest! {
 // userinfo 付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_userinfo(user in userinfo(), h in hostname(), p in path()) {
+    fn prop_uri_parse_with_userinfo(user in userinfo(), h in hostname(), p in path()) {
         let uri_str = format!("http://{}@{}{}", user, h, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -345,7 +345,7 @@ proptest! {
 // userinfo + ポート付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_userinfo_and_port(user in userinfo(), h in hostname(), pt in port()) {
+    fn prop_uri_parse_with_userinfo_and_port(user in userinfo(), h in hostname(), pt in port()) {
         let uri_str = format!("http://{}@{}:{}/", user, h, pt);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -357,7 +357,7 @@ proptest! {
 // 相対 URI のパース
 proptest! {
     #[test]
-    fn uri_parse_relative(p in path()) {
+    fn prop_uri_parse_relative(p in path()) {
         let uri = Uri::parse(&p).unwrap();
 
         prop_assert!(uri.is_relative());
@@ -372,7 +372,7 @@ proptest! {
 // クエリ付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_query(p in path(), q in query()) {
+    fn prop_uri_parse_with_query(p in path(), q in query()) {
         let uri_str = format!("{}?{}", p, q);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -384,7 +384,7 @@ proptest! {
 // フラグメント付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_fragment(p in path(), f in fragment()) {
+    fn prop_uri_parse_with_fragment(p in path(), f in fragment()) {
         let uri_str = format!("{}#{}", p, f);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -396,7 +396,7 @@ proptest! {
 // クエリ + フラグメント付き URI のパース
 proptest! {
     #[test]
-    fn uri_parse_with_query_and_fragment(p in path(), q in query(), f in fragment()) {
+    fn prop_uri_parse_with_query_and_fragment(p in path(), q in query(), f in fragment()) {
         let uri_str = format!("{}?{}#{}", p, q, f);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -409,7 +409,7 @@ proptest! {
 // フル URI (scheme, userinfo, host, port, path, query, fragment)
 proptest! {
     #[test]
-    fn uri_parse_full(
+    fn prop_uri_parse_full(
         s in scheme(),
         user in userinfo(),
         h in hostname(),
@@ -436,7 +436,7 @@ proptest! {
 
 // 不正なスキーム (最初が数字)
 #[test]
-fn uri_parse_invalid_scheme_starts_with_digit() {
+fn prop_uri_parse_invalid_scheme_starts_with_digit() {
     assert!(matches!(
         Uri::parse("1http://example.com"),
         Err(UriError::InvalidScheme)
@@ -445,7 +445,7 @@ fn uri_parse_invalid_scheme_starts_with_digit() {
 
 // 不正なスキーム (不正な文字) → スキームとして認識されない
 #[test]
-fn uri_parse_invalid_scheme_invalid_char() {
+fn prop_uri_parse_invalid_scheme_invalid_char() {
     // ! はスキームに使えないため、スキームとして認識されず相対パスとして解釈される
     let uri = Uri::parse("ht!tp://example.com").unwrap();
     assert_eq!(uri.scheme(), None);
@@ -454,7 +454,7 @@ fn uri_parse_invalid_scheme_invalid_char() {
 
 // 不正なポート番号
 #[test]
-fn uri_parse_invalid_port() {
+fn prop_uri_parse_invalid_port() {
     assert!(matches!(
         Uri::parse("http://example.com:abc/"),
         Err(UriError::InvalidPort)
@@ -467,7 +467,7 @@ fn uri_parse_invalid_port() {
 
 // 不正な IPv6 ホスト (閉じ括弧なし)
 #[test]
-fn uri_parse_invalid_ipv6_no_closing_bracket() {
+fn prop_uri_parse_invalid_ipv6_no_closing_bracket() {
     assert!(matches!(
         Uri::parse("http://[::1/path"),
         Err(UriError::InvalidHost)
@@ -476,7 +476,7 @@ fn uri_parse_invalid_ipv6_no_closing_bracket() {
 
 // 不正な IPv6 ホスト (括弧後に不正な文字)
 #[test]
-fn uri_parse_invalid_ipv6_invalid_after_bracket() {
+fn prop_uri_parse_invalid_ipv6_invalid_after_bracket() {
     assert!(matches!(
         Uri::parse("http://[::1]abc/path"),
         Err(UriError::InvalidHost)
@@ -490,7 +490,7 @@ fn uri_parse_invalid_ipv6_invalid_after_bracket() {
 // as_str() は元の URI 文字列を返す
 proptest! {
     #[test]
-    fn uri_as_str(s in scheme(), h in hostname(), p in path()) {
+    fn prop_uri_as_str(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -501,7 +501,7 @@ proptest! {
 // Display は as_str() と同じ
 proptest! {
     #[test]
-    fn uri_display(s in scheme(), h in hostname(), p in path()) {
+    fn prop_uri_display(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -512,7 +512,7 @@ proptest! {
 // origin_form は path + query
 proptest! {
     #[test]
-    fn uri_origin_form(h in hostname(), p in path(), q in query()) {
+    fn prop_uri_origin_form(h in hostname(), p in path(), q in query()) {
         let uri_str = format!("http://{}{}?{}", h, p, q);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -524,7 +524,7 @@ proptest! {
 // 空パスの origin_form は "/"
 proptest! {
     #[test]
-    fn uri_origin_form_empty_path(h in hostname()) {
+    fn prop_uri_origin_form_empty_path(h in hostname()) {
         let uri_str = format!("http://{}", h);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -535,7 +535,7 @@ proptest! {
 // origin_form (クエリなし)
 proptest! {
     #[test]
-    fn uri_origin_form_no_query(h in hostname(), p in path()) {
+    fn prop_uri_origin_form_no_query(h in hostname(), p in path()) {
         let uri_str = format!("http://{}{}", h, p);
         let uri = Uri::parse(&uri_str).unwrap();
 
@@ -550,7 +550,7 @@ proptest! {
 // 絶対参照の解決 (そのまま返る)
 proptest! {
     #[test]
-    fn uri_resolve_absolute(s in scheme(), h in hostname(), p in path()) {
+    fn prop_uri_resolve_absolute(s in scheme(), h in hostname(), p in path()) {
         let base = Uri::parse("http://example.com/a/b").unwrap();
         let reference = Uri::parse(&format!("{}://{}{}", s, h, p)).unwrap();
         let resolved = resolve(&base, &reference).unwrap();
@@ -563,7 +563,7 @@ proptest! {
 // authority 付き参照の解決 (base のスキームのみ使用)
 proptest! {
     #[test]
-    fn uri_resolve_with_authority(h in hostname(), p in path()) {
+    fn prop_uri_resolve_with_authority(h in hostname(), p in path()) {
         let base = Uri::parse("http://example.com/a/b").unwrap();
         let ref_str = format!("//{}{}", h, p);
         let reference = Uri::parse(&ref_str).unwrap();
@@ -576,7 +576,7 @@ proptest! {
 
 // 空パス参照の解決 (base のパスを使用)
 #[test]
-fn uri_resolve_empty_path() {
+fn prop_uri_resolve_empty_path() {
     let base = Uri::parse("http://example.com/a/b/c").unwrap();
 
     // 空パス + クエリ
@@ -595,7 +595,7 @@ fn uri_resolve_empty_path() {
 
 // 空パス参照 (base にクエリがある場合)
 #[test]
-fn uri_resolve_empty_path_with_base_query() {
+fn prop_uri_resolve_empty_path_with_base_query() {
     let base = Uri::parse("http://example.com/path?basequery").unwrap();
 
     // 空パス、クエリなし → base のクエリを継承
@@ -607,7 +607,7 @@ fn uri_resolve_empty_path_with_base_query() {
 // 絶対パス参照の解決
 proptest! {
     #[test]
-    fn uri_resolve_absolute_path(segment in path_segment()) {
+    fn prop_uri_resolve_absolute_path(segment in path_segment()) {
         // ドットセグメントを含まないシンプルなパスでテスト
         let p = format!("/{}", segment);
         let base = Uri::parse("http://example.com/a/b/c").unwrap();
@@ -623,7 +623,7 @@ proptest! {
 // 相対パス参照の解決
 proptest! {
     #[test]
-    fn uri_resolve_relative_path(segment in path_segment()) {
+    fn prop_uri_resolve_relative_path(segment in path_segment()) {
         let base = Uri::parse("http://example.com/a/b/c").unwrap();
         let reference = Uri::parse(&segment).unwrap();
         let resolved = resolve(&base, &reference).unwrap();
@@ -639,7 +639,7 @@ proptest! {
 
 // `..` を含む相対パスの解決
 #[test]
-fn uri_resolve_dotdot() {
+fn prop_uri_resolve_dotdot() {
     let base = Uri::parse("http://example.com/a/b/c").unwrap();
 
     let reference = Uri::parse("../d").unwrap();
@@ -657,7 +657,7 @@ fn uri_resolve_dotdot() {
 
 // `.` を含む相対パスの解決
 #[test]
-fn uri_resolve_dot() {
+fn prop_uri_resolve_dot() {
     let base = Uri::parse("http://example.com/a/b/c").unwrap();
 
     let reference = Uri::parse("./d").unwrap();
@@ -671,7 +671,7 @@ fn uri_resolve_dot() {
 
 // base に authority があり、パスが空の場合
 #[test]
-fn uri_resolve_base_empty_path() {
+fn prop_uri_resolve_base_empty_path() {
     let base = Uri::parse("http://example.com").unwrap();
 
     let reference = Uri::parse("relative").unwrap();
@@ -686,7 +686,7 @@ fn uri_resolve_base_empty_path() {
 // 正規化後のスキームとホストは小文字
 proptest! {
     #[test]
-    fn uri_normalize_lowercase(s in "[A-Z]{1,8}", h in "[A-Z]{1,16}") {
+    fn prop_uri_normalize_lowercase(s in "[A-Z]{1,8}", h in "[A-Z]{1,16}") {
         let uri_str = format!("{}://{}/path", s, h);
         let uri = Uri::parse(&uri_str).unwrap();
         let normalized = normalize(&uri).unwrap();
@@ -700,7 +700,7 @@ proptest! {
 
 // 正規化でドットセグメントが除去される
 #[test]
-fn uri_normalize_removes_dot_segments() {
+fn prop_uri_normalize_removes_dot_segments() {
     let uri = Uri::parse("http://example.com/a/b/../c/./d").unwrap();
     let normalized = normalize(&uri).unwrap();
     assert_eq!(normalized.path(), "/a/c/d");
@@ -708,7 +708,7 @@ fn uri_normalize_removes_dot_segments() {
 
 // 正規化でパーセントエンコーディングが正規化される
 #[test]
-fn uri_normalize_percent_encoding() {
+fn prop_uri_normalize_percent_encoding() {
     // unreserved 文字のエンコードはデコードされる
     let uri = Uri::parse("http://example.com/%61%62%63").unwrap(); // abc
     let normalized = normalize(&uri).unwrap();
@@ -723,7 +723,7 @@ fn uri_normalize_percent_encoding() {
 // クエリとフラグメントの正規化
 proptest! {
     #[test]
-    fn uri_normalize_with_query_and_fragment(s in scheme(), h in hostname(), q in query(), f in fragment()) {
+    fn prop_uri_normalize_with_query_and_fragment(s in scheme(), h in hostname(), q in query(), f in fragment()) {
         let uri_str = format!("{}://{}/path?{}#{}", s.to_uppercase(), h.to_uppercase(), q, f);
         let uri = Uri::parse(&uri_str).unwrap();
         let normalized = normalize(&uri).unwrap();
@@ -739,7 +739,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn uri_clone_eq(s in scheme(), h in hostname(), p in path()) {
+    fn prop_uri_clone_eq(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
         let uri = Uri::parse(&uri_str).unwrap();
         let cloned = uri.clone();
@@ -755,7 +755,7 @@ proptest! {
 // 任意のバイト列で URI パースがパニックしない
 proptest! {
     #[test]
-    fn uri_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
+    fn prop_uri_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
         if let Ok(s) = std::str::from_utf8(&data) {
             let _ = Uri::parse(s);
         }
@@ -765,7 +765,7 @@ proptest! {
 // 任意の文字列でパーセントデコードがパニックしない
 proptest! {
     #[test]
-    fn percent_decode_no_panic(s in "[ -~]{0,64}") {
+    fn prop_percent_decode_no_panic(s in "[ -~]{0,64}") {
         let _ = percent_decode(&s);
     }
 }
@@ -773,7 +773,7 @@ proptest! {
 // 任意の文字列で正規化がパニックしない
 proptest! {
     #[test]
-    fn uri_normalize_no_panic(s in "[a-z]{1,8}://[a-z]{1,16}/[a-zA-Z0-9%._-]{0,32}") {
+    fn prop_uri_normalize_no_panic(s in "[a-z]{1,8}://[a-z]{1,16}/[a-zA-Z0-9%._-]{0,32}") {
         if let Ok(uri) = Uri::parse(&s) {
             let _ = normalize(&uri);
         }
@@ -785,7 +785,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn remove_dot_segments_edge_cases() {
+fn prop_remove_dot_segments_edge_cases() {
     // RFC 3986 Section 5.4 のテストケース
     let base = Uri::parse("http://example.com/base/").unwrap();
 
@@ -812,7 +812,7 @@ fn remove_dot_segments_edge_cases() {
 
 // ./ と ../ で始まるパス
 #[test]
-fn remove_dot_segments_leading_dots() {
+fn prop_remove_dot_segments_leading_dots() {
     let base = Uri::parse("http://example.com/a/b/c").unwrap();
 
     // ./ で始まる
@@ -831,7 +831,7 @@ fn remove_dot_segments_leading_dots() {
 // ========================================
 
 #[test]
-fn uri_scheme_edge_cases() {
+fn prop_uri_scheme_edge_cases() {
     // スキームに + - . を含む
     let uri = Uri::parse("custom+scheme://host/path").unwrap();
     assert_eq!(uri.scheme(), Some("custom+scheme"));
@@ -853,7 +853,7 @@ fn uri_scheme_edge_cases() {
 // ========================================
 
 #[test]
-fn uri_empty_authority() {
+fn prop_uri_empty_authority() {
     let uri = Uri::parse("file:///path/to/file").unwrap();
     assert_eq!(uri.scheme(), Some("file"));
     assert_eq!(uri.authority(), Some(""));
@@ -867,7 +867,7 @@ fn uri_empty_authority() {
 // ========================================
 
 #[test]
-fn uri_empty_port() {
+fn prop_uri_empty_port() {
     let uri = Uri::parse("http://example.com:/path").unwrap();
     // 空ポートの場合、host には : が含まれる (実装の動作)
     assert_eq!(uri.host(), Some("example.com:"));

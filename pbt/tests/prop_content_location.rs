@@ -82,7 +82,7 @@ fn valid_uri() -> impl Strategy<Value = String> {
 // ========================================
 
 #[test]
-fn content_location_error_display() {
+fn prop_content_location_error_display() {
     let errors = [
         (ContentLocationError::Empty, "empty Content-Location"),
         (
@@ -97,7 +97,7 @@ fn content_location_error_display() {
 }
 
 #[test]
-fn content_location_error_is_error_trait() {
+fn prop_content_location_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(ContentLocationError::Empty);
     assert_eq!(error.to_string(), "empty Content-Location");
 }
@@ -109,7 +109,7 @@ fn content_location_error_is_error_trait() {
 // 絶対 URI のラウンドトリップ
 proptest! {
     #[test]
-    fn content_location_absolute_uri_roundtrip(uri in absolute_uri()) {
+    fn prop_content_location_absolute_uri_roundtrip(uri in absolute_uri()) {
         let cl = ContentLocation::parse(&uri).unwrap();
         let _display = cl.to_string();
 
@@ -121,7 +121,7 @@ proptest! {
 // HTTP/HTTPS URI
 proptest! {
     #[test]
-    fn content_location_http_uri(
+    fn prop_content_location_http_uri(
         secure in proptest::bool::ANY,
         host in hostname(),
         p in path()
@@ -137,7 +137,7 @@ proptest! {
 // IPv4 ホスト
 proptest! {
     #[test]
-    fn content_location_ipv4_host(addr in ipv4(), p in path()) {
+    fn prop_content_location_ipv4_host(addr in ipv4(), p in path()) {
         let uri = format!("http://{}{}", addr, p);
         let cl = ContentLocation::parse(&uri).unwrap();
 
@@ -152,7 +152,7 @@ proptest! {
 // 相対 URI のラウンドトリップ
 proptest! {
     #[test]
-    fn content_location_relative_uri_roundtrip(uri in relative_uri()) {
+    fn prop_content_location_relative_uri_roundtrip(uri in relative_uri()) {
         let cl = ContentLocation::parse(&uri).unwrap();
 
         // パスが正しく取得できる
@@ -163,7 +163,7 @@ proptest! {
 // パスのみの URI
 proptest! {
     #[test]
-    fn content_location_path_only(p in path()) {
+    fn prop_content_location_path_only(p in path()) {
         let cl = ContentLocation::parse(&p).unwrap();
         prop_assert_eq!(cl.uri().path(), p.as_str());
     }
@@ -172,7 +172,7 @@ proptest! {
 // パス + クエリ
 proptest! {
     #[test]
-    fn content_location_path_with_query(p in path(), q in "[a-z]{1,8}=[a-z0-9]{1,8}") {
+    fn prop_content_location_path_with_query(p in path(), q in "[a-z]{1,8}=[a-z0-9]{1,8}") {
         let uri = format!("{}?{}", p, q);
         let cl = ContentLocation::parse(&uri).unwrap();
 
@@ -184,7 +184,7 @@ proptest! {
 // パス + フラグメント
 proptest! {
     #[test]
-    fn content_location_path_with_fragment(p in path(), frag in "[a-z]{1,8}") {
+    fn prop_content_location_path_with_fragment(p in path(), frag in "[a-z]{1,8}") {
         let uri = format!("{}#{}", p, frag);
         let cl = ContentLocation::parse(&uri).unwrap();
 
@@ -200,7 +200,7 @@ proptest! {
 // Display は元の URI を返す
 proptest! {
     #[test]
-    fn content_location_display(uri in valid_uri()) {
+    fn prop_content_location_display(uri in valid_uri()) {
         let cl = ContentLocation::parse(&uri).unwrap();
         let display = cl.to_string();
 
@@ -215,7 +215,7 @@ proptest! {
 // ========================================
 
 #[test]
-fn content_location_parse_errors() {
+fn prop_content_location_parse_errors() {
     // 空
     assert!(matches!(
         ContentLocation::parse(""),
@@ -239,7 +239,7 @@ fn content_location_parse_errors() {
 
 proptest! {
     #[test]
-    fn content_location_clone_eq(uri in valid_uri()) {
+    fn prop_content_location_clone_eq(uri in valid_uri()) {
         let cl = ContentLocation::parse(&uri).unwrap();
         let cloned = cl.clone();
 
@@ -253,7 +253,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_location_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_content_location_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ContentLocation::parse(&s);
     }
 }

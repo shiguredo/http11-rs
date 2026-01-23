@@ -106,7 +106,7 @@ fn is_attr_char_for_test(b: u8) -> bool {
 // ========================================
 
 #[test]
-fn content_disposition_error_display() {
+fn prop_content_disposition_error_display() {
     let errors = [
         (ContentDispositionError::Empty, "empty content-disposition"),
         (
@@ -133,7 +133,7 @@ fn content_disposition_error_display() {
 }
 
 #[test]
-fn content_disposition_error_is_error_trait() {
+fn prop_content_disposition_error_is_error_trait() {
     let error: Box<dyn std::error::Error> = Box::new(ContentDispositionError::Empty);
     assert_eq!(error.to_string(), "empty content-disposition");
 }
@@ -143,7 +143,7 @@ fn content_disposition_error_is_error_trait() {
 // ========================================
 
 #[test]
-fn disposition_type_display() {
+fn prop_disposition_type_display() {
     assert_eq!(DispositionType::Inline.to_string(), "inline");
     assert_eq!(DispositionType::Attachment.to_string(), "attachment");
     assert_eq!(DispositionType::FormData.to_string(), "form-data");
@@ -156,7 +156,7 @@ fn disposition_type_display() {
 // disposition-type のみのラウンドトリップ
 proptest! {
     #[test]
-    fn content_disposition_type_only_roundtrip(dtype in disposition_type_str()) {
+    fn prop_content_disposition_type_only_roundtrip(dtype in disposition_type_str()) {
         let cd = ContentDisposition::parse(dtype).unwrap();
 
         match dtype {
@@ -184,7 +184,7 @@ proptest! {
 // 大文字小文字混在のパース
 proptest! {
     #[test]
-    fn content_disposition_case_insensitive(dtype in mixed_case_disposition_type()) {
+    fn prop_content_disposition_case_insensitive(dtype in mixed_case_disposition_type()) {
         let cd = ContentDisposition::parse(&dtype).unwrap();
 
         // Display は小文字に正規化される
@@ -200,7 +200,7 @@ proptest! {
 // 引用符付き filename のラウンドトリップ
 proptest! {
     #[test]
-    fn content_disposition_filename_quoted_roundtrip(
+    fn prop_content_disposition_filename_quoted_roundtrip(
         dtype in disposition_type_str(),
         filename in ascii_filename()
     ) {
@@ -215,7 +215,7 @@ proptest! {
 // 引用符なし filename のパース
 proptest! {
     #[test]
-    fn content_disposition_filename_unquoted_roundtrip(
+    fn prop_content_disposition_filename_unquoted_roundtrip(
         dtype in disposition_type_str(),
         filename in ascii_filename()
     ) {
@@ -229,7 +229,7 @@ proptest! {
 // 特殊文字を含む引用符付き文字列
 proptest! {
     #[test]
-    fn content_disposition_quoted_string_content(
+    fn prop_content_disposition_quoted_string_content(
         dtype in disposition_type_str(),
         content in quoted_string_content()
     ) {
@@ -247,7 +247,7 @@ proptest! {
 // filename* のラウンドトリップ
 proptest! {
     #[test]
-    fn content_disposition_filename_ext_roundtrip(
+    fn prop_content_disposition_filename_ext_roundtrip(
         dtype in disposition_type_str(),
         (original, encoded) in percent_encoded_utf8()
     ) {
@@ -262,7 +262,7 @@ proptest! {
 // filename* は filename より優先される
 proptest! {
     #[test]
-    fn content_disposition_filename_ext_priority(
+    fn prop_content_disposition_filename_ext_priority(
         dtype in disposition_type_str(),
         ascii_name in ascii_filename(),
         (utf8_name, encoded) in percent_encoded_utf8()
@@ -283,7 +283,7 @@ proptest! {
 
 // UTF-8 以外の charset は拒否される
 #[test]
-fn content_disposition_filename_ext_non_utf8_rejected() {
+fn prop_content_disposition_filename_ext_non_utf8_rejected() {
     let result = ContentDisposition::parse("attachment; filename*=ISO-8859-1''test.txt");
     assert!(matches!(
         result,
@@ -299,7 +299,7 @@ fn content_disposition_filename_ext_non_utf8_rejected() {
 
 // ext-value のフォーマットエラー
 #[test]
-fn content_disposition_filename_ext_format_errors() {
+fn prop_content_disposition_filename_ext_format_errors() {
     // シングルクォートがない
     let result = ContentDisposition::parse("attachment; filename*=UTF-8test.txt");
     assert!(matches!(
@@ -317,7 +317,7 @@ fn content_disposition_filename_ext_format_errors() {
 
 // 不完全なパーセントエンコーディング
 #[test]
-fn content_disposition_incomplete_percent_encoding() {
+fn prop_content_disposition_incomplete_percent_encoding() {
     // % の後に1文字しかない
     let result = ContentDisposition::parse("attachment; filename*=UTF-8''test%2");
     assert!(matches!(
@@ -342,7 +342,7 @@ fn content_disposition_incomplete_percent_encoding() {
 
 // 不正な UTF-8 シーケンス
 #[test]
-fn content_disposition_invalid_utf8_sequence() {
+fn prop_content_disposition_invalid_utf8_sequence() {
     // 無効な UTF-8 バイトシーケンス
     let result = ContentDisposition::parse("attachment; filename*=UTF-8''%FF%FE");
     assert!(matches!(
@@ -358,7 +358,7 @@ fn content_disposition_invalid_utf8_sequence() {
 // form-data with name のラウンドトリップ
 proptest! {
     #[test]
-    fn content_disposition_form_data_name_roundtrip(name in ascii_filename()) {
+    fn prop_content_disposition_form_data_name_roundtrip(name in ascii_filename()) {
         let input = format!("form-data; name=\"{}\"", name);
         let cd = ContentDisposition::parse(&input).unwrap();
 
@@ -370,7 +370,7 @@ proptest! {
 // form-data with name and filename
 proptest! {
     #[test]
-    fn content_disposition_form_data_name_and_filename(
+    fn prop_content_disposition_form_data_name_and_filename(
         name in ascii_filename(),
         filename in ascii_filename()
     ) {
@@ -390,7 +390,7 @@ proptest! {
 // カスタムパラメータの取得
 proptest! {
     #[test]
-    fn content_disposition_custom_parameter(
+    fn prop_content_disposition_custom_parameter(
         dtype in disposition_type_str(),
         param_name in "[a-z]{1,8}",
         param_value in ascii_filename()
@@ -407,7 +407,7 @@ proptest! {
 
 // パラメータ名は大文字小文字を区別しない
 #[test]
-fn content_disposition_parameter_case_insensitive() {
+fn prop_content_disposition_parameter_case_insensitive() {
     let cd = ContentDisposition::parse("attachment; FILENAME=\"test.txt\"").unwrap();
     assert_eq!(cd.filename(), Some("test.txt"));
 
@@ -422,7 +422,7 @@ fn content_disposition_parameter_case_insensitive() {
 // ContentDisposition::new + with_filename
 proptest! {
     #[test]
-    fn content_disposition_builder_filename(filename in ascii_filename()) {
+    fn prop_content_disposition_builder_filename(filename in ascii_filename()) {
         let cd = ContentDisposition::new(DispositionType::Attachment)
             .with_filename(&filename);
 
@@ -435,7 +435,7 @@ proptest! {
 // ContentDisposition::new + with_filename_ext
 proptest! {
     #[test]
-    fn content_disposition_builder_filename_ext(filename in utf8_filename()) {
+    fn prop_content_disposition_builder_filename_ext(filename in utf8_filename()) {
         let cd = ContentDisposition::new(DispositionType::Attachment)
             .with_filename_ext(&filename);
 
@@ -447,7 +447,7 @@ proptest! {
 // ContentDisposition::new + with_name
 proptest! {
     #[test]
-    fn content_disposition_builder_name(name in ascii_filename()) {
+    fn prop_content_disposition_builder_name(name in ascii_filename()) {
         let cd = ContentDisposition::new(DispositionType::FormData)
             .with_name(&name);
 
@@ -459,7 +459,7 @@ proptest! {
 // 複合ビルダー
 proptest! {
     #[test]
-    fn content_disposition_builder_combined(
+    fn prop_content_disposition_builder_combined(
         name in ascii_filename(),
         ascii_fn in ascii_filename(),
         utf8_fn in utf8_filename()
@@ -485,7 +485,7 @@ proptest! {
 // attachment + filename の Display
 proptest! {
     #[test]
-    fn content_disposition_display_filename(fname in ascii_filename()) {
+    fn prop_content_disposition_display_filename(fname in ascii_filename()) {
         let cd = ContentDisposition::new(DispositionType::Attachment)
             .with_filename(&fname);
         let display = cd.to_string();
@@ -499,7 +499,7 @@ proptest! {
 // form-data + name + filename の Display
 proptest! {
     #[test]
-    fn content_disposition_display_form_data(
+    fn prop_content_disposition_display_form_data(
         nm in ascii_filename(),
         fname in ascii_filename()
     ) {
@@ -519,7 +519,7 @@ proptest! {
 // filename* の Display (パーセントエンコーディング)
 proptest! {
     #[test]
-    fn content_disposition_display_filename_ext(filename in utf8_filename()) {
+    fn prop_content_disposition_display_filename_ext(filename in utf8_filename()) {
         let cd = ContentDisposition::new(DispositionType::Attachment)
             .with_filename_ext(&filename);
         let display = cd.to_string();
@@ -535,7 +535,7 @@ proptest! {
 
 // 引用符を含む filename
 #[test]
-fn content_disposition_escape_quote_in_filename() {
+fn prop_content_disposition_escape_quote_in_filename() {
     // パース時のエスケープ解除
     let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#).unwrap();
     assert_eq!(cd.filename(), Some("file\"name.txt"));
@@ -548,7 +548,7 @@ fn content_disposition_escape_quote_in_filename() {
 
 // バックスラッシュを含む filename
 #[test]
-fn content_disposition_escape_backslash_in_filename() {
+fn prop_content_disposition_escape_backslash_in_filename() {
     // パース時のエスケープ解除
     let cd = ContentDisposition::parse(r#"attachment; filename="path\\file.txt""#).unwrap();
     assert_eq!(cd.filename(), Some("path\\file.txt"));
@@ -561,7 +561,7 @@ fn content_disposition_escape_backslash_in_filename() {
 
 // 不完全なエスケープシーケンス
 #[test]
-fn content_disposition_incomplete_escape() {
+fn prop_content_disposition_incomplete_escape() {
     // バックスラッシュで終わる
     let result = ContentDisposition::parse(r#"attachment; filename="test\"#);
     assert!(matches!(
@@ -575,7 +575,7 @@ fn content_disposition_incomplete_escape() {
 // ========================================
 
 #[test]
-fn content_disposition_parse_errors() {
+fn prop_content_disposition_parse_errors() {
     // 空
     assert!(matches!(
         ContentDisposition::parse(""),
@@ -603,7 +603,7 @@ fn content_disposition_parse_errors() {
 
 // 空のパラメータ部分
 #[test]
-fn content_disposition_empty_parameter_parts() {
+fn prop_content_disposition_empty_parameter_parts() {
     // 末尾のセミコロン
     let cd = ContentDisposition::parse("attachment;").unwrap();
     assert!(cd.is_attachment());
@@ -615,7 +615,7 @@ fn content_disposition_empty_parameter_parts() {
 
 // = がないパラメータは無視される
 #[test]
-fn content_disposition_parameter_without_equals() {
+fn prop_content_disposition_parameter_without_equals() {
     let cd = ContentDisposition::parse("attachment; filename").unwrap();
     assert!(cd.is_attachment());
     assert_eq!(cd.filename(), None);
@@ -627,7 +627,7 @@ fn content_disposition_parameter_without_equals() {
 
 proptest! {
     #[test]
-    fn content_disposition_clone_eq(
+    fn prop_content_disposition_clone_eq(
         dtype in disposition_type_str(),
         filename in prop::option::of(ascii_filename()),
         name in prop::option::of(ascii_filename())
@@ -657,7 +657,7 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_disposition_type_helpers(dtype in prop_oneof![
+    fn prop_content_disposition_type_helpers(dtype in prop_oneof![
         Just(DispositionType::Inline),
         Just(DispositionType::Attachment),
         Just(DispositionType::FormData)
@@ -676,14 +676,14 @@ proptest! {
 
 proptest! {
     #[test]
-    fn content_disposition_parse_no_panic(s in "[ -~]{0,128}") {
+    fn prop_content_disposition_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ContentDisposition::parse(&s);
     }
 }
 
 proptest! {
     #[test]
-    fn content_disposition_parse_with_utf8_no_panic(s in ".*{0,64}") {
+    fn prop_content_disposition_parse_with_utf8_no_panic(s in ".*{0,64}") {
         let _ = ContentDisposition::parse(&s);
     }
 }
