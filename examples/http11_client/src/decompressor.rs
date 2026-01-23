@@ -222,9 +222,7 @@ pub fn decompress_body(data: &[u8], encoding: &str) -> Result<Vec<u8>, Compressi
             Ok(decompressed)
         }
         #[cfg(feature = "zstd")]
-        "zstd" => {
-            zstd::decode_all(data).map_err(|e| CompressionError::InvalidData(e.to_string()))
-        }
+        "zstd" => zstd::decode_all(data).map_err(|e| CompressionError::InvalidData(e.to_string())),
         "identity" | "" => Ok(data.to_vec()),
         _ => Err(CompressionError::InvalidData(format!(
             "unsupported encoding: {}",

@@ -221,7 +221,8 @@ impl Compressor for BrotliCompressor {
 
         let mut compressed = Vec::new();
         {
-            let mut encoder = brotli::CompressorWriter::new(&mut compressed, 4096, self.quality, 22);
+            let mut encoder =
+                brotli::CompressorWriter::new(&mut compressed, 4096, self.quality, 22);
             encoder
                 .write_all(&self.buffer)
                 .map_err(|e| CompressionError::Internal(e.to_string()))?;
@@ -481,9 +482,7 @@ pub fn compress_body(data: &[u8], encoding: &str) -> Result<Vec<u8>, Compression
             Ok(compressed)
         }
         #[cfg(feature = "zstd")]
-        "zstd" => {
-            zstd::encode_all(data, 3).map_err(|e| CompressionError::Internal(e.to_string()))
-        }
+        "zstd" => zstd::encode_all(data, 3).map_err(|e| CompressionError::Internal(e.to_string())),
         _ => Ok(data.to_vec()),
     }
 }

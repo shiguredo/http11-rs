@@ -81,8 +81,8 @@ pub use decoder::{
     BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, ResponseDecoder, ResponseHead,
 };
 pub use encoder::{
-    encode_chunk, encode_chunks, encode_request, encode_request_headers, encode_response,
-    encode_response_headers, RequestEncoder, ResponseEncoder,
+    RequestEncoder, ResponseEncoder, encode_chunk, encode_chunks, encode_request,
+    encode_request_headers, encode_response, encode_response_headers,
 };
 pub use error::Error;
 pub use limits::DecoderLimits;

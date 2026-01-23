@@ -64,6 +64,27 @@ let bytes = response.encode();
 // bytes を送信...
 ```
 
+### 圧縮/展開 (Content-Encoding)
+
+ライブラリ本体は依存 0 を維持するため、圧縮/展開の実装は含みません。
+代わりに `Compressor` / `Decompressor` トレイトを提供し、利用者が任意の実装を組み込めます。
+
+```rust
+use shiguredo_http11::{ResponseDecoder, ResponseEncoder};
+use shiguredo_http11::compression::{Compressor, Decompressor, NoCompression};
+
+// 展開器を組み込んだデコーダー
+let decoder = ResponseDecoder::with_decompressor(MyGzipDecompressor::new());
+
+// 圧縮器を組み込んだエンコーダー
+let encoder = ResponseEncoder::with_compressor(MyGzipCompressor::new());
+
+// 従来通りの使い方 (圧縮なし)
+let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
+```
+
+サンプル (`examples/`) では `flate2`, `brotli`, `zstd` クレートを使った実装例を提供しています。
+
 ### ストリーミングデコード
 
 大きなボディを扱う場合や、ボディを受信しながら処理したい場合はストリーミング API を使用します。
