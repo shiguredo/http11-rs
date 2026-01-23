@@ -23,6 +23,8 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 ライブラリで�
 - Sans I/O
   - <https://sans-io.readthedocs.io/index.html>
 - 依存ライブラリ 0
+- 圧縮/展開トレイト (`Compressor` / `Decompressor`) の提供
+  - ライブラリ本体は圧縮実装を含まず、利用者が任意の実装を組み込める
 
 ## 使い方
 
@@ -66,7 +68,7 @@ let bytes = response.encode();
 
 ### 圧縮/展開 (Content-Encoding)
 
-ライブラリ本体は依存 0 を維持するため、圧縮/展開の実装は含みません。
+ライブラリ本体は圧縮/展開の実装は含みません。
 代わりに `Compressor` / `Decompressor` トレイトを提供し、利用者が任意の実装を組み込めます。
 
 ```rust
