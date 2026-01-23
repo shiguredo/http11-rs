@@ -118,7 +118,7 @@ proptest! {
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // obs-fold (行頭スペース) はエラー
-        let data = format!("GET / HTTP/1.1\r\n {}: {}\r\n\r\n", header_name, header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n {}: {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -132,7 +132,7 @@ proptest! {
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // obs-fold (行頭タブ) はエラー
-        let data = format!("GET / HTTP/1.1\r\n\t{}: {}\r\n\r\n", header_name, header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n\t{}: {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -146,7 +146,7 @@ proptest! {
         suffix in "[A-Za-z]{1,8}"
     ) {
         // ヘッダー名に CR を含むとエラー
-        let data = format!("GET / HTTP/1.1\r\n{}\r{}: value\r\n\r\n", prefix, suffix);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r{}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -160,7 +160,7 @@ proptest! {
         suffix in "[A-Za-z]{1,8}"
     ) {
         // ヘッダー名に LF を含むとエラー
-        let data = format!("GET / HTTP/1.1\r\n{}\n{}: value\r\n\r\n", prefix, suffix);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\n{}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -174,7 +174,7 @@ proptest! {
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // コロンがないとエラー
-        let data = format!("GET / HTTP/1.1\r\n{} {}\r\n\r\n", header_name, header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -187,7 +187,7 @@ proptest! {
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // 空のヘッダー名はエラー
-        let data = format!("GET / HTTP/1.1\r\n: {}\r\n\r\n", header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n: {}\r\n\r\n", header_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -201,7 +201,7 @@ proptest! {
         suffix in "[A-Za-z]{1,8}"
     ) {
         // ヘッダー名にスペースを含むとエラー
-        let data = format!("GET / HTTP/1.1\r\n{} {}: value\r\n\r\n", prefix, suffix);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} {}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -214,7 +214,7 @@ proptest! {
         header_name in "[A-Za-z]{1,16}"
     ) {
         // ヘッダー名の後にスペースがあるとエラー
-        let data = format!("GET / HTTP/1.1\r\n{} : value\r\n\r\n", header_name);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} : value\r\n\r\n", header_name);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -229,7 +229,7 @@ proptest! {
         suffix in "[A-Za-z]{1,8}"
     ) {
         // 無効な文字を含むヘッダー名はエラー
-        let data = format!("GET / HTTP/1.1\r\n{}{}{}: value\r\n\r\n", prefix, invalid_char, suffix);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}{}{}: value\r\n\r\n", prefix, invalid_char, suffix);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -245,7 +245,7 @@ proptest! {
     ) {
         // 有効な特殊文字を含むヘッダー名は OK
         let header_name = format!("{}{}{}", prefix, special_char, suffix);
-        let data = format!("GET / HTTP/1.1\r\n{}: value\r\n\r\n", header_name);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}: value\r\n\r\n", header_name);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_ok());
@@ -267,7 +267,7 @@ proptest! {
             value,
             " ".repeat(trailing_spaces)
         );
-        let data = format!("GET / HTTP/1.1\r\n{}:{}\r\n\r\n", header_name, padded_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}:{}\r\n\r\n", header_name, padded_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
@@ -290,7 +290,7 @@ proptest! {
     ) {
         // Transfer-Encoding と Content-Length の両方があるとエラー
         let data = format!(
-            "GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: {}\r\n\r\n",
+            "GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\nContent-Length: {}\r\n\r\n",
             content_length
         );
         let mut decoder = RequestDecoder::new();
@@ -305,7 +305,7 @@ proptest! {
         coding in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked"))
     ) {
         // chunked 以外の Transfer-Encoding はエラー
-        let data = format!("GET / HTTP/1.1\r\nTransfer-Encoding: {}\r\n\r\n", coding);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: {}\r\n\r\n", coding);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -320,7 +320,7 @@ proptest! {
     ) {
         // 空のトークン (連続カンマ) はエラー
         let data = format!(
-            "GET / HTTP/1.1\r\nTransfer-Encoding: {},,{}\r\n\r\n",
+            "GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: {},,{}\r\n\r\n",
             "chunked".repeat(before_comma.max(1)),
             "chunked".repeat(after_comma.max(1))
         );
@@ -336,7 +336,7 @@ proptest! {
         method in http_method()
     ) {
         // 空の Transfer-Encoding はエラー
-        let data = format!("{} / HTTP/1.1\r\nTransfer-Encoding: \r\n\r\n", method);
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: \r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -430,7 +430,7 @@ proptest! {
         invalid_value in "[a-zA-Z]{1,8}"
     ) {
         // 数字でない Content-Length はエラー
-        let data = format!("GET / HTTP/1.1\r\nContent-Length: {}\r\n\r\n", invalid_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n", invalid_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -443,7 +443,7 @@ proptest! {
         method in http_method()
     ) {
         // 空の Content-Length はエラー
-        let data = format!("{} / HTTP/1.1\r\nContent-Length: \r\n\r\n", method);
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: \r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().is_err());
@@ -458,7 +458,7 @@ proptest! {
     ) {
         // 異なる値の Content-Length はエラー
         let data = format!(
-            "GET / HTTP/1.1\r\nContent-Length: {}\r\nContent-Length: {}\r\n\r\n",
+            "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nContent-Length: {}\r\n\r\n",
             len1, len2
         );
         let mut decoder = RequestDecoder::new();
@@ -477,7 +477,7 @@ proptest! {
         let body_bytes = &body_content.as_bytes()[..length.min(body_content.len())];
         let actual_len = body_bytes.len();
         let data = format!(
-            "GET / HTTP/1.1\r\nContent-Length: {}\r\nContent-Length: {}\r\n\r\n",
+            "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\nContent-Length: {}\r\n\r\n",
             actual_len, actual_len
         );
         let mut full_data = data.into_bytes();
@@ -506,7 +506,7 @@ proptest! {
         method in http_method()
     ) {
         // Content-Length: 0 はボディなし
-        let data = format!("{} / HTTP/1.1\r\nContent-Length: 0\r\n\r\n", method);
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
@@ -527,7 +527,7 @@ proptest! {
     ) {
         // Content-Length は大文字小文字を区別しない
         let body_content = "x".repeat(length);
-        let data = format!("GET / HTTP/1.1\r\n{}: {}\r\n\r\n{}", header_case, length, body_content);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}: {}\r\n\r\n{}", header_case, length, body_content);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
@@ -993,7 +993,7 @@ proptest! {
         invalid_byte in 128u8..=255
     ) {
         // 無効な UTF-8 バイトを含むヘッダーはエラー
-        let mut data = b"GET / HTTP/1.1\r\n".to_vec();
+        let mut data = b"GET / HTTP/1.1\r\nHost: localhost\r\n".to_vec();
         data.extend(header_name.as_bytes());
         data.extend(b": ");
         data.push(invalid_byte);
@@ -1078,7 +1078,7 @@ proptest! {
         header_value in "[A-Za-z0-9]{1,16}"
     ) {
         // ヘッダー終端 CRLF がない場合は None
-        let data = format!("GET / HTTP/1.1\r\n{}: {}", header_name, header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}: {}", header_name, header_value);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.decode_headers().unwrap().is_none());
@@ -1094,7 +1094,7 @@ proptest! {
         // 不完全なボディは peek_body で部分データを返す
         let full_body = "x".repeat(body_length);
         let partial_body = &full_body[..partial_length];
-        let data = format!("GET / HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}", body_length, partial_body);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}", body_length, partial_body);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
@@ -1227,7 +1227,7 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
         let header_value = "x".repeat(header_value_len);
-        let data = format!("GET / HTTP/1.1\r\nX-Long: {}\r\n\r\n", header_value);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nX-Long: {}\r\n\r\n", header_value);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
@@ -1249,7 +1249,7 @@ proptest! {
             .map(|i| format!("X-Header{}: value{}", i, i))
             .collect::<Vec<_>>()
             .join("\r\n");
-        let data = format!("GET / HTTP/1.1\r\n{}\r\n\r\n", headers);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", headers);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
@@ -1268,14 +1268,16 @@ proptest! {
             ..DecoderLimits::default()
         };
         let mut decoder = RequestDecoder::with_limits(limits);
-        let header_count = max_count + extra_headers;
+        // Host ヘッダーが1つあるので、残りの枠は max_count - 1
+        let header_count = (max_count - 1) + extra_headers;
         let headers = (0..header_count)
             .map(|i| format!("X-H{}: v{}", i, i))
             .collect::<Vec<_>>()
             .join("\r\n");
-        let data = format!("GET / HTTP/1.1\r\n{}\r\n\r\n", headers);
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", headers);
         decoder.feed(data.as_bytes()).unwrap();
         if extra_headers == 0 {
+            // Host + 9 headers = 10 (ちょうど max_count)
             prop_assert!(decoder.decode_headers().is_ok());
         } else {
             let result = decoder.decode_headers();
@@ -1296,7 +1298,7 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
         let body = "x".repeat(body_size);
-        let data = format!("POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
+        let data = format!("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         // Content-Length が制限を超えているのでエラー
@@ -1317,7 +1319,7 @@ proptest! {
         let mut decoder = RequestDecoder::with_limits(limits);
         let body_size = max_size + extra_bytes;
         let body = "x".repeat(body_size);
-        let data = format!("POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
+        let data = format!("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
         decoder.feed(data.as_bytes()).unwrap();
         if extra_bytes == 0 {
             prop_assert!(decoder.decode_headers().is_ok());
@@ -1339,7 +1341,7 @@ proptest! {
         let mut decoder = RequestDecoder::with_limits(limits);
         let chunk = "x".repeat(chunk_size);
         let data = format!(
-            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             chunk_size, chunk
         );
         decoder.feed(data.as_bytes()).unwrap();
@@ -1654,7 +1656,8 @@ proptest! {
         let mut decoder = RequestDecoder::new();
 
         for i in 0..count {
-            let request = Request::new(&methods[i], &uris[i]);
+            let mut request = Request::new(&methods[i], &uris[i]);
+            request.add_header("Host", "localhost");
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
@@ -1695,7 +1698,8 @@ proptest! {
         let _ = decoder.decode_headers();
         decoder.reset();
         // リセット後は正常に動作
-        let request = Request::new(&valid_method, &valid_uri);
+        let mut request = Request::new(&valid_method, &valid_uri);
+        request.add_header("Host", "localhost");
         decoder.feed(&request.encode()).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
         prop_assert_eq!(decoded.method, valid_method);
@@ -1719,9 +1723,9 @@ proptest! {
             .collect::<Vec<_>>()
             .join("\r\n");
         let data = if header_count > 0 {
-            format!("{} {} HTTP/1.1\r\n{}\r\n\r\n", method, uri, headers)
+            format!("{} {} HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", method, uri, headers)
         } else {
-            format!("{} {} HTTP/1.1\r\n\r\n", method, uri)
+            format!("{} {} HTTP/1.1\r\nHost: localhost\r\n\r\n", method, uri)
         };
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
@@ -1740,7 +1744,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         let body_len = body_content.len();
         let data = format!(
-            "{} / HTTP/1.1\r\nContent-Length: {}\r\n\r\n{}",
+            "{} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}",
             method, body_len, body_content
         );
         decoder.feed(data.as_bytes()).unwrap();
@@ -1874,7 +1878,7 @@ proptest! {
         uri in "[a-z]{1,10}"
     ) {
         // ボディなしメッセージの場合、2 回目の decode_headers は Ok(None)
-        let data = format!("GET /{} HTTP/1.1\r\n\r\n", uri);
+        let data = format!("GET /{} HTTP/1.1\r\nHost: localhost\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let _ = decoder.decode_headers().unwrap().unwrap();
@@ -1908,7 +1912,7 @@ proptest! {
         method in http_method()
     ) {
         let mut decoder = RequestDecoder::new();
-        let data = format!("{} / HTTP/1.1\r\n\r\n", method);
+        let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
         prop_assert!(decoder.progress().is_err());
     }
@@ -1942,7 +1946,8 @@ proptest! {
         // 全リクエストを一度にバッファに入れる
         let mut all_data = Vec::new();
         for i in 0..count {
-            let request = Request::new(&methods[i], &uris[i]);
+            let mut request = Request::new(&methods[i], &uris[i]);
+            request.add_header("Host", "localhost");
             all_data.extend(request.encode());
         }
         decoder.feed(&all_data).unwrap();
@@ -1970,6 +1975,7 @@ proptest! {
         let mut all_data = Vec::new();
         for body_data in &bodies {
             let mut request = Request::new("POST", "/");
+            request.add_header("Host", "localhost");
             request.body = body_data.clone();
             all_data.extend(request.encode());
         }
@@ -2016,8 +2022,10 @@ proptest! {
     ) {
         let mut decoder = RequestDecoder::new();
 
-        let req1 = Request::new(&method1, &uri1);
-        let req2 = Request::new(&method2, &uri2);
+        let mut req1 = Request::new(&method1, &uri1);
+        req1.add_header("Host", "localhost");
+        let mut req2 = Request::new(&method2, &uri2);
+        req2.add_header("Host", "localhost");
 
         decoder.feed(&req1.encode()).unwrap();
         decoder.feed(&req2.encode()).unwrap();
@@ -2123,7 +2131,7 @@ proptest! {
         // リクエストでもチャンクの CRLF 検証
         let len = body_content.len();
         let data = format!(
-            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}{}",
+            "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}{}",
             len, body_content, invalid_chars
         );
         let mut decoder = RequestDecoder::new();
@@ -2183,11 +2191,11 @@ proptest! {
 
         // 2 つの chunked リクエストを作成
         let req1 = format!(
-            "POST /first HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            "POST /first HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             body1.len(), body1
         );
         let req2 = format!(
-            "POST /second HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            "POST /second HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             body2.len(), body2
         );
 
@@ -2257,11 +2265,11 @@ proptest! {
         let body1 = "a".repeat(body1_len);
         let body2 = "b".repeat(body2_len);
         let req1 = format!(
-            "POST /1 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            "POST /1 HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             body1.len(), body1
         );
         let req2 = format!(
-            "POST /2 HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
+            "POST /2 HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             body2.len(), body2
         );
 
@@ -2323,7 +2331,7 @@ proptest! {
         // chunked リクエストを生成してバッファに追加
         let mut all_data = Vec::new();
         for (i, body_data) in bodies.iter().enumerate() {
-            let mut data = format!("POST /{} HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n", i)
+            let mut data = format!("POST /{} HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n", i)
                 .into_bytes();
             // 空ボディでない場合のみチャンクデータを追加
             if !body_data.is_empty() {
@@ -2543,7 +2551,7 @@ proptest! {
         // 複数のボディなしメッセージを decode_headers で連続処理
         let mut decoder = RequestDecoder::new();
         for i in 0..count {
-            let data = format!("GET /{} HTTP/1.1\r\n\r\n", i);
+            let data = format!("GET /{} HTTP/1.1\r\nHost: localhost\r\n\r\n", i);
             decoder.feed(data.as_bytes()).unwrap();
         }
 
@@ -2592,7 +2600,7 @@ proptest! {
         size in 1..100usize
     ) {
         // 不完全なチャンクサイズ行は None
-        let data = format!("POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}", size);
+        let data = format!("POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}", size);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
@@ -2609,7 +2617,7 @@ proptest! {
         // 不完全なチャンクデータは部分データを返す
         let partial_data = "x".repeat(partial_size);
         let data = format!(
-            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}",
+            "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}",
             chunk_size, partial_data
         );
         let mut decoder = RequestDecoder::new();
@@ -2630,7 +2638,7 @@ proptest! {
         // 不完全なトレーラーは Continue
         let len = body_content.len();
         let data = format!(
-            "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: value",
+            "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: value",
             len, body_content, trailer_name
         );
         let mut decoder = RequestDecoder::new();
@@ -2833,7 +2841,7 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
         // Transfer-Encoding: chunked のリクエスト
-        decoder.feed(b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n").unwrap();
+        decoder.feed(b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n").unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::Chunked);
 

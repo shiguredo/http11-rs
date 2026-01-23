@@ -82,7 +82,10 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
     buf.extend_from_slice(b"\r\n");
 
     // Body
-    buf.extend_from_slice(&response.body);
+    // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
+    if status_has_body {
+        buf.extend_from_slice(&response.body);
+    }
 
     buf
 }

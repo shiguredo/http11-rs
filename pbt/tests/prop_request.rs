@@ -96,6 +96,7 @@ proptest! {
         body_data in body()
     ) {
         let mut request = Request::new(&method, &uri);
+        request.add_header("Host", "localhost");
         for (name, value) in &hdrs {
             request.add_header(name, value);
         }
@@ -130,16 +131,17 @@ proptest! {
 
         prop_assert_eq!(&decoded_body, &request.body);
 
-        // ヘッダー数は同じ (Content-Length が自動追加される可能性)
-        if !body_data.is_empty()
+        // ヘッダー数は同じ (Content-Length が自動追加される可能性、Host は +1)
+        let expected_header_count = if !body_data.is_empty()
             && !hdrs
                 .iter()
                 .any(|(n, _)| n.eq_ignore_ascii_case("Content-Length"))
         {
-            prop_assert_eq!(head.headers.len(), hdrs.len() + 1);
+            hdrs.len() + 2  // Host + Content-Length
         } else {
-            prop_assert_eq!(head.headers.len(), hdrs.len());
-        }
+            hdrs.len() + 1  // Host
+        };
+        prop_assert_eq!(head.headers.len(), expected_header_count);
     }
 }
 
@@ -155,6 +157,7 @@ proptest! {
         hdrs in headers()
     ) {
         let mut request = Request::new(&method, &uri);
+        request.add_header("Host", "localhost");
         for (name, value) in &hdrs {
             request.add_header(name, value);
         }
@@ -182,6 +185,7 @@ proptest! {
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
         let mut request = Request::new(&method, &uri);
+        request.add_header("Host", "localhost");
         request.body = body_data.clone();
         let encoded = request.encode();
 
@@ -283,7 +287,8 @@ proptest! {
             if i > 0 {
                 decoder.reset();
             }
-            let request = Request::new(&methods[i], &uris[i]);
+            let mut request = Request::new(&methods[i], &uris[i]);
+            request.add_header("Host", "localhost");
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -326,7 +331,8 @@ proptest! {
 
         // リセットして正常なリクエストをデコード
         decoder.reset();
-        let request = Request::new(&method, &uri);
+        let mut request = Request::new(&method, &uri);
+        request.add_header("Host", "localhost");
         let encoded = request.encode();
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();

@@ -64,7 +64,7 @@ use shiguredo_http11::{BodyKind, BodyProgress, RequestDecoder, ResponseDecoder};
 fn incomplete_content_length_body() {
     let mut decoder = RequestDecoder::new();
     decoder
-        .feed(b"POST / HTTP/1.1\r\nContent-Length: 100\r\n\r\n")
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 100\r\n\r\n")
         .unwrap();
     decoder.feed(&[0u8; 50]).unwrap(); // 100 バイト中 50 バイトのみ
 
@@ -141,7 +141,7 @@ fn incomplete_chunked_body() {
 fn complete_content_length_body() {
     let mut decoder = RequestDecoder::new();
     decoder
-        .feed(b"POST / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello")
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello")
         .unwrap();
 
     let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();

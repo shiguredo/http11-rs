@@ -189,6 +189,30 @@ impl RequestDecoder {
                             // Empty line - end of headers
                             self.buf.drain(..2);
 
+                            // RFC 9112 Section 3.2: HTTP/1.1 リクエストでは Host ヘッダーが必須
+                            let start_line_ref = self.start_line.as_ref().ok_or_else(|| {
+                                Error::InvalidData("missing request line".to_string())
+                            })?;
+                            let version = start_line_ref.split(' ').nth(2).unwrap_or("");
+                            if version == "HTTP/1.1" {
+                                let host_count = self
+                                    .headers
+                                    .iter()
+                                    .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
+                                    .count();
+                                if host_count == 0 {
+                                    return Err(Error::InvalidData(
+                                        "HTTP/1.1 request missing Host header".to_string(),
+                                    ));
+                                }
+                                if host_count > 1 {
+                                    return Err(Error::InvalidData(
+                                        "HTTP/1.1 request contains multiple Host headers"
+                                            .to_string(),
+                                    ));
+                                }
+                            }
+
                             let body_kind = self.determine_body_kind()?;
 
                             // ヘッダー完了、ボディフェーズに遷移

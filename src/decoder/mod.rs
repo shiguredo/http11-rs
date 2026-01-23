@@ -12,7 +12,7 @@
 //! let mut decoder = RequestDecoder::new();
 //!
 //! // データを投入
-//! decoder.feed(b"GET / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello").unwrap();
+//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello").unwrap();
 //!
 //! // ヘッダーをデコード
 //! let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
@@ -48,7 +48,7 @@
 //! use shiguredo_http11::RequestDecoder;
 //!
 //! let mut decoder = RequestDecoder::new();
-//! decoder.feed(b"GET / HTTP/1.1\r\n\r\n").unwrap();
+//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").unwrap();
 //! let request = decoder.decode().unwrap().unwrap();
 //! assert_eq!(request.method, "GET");
 //! ```
