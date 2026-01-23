@@ -1,3 +1,4 @@
+use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
 use crate::request::Request;
 use crate::response::Response;
 
@@ -213,5 +214,183 @@ impl Response {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
     pub fn encode_headers(&self) -> Vec<u8> {
         encode_response_headers(self)
+    }
+}
+
+/// レスポンスエンコーダー (圧縮対応)
+///
+/// # 型パラメータ
+///
+/// - `C`: 圧縮器の型。デフォルトは `NoCompression`（圧縮なし）。
+///
+/// # 使い方
+///
+/// ## 圧縮なし（既存 API 互換）
+///
+/// ```rust
+/// use shiguredo_http11::ResponseEncoder;
+///
+/// let encoder = ResponseEncoder::new();
+/// ```
+///
+/// ## 圧縮あり
+///
+/// ```ignore
+/// use shiguredo_http11::ResponseEncoder;
+///
+/// let mut encoder = ResponseEncoder::with_compressor(GzipCompressor::new());
+/// let mut output = vec![0u8; 8192];
+/// let status = encoder.compress_body(body_data, &mut output)?;
+/// // output[..status.produced()] に圧縮データ
+/// ```
+#[derive(Debug)]
+pub struct ResponseEncoder<C: Compressor = NoCompression> {
+    compressor: C,
+}
+
+impl Default for ResponseEncoder<NoCompression> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResponseEncoder<NoCompression> {
+    /// 新しいエンコーダーを作成
+    pub fn new() -> Self {
+        Self {
+            compressor: NoCompression::new(),
+        }
+    }
+}
+
+impl<C: Compressor> ResponseEncoder<C> {
+    /// 圧縮器付きでエンコーダーを作成
+    pub fn with_compressor(compressor: C) -> Self {
+        Self { compressor }
+    }
+
+    /// ボディを圧縮（ストリーミング）
+    ///
+    /// # 引数
+    /// - `input`: 圧縮する入力データ
+    /// - `output`: 圧縮データを書き込む出力バッファ
+    ///
+    /// # 戻り値
+    /// - `Continue`: 処理継続中、入力がすべて消費された
+    /// - `OutputFull`: 出力バッファが満杯、再度呼び出す必要あり
+    pub fn compress_body(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<CompressionStatus, CompressionError> {
+        self.compressor.compress(input, output)
+    }
+
+    /// 圧縮を終了
+    ///
+    /// 残りの圧縮データをフラッシュする。
+    ///
+    /// # 引数
+    /// - `output`: 残りの圧縮データを書き込む出力バッファ
+    ///
+    /// # 戻り値
+    /// - `Complete`: 圧縮完了
+    /// - `OutputFull`: 出力バッファが満杯、再度呼び出す必要あり
+    pub fn finish(&mut self, output: &mut [u8]) -> Result<CompressionStatus, CompressionError> {
+        self.compressor.finish(output)
+    }
+
+    /// 圧縮器をリセット
+    pub fn reset(&mut self) {
+        self.compressor.reset();
+    }
+}
+
+/// リクエストエンコーダー (圧縮対応)
+///
+/// # 型パラメータ
+///
+/// - `C`: 圧縮器の型。デフォルトは `NoCompression`（圧縮なし）。
+///
+/// # 使い方
+///
+/// ## 圧縮なし（既存 API 互換）
+///
+/// ```rust
+/// use shiguredo_http11::RequestEncoder;
+///
+/// let encoder = RequestEncoder::new();
+/// ```
+///
+/// ## 圧縮あり
+///
+/// ```ignore
+/// use shiguredo_http11::RequestEncoder;
+///
+/// let mut encoder = RequestEncoder::with_compressor(GzipCompressor::new());
+/// let mut output = vec![0u8; 8192];
+/// let status = encoder.compress_body(body_data, &mut output)?;
+/// // output[..status.produced()] に圧縮データ
+/// ```
+#[derive(Debug)]
+pub struct RequestEncoder<C: Compressor = NoCompression> {
+    compressor: C,
+}
+
+impl Default for RequestEncoder<NoCompression> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl RequestEncoder<NoCompression> {
+    /// 新しいエンコーダーを作成
+    pub fn new() -> Self {
+        Self {
+            compressor: NoCompression::new(),
+        }
+    }
+}
+
+impl<C: Compressor> RequestEncoder<C> {
+    /// 圧縮器付きでエンコーダーを作成
+    pub fn with_compressor(compressor: C) -> Self {
+        Self { compressor }
+    }
+
+    /// ボディを圧縮（ストリーミング）
+    ///
+    /// # 引数
+    /// - `input`: 圧縮する入力データ
+    /// - `output`: 圧縮データを書き込む出力バッファ
+    ///
+    /// # 戻り値
+    /// - `Continue`: 処理継続中、入力がすべて消費された
+    /// - `OutputFull`: 出力バッファが満杯、再度呼び出す必要あり
+    pub fn compress_body(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<CompressionStatus, CompressionError> {
+        self.compressor.compress(input, output)
+    }
+
+    /// 圧縮を終了
+    ///
+    /// 残りの圧縮データをフラッシュする。
+    ///
+    /// # 引数
+    /// - `output`: 残りの圧縮データを書き込む出力バッファ
+    ///
+    /// # 戻り値
+    /// - `Complete`: 圧縮完了
+    /// - `OutputFull`: 出力バッファが満杯、再度呼び出す必要あり
+    pub fn finish(&mut self, output: &mut [u8]) -> Result<CompressionStatus, CompressionError> {
+        self.compressor.finish(output)
+    }
+
+    /// 圧縮器をリセット
+    pub fn reset(&mut self) {
+        self.compressor.reset();
     }
 }

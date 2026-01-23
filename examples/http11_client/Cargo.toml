@@ -4,6 +4,12 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
+[features]
+default = ["gzip", "br", "zstd"]
+gzip = ["dep:flate2"]
+br = ["dep:brotli"]
+zstd = ["dep:zstd"]
+
 [dependencies]
 shiguredo_http11 = { path = "../.." }
 rustls = { version = "0.23", default-features = false, features = [
@@ -13,3 +19,8 @@ rustls = { version = "0.23", default-features = false, features = [
 ] }
 rustls-platform-verifier = "0.6"
 noargs = "0.4"
+
+# 展開 (オプション)
+flate2 = { version = "1", optional = true }
+brotli = { version = "8", optional = true }
+zstd = { version = "0.13", optional = true }

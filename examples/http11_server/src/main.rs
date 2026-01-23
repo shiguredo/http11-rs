@@ -10,6 +10,12 @@
 //! テスト用の自己署名証明書の作成:
 //!   openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
 //!     -subj "/CN=localhost"
+//!
+//! 圧縮対応:
+//!   クライアントの Accept-Encoding ヘッダーに基づいて gzip, br, zstd で圧縮します。
+//!   優先順位: zstd > br > gzip
+
+mod compressor;
 
 use std::sync::Arc;
 
@@ -20,6 +26,8 @@ use shiguredo_http11::{RequestDecoder, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
+
+use compressor::{compress_body, encoding_header, select_encoding};
 
 struct ServerOptions {
     port: u16,
@@ -260,6 +268,15 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
     let is_head = request.method.eq_ignore_ascii_case("HEAD");
 
+    // Accept-Encoding ヘッダーから圧縮方式を選択
+    let accept_encoding = request
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+        .map(|(_, value)| value.as_str());
+
+    let encoding = accept_encoding.and_then(select_encoding);
+
     match request.uri.as_str() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
@@ -275,38 +292,30 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
 </body>
 </html>
 "#;
-            let body_bytes = body_content.as_bytes();
-
-            Response::new(200, "OK")
-                .header("Date", &date)
-                .header("Content-Type", "text/html; charset=utf-8")
-                .header("Content-Length", &body_bytes.len().to_string())
-                .header("Server", "shiguredo_http11/0.1.0")
-                .body(if is_head {
-                    Vec::new()
-                } else {
-                    body_bytes.to_vec()
-                })
-                .omit_content_length(true)
+            build_compressed_response(
+                200,
+                "OK",
+                "text/html; charset=utf-8",
+                body_content.as_bytes(),
+                &date,
+                is_head,
+                encoding,
+            )
         }
         "/info" => {
             let body_content = format!(
                 r#"{{"server":"shiguredo_http11","version":"0.1.0","timestamp":{}}}"#,
                 now
             );
-            let body_bytes = body_content.as_bytes();
-
-            Response::new(200, "OK")
-                .header("Date", &date)
-                .header("Content-Type", "application/json")
-                .header("Content-Length", &body_bytes.len().to_string())
-                .header("Server", "shiguredo_http11/0.1.0")
-                .body(if is_head {
-                    Vec::new()
-                } else {
-                    body_content.into_bytes()
-                })
-                .omit_content_length(true)
+            build_compressed_response(
+                200,
+                "OK",
+                "application/json",
+                body_content.as_bytes(),
+                &date,
+                is_head,
+                encoding,
+            )
         }
         "/echo" => {
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
@@ -338,29 +347,72 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
                 }
             }
 
-            Response::new(200, "OK")
-                .header("Date", &date)
-                .header("Content-Type", "text/plain; charset=utf-8")
-                .header("Server", "shiguredo_http11/0.1.0")
-                .body(body.into_bytes())
+            build_compressed_response(
+                200,
+                "OK",
+                "text/plain; charset=utf-8",
+                body.as_bytes(),
+                &date,
+                false,
+                encoding,
+            )
         }
         _ => {
             let body_content = "404 Not Found\n";
-            let body_bytes = body_content.as_bytes();
-
-            Response::new(404, "Not Found")
-                .header("Date", &date)
-                .header("Content-Type", "text/plain")
-                .header("Content-Length", &body_bytes.len().to_string())
-                .header("Server", "shiguredo_http11/0.1.0")
-                .body(if is_head {
-                    Vec::new()
-                } else {
-                    body_bytes.to_vec()
-                })
-                .omit_content_length(true)
+            build_compressed_response(
+                404,
+                "Not Found",
+                "text/plain",
+                body_content.as_bytes(),
+                &date,
+                is_head,
+                encoding,
+            )
         }
     }
+}
+
+/// 圧縮対応のレスポンスを構築
+fn build_compressed_response(
+    status_code: u16,
+    reason_phrase: &str,
+    content_type: &str,
+    body: &[u8],
+    date: &str,
+    is_head: bool,
+    encoding: Option<&str>,
+) -> Response {
+    // 圧縮を試みる
+    let (final_body, content_encoding) = if let Some(enc) = encoding {
+        match compress_body(body, enc) {
+            Ok(compressed) => {
+                // 圧縮後のサイズが元より小さい場合のみ圧縮を使用
+                if compressed.len() < body.len() {
+                    (compressed, Some(encoding_header(enc)))
+                } else {
+                    (body.to_vec(), None)
+                }
+            }
+            Err(_) => (body.to_vec(), None),
+        }
+    } else {
+        (body.to_vec(), None)
+    };
+
+    let mut response = Response::new(status_code, reason_phrase)
+        .header("Date", date)
+        .header("Content-Type", content_type)
+        .header("Content-Length", &final_body.len().to_string())
+        .header("Server", "shiguredo_http11/0.1.0")
+        .header("Vary", "Accept-Encoding");
+
+    if let Some(enc) = content_encoding {
+        response = response.header("Content-Encoding", enc);
+    }
+
+    response
+        .body(if is_head { Vec::new() } else { final_body })
+        .omit_content_length(true)
 }
 
 /// RFC 9110 準拠の IMF-fixdate 形式で日付を生成

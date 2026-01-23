@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::compression::CompressionError;
+
 /// HTTP パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -15,6 +17,8 @@ pub enum Error {
     BodyTooLarge { size: usize, limit: usize },
     /// チャンクサイズ行が長すぎる
     ChunkLineTooLong { size: usize, limit: usize },
+    /// 圧縮/展開エラー
+    Compression(CompressionError),
 }
 
 impl fmt::Display for Error {
@@ -36,8 +40,15 @@ impl fmt::Display for Error {
             Error::ChunkLineTooLong { size, limit } => {
                 write!(f, "chunk line too long: {} > {}", size, limit)
             }
+            Error::Compression(e) => write!(f, "compression error: {}", e),
         }
     }
 }
 
 impl std::error::Error for Error {}
+
+impl From<CompressionError> for Error {
+    fn from(e: CompressionError) -> Self {
+        Error::Compression(e)
+    }
+}

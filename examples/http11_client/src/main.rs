@@ -3,11 +3,18 @@
 //! 使い方:
 //!   cargo run -p http11_client -- https://example.com/
 //!   cargo run -p http11_client -- http://httpbin.org/get
+//!
+//! 圧縮対応:
+//!   Accept-Encoding ヘッダーで gzip, br, zstd を要求し、
+//!   Content-Encoding ヘッダーに基づいてレスポンスボディを展開します。
+
+mod decompressor;
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 
+use decompressor::{decompress_body, supported_encodings};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
@@ -48,11 +55,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Connecting to {}:{} ...", host, port);
 
-    let request = Request::new("GET", &path)
+    let mut request = Request::new("GET", &path)
         .header("Host", &host)
         .header("User-Agent", "shiguredo_http11/0.1.0")
         .header("Accept", "*/*")
         .header("Connection", "close");
+
+    // 有効な圧縮形式があれば Accept-Encoding を追加
+    let encodings = supported_encodings();
+    if !encodings.is_empty() {
+        request = request.header("Accept-Encoding", encodings);
+    }
 
     let request_bytes = request.encode();
 
@@ -184,15 +197,44 @@ fn print_response(response: &shiguredo_http11::Response) {
 
     println!();
 
+    // Content-Encoding ヘッダーを取得
+    let content_encoding = response
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Content-Encoding"))
+        .map(|(_, value)| value.as_str());
+
+    // ボディを展開（必要な場合）
+    let body = match content_encoding {
+        Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
+            match decompress_body(&response.body, encoding) {
+                Ok(decompressed) => {
+                    println!(
+                        "[Decompressed from {} ({} bytes -> {} bytes)]",
+                        encoding,
+                        response.body.len(),
+                        decompressed.len()
+                    );
+                    decompressed
+                }
+                Err(e) => {
+                    eprintln!("[Decompression failed ({}): {}]", encoding, e);
+                    response.body.clone()
+                }
+            }
+        }
+        _ => response.body.clone(),
+    };
+
     // ボディを表示 (テキストの場合)
-    if let Ok(body) = std::str::from_utf8(&response.body) {
-        if body.len() > 1000 {
-            println!("{}...", &body[..1000]);
-            println!("\n[Body truncated, {} bytes total]", response.body.len());
+    if let Ok(text) = std::str::from_utf8(&body) {
+        if text.len() > 1000 {
+            println!("{}...", &text[..1000]);
+            println!("\n[Body truncated, {} bytes total]", body.len());
         } else {
-            println!("{}", body);
+            println!("{}", text);
         }
     } else {
-        println!("[Binary body, {} bytes]", response.body.len());
+        println!("[Binary body, {} bytes]", body.len());
     }
 }

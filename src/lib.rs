@@ -51,6 +51,7 @@
 pub mod accept;
 pub mod auth;
 pub mod cache;
+pub mod compression;
 pub mod conditional;
 pub mod content_disposition;
 pub mod content_encoding;
@@ -81,7 +82,7 @@ pub use decoder::{
 };
 pub use encoder::{
     encode_chunk, encode_chunks, encode_request, encode_request_headers, encode_response,
-    encode_response_headers,
+    encode_response_headers, RequestEncoder, ResponseEncoder,
 };
 pub use error::Error;
 pub use limits::DecoderLimits;

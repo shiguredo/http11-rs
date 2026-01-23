@@ -1,5 +1,6 @@
 //! HTTP リクエストデコーダー
 
+use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::request::Request;
@@ -14,8 +15,30 @@ use super::phase::DecodePhase;
 /// HTTP リクエストデコーダー (Sans I/O)
 ///
 /// サーバー側でクライアントからのリクエストをパースする際に使用
+///
+/// # 型パラメータ
+///
+/// - `D`: 展開器の型。デフォルトは `NoCompression`（展開なし）。
+///
+/// # 使い方
+///
+/// ## 展開なし（既存 API 互換）
+///
+/// ```rust
+/// use shiguredo_http11::RequestDecoder;
+///
+/// let mut decoder = RequestDecoder::new();
+/// ```
+///
+/// ## 展開あり
+///
+/// ```ignore
+/// use shiguredo_http11::RequestDecoder;
+///
+/// let mut decoder = RequestDecoder::with_decompressor(GzipDecompressor::new());
+/// ```
 #[derive(Debug)]
-pub struct RequestDecoder {
+pub struct RequestDecoder<D: Decompressor = NoCompression> {
     buf: Vec<u8>,
     phase: DecodePhase,
     start_line: Option<String>,
@@ -28,15 +51,17 @@ pub struct RequestDecoder {
     decoded_body_kind: Option<BodyKind>,
     /// decode() 用: デコード済みボディ
     decoded_body: Vec<u8>,
+    /// 展開器
+    decompressor: D,
 }
 
-impl Default for RequestDecoder {
+impl Default for RequestDecoder<NoCompression> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl RequestDecoder {
+impl RequestDecoder<NoCompression> {
     /// 新しいデコーダーを作成
     pub fn new() -> Self {
         Self {
@@ -49,6 +74,7 @@ impl RequestDecoder {
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
+            decompressor: NoCompression::new(),
         }
     }
 
@@ -64,6 +90,41 @@ impl RequestDecoder {
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
+            decompressor: NoCompression::new(),
+        }
+    }
+}
+
+impl<D: Decompressor> RequestDecoder<D> {
+    /// 展開器付きでデコーダーを作成
+    pub fn with_decompressor(decompressor: D) -> Self {
+        Self {
+            buf: Vec::new(),
+            phase: DecodePhase::StartLine,
+            start_line: None,
+            headers: Vec::new(),
+            body_decoder: BodyDecoder::new(),
+            limits: DecoderLimits::default(),
+            decoded_head: None,
+            decoded_body_kind: None,
+            decoded_body: Vec::new(),
+            decompressor,
+        }
+    }
+
+    /// 展開器と制限付きでデコーダーを作成
+    pub fn with_decompressor_and_limits(decompressor: D, limits: DecoderLimits) -> Self {
+        Self {
+            buf: Vec::new(),
+            phase: DecodePhase::StartLine,
+            start_line: None,
+            headers: Vec::new(),
+            body_decoder: BodyDecoder::new(),
+            limits,
+            decoded_head: None,
+            decoded_body_kind: None,
+            decoded_body: Vec::new(),
+            decompressor,
         }
     }
 
@@ -105,6 +166,7 @@ impl RequestDecoder {
         self.decoded_head = None;
         self.decoded_body_kind = None;
         self.decoded_body.clear();
+        self.decompressor.reset();
     }
 
     /// ボディモードを決定
@@ -300,6 +362,43 @@ impl RequestDecoder {
     /// ボディがない場合や完了済みの場合は `None` を返す
     pub fn peek_body(&self) -> Option<&[u8]> {
         self.body_decoder.peek_body(&self.buf, &self.phase)
+    }
+
+    /// ボディデータを展開して取得
+    ///
+    /// `decode_headers()` 成功後に呼ぶ。
+    /// 利用可能なボディデータを展開して output に書き込む。
+    ///
+    /// # 引数
+    /// - `output`: 展開データを書き込む出力バッファ
+    ///
+    /// # 戻り値
+    /// - `Ok(Some(status))`: 展開成功。`status.produced()` バイトが output に書き込まれた。
+    ///   `status.consumed()` バイトを `consume_body()` で消費する必要がある。
+    /// - `Ok(None)`: 利用可能なボディデータがない
+    /// - `Err(e)`: 展開エラー
+    ///
+    /// # 使い方
+    ///
+    /// ```ignore
+    /// let mut output = vec![0u8; 8192];
+    /// while let Some(status) = decoder.peek_body_decompressed(&mut output)? {
+    ///     // output[..status.produced()] に展開済みデータ
+    ///     process(&output[..status.produced()]);
+    ///     decoder.consume_body(status.consumed())?;
+    /// }
+    /// ```
+    pub fn peek_body_decompressed(
+        &mut self,
+        output: &mut [u8],
+    ) -> Result<Option<CompressionStatus>, Error> {
+        let input = match self.body_decoder.peek_body(&self.buf, &self.phase) {
+            Some(data) if !data.is_empty() => data,
+            _ => return Ok(None),
+        };
+
+        let status = self.decompressor.decompress(input, output)?;
+        Ok(Some(status))
     }
 
     /// 利用可能なボディデータのバイト数を取得
