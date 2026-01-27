@@ -18,6 +18,7 @@
 mod compressor;
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
@@ -29,11 +30,23 @@ use tokio_rustls::TlsAcceptor;
 
 use compressor::{compress_body, encoding_header, select_encoding};
 
+/// Keep-Alive タイムアウト (秒)
+const DEFAULT_KEEP_ALIVE_TIMEOUT: u64 = 60;
+/// 1 接続あたりの最大リクエスト数
+const DEFAULT_MAX_REQUESTS: u32 = 1000;
+
 struct ServerOptions {
     port: u16,
     tls: bool,
     cert_path: Option<String>,
     key_path: Option<String>,
+}
+
+/// Keep-Alive 接続の状態管理
+struct ConnectionState {
+    request_count: u32,
+    max_requests: u32,
+    keep_alive_timeout: Duration,
 }
 
 #[tokio::main]
@@ -182,9 +195,28 @@ async fn handle_client(
 
     let mut decoder = RequestDecoder::new();
     let mut buf = [0u8; 8192];
+    let mut conn_state = ConnectionState {
+        request_count: 0,
+        max_requests: DEFAULT_MAX_REQUESTS,
+        keep_alive_timeout: Duration::from_secs(DEFAULT_KEEP_ALIVE_TIMEOUT),
+    };
 
     loop {
-        let n = reader.read(&mut buf).await?;
+        let read_result =
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+
+        let n = match read_result {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => {
+                eprintln!("Read error from {}: {}", peer_addr, e);
+                break;
+            }
+            Err(_) => {
+                println!("Keep-Alive timeout for {}", peer_addr);
+                break;
+            }
+        };
+
         if n == 0 {
             println!("Connection closed by {}", peer_addr);
             break;
@@ -193,18 +225,31 @@ async fn handle_client(
         decoder.feed(&buf[..n])?;
 
         while let Some(request) = decoder.decode()? {
+            conn_state.request_count += 1;
+
             println!(
-                "{} {} {} from {}",
-                request.method, request.uri, request.version, peer_addr
+                "{} {} {} from {} (request #{})",
+                request.method, request.uri, request.version, peer_addr, conn_state.request_count
             );
 
-            let response = build_response(&request);
+            // Keep-Alive 継続判定
+            let should_keep_alive =
+                request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
+
+            let response = build_response(&request, should_keep_alive);
             let response_bytes = response.encode();
             writer.write_all(&response_bytes).await?;
             writer.flush().await?;
 
-            if !request.is_keep_alive() {
-                println!("Connection close requested by {}", peer_addr);
+            if !should_keep_alive {
+                if conn_state.request_count >= conn_state.max_requests {
+                    println!(
+                        "Max requests ({}) reached for {}",
+                        conn_state.max_requests, peer_addr
+                    );
+                } else {
+                    println!("Connection close requested by {}", peer_addr);
+                }
                 return Ok(());
             }
         }
@@ -225,9 +270,28 @@ async fn handle_tls_client(
 
     let mut decoder = RequestDecoder::new();
     let mut buf = [0u8; 8192];
+    let mut conn_state = ConnectionState {
+        request_count: 0,
+        max_requests: DEFAULT_MAX_REQUESTS,
+        keep_alive_timeout: Duration::from_secs(DEFAULT_KEEP_ALIVE_TIMEOUT),
+    };
 
     loop {
-        let n = reader.read(&mut buf).await?;
+        let read_result =
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+
+        let n = match read_result {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => {
+                eprintln!("TLS read error from {}: {}", peer_addr, e);
+                break;
+            }
+            Err(_) => {
+                println!("TLS Keep-Alive timeout for {}", peer_addr);
+                break;
+            }
+        };
+
         if n == 0 {
             println!("TLS connection closed by {}", peer_addr);
             break;
@@ -236,18 +300,31 @@ async fn handle_tls_client(
         decoder.feed(&buf[..n])?;
 
         while let Some(request) = decoder.decode()? {
+            conn_state.request_count += 1;
+
             println!(
-                "{} {} {} from {} (TLS)",
-                request.method, request.uri, request.version, peer_addr
+                "{} {} {} from {} (TLS, request #{})",
+                request.method, request.uri, request.version, peer_addr, conn_state.request_count
             );
 
-            let response = build_response(&request);
+            // Keep-Alive 継続判定
+            let should_keep_alive =
+                request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
+
+            let response = build_response(&request, should_keep_alive);
             let response_bytes = response.encode();
             writer.write_all(&response_bytes).await?;
             writer.flush().await?;
 
-            if !request.is_keep_alive() {
-                println!("Connection close requested by {}", peer_addr);
+            if !should_keep_alive {
+                if conn_state.request_count >= conn_state.max_requests {
+                    println!(
+                        "Max requests ({}) reached for {} (TLS)",
+                        conn_state.max_requests, peer_addr
+                    );
+                } else {
+                    println!("Connection close requested by {} (TLS)", peer_addr);
+                }
                 return Ok(());
             }
         }
@@ -256,7 +333,7 @@ async fn handle_tls_client(
     Ok(())
 }
 
-fn build_response(request: &shiguredo_http11::Request) -> Response {
+fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) -> Response {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -277,7 +354,7 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
 
     let encoding = accept_encoding.and_then(select_encoding);
 
-    match request.uri.as_str() {
+    let response = match request.uri.as_str() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
 <html>
@@ -321,12 +398,15 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             // (実際の GET レスポンスはリクエストに依存するため)
             if is_head {
-                return Response::new(200, "OK")
-                    .header("Date", &date)
-                    .header("Content-Type", "text/plain; charset=utf-8")
-                    .header("Content-Length", "0")
-                    .header("Server", "shiguredo_http11/0.1.0")
-                    .omit_content_length(true);
+                return add_connection_headers(
+                    Response::new(200, "OK")
+                        .header("Date", &date)
+                        .header("Content-Type", "text/plain; charset=utf-8")
+                        .header("Content-Length", "0")
+                        .header("Server", "shiguredo_http11/0.1.0")
+                        .omit_content_length(true),
+                    should_keep_alive,
+                );
             }
 
             let mut body = format!(
@@ -369,7 +449,9 @@ fn build_response(request: &shiguredo_http11::Request) -> Response {
                 encoding,
             )
         }
-    }
+    };
+
+    add_connection_headers(response, should_keep_alive)
 }
 
 /// 圧縮対応のレスポンスを構築
@@ -413,6 +495,19 @@ fn build_compressed_response(
     response
         .body(if is_head { Vec::new() } else { final_body })
         .omit_content_length(true)
+}
+
+/// RFC 9112 準拠で Connection ヘッダーを設定する
+///
+/// HTTP/1.1 では keep-alive がデフォルトのため:
+/// - keep-alive 継続: ヘッダー不要
+/// - 接続終了: Connection: close を追加
+fn add_connection_headers(response: Response, should_keep_alive: bool) -> Response {
+    if should_keep_alive {
+        response
+    } else {
+        response.header("Connection", "close")
+    }
 }
 
 /// RFC 9110 準拠の IMF-fixdate 形式で日付を生成
