@@ -248,8 +248,8 @@ dependencies = [
  "flate2",
  "noargs",
  "rustls",
- "rustls-platform-verifier",
- "shiguredo_http11",
+ "rustls-platform-verifier 0.6.2",
+ "shiguredo_http11 2026.1.0-canary.3",
  "zstd",
 ]
 
@@ -259,8 +259,8 @@ version = "0.0.0"
 dependencies = [
  "noargs",
  "rustls",
- "rustls-platform-verifier",
- "shiguredo_http11",
+ "rustls-platform-verifier 0.6.2",
+ "shiguredo_http11 2026.1.0-canary.3",
  "tokio",
  "tokio-rustls",
 ]
@@ -273,7 +273,7 @@ dependencies = [
  "flate2",
  "noargs",
  "rustls",
- "shiguredo_http11",
+ "shiguredo_http11 2026.1.0-canary.3",
  "tokio",
  "tokio-rustls",
  "zstd",
@@ -363,6 +363,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e5dc223a8d69eaeb19c31218a69a55112fe79965764430f092532aed848f1b8"
 
 [[package]]
+name = "nojson"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f04459ec5e667063406c9155f199d9628e1f791a2f27c0bc58165a8716e89b86"
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -388,7 +394,7 @@ name = "pbt"
 version = "0.0.0"
 dependencies = [
  "proptest",
- "shiguredo_http11",
+ "shiguredo_http11 2026.1.0-canary.3",
 ]
 
 [[package]]
@@ -570,6 +576,27 @@ dependencies = [
 
 [[package]]
 name = "rustls-platform-verifier"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19787cda76408ec5404443dc8b31795c87cd8fec49762dc75fa727740d34acc1"
+dependencies = [
+ "core-foundation",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs 0.26.11",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "rustls-platform-verifier"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d99feebc72bae7ab76ba994bb5e121b8d83d910ca40b36e0921f53becc41784"
@@ -585,7 +612,7 @@ dependencies = [
  "rustls-webpki",
  "security-framework",
  "security-framework-sys",
- "webpki-root-certs",
+ "webpki-root-certs 1.0.5",
  "windows-sys 0.61.2",
 ]
 
@@ -663,6 +690,12 @@ dependencies = [
 [[package]]
 name = "shiguredo_http11"
 version = "2026.1.0-canary.3"
+
+[[package]]
+name = "shiguredo_http11"
+version = "2026.1.0-canary.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c65267a074e2e6bf86f0378d7b4948919317d36813ea727304f1761379d716b"
 
 [[package]]
 name = "shlex"
@@ -773,6 +806,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio_http11"
+version = "2026.0.0"
+dependencies = [
+ "nojson",
+ "rustls",
+ "rustls-pki-types",
+ "rustls-platform-verifier 0.5.3",
+ "shiguredo_http11 2026.1.0-canary.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tokio",
+ "tokio-rustls",
+]
+
+[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -822,6 +868,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0562428422c63773dad2c345a1882263bbf4d65cf3f42e90921f787ef5ad58e7"
 dependencies = [
  "wit-bindgen",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75c7f0ef91146ebfb530314f5f1d24528d7f0767efbfd31dce919275413e393e"
+dependencies = [
+ "webpki-root-certs 1.0.5",
 ]
 
 [[package]]

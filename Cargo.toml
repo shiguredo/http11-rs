@@ -14,6 +14,7 @@ readme = "README.md"
 
 [workspace]
 members = [
+    "crates/tokio_http11",
     "examples/http11_client",
     "examples/http11_server",
     "examples/http11_reverse_proxy",

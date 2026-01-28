@@ -1,0 +1,37 @@
+[package]
+name = "tokio_http11"
+version = "2026.0.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Shiguredo Inc."]
+license = "Apache-2.0"
+description = "Tokio integration for shiguredo_http11"
+homepage = "https://github.com/shiguredo/http11-rs"
+repository = "https://github.com/shiguredo/http11-rs"
+readme = "README.md"
+
+[features]
+default = ["client", "server"]
+full = ["client", "server"]
+client = []
+server = []
+
+[dependencies]
+shiguredo_http11 = { version = "2026.1.0-canary.3" }
+tokio = { version = "1", features = [
+    "net",
+    "io-util",
+    "time",
+    "sync",
+    "rt",
+    "macros",
+] }
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "aws-lc-rs",
+] }
+rustls-pki-types = "1"
+rustls-platform-verifier = "0.5"
+nojson = "0.3"
