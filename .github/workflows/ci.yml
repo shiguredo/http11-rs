@@ -40,9 +40,10 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.toolchain }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.toolchain }}-cargo-
+      - run: rustup component add rustfmt
+      - run: cargo fmt --all --check
       - run: cargo check --workspace
       - run: cargo test --workspace
-      - run: cargo fmt --all --check
       # [NOTE]
       # clippy は「stable と nightly の片方に対応したらもう片方で失敗する」といったケースが
       # まれにあるのと、そもそも nightly のチェックを事前に行うメリットが
