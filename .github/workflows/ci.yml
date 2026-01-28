@@ -21,15 +21,12 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v6
       - run: rustup update stable
-      - run: rustup default stable
       - uses: shiguredo/github-actions/.github/actions/rust-cache@main
         with:
           toolchain: stable
-      - run: rustup component add rustfmt
       - run: cargo fmt --all --check
       - run: cargo check --workspace
       - run: cargo test --workspace
-      - run: rustup component add clippy
       - run: cargo clippy --workspace -- -D warnings
 
   slack_notify_failed:
