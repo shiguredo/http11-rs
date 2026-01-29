@@ -336,3 +336,92 @@ fn request_target_without_percent_encoded_null_should_succeed() {
     let result = decoder.decode_headers();
     assert!(result.is_ok());
 }
+
+/// RFC 3986 除外文字を含むリクエストターゲットは拒否される
+///
+/// RFC 3986 Section 2.2: 以下の文字は URI で許可されない
+/// " < > \ ^ ` { | }
+#[test]
+fn request_target_with_rfc3986_excluded_chars_should_fail() {
+    let excluded_chars = ['"', '<', '>', '\\', '^', '`', '{', '|', '}'];
+
+    for ch in excluded_chars {
+        let mut decoder = RequestDecoder::new();
+        let request = format!("GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n", ch);
+        decoder.feed(request.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers();
+        assert!(
+            result.is_err(),
+            "expected error for excluded char '{}', got {:?}",
+            ch,
+            result
+        );
+    }
+}
+
+/// 不完全なパーセントエンコーディングは拒否される
+///
+/// % の後に 2 桁の 16 進数が必要
+#[test]
+fn request_target_with_incomplete_percent_encoding_should_fail() {
+    // % のみ (末尾)
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET /path% HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    assert!(decoder.decode_headers().is_err());
+
+    // %X のみ (1 桁)
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET /path%2 HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    assert!(decoder.decode_headers().is_err());
+}
+
+/// 不正な 16 進数を含むパーセントエンコーディングは拒否される
+#[test]
+fn request_target_with_invalid_hex_percent_encoding_should_fail() {
+    let invalid_cases = ["%GG", "%ZZ", "%0G", "%G0", "%-0", "%0-"];
+
+    for case in invalid_cases {
+        let mut decoder = RequestDecoder::new();
+        let request = format!(
+            "GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            case
+        );
+        decoder.feed(request.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers();
+        assert!(
+            result.is_err(),
+            "expected error for invalid hex '{}', got {:?}",
+            case,
+            result
+        );
+    }
+}
+
+/// 有効なパーセントエンコーディングは許可される
+#[test]
+fn request_target_with_valid_percent_encoding_should_succeed() {
+    let valid_cases = ["%20", "%2F", "%3A", "%7E", "%41", "%61", "%Aa", "%aA"];
+
+    for case in valid_cases {
+        let mut decoder = RequestDecoder::new();
+        let request = format!(
+            "GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            case
+        );
+        decoder.feed(request.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers();
+        assert!(
+            result.is_ok(),
+            "expected success for valid encoding '{}', got {:?}",
+            case,
+            result
+        );
+    }
+}

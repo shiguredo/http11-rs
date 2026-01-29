@@ -464,48 +464,69 @@ pub(crate) fn is_valid_http_version(version: &str) -> bool {
     matches!(version, "HTTP/1.0" | "HTTP/1.1")
 }
 
+/// RFC 3986 で除外されている文字
+const RFC3986_EXCLUDED: &[u8] = b"\"<>\\^`{|}";
+
 /// リクエストターゲット (URI) が有効か確認
 ///
-/// NUL バイト (0x00) や制御文字を含む場合は無効
 /// RFC 9112 Section 3: request-target には制御文字を含めない
+/// RFC 3986 Section 2: URI で許可されない文字を拒否
 ///
-/// また、パーセントエンコーディングされた NUL バイト (%00) も拒否する
-/// これはセキュリティ上の理由による（null バイト注入攻撃の防止）
+/// 拒否する文字:
+/// - 制御文字 (0x00-0x20, 0x7F)
+/// - RFC 3986 で除外されている文字: " < > \ ^ ` { | }
+/// - 不正なパーセントエンコーディング (% の後に 2 桁の 16 進数がない)
+/// - パーセントエンコーディングされた NUL バイト (%00)
+///
+/// 許可する文字:
+/// - VCHAR (0x21-0x7E) のうち RFC 3986 除外文字以外
+/// - obs-text (0x80-0xFF) - RFC 9112 準拠
 pub(crate) fn is_valid_request_target(target: &str) -> bool {
     if target.is_empty() {
         return false;
     }
 
-    // 生の制御文字のチェック
-    if !target
-        .bytes()
-        .all(|b| matches!(b, 0x21..=0x7E | 0x80..=0xFF))
-    {
-        return false;
-    }
-
-    // パーセントエンコーディングされた NUL バイト (%00) のチェック
-    // 大文字・小文字の両方をチェック
-    !contains_percent_encoded_null(target)
-}
-
-/// パーセントエンコーディングされた NUL バイト (%00) を含むかチェック
-fn contains_percent_encoded_null(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let len = bytes.len();
+    let bytes = target.as_bytes();
     let mut i = 0;
 
-    while i + 2 < len {
-        if bytes[i] == b'%' {
-            // %00 のチェック（大文字・小文字両方）
-            if bytes[i + 1] == b'0' && bytes[i + 2] == b'0' {
-                return true;
-            }
+    while i < bytes.len() {
+        let b = bytes[i];
+
+        // 制御文字の拒否 (0x00-0x20, 0x7F)
+        if b <= 0x20 || b == 0x7F {
+            return false;
         }
+
+        // RFC 3986 除外文字の拒否
+        if RFC3986_EXCLUDED.contains(&b) {
+            return false;
+        }
+
+        // パーセントエンコーディングの検証
+        if b == b'%' {
+            if i + 2 >= bytes.len() {
+                return false; // 不完全
+            }
+            let high = bytes[i + 1];
+            let low = bytes[i + 2];
+
+            if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
+                return false; // 不正な 16 進数
+            }
+
+            // %00 (NUL) の拒否
+            if high == b'0' && low == b'0' {
+                return false;
+            }
+
+            i += 3;
+            continue;
+        }
+
         i += 1;
     }
 
-    false
+    true
 }
 
 /// ステータスコードが有効か確認 (RFC 9110 Section 15)
