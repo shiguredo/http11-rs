@@ -1,4 +1,4 @@
-# tokio_http11
+# tokio-http11
 
 tokio と tokio-rustls を使用した非同期 HTTP/1.1 クライアント/サーバーライブラリ。
 
