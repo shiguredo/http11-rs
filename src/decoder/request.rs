@@ -311,6 +311,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 BodyKind::CloseDelimited | BodyKind::None => {
                                     self.phase = DecodePhase::Complete;
                                 }
+                                BodyKind::Tunnel => {
+                                    // リクエストではトンネルモードは発生しない
+                                    unreachable!("Tunnel mode is only for CONNECT responses")
+                                }
                             }
 
                             // RequestHead を構築
@@ -480,6 +484,10 @@ impl<D: Decompressor> RequestDecoder<D> {
         // RFC 9112: リクエストは close-delimited を使わないため、CloseDelimited は None と同じ
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
+            BodyKind::Tunnel => {
+                // リクエストではトンネルモードは発生しない
+                unreachable!("Tunnel mode is only for CONNECT responses")
+            }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
                 // 直接バッファから利用可能なデータ長を取得（コピーなし）
                 let available = self.available_body_len();

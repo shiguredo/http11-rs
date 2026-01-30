@@ -52,3 +52,22 @@ impl From<CompressionError> for Error {
         Error::Compression(e)
     }
 }
+
+/// HTTP エンコードエラー
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EncodeError {
+    /// Host ヘッダーがない (HTTP/1.1 必須)
+    MissingHostHeader,
+}
+
+impl fmt::Display for EncodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EncodeError::MissingHostHeader => {
+                write!(f, "missing Host header (required for HTTP/1.1)")
+            }
+        }
+    }
+}
+
+impl std::error::Error for EncodeError {}

@@ -57,6 +57,8 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     decoded_body: Vec<u8>,
     /// 展開器
     decompressor: D,
+    /// リクエストメソッド (CONNECT トンネル判定用)
+    request_method: Option<String>,
 }
 
 impl Default for ResponseDecoder<NoCompression> {
@@ -81,6 +83,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
+            request_method: None,
         }
     }
 
@@ -99,6 +102,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
+            request_method: None,
         }
     }
 }
@@ -119,6 +123,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor,
+            request_method: None,
         }
     }
 
@@ -137,12 +142,38 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor,
+            request_method: None,
         }
     }
 
     /// HEAD リクエストへのレスポンスとしてデコード (ボディなし)
     pub fn set_expect_no_body(&mut self, expect_no_body: bool) {
         self.expect_no_body = expect_no_body;
+    }
+
+    /// リクエストメソッドを設定 (CONNECT トンネル判定用)
+    ///
+    /// CONNECT メソッドへの 2xx レスポンスはトンネルモードに切り替わる。
+    /// この場合、ボディは存在せず、バッファ残りデータはトンネルデータとなる。
+    pub fn set_request_method(&mut self, method: &str) {
+        self.request_method = Some(method.to_string());
+    }
+
+    /// バッファの残りデータを取り出す (トンネルモード用)
+    ///
+    /// CONNECT 2xx レスポンス後にトンネルモードに切り替わった場合、
+    /// このメソッドでヘッダー後のデータを取り出してトンネルに転送する。
+    ///
+    /// 呼び出し後、バッファは空になる。
+    pub fn take_remaining(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.buf)
+    }
+
+    /// トンネルモードかどうかを判定
+    ///
+    /// CONNECT 2xx レスポンスの場合、トンネルモードになる。
+    pub fn is_tunnel(&self) -> bool {
+        matches!(self.phase, DecodePhase::Tunnel)
     }
 
     /// 制限設定を取得
@@ -186,6 +217,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.decompressor.reset();
+        self.request_method = None;
     }
 
     /// 接続終了を通知 (close-delimited ボディ用)
@@ -214,11 +246,21 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// ボディモードを決定
     ///
     /// RFC 9112 Section 6.3 の優先順位に従う:
-    /// 1. HEAD レスポンス、1xx/204/304 はボディなし
-    /// 2. Transfer-Encoding がある場合は chunked
-    /// 3. Content-Length がある場合は固定長
-    /// 4. それ以外は close-delimited (接続が閉じるまでがボディ)
+    /// 1. CONNECT 2xx はトンネルモード (Transfer-Encoding/Content-Length は無視)
+    /// 2. HEAD レスポンス、1xx/204/304 はボディなし
+    /// 3. Transfer-Encoding がある場合は chunked
+    /// 4. Content-Length がある場合は固定長
+    /// 5. それ以外は close-delimited (接続が閉じるまでがボディ)
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
+        // RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
+        // トンネルモードに切り替わる。Transfer-Encoding と Content-Length は無視される。
+        if let Some(ref method) = self.request_method
+            && method.eq_ignore_ascii_case("CONNECT")
+            && (200..300).contains(&status_code)
+        {
+            return Ok(BodyKind::Tunnel);
+        }
+
         let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
 
         // HEAD リクエストへのレスポンス、または 1xx/204/304 はボディなし
@@ -348,6 +390,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 BodyKind::None => {
                                     self.phase = DecodePhase::Complete;
                                 }
+                                BodyKind::Tunnel => {
+                                    self.phase = DecodePhase::Tunnel;
+                                }
                             }
 
                             // ResponseHead を構築
@@ -399,6 +444,11 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     self.expect_no_body = false;
                     self.status_code = 0;
                     continue;
+                }
+                DecodePhase::Tunnel => {
+                    return Err(Error::InvalidData(
+                        "decode_headers cannot be used in tunnel mode".to_string(),
+                    ));
                 }
                 _ => {
                     return Err(Error::InvalidData(
@@ -523,6 +573,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // ボディを読む
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
+            BodyKind::Tunnel => {
+                return Err(Error::InvalidData(
+                    "decode() cannot be used in tunnel mode, use take_remaining() instead"
+                        .to_string(),
+                ));
+            }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
                 // 直接バッファから利用可能なデータ長を取得（コピーなし）
                 let available = self.available_body_len();

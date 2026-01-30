@@ -301,15 +301,17 @@ fn parse_rfc850(day_name: &str, rest: &str) -> Result<HttpDate, DateError> {
         .parse::<u8>()
         .map_err(|_| DateError::InvalidDay)?;
     let month = parse_month(date_parts[1])?;
-    let mut year = date_parts[2]
+    let raw_year = date_parts[2]
         .parse::<u16>()
         .map_err(|_| DateError::InvalidYear)?;
 
-    // 2桁年の補正 (RFC 2616 Section 19.3)
-    // 00-49 は 2000-2049, 50-99 は 1950-1999
-    if year < 100 {
-        year = if year < 50 { 2000 + year } else { 1900 + year };
-    }
+    // 2 桁年の補正 (RFC 9110 Section 5.6.7)
+    // 50 年以上未来に見える場合は 100 年引く
+    let year = if raw_year < 100 {
+        interpret_two_digit_year(raw_year)
+    } else {
+        raw_year
+    };
 
     let (hour, minute, second) = parse_time(parts[1])?;
 
@@ -374,6 +376,53 @@ fn month_name(month: u8) -> &'static str {
         11 => "Nov",
         12 => "Dec",
         _ => "???",
+    }
+}
+
+/// 現在の年を取得
+#[cfg(not(test))]
+fn current_year() -> u16 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    // 1 年 ≈ 31,557,600 秒 (365.25 日)
+    let years_since_1970 = now.as_secs() / 31_557_600;
+    (1970 + years_since_1970) as u16
+}
+
+#[cfg(test)]
+thread_local! {
+    static CURRENT_YEAR_FOR_TEST: std::cell::Cell<u16> = const { std::cell::Cell::new(2026) };
+}
+
+#[cfg(test)]
+fn current_year() -> u16 {
+    CURRENT_YEAR_FOR_TEST.with(|y| y.get())
+}
+
+#[cfg(test)]
+fn set_current_year_for_test(year: u16) {
+    CURRENT_YEAR_FOR_TEST.with(|y| y.set(year));
+}
+
+/// 2 桁年を RFC 9110 準拠で解釈する
+///
+/// RFC 9110 Section 5.6.7:
+/// 「Recipients of a timestamp value in rfc850-date format, which uses a
+/// two-digit year, MUST interpret a timestamp that appears to be more than
+/// 50 years in the future as representing the most recent year in the past
+/// that had the same last two digits.」
+fn interpret_two_digit_year(two_digit: u16) -> u16 {
+    let current = current_year();
+    let current_century = (current / 100) * 100;
+    let candidate = current_century + two_digit;
+
+    // 50 年以上未来なら 100 年引く
+    if candidate > current + 50 {
+        candidate - 100
+    } else {
+        candidate
     }
 }
 
@@ -453,13 +502,50 @@ mod tests {
 
     #[test]
     fn test_parse_rfc850_2digit_year() {
-        // 00-49 は 2000-2049
+        // RFC 9110 Section 5.6.7:
+        // 50 年以上未来に見える場合は 100 年引く
+
+        // 現在年を 2026 に設定 (デフォルト)
+        set_current_year_for_test(2026);
+
+        // 20 → 2020 (2026 + 50 = 2076 > 2020 なので 2020)
         let date = HttpDate::parse("Sunday, 06-Nov-20 08:49:37 GMT").unwrap();
         assert_eq!(date.year(), 2020);
 
-        // 50-99 は 1950-1999
+        // 76 → 2076 (2026 + 50 = 2076 >= 2076 なので 2076)
+        let date = HttpDate::parse("Sunday, 06-Nov-76 08:49:37 GMT").unwrap();
+        assert_eq!(date.year(), 2076);
+
+        // 77 → 1977 (2026 + 50 = 2076 < 2077 なので 100 年引いて 1977)
+        let date = HttpDate::parse("Sunday, 06-Nov-77 08:49:37 GMT").unwrap();
+        assert_eq!(date.year(), 1977);
+
+        // 99 → 1999 (2026 + 50 = 2076 < 2099 なので 100 年引いて 1999)
         let date = HttpDate::parse("Sunday, 06-Nov-99 08:49:37 GMT").unwrap();
         assert_eq!(date.year(), 1999);
+    }
+
+    #[test]
+    fn test_parse_rfc850_2digit_year_boundary() {
+        // 境界テスト: 異なる基準年での動作確認
+
+        // 基準年 2050 の場合
+        set_current_year_for_test(2050);
+
+        // 00 → 2000 (candidate = 2000, 2000 > 2050 + 50 = 2100? No → 2000)
+        let date = HttpDate::parse("Sunday, 06-Nov-00 08:49:37 GMT").unwrap();
+        assert_eq!(date.year(), 2000);
+
+        // 01 → 2001 (candidate = 2001, 2001 > 2100? No → 2001)
+        let date = HttpDate::parse("Sunday, 06-Nov-01 08:49:37 GMT").unwrap();
+        assert_eq!(date.year(), 2001);
+
+        // 50 → 2050 (candidate = 2050, 2050 > 2100? No → 2050)
+        let date = HttpDate::parse("Sunday, 06-Nov-50 08:49:37 GMT").unwrap();
+        assert_eq!(date.year(), 2050);
+
+        // テスト後にデフォルトに戻す
+        set_current_year_for_test(2026);
     }
 
     #[test]

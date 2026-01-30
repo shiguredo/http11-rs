@@ -2922,3 +2922,187 @@ proptest! {
         prop_assert!(result.is_ok(), "expected success for method with underscore/hyphen '{}', got {:?}", method, result);
     }
 }
+
+// ========================================
+// CONNECT トンネルモードのテスト (RFC 9112 Section 6.3)
+// ========================================
+
+/// CONNECT + 2xx レスポンスでトンネルモードになることを確認
+#[test]
+fn prop_connect_2xx_tunnel_mode() {
+    for status in [200, 201, 202, 204, 299] {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+
+        let response = format!("HTTP/1.1 {} OK\r\nContent-Length: 100\r\n\r\n", status);
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap();
+        assert!(
+            result.is_some(),
+            "expected headers for CONNECT {} response",
+            status
+        );
+
+        let (head, body_kind) = result.unwrap();
+        assert_eq!(head.status_code, status);
+        // CONNECT 2xx は Transfer-Encoding/Content-Length を無視してトンネルモードになる
+        assert_eq!(
+            body_kind,
+            BodyKind::Tunnel,
+            "expected Tunnel for CONNECT {} response",
+            status
+        );
+        assert!(decoder.is_tunnel());
+    }
+}
+
+/// CONNECT + 非 2xx レスポンスは通常のボディ判定
+#[test]
+fn prop_connect_non_2xx_normal_body() {
+    for status in [100, 101, 301, 400, 401, 403, 404, 500, 502, 503] {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+
+        let response = format!(
+            "HTTP/1.1 {} Error\r\nContent-Length: 5\r\n\r\nhello",
+            status
+        );
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap();
+        assert!(
+            result.is_some(),
+            "expected headers for CONNECT {} response",
+            status
+        );
+
+        let (_head, body_kind) = result.unwrap();
+        // 非 2xx はトンネルモードではない
+        assert_ne!(
+            body_kind,
+            BodyKind::Tunnel,
+            "expected non-Tunnel for CONNECT {} response",
+            status
+        );
+        assert!(!decoder.is_tunnel());
+    }
+}
+
+/// 非 CONNECT + 2xx レスポンスは通常のボディ判定
+#[test]
+fn prop_non_connect_2xx_normal_body() {
+    for method in ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"] {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method(method);
+
+        let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap();
+        assert!(result.is_some(), "expected headers for {} response", method);
+
+        let (_head, body_kind) = result.unwrap();
+        // 非 CONNECT はトンネルモードではない
+        assert_ne!(
+            body_kind,
+            BodyKind::Tunnel,
+            "expected non-Tunnel for {} response",
+            method
+        );
+        assert!(!decoder.is_tunnel());
+    }
+}
+
+/// CONNECT 2xx で Transfer-Encoding/Content-Length は無視される
+#[test]
+fn prop_connect_2xx_ignores_body_headers() {
+    // Transfer-Encoding: chunked があってもトンネルモード
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Tunnel);
+
+    // Content-Length があってもトンネルモード
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Tunnel);
+}
+
+/// take_remaining() でヘッダー後のデータを取得
+#[test]
+fn prop_connect_take_remaining() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 200 OK\r\n\r\ntunnel data here";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Tunnel);
+
+    // take_remaining でトンネルデータを取得
+    let remaining = decoder.take_remaining();
+    assert_eq!(remaining, b"tunnel data here");
+
+    // 2 回目は空
+    let remaining = decoder.take_remaining();
+    assert!(remaining.is_empty());
+}
+
+/// トンネルモードで decode_headers() を再度呼ぶとエラー
+#[test]
+fn prop_connect_tunnel_decode_headers_error() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    // 最初の decode_headers は成功
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Tunnel);
+
+    // トンネルモードで再度 decode_headers を呼ぶとエラー
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// トンネルモードで decode() を呼ぶとエラー
+#[test]
+fn prop_connect_tunnel_decode_error() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    // decode() はトンネルモードではエラー
+    let result = decoder.decode();
+    assert!(result.is_err());
+}
+
+proptest! {
+    /// CONNECT + 2xx の全ステータスコードでトンネルモードになることを確認
+    #[test]
+    fn prop_connect_all_2xx_tunnel(status in 200u16..300u16) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+
+        let response = format!("HTTP/1.1 {} OK\r\n\r\n", status);
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(result.1, BodyKind::Tunnel, "expected Tunnel for CONNECT {}", status);
+        prop_assert!(decoder.is_tunnel());
+    }
+}

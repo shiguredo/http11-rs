@@ -19,6 +19,11 @@ pub enum BodyKind {
     CloseDelimited,
     /// ボディなし
     None,
+    /// トンネルモード (CONNECT 2xx レスポンス用)
+    ///
+    /// RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
+    /// トンネルモードに切り替わり、Transfer-Encoding と Content-Length は無視される
+    Tunnel,
 }
 
 /// ボディデコードの進捗
@@ -102,7 +107,8 @@ impl BodyDecoder {
             | DecodePhase::ChunkedTrailer
             | DecodePhase::Complete
             | DecodePhase::StartLine
-            | DecodePhase::Headers => None,
+            | DecodePhase::Headers
+            | DecodePhase::Tunnel => None,
         }
     }
 
@@ -254,6 +260,10 @@ impl BodyDecoder {
             }),
             DecodePhase::StartLine | DecodePhase::Headers => Err(Error::InvalidData(
                 "consume_body called before decode_headers".to_string(),
+            )),
+            DecodePhase::Tunnel => Err(Error::InvalidData(
+                "consume_body cannot be used in tunnel mode, use take_remaining instead"
+                    .to_string(),
             )),
         }
     }

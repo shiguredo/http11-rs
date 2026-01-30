@@ -1,9 +1,17 @@
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
+use crate::error::EncodeError;
 use crate::request::Request;
 use crate::response::Response;
 
 /// リクエストをエンコード
-pub fn encode_request(request: &Request) -> Vec<u8> {
+///
+/// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
+    // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
+    if request.version == "HTTP/1.1" && !request.has_header("Host") {
+        return Err(EncodeError::MissingHostHeader);
+    }
+
     let mut buf = Vec::new();
 
     // Request line: METHOD SP URI SP VERSION CRLF
@@ -39,7 +47,7 @@ pub fn encode_request(request: &Request) -> Vec<u8> {
     // Body
     buf.extend_from_slice(&request.body);
 
-    buf
+    Ok(buf)
 }
 
 /// レスポンスをエンコード
@@ -93,7 +101,17 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
 
 impl Request {
     /// リクエストをバイト列にエンコード
+    ///
+    /// HTTP/1.1 リクエストで Host ヘッダーがない場合はパニックする。
+    /// エラーハンドリングが必要な場合は `try_encode()` を使用する。
     pub fn encode(&self) -> Vec<u8> {
+        encode_request(self).expect("HTTP/1.1 request requires Host header")
+    }
+
+    /// リクエストをバイト列にエンコード (Result 版)
+    ///
+    /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+    pub fn try_encode(&self) -> Result<Vec<u8>, EncodeError> {
         encode_request(self)
     }
 }
@@ -149,7 +167,14 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 ///
 /// Chunked Transfer Encoding を使う場合に便利です。
 /// ヘッダー送信後に `encode_chunk` でボディを送信できます。
-pub fn encode_request_headers(request: &Request) -> Vec<u8> {
+///
+/// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError> {
+    // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
+    if request.version == "HTTP/1.1" && !request.has_header("Host") {
+        return Err(EncodeError::MissingHostHeader);
+    }
+
     let mut buf = Vec::new();
 
     // Request line: METHOD SP URI SP VERSION CRLF
@@ -171,7 +196,7 @@ pub fn encode_request_headers(request: &Request) -> Vec<u8> {
     // End of headers
     buf.extend_from_slice(b"\r\n");
 
-    buf
+    Ok(buf)
 }
 
 /// レスポンスヘッダーのみをエンコード (ボディなし)
@@ -205,7 +230,17 @@ pub fn encode_response_headers(response: &Response) -> Vec<u8> {
 
 impl Request {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
+    ///
+    /// HTTP/1.1 リクエストで Host ヘッダーがない場合はパニックする。
+    /// エラーハンドリングが必要な場合は `try_encode_headers()` を使用する。
     pub fn encode_headers(&self) -> Vec<u8> {
+        encode_request_headers(self).expect("HTTP/1.1 request requires Host header")
+    }
+
+    /// ヘッダーのみをエンコード (Result 版)
+    ///
+    /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+    pub fn try_encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
         encode_request_headers(self)
     }
 }

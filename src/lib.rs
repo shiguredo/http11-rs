@@ -84,7 +84,7 @@ pub use encoder::{
     RequestEncoder, ResponseEncoder, encode_chunk, encode_chunks, encode_request,
     encode_request_headers, encode_response, encode_response_headers,
 };
-pub use error::Error;
+pub use error::{EncodeError, Error};
 pub use limits::DecoderLimits;
 pub use request::Request;
 pub use response::Response;

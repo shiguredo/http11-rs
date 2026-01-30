@@ -126,7 +126,8 @@ proptest! {
                 }
             }
             // リクエストでは CloseDelimited は使われない (RFC 9112)
-            BodyKind::CloseDelimited | BodyKind::None => {}
+            // Tunnel はレスポンスのみで発生 (CONNECT 2xx)
+            BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
         }
 
         prop_assert_eq!(&decoded_body, &request.body);
@@ -220,7 +221,8 @@ proptest! {
                         }
                     }
                     // リクエストでは CloseDelimited は使われない (RFC 9112)
-                    BodyKind::CloseDelimited | BodyKind::None => {}
+                    // Tunnel はレスポンスのみで発生 (CONNECT 2xx)
+                    BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
                 }
             }
         }

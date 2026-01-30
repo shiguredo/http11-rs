@@ -2,8 +2,8 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    Request, Response, encode_chunk, encode_chunks, encode_request, encode_request_headers,
-    encode_response, encode_response_headers,
+    EncodeError, Request, Response, encode_chunk, encode_chunks, encode_request,
+    encode_request_headers, encode_response, encode_response_headers,
 };
 
 // ========================================
@@ -437,8 +437,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_basic(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
-        let encoded = encode_request(&req);
+        // HTTP/1.1 には Host ヘッダーが必須
+        let req = Request::new(method, &uri).header("Host", "example.com");
+        let encoded = encode_request(&req).unwrap();
 
         // リクエストラインを含む
         let request_line = format!("{} {} HTTP/1.1\r\n", method, uri);
@@ -456,8 +457,11 @@ proptest! {
         header_name in header_name(),
         header_value in header_value()
     ) {
-        let req = Request::new(method, &uri).header(&header_name, &header_value);
-        let encoded = encode_request(&req);
+        // HTTP/1.1 には Host ヘッダーが必須
+        let req = Request::new(method, &uri)
+            .header("Host", "example.com")
+            .header(&header_name, &header_value);
+        let encoded = encode_request(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let header_line = format!("{}: {}\r\n", header_name, header_value);
@@ -468,8 +472,11 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
-        let req = Request::new(method, &uri).body(data.clone());
-        let encoded = encode_request(&req);
+        // HTTP/1.1 には Host ヘッダーが必須
+        let req = Request::new(method, &uri)
+            .header("Host", "example.com")
+            .body(data.clone());
+        let encoded = encode_request(&req).unwrap();
 
         if !data.is_empty() {
             // Content-Length が自動追加される
@@ -485,10 +492,12 @@ proptest! {
 #[test]
 fn prop_encode_request_with_existing_content_length() {
     // Content-Length が既に設定されている場合は追加しない
+    // HTTP/1.1 には Host ヘッダーが必須
     let req = Request::new("POST", "/")
+        .header("Host", "example.com")
         .header("Content-Length", "5")
         .body(b"hello".to_vec());
-    let encoded = encode_request(&req);
+    let encoded = encode_request(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // Content-Length が 1 回だけ出現
@@ -681,7 +690,7 @@ proptest! {
     fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
             .header("Host", "example.com");
-        let encoded = encode_request_headers(&req);
+        let encoded = encode_request_headers(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         // リクエストラインを含む
@@ -697,8 +706,9 @@ proptest! {
 
 #[test]
 fn prop_encode_request_headers_ignores_body() {
-    let req = Request::new("POST", "/").body(b"hello world".to_vec());
-    let encoded = encode_request_headers(&req);
+    // HTTP/1.0 で Host なしを使用 (HTTP/1.1 では Host 必須なのでエラーになる)
+    let req = Request::with_version("POST", "/", "HTTP/1.0").body(b"hello world".to_vec());
+    let encoded = encode_request_headers(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // ボディは含まれない
@@ -746,9 +756,10 @@ fn prop_encode_response_headers_ignores_body() {
 proptest! {
     #[test]
     fn prop_request_encode_method(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
+        // HTTP/1.1 には Host ヘッダーが必須
+        let req = Request::new(method, &uri).header("Host", "example.com");
         let encoded = req.encode();
-        prop_assert_eq!(encoded, encode_request(&req));
+        prop_assert_eq!(encoded, encode_request(&req).unwrap());
     }
 }
 
@@ -768,9 +779,82 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_encode_headers_method(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
+        // HTTP/1.1 には Host ヘッダーが必須
+        let req = Request::new(method, &uri).header("Host", "example.com");
         let encoded = req.encode_headers();
-        prop_assert_eq!(encoded, encode_request_headers(&req));
+        prop_assert_eq!(encoded, encode_request_headers(&req).unwrap());
+    }
+}
+
+// ========================================
+// Host 必須チェックのテスト (RFC 9112 Section 3.2)
+// ========================================
+
+#[test]
+fn prop_encode_request_missing_host_http11() {
+    // HTTP/1.1 で Host ヘッダーがない場合はエラー
+    let req = Request::new("GET", "/");
+    let result = encode_request(&req);
+    assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
+}
+
+#[test]
+fn prop_encode_request_with_host_http11() {
+    // HTTP/1.1 で Host ヘッダーがある場合は成功
+    let req = Request::new("GET", "/").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_missing_host_http10() {
+    // HTTP/1.0 で Host ヘッダーがない場合は成功 (Host は任意)
+    let req = Request::with_version("GET", "/", "HTTP/1.0");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_headers_missing_host_http11() {
+    // encode_request_headers でも HTTP/1.1 で Host ヘッダーがない場合はエラー
+    let req = Request::new("GET", "/");
+    let result = encode_request_headers(&req);
+    assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
+}
+
+#[test]
+fn prop_request_try_encode_missing_host() {
+    // Request::try_encode でも HTTP/1.1 で Host ヘッダーがない場合はエラー
+    let req = Request::new("GET", "/");
+    let result = req.try_encode();
+    assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
+}
+
+#[test]
+fn prop_request_try_encode_headers_missing_host() {
+    // Request::try_encode_headers でも HTTP/1.1 で Host ヘッダーがない場合はエラー
+    let req = Request::new("GET", "/");
+    let result = req.try_encode_headers();
+    assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_host_required_for_http11(method in http_method(), uri in uri()) {
+        // HTTP/1.1 で Host ヘッダーがない場合は常にエラー
+        let req = Request::new(method, &uri);
+        let result = encode_request(&req);
+        prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_host_optional_for_http10(method in http_method(), uri in uri()) {
+        // HTTP/1.0 で Host ヘッダーがない場合は成功
+        let req = Request::with_version(method, &uri, "HTTP/1.0");
+        let result = encode_request(&req);
+        prop_assert!(result.is_ok());
     }
 }
 
