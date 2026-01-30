@@ -399,7 +399,10 @@ fn percent_decode(s: &str) -> Result<String, ContentDispositionError> {
                 .map_err(|_| ContentDispositionError::InvalidExtValue)?;
             bytes.push(byte);
         } else {
-            // attr-char (RFC 5987)
+            // RFC 5987 Section 3.2: パーセントエンコード以外は attr-char のみ許可
+            if !c.is_ascii() || !is_attr_char(c as u8) {
+                return Err(ContentDispositionError::InvalidExtValue);
+            }
             bytes.push(c as u8);
         }
     }
@@ -572,5 +575,22 @@ mod tests {
         assert_eq!(cd.filename_ascii(), Some("example.txt"));
         assert_eq!(cd.filename_ext(), Some("例.txt"));
         assert_eq!(cd.filename(), Some("例.txt")); // filename* 優先
+    }
+
+    #[test]
+    fn test_ext_value_invalid_char() {
+        // RFC 5987 Section 3.2: attr-char 以外の生文字は不正
+        // スペースは attr-char ではない
+        assert!(ContentDisposition::parse("attachment; filename*=UTF-8''hello world.txt").is_err());
+        // @ は attr-char ではない
+        assert!(ContentDisposition::parse("attachment; filename*=UTF-8''test@file.txt").is_err());
+    }
+
+    #[test]
+    fn test_ext_value_valid_chars() {
+        // RFC 5987: 許可された attr-char はそのまま使える
+        let cd =
+            ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt").unwrap();
+        assert_eq!(cd.filename(), Some("test-file_v1.0.txt"));
     }
 }

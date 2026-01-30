@@ -266,19 +266,27 @@ impl<D: Decompressor> RequestDecoder<D> {
                             })?;
                             let version = start_line_ref.split(' ').nth(2).unwrap_or("");
                             if version == "HTTP/1.1" {
-                                let host_count = self
+                                let host_headers: Vec<_> = self
                                     .headers
                                     .iter()
                                     .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
-                                    .count();
-                                if host_count == 0 {
+                                    .collect();
+                                if host_headers.is_empty() {
                                     return Err(Error::InvalidData(
                                         "HTTP/1.1 request missing Host header".to_string(),
                                     ));
                                 }
-                                if host_count > 1 {
+                                if host_headers.len() > 1 {
                                     return Err(Error::InvalidData(
                                         "HTTP/1.1 request contains multiple Host headers"
+                                            .to_string(),
+                                    ));
+                                }
+                                // Host ヘッダー値検証
+                                let (_, host_value) = host_headers[0];
+                                if crate::host::Host::parse(host_value).is_err() {
+                                    return Err(Error::InvalidData(
+                                        "HTTP/1.1 request contains invalid Host header value"
                                             .to_string(),
                                     ));
                                 }

@@ -675,7 +675,8 @@ fn build_uri(
 /// RFC 3986 Section 6 に基づいて URI を正規化します。
 pub fn normalize(uri: &Uri) -> Result<Uri, UriError> {
     let scheme = uri.scheme().map(|s| s.to_ascii_lowercase());
-    let authority = uri.authority().map(|a| a.to_ascii_lowercase());
+    // RFC 3986: host のみ case-insensitive、userinfo は case-sensitive
+    let authority = uri.authority().map(normalize_authority);
     let path = remove_dot_segments(uri.path());
 
     // パーセントエンコーディングの正規化
@@ -691,6 +692,38 @@ pub fn normalize(uri: &Uri) -> Result<Uri, UriError> {
         query.as_deref(),
         fragment.as_deref(),
     ))
+}
+
+/// authority を正規化 (userinfo は case-sensitive、host は case-insensitive)
+fn normalize_authority(authority: &str) -> String {
+    if let Some(at_pos) = authority.rfind('@') {
+        // userinfo あり: userinfo はそのまま、host:port は小文字化
+        let userinfo = &authority[..at_pos];
+        let host_port = &authority[at_pos + 1..];
+        format!("{}@{}", userinfo, normalize_host_port(host_port))
+    } else {
+        // userinfo なし: 全体が host:port
+        normalize_host_port(authority)
+    }
+}
+
+/// host:port を正規化 (host は小文字化、port はそのまま)
+fn normalize_host_port(host_port: &str) -> String {
+    // IPv6 アドレス
+    if let Some(bracket_end) = host_port.strip_prefix('[').and_then(|s| s.find(']')) {
+        let host = &host_port[..=bracket_end + 1];
+        let after = &host_port[bracket_end + 2..];
+        return format!("{}{}", host.to_ascii_lowercase(), after);
+    }
+
+    // 通常の host:port
+    if let Some(colon_pos) = host_port.rfind(':') {
+        let host = &host_port[..colon_pos];
+        let port = &host_port[colon_pos..];
+        format!("{}{}", host.to_ascii_lowercase(), port)
+    } else {
+        host_port.to_ascii_lowercase()
+    }
 }
 
 /// パーセントエンコーディングを正規化
@@ -828,5 +861,24 @@ mod tests {
         assert_eq!(remove_dot_segments("mid/content=5/../6"), "mid/6");
         assert_eq!(remove_dot_segments("/../a"), "/a");
         assert_eq!(remove_dot_segments("./a"), "a");
+    }
+
+    #[test]
+    fn test_normalize_authority_userinfo_preserved() {
+        // RFC 3986: userinfo は case-sensitive、host は case-insensitive
+        let uri = Uri::parse("http://UserName:PassWord@EXAMPLE.COM/path").unwrap();
+        let normalized = normalize(&uri).unwrap();
+        // userinfo は大文字のまま、host は小文字化
+        assert_eq!(
+            normalized.authority(),
+            Some("UserName:PassWord@example.com")
+        );
+    }
+
+    #[test]
+    fn test_normalize_authority_without_userinfo() {
+        let uri = Uri::parse("http://EXAMPLE.COM:8080/path").unwrap();
+        let normalized = normalize(&uri).unwrap();
+        assert_eq!(normalized.authority(), Some("example.com:8080"));
     }
 }

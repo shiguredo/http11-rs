@@ -56,13 +56,8 @@ fn accept_qvalue_string(value: u16) -> String {
     format!("0.{}", frac)
 }
 
-fn accept_language_subtag() -> impl Strategy<Value = String> {
-    "[A-Za-z0-9]{1,8}".prop_map(|s| s)
-}
-
-fn accept_language_tag() -> impl Strategy<Value = String> {
-    proptest::collection::vec(accept_language_subtag(), 1..=3).prop_map(|parts| parts.join("-"))
-}
+// 言語タグ生成は pbt クレートを使用
+use pbt::language_tag as accept_language_tag;
 
 // 一般的なメディアタイプ
 fn common_media_type() -> impl Strategy<Value = &'static str> {

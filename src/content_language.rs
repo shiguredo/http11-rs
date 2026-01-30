@@ -92,16 +92,28 @@ fn is_valid_language_tag(tag: &str) -> bool {
         return false;
     }
 
-    let mut iter = tag.split('-');
-    let mut has_part = false;
-    for part in &mut iter {
-        has_part = true;
+    let mut parts = tag.split('-');
+
+    // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ (数字不可)
+    if let Some(primary) = parts.next() {
+        if primary.is_empty()
+            || primary.len() > 8
+            || !primary.chars().all(|c| c.is_ascii_alphabetic())
+        {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    // 後続サブタグは ALPHA / DIGIT
+    for part in parts {
         if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
             return false;
         }
     }
 
-    has_part
+    true
 }
 
 #[cfg(test)]
@@ -132,5 +144,16 @@ mod tests {
     fn display() {
         let cl = ContentLanguage::parse("en-US, ja").unwrap();
         assert_eq!(cl.to_string(), "en-US, ja");
+    }
+
+    #[test]
+    fn parse_primary_subtag_alpha_only() {
+        // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ
+        // 数字で始まる言語タグは不正
+        assert!(ContentLanguage::parse("123").is_err());
+        assert!(ContentLanguage::parse("1ab").is_err());
+        // 後続サブタグは ALPHA / DIGIT OK
+        let cl = ContentLanguage::parse("en-123").unwrap();
+        assert_eq!(cl.tags()[0], "en-123");
     }
 }

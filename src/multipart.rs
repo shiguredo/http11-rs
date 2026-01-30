@@ -176,6 +176,30 @@ enum ParserState {
     Finished,
 }
 
+/// RFC 2046 Section 5.1.1: boundary で許可される文字
+fn is_valid_boundary_char(b: u8) -> bool {
+    matches!(b,
+        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' |
+        b'\'' | b'(' | b')' | b'+' | b'_' | b',' | b'-' | b'.' |
+        b'/' | b':' | b'=' | b'?' | b' '
+    )
+}
+
+/// RFC 2046 Section 5.1.1: boundary の検証
+fn is_valid_boundary(boundary: &str) -> bool {
+    let bytes = boundary.as_bytes();
+    // 1-70 文字
+    if bytes.is_empty() || bytes.len() > 70 {
+        return false;
+    }
+    // 許可された文字のみ
+    if !bytes.iter().all(|&b| is_valid_boundary_char(b)) {
+        return false;
+    }
+    // 末尾スペース不可
+    bytes.last() != Some(&b' ')
+}
+
 impl MultipartParser {
     /// 新しいパーサーを作成
     pub fn new(boundary: &str) -> Self {
@@ -185,6 +209,16 @@ impl MultipartParser {
             state: ParserState::Initial,
             finished: false,
         }
+    }
+
+    /// boundary を検証して新しいパーサーを作成
+    ///
+    /// RFC 2046 Section 5.1.1 に従い、boundary 文字列を検証します。
+    pub fn try_new(boundary: &str) -> Result<Self, MultipartError> {
+        if !is_valid_boundary(boundary) {
+            return Err(MultipartError::InvalidBoundary);
+        }
+        Ok(Self::new(boundary))
     }
 
     /// データを追加
@@ -349,6 +383,16 @@ impl MultipartBuilder {
             boundary: boundary.to_string(),
             parts: Vec::new(),
         }
+    }
+
+    /// boundary を検証して作成
+    ///
+    /// RFC 2046 Section 5.1.1 に従い、boundary 文字列を検証します。
+    pub fn try_with_boundary(boundary: &str) -> Result<Self, MultipartError> {
+        if !is_valid_boundary(boundary) {
+            return Err(MultipartError::InvalidBoundary);
+        }
+        Ok(Self::with_boundary(boundary))
     }
 
     /// 境界文字列を取得
@@ -624,5 +668,34 @@ mod tests {
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.body(), &binary_data);
+    }
+
+    #[test]
+    fn test_try_new_valid_boundary() {
+        // RFC 2046 Section 5.1.1: 有効な boundary
+        assert!(MultipartParser::try_new("simple").is_ok());
+        assert!(MultipartParser::try_new("a-b_c.d").is_ok());
+        assert!(MultipartParser::try_new("with space").is_ok());
+        assert!(MultipartParser::try_new("----WebKitFormBoundary").is_ok());
+    }
+
+    #[test]
+    fn test_try_new_invalid_boundary() {
+        // RFC 2046 Section 5.1.1: 無効な boundary
+        // 空
+        assert!(MultipartParser::try_new("").is_err());
+        // 71 文字以上
+        assert!(MultipartParser::try_new(&"a".repeat(71)).is_err());
+        // 末尾スペース
+        assert!(MultipartParser::try_new("boundary ").is_err());
+        // 許可されない文字
+        assert!(MultipartParser::try_new("bound\x00ary").is_err());
+        assert!(MultipartParser::try_new("bound*ary").is_err());
+    }
+
+    #[test]
+    fn test_builder_try_with_boundary() {
+        assert!(MultipartBuilder::try_with_boundary("valid-boundary").is_ok());
+        assert!(MultipartBuilder::try_with_boundary("").is_err());
     }
 }

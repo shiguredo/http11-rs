@@ -384,15 +384,13 @@ fn prop_if_range_parse_errors() {
     ));
 }
 
-// 小文字の w/ もパースできる
+// RFC 9110 Section 8.8.3: W/ は case-sensitive (小文字 w/ は拒否)
 proptest! {
     #[test]
-    fn prop_if_range_weak_lowercase(tag in etag_value()) {
+    fn prop_if_range_weak_lowercase_rejected(tag in etag_value()) {
         let input = format!("w/\"{}\"", tag);
-        let ir = IfRange::parse(&input).unwrap();
-
-        prop_assert!(ir.is_etag());
-        prop_assert!(ir.etag().unwrap().is_weak());
+        // 小文字 w/ は RFC 非準拠のため拒否される
+        prop_assert!(IfRange::parse(&input).is_err());
     }
 }
 

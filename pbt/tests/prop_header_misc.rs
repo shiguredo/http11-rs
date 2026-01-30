@@ -45,14 +45,8 @@ fn header_misc_digest_algorithm_token() -> impl Strategy<Value = String> {
     "[a-z0-9-]{1,16}".prop_map(|s| s)
 }
 
-fn header_misc_language_subtag() -> impl Strategy<Value = String> {
-    "[A-Za-z0-9]{1,8}".prop_map(|s| s)
-}
-
-fn header_misc_language_tag() -> impl Strategy<Value = String> {
-    proptest::collection::vec(header_misc_language_subtag(), 1..=3)
-        .prop_map(|parts| parts.join("-"))
-}
+// 言語タグ生成は pbt クレートを使用
+use pbt::language_tag as header_misc_language_tag;
 
 // URI (スペースや CRLF を含まない)
 fn header_misc_http_uri() -> impl Strategy<Value = String> {

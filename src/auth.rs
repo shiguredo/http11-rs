@@ -114,16 +114,8 @@ impl BasicAuth {
             return Err(AuthError::Empty);
         }
 
-        // "Basic " プレフィックスを確認
-        let credentials = if let Some(rest) = input.strip_prefix("Basic ") {
-            rest
-        } else if let Some(rest) = input.strip_prefix("basic ") {
-            rest
-        } else {
-            return Err(AuthError::NotBasicScheme);
-        };
-
-        let credentials = credentials.trim();
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        let credentials = strip_scheme(input, "Basic").ok_or(AuthError::NotBasicScheme)?;
         if credentials.is_empty() {
             return Err(AuthError::InvalidFormat);
         }
@@ -219,16 +211,12 @@ impl WwwAuthenticate {
             return Err(AuthError::Empty);
         }
 
-        // "Basic " プレフィックスを確認
-        let params = if let Some(rest) = input.strip_prefix("Basic ") {
-            rest
-        } else if let Some(rest) = input.strip_prefix("basic ") {
-            rest
-        } else {
-            return Err(AuthError::NotBasicScheme);
-        };
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        let params = strip_scheme(input, "Basic").ok_or(AuthError::NotBasicScheme)?;
+        if params.is_empty() {
+            return Err(AuthError::InvalidFormat);
+        }
 
-        let params = params.trim();
         let mut realm = None;
         let mut charset = None;
 
@@ -531,13 +519,14 @@ impl Authorization {
             return Err(AuthError::Empty);
         }
 
-        if input.starts_with("Basic ") || input.starts_with("basic ") {
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        if strip_scheme(input, "Basic").is_some() {
             return Ok(Authorization::Basic(BasicAuth::parse(input)?));
         }
-        if input.starts_with("Digest ") || input.starts_with("digest ") {
+        if strip_scheme(input, "Digest").is_some() {
             return Ok(Authorization::Digest(DigestAuth::parse(input)?));
         }
-        if input.starts_with("Bearer ") || input.starts_with("bearer ") {
+        if strip_scheme(input, "Bearer").is_some() {
             return Ok(Authorization::Bearer(BearerToken::parse(input)?));
         }
 
@@ -576,13 +565,14 @@ impl AuthChallenge {
             return Err(AuthError::Empty);
         }
 
-        if input.starts_with("Basic ") || input.starts_with("basic ") {
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        if strip_scheme(input, "Basic").is_some() {
             return Ok(AuthChallenge::Basic(WwwAuthenticate::parse(input)?));
         }
-        if input.starts_with("Digest ") || input.starts_with("digest ") {
+        if strip_scheme(input, "Digest").is_some() {
             return Ok(AuthChallenge::Digest(DigestChallenge::parse(input)?));
         }
-        if input.starts_with("Bearer ") || input.starts_with("bearer ") {
+        if strip_scheme(input, "Bearer").is_some() {
             return Ok(AuthChallenge::Bearer(BearerChallenge::parse(input)?));
         }
 
@@ -1144,5 +1134,28 @@ mod tests {
     fn test_digest_auth_non_ascii_input() {
         let input = ")ϓ )ϓ";
         assert!(DigestAuth::parse(input).is_err());
+    }
+
+    #[test]
+    fn test_basic_auth_case_insensitive() {
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        let auth1 = BasicAuth::parse("BASIC dXNlcjpwYXNzd29yZA==").unwrap();
+        let auth2 = BasicAuth::parse("BaSiC dXNlcjpwYXNzd29yZA==").unwrap();
+        assert_eq!(auth1.username(), "user");
+        assert_eq!(auth2.username(), "user");
+    }
+
+    #[test]
+    fn test_www_authenticate_case_insensitive() {
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        let auth = WwwAuthenticate::parse("BASIC realm=\"test\"").unwrap();
+        assert_eq!(auth.realm(), "test");
+    }
+
+    #[test]
+    fn test_authorization_case_insensitive() {
+        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
+        let auth = Authorization::parse("BEARER token123").unwrap();
+        assert!(matches!(auth, Authorization::Bearer(_)));
     }
 }

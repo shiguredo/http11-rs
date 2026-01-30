@@ -16,8 +16,6 @@ fn prop_cookie_error_display() {
         (CookieError::InvalidName, "invalid cookie name"),
         (CookieError::InvalidValue, "invalid cookie value"),
         (CookieError::InvalidAttribute, "invalid cookie attribute"),
-        (CookieError::InvalidExpires, "invalid Expires attribute"),
-        (CookieError::InvalidMaxAge, "invalid Max-Age attribute"),
         (CookieError::InvalidSameSite, "invalid SameSite attribute"),
     ];
 
@@ -249,11 +247,9 @@ fn prop_set_cookie_parse_errors() {
         Err(CookieError::InvalidFormat)
     ));
 
-    // 不正な Max-Age
-    assert!(matches!(
-        SetCookie::parse("name=value; Max-Age=notanumber"),
-        Err(CookieError::InvalidMaxAge)
-    ));
+    // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される (エラーにならない)
+    let cookie = SetCookie::parse("name=value; Max-Age=notanumber").unwrap();
+    assert!(cookie.max_age().is_none());
 
     // 不正な SameSite
     assert!(matches!(
@@ -261,11 +257,9 @@ fn prop_set_cookie_parse_errors() {
         Err(CookieError::InvalidSameSite)
     ));
 
-    // 不正な Expires
-    assert!(matches!(
-        SetCookie::parse("name=value; Expires=not a date"),
-        Err(CookieError::InvalidExpires)
-    ));
+    // RFC 6265 Section 5.2.1: 不正な Expires は無視される (エラーにならない)
+    let cookie = SetCookie::parse("name=value; Expires=not a date").unwrap();
+    assert!(cookie.expires().is_none());
 }
 
 // ========================================

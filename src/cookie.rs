@@ -39,10 +39,6 @@ pub enum CookieError {
     InvalidValue,
     /// 不正な属性
     InvalidAttribute,
-    /// 不正な Expires
-    InvalidExpires,
-    /// 不正な Max-Age
-    InvalidMaxAge,
     /// 不正な SameSite
     InvalidSameSite,
 }
@@ -55,8 +51,6 @@ impl fmt::Display for CookieError {
             CookieError::InvalidName => write!(f, "invalid cookie name"),
             CookieError::InvalidValue => write!(f, "invalid cookie value"),
             CookieError::InvalidAttribute => write!(f, "invalid cookie attribute"),
-            CookieError::InvalidExpires => write!(f, "invalid Expires attribute"),
-            CookieError::InvalidMaxAge => write!(f, "invalid Max-Age attribute"),
             CookieError::InvalidSameSite => write!(f, "invalid SameSite attribute"),
         }
     }
@@ -256,16 +250,16 @@ impl SetCookie {
 
                 match attr_name.to_ascii_lowercase().as_str() {
                     "expires" => {
-                        set_cookie.expires = Some(
-                            HttpDate::parse(attr_value).map_err(|_| CookieError::InvalidExpires)?,
-                        );
+                        // RFC 6265 Section 5.2.1: 不正な Expires は無視
+                        if let Ok(date) = HttpDate::parse(attr_value) {
+                            set_cookie.expires = Some(date);
+                        }
                     }
                     "max-age" => {
-                        set_cookie.max_age = Some(
-                            attr_value
-                                .parse::<i64>()
-                                .map_err(|_| CookieError::InvalidMaxAge)?,
-                        );
+                        // RFC 6265 Section 5.2.2: 不正な Max-Age は無視
+                        if let Ok(age) = attr_value.parse::<i64>() {
+                            set_cookie.max_age = Some(age);
+                        }
                     }
                     "domain" => {
                         set_cookie.domain = Some(attr_value.to_string());
@@ -630,5 +624,23 @@ mod tests {
     #[test]
     fn test_same_site_default() {
         assert_eq!(SameSite::default(), SameSite::Lax);
+    }
+
+    #[test]
+    fn test_set_cookie_invalid_expires_ignored() {
+        // RFC 6265 Section 5.2.1: 不正な Expires は無視される
+        let cookie = SetCookie::parse("session=abc123; Expires=invalid-date").unwrap();
+        assert_eq!(cookie.name(), "session");
+        assert_eq!(cookie.value(), "abc123");
+        assert!(cookie.expires().is_none());
+    }
+
+    #[test]
+    fn test_set_cookie_invalid_max_age_ignored() {
+        // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される
+        let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number").unwrap();
+        assert_eq!(cookie.name(), "session");
+        assert_eq!(cookie.value(), "abc123");
+        assert!(cookie.max_age().is_none());
     }
 }

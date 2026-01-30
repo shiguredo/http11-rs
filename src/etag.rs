@@ -81,8 +81,10 @@ impl EntityTag {
             return Err(ETagError::Empty);
         }
 
-        let (weak, rest) = if input.starts_with("W/") || input.starts_with("w/") {
-            (true, &input[2..])
+        // RFC 9110 Section 8.8.3: weak = %s"W/" (case-sensitive)
+        // 小文字 w/ は許可しない
+        let (weak, rest) = if let Some(rest) = input.strip_prefix("W/") {
+            (true, rest)
         } else {
             (false, input)
         };
@@ -100,6 +102,12 @@ impl EntityTag {
             if !is_etagc(b) {
                 return Err(ETagError::InvalidCharacter);
             }
+        }
+
+        // 閉じ引用符の後に余剰文字がないことを確認
+        let after_quote = &rest[2 + end_quote..];
+        if !after_quote.is_empty() {
+            return Err(ETagError::InvalidFormat);
         }
 
         Ok(EntityTag {
@@ -272,9 +280,17 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_weak_lowercase() {
-        let etag = EntityTag::parse("w/\"abc123\"").unwrap();
-        assert!(etag.is_weak());
+    fn test_parse_weak_lowercase_rejected() {
+        // RFC 9110 Section 8.8.3: weak = %s"W/" (case-sensitive)
+        // 小文字 w/ は許可されない
+        assert!(EntityTag::parse("w/\"abc123\"").is_err());
+    }
+
+    #[test]
+    fn test_parse_trailing_content_rejected() {
+        // 閉じ引用符の後に余剰文字がある場合は拒否
+        assert!(EntityTag::parse("\"abc\" extra").is_err());
+        assert!(EntityTag::parse("W/\"abc\"extra").is_err());
     }
 
     #[test]
