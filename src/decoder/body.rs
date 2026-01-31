@@ -375,6 +375,13 @@ pub(crate) fn find_line(buf: &[u8]) -> Option<usize> {
 }
 
 /// ヘッダー行をパース
+///
+/// # RFC 非準拠
+///
+/// 現在の実装ではヘッダー行を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
+/// バイト列として扱っていない。RFC 9110 Section 5.5 では obs-text は任意のバイト列
+/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
+/// シーケンスを含むヘッダー行は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
     if line.starts_with(' ') || line.starts_with('\t') {
         return Err(Error::InvalidData(
@@ -439,6 +446,13 @@ pub(crate) fn is_token_char(b: u8) -> bool {
 /// obs-text = %x80-FF
 ///
 /// SP (0x20) と HTAB (0x09) も許可される (field-content の一部)
+///
+/// # RFC 非準拠
+///
+/// 現在の実装ではヘッダー値を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
+/// バイト列として扱っていない。RFC 9110 Section 5.5 では obs-text は任意のバイト列
+/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
+/// シーケンスを含むヘッダー値は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn is_valid_field_vchar(b: u8) -> bool {
     matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
 }
@@ -446,6 +460,13 @@ pub(crate) fn is_valid_field_vchar(b: u8) -> bool {
 /// ヘッダー値が有効か確認 (RFC 9110 Section 5.5)
 ///
 /// 制御文字 (0x00-0x08, 0x0A-0x1F, 0x7F) を含む場合は無効
+///
+/// # RFC 非準拠
+///
+/// 現在の実装ではヘッダー値を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
+/// バイト列として扱っていない。RFC 9110 Section 5.5 では obs-text は任意のバイト列
+/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
+/// シーケンスを含むヘッダー値は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn is_valid_field_value(value: &str) -> bool {
     value.bytes().all(is_valid_field_vchar)
 }
@@ -848,6 +869,13 @@ pub(crate) fn is_valid_status_code(code: u16) -> bool {
 /// reason-phrase = 1*( HTAB / SP / VCHAR / obs-text )
 /// VCHAR = %x21-7E
 /// obs-text = %x80-FF
+///
+/// # RFC 非準拠
+///
+/// 現在の実装では reason-phrase を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
+/// バイト列として扱っていない。RFC 9112 Section 4 では obs-text は任意のバイト列
+/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
+/// シーケンスを含む reason-phrase は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
     phrase
         .bytes()
