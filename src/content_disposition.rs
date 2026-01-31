@@ -55,7 +55,9 @@ impl fmt::Display for ContentDispositionError {
 impl std::error::Error for ContentDispositionError {}
 
 /// Disposition タイプ
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// RFC 6266 Section 4.1: disposition-type は拡張可能 (拡張トークンを受け入れる)
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DispositionType {
     /// inline: コンテンツをインラインで表示
     Inline,
@@ -63,15 +65,29 @@ pub enum DispositionType {
     Attachment,
     /// form-data: multipart/form-data のパート用
     FormData,
+    /// 拡張 disposition-type (RFC 6266 準拠)
+    Unknown(String),
 }
 
 impl DispositionType {
+    /// disposition-type をパース
+    ///
+    /// RFC 6266 Section 4.1: 標準タイプ (inline, attachment, form-data) に加えて、
+    /// 有効なトークンであれば拡張タイプとして受け入れる
     fn from_str(s: &str) -> Result<Self, ContentDispositionError> {
-        match s.to_ascii_lowercase().as_str() {
+        let lower = s.to_ascii_lowercase();
+        match lower.as_str() {
             "inline" => Ok(DispositionType::Inline),
             "attachment" => Ok(DispositionType::Attachment),
             "form-data" => Ok(DispositionType::FormData),
-            _ => Err(ContentDispositionError::InvalidDispositionType),
+            _ => {
+                // 拡張 disposition-type: 有効なトークンであれば受け入れる
+                if is_valid_token(s) {
+                    Ok(DispositionType::Unknown(lower))
+                } else {
+                    Err(ContentDispositionError::InvalidDispositionType)
+                }
+            }
         }
     }
 }
@@ -82,6 +98,7 @@ impl fmt::Display for DispositionType {
             DispositionType::Inline => write!(f, "inline"),
             DispositionType::Attachment => write!(f, "attachment"),
             DispositionType::FormData => write!(f, "form-data"),
+            DispositionType::Unknown(s) => write!(f, "{}", s),
         }
     }
 }
@@ -181,7 +198,7 @@ impl ContentDisposition {
 
     /// disposition-type を取得
     pub fn disposition_type(&self) -> DispositionType {
-        self.disposition_type
+        self.disposition_type.clone()
     }
 
     /// filename を取得 (filename* があればそちらを優先)
@@ -316,6 +333,9 @@ fn split_params(input: &str) -> Vec<String> {
 }
 
 /// パラメータ値をパース (引用符付きまたはトークン)
+///
+/// RFC 9110 Section 5.6.6: パラメータ値がトークンの場合、
+/// トークン文字 (tchar) のみで構成されている必要がある
 fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
     let value = value.trim();
 
@@ -329,9 +349,28 @@ fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
             Err(ContentDispositionError::InvalidParameter)
         }
     } else {
-        // トークン
+        // トークン: RFC 9110 Section 5.6.2 準拠の検証
+        if !is_valid_token(value) {
+            return Err(ContentDispositionError::InvalidParameter);
+        }
         Ok(value.to_string())
     }
+}
+
+/// 有効なトークンかどうか
+fn is_valid_token(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(is_token_char)
+}
+
+/// RFC 9110 Section 5.6.2 のトークン文字 (tchar)
+///
+/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+fn is_token_char(b: u8) -> bool {
+    matches!(b,
+        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
+        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
+    )
 }
 
 /// 引用符付き文字列をパース (エスケープ処理)
@@ -534,7 +573,10 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_type() {
-        assert!(ContentDisposition::parse("unknown").is_err());
+        // 不正なトークン (スペースを含む) はエラー
+        assert!(ContentDisposition::parse("hello world").is_err());
+        // 不正なトークン (@ を含む) はエラー
+        assert!(ContentDisposition::parse("type@invalid").is_err());
     }
 
     #[test]
@@ -592,5 +634,85 @@ mod tests {
         let cd =
             ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt").unwrap();
         assert_eq!(cd.filename(), Some("test-file_v1.0.txt"));
+    }
+
+    // 修正 2: 拡張 disposition-type サポート (RFC 6266 Section 4.1)
+
+    #[test]
+    fn test_unknown_disposition_type() {
+        // 拡張 disposition-type がパースできること
+        let cd = ContentDisposition::parse("signal").unwrap();
+        assert_eq!(
+            cd.disposition_type(),
+            DispositionType::Unknown("signal".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unknown_disposition_type_with_params() {
+        // 拡張 disposition-type + パラメータ
+        let cd = ContentDisposition::parse("notification; id=123").unwrap();
+        assert_eq!(
+            cd.disposition_type(),
+            DispositionType::Unknown("notification".to_string())
+        );
+        assert_eq!(cd.parameter("id"), Some("123"));
+    }
+
+    #[test]
+    fn test_unknown_disposition_type_case_insensitive() {
+        // 大文字小文字は区別しない (小文字に正規化)
+        let cd = ContentDisposition::parse("CUSTOM-TYPE").unwrap();
+        assert_eq!(
+            cd.disposition_type(),
+            DispositionType::Unknown("custom-type".to_string())
+        );
+    }
+
+    #[test]
+    fn test_invalid_disposition_type() {
+        // 不正なトークン (スペースを含む) はエラー
+        assert!(ContentDisposition::parse("hello world").is_err());
+    }
+
+    #[test]
+    fn test_invalid_disposition_type_special_char() {
+        // 不正なトークン (@ を含む) はエラー
+        assert!(ContentDisposition::parse("type@invalid").is_err());
+    }
+
+    #[test]
+    fn test_unknown_disposition_display() {
+        let cd = ContentDisposition::parse("custom-type; name=\"test\"").unwrap();
+        let s = cd.to_string();
+        assert!(s.starts_with("custom-type"));
+    }
+
+    // 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
+
+    #[test]
+    fn test_invalid_token_parameter_value() {
+        // 不正なトークン値 (@ を含む) はエラー
+        assert!(ContentDisposition::parse("attachment; filename=hello@world.txt").is_err());
+    }
+
+    #[test]
+    fn test_invalid_token_parameter_value_space() {
+        // スペースを含むトークン値はエラー (引用符で囲む必要がある)
+        assert!(ContentDisposition::parse("attachment; filename=hello world.txt").is_err());
+    }
+
+    #[test]
+    fn test_valid_token_parameter_value() {
+        // 有効なトークン値は通る
+        let cd = ContentDisposition::parse("attachment; filename=valid-token_v1.0").unwrap();
+        assert_eq!(cd.filename(), Some("valid-token_v1.0"));
+    }
+
+    #[test]
+    fn test_quoted_special_chars() {
+        // 引用符で囲めば特殊文字も OK
+        let cd = ContentDisposition::parse("attachment; filename=\"hello@world.txt\"").unwrap();
+        assert_eq!(cd.filename(), Some("hello@world.txt"));
     }
 }

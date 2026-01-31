@@ -586,13 +586,27 @@ fn prop_content_disposition_parse_errors() {
         Err(ContentDispositionError::Empty)
     ));
 
-    // 不正な disposition-type
+    // RFC 6266 Section 4.1: 拡張 disposition-type は有効なトークンであれば受け入れられる
+    // "unknown" と "download" は有効なトークンなので Unknown バリアントとしてパースされる
+    let cd = ContentDisposition::parse("unknown").unwrap();
+    assert_eq!(
+        cd.disposition_type(),
+        DispositionType::Unknown("unknown".to_string())
+    );
+
+    let cd = ContentDisposition::parse("download").unwrap();
+    assert_eq!(
+        cd.disposition_type(),
+        DispositionType::Unknown("download".to_string())
+    );
+
+    // 不正な disposition-type: トークンとして無効な文字を含む
     assert!(matches!(
-        ContentDisposition::parse("unknown"),
+        ContentDisposition::parse("hello world"),
         Err(ContentDispositionError::InvalidDispositionType)
     ));
     assert!(matches!(
-        ContentDisposition::parse("download"),
+        ContentDisposition::parse("type@invalid"),
         Err(ContentDispositionError::InvalidDispositionType)
     ));
 }
@@ -662,7 +676,7 @@ proptest! {
         Just(DispositionType::Attachment),
         Just(DispositionType::FormData)
     ]) {
-        let cd = ContentDisposition::new(dtype);
+        let cd = ContentDisposition::new(dtype.clone());
 
         prop_assert_eq!(cd.is_inline(), dtype == DispositionType::Inline);
         prop_assert_eq!(cd.is_attachment(), dtype == DispositionType::Attachment);

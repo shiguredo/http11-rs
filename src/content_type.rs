@@ -258,7 +258,7 @@ fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeErr
         let (value, remaining) = if let Some(after_quote) = rest.strip_prefix('"') {
             parse_quoted_string(after_quote)?
         } else {
-            parse_token_value(rest)
+            parse_token_value(rest)?
         };
 
         parameters.push((name.to_ascii_lowercase(), value));
@@ -290,11 +290,21 @@ fn parse_quoted_string(input: &str) -> Result<(String, &str), ContentTypeError> 
 }
 
 /// トークン値をパース
-fn parse_token_value(input: &str) -> (String, &str) {
+///
+/// RFC 9110 Section 5.6.6: パラメータ値がトークンの場合、
+/// トークン文字 (tchar) のみで構成されている必要がある
+fn parse_token_value(input: &str) -> Result<(String, &str), ContentTypeError> {
     let end = input
         .find(|c: char| c == ';' || c.is_whitespace())
         .unwrap_or(input.len());
-    (input[..end].to_string(), &input[end..])
+    let token = &input[..end];
+
+    // トークン値の検証 (RFC 9110 Section 5.6.2)
+    if !is_valid_token(token) {
+        return Err(ContentTypeError::InvalidParameter);
+    }
+
+    Ok((token.to_string(), &input[end..]))
 }
 
 /// 有効なトークン文字かどうか
@@ -302,7 +312,10 @@ fn is_valid_token(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(is_token_char)
 }
 
-/// RFC 7230 のトークン文字
+/// RFC 9110 Section 5.6.2 のトークン文字 (tchar)
+///
+/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
 fn is_token_char(b: u8) -> bool {
     matches!(b,
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
@@ -442,5 +455,48 @@ mod tests {
                 .is_multipart()
         );
         assert!(!ContentType::parse("text/plain").unwrap().is_multipart());
+    }
+
+    // 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
+
+    #[test]
+    fn test_invalid_token_parameter_value() {
+        // 不正なトークン値 (@ を含む) はエラー
+        assert!(ContentType::parse("text/plain; charset=hello@world").is_err());
+    }
+
+    #[test]
+    fn test_invalid_token_parameter_value_space() {
+        // スペースを含むトークン値は境界で区切られる
+        // "text/plain; charset=hello world" -> charset=hello として解釈され、
+        // "world" が無効なパラメータになるためエラー
+        assert!(ContentType::parse("text/plain; charset=hello world").is_err());
+    }
+
+    #[test]
+    fn test_valid_token_parameter_value() {
+        // 有効なトークン値は通る
+        let ct = ContentType::parse("text/plain; charset=utf-8").unwrap();
+        assert_eq!(ct.charset(), Some("utf-8"));
+    }
+
+    #[test]
+    fn test_valid_token_parameter_value_complex() {
+        // 有効なトークン文字で構成された値
+        let ct = ContentType::parse("application/octet-stream; name=file-v1.0_test").unwrap();
+        assert_eq!(ct.parameter("name"), Some("file-v1.0_test"));
+    }
+
+    #[test]
+    fn test_quoted_special_chars() {
+        // 引用符で囲めば特殊文字も OK
+        let ct = ContentType::parse("text/plain; charset=\"hello@world\"").unwrap();
+        assert_eq!(ct.charset(), Some("hello@world"));
+    }
+
+    #[test]
+    fn test_empty_token_parameter_value() {
+        // 空のトークン値はエラー
+        assert!(ContentType::parse("text/plain; charset=").is_err());
     }
 }

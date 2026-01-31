@@ -2,6 +2,7 @@
 
 use crate::error::Error;
 use crate::limits::DecoderLimits;
+use crate::trailer::is_prohibited_trailer_field;
 
 use super::phase::DecodePhase;
 
@@ -358,6 +359,15 @@ impl BodyDecoder {
 
                     // 不正なトレーラー行はエラーにする
                     let (name, value) = parse_header_line(&line)?;
+
+                    // RFC 9112 Section 7.1.2: 禁止フィールドチェック
+                    if is_prohibited_trailer_field(&name) {
+                        return Err(Error::InvalidData(format!(
+                            "prohibited trailer field: {}",
+                            name
+                        )));
+                    }
+
                     self.trailers.push((name, value));
                     self.trailer_count += 1;
                 }
@@ -998,7 +1008,6 @@ pub(crate) fn parse_transfer_encoding_for_response(
         Ok(TransferEncodingResult::Other)
     }
 }
-
 
 /// Content-Length ヘッダーを解析
 pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<usize>, Error> {

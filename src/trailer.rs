@@ -24,6 +24,8 @@ pub enum TrailerError {
     InvalidFormat,
     /// 不正なフィールド名トークン
     InvalidFieldName,
+    /// 禁止フィールド (RFC 9112 Section 7.1.2)
+    ProhibitedField(String),
 }
 
 impl fmt::Display for TrailerError {
@@ -32,6 +34,9 @@ impl fmt::Display for TrailerError {
             TrailerError::Empty => write!(f, "empty Trailer header"),
             TrailerError::InvalidFormat => write!(f, "invalid Trailer header format"),
             TrailerError::InvalidFieldName => write!(f, "invalid Trailer field name"),
+            TrailerError::ProhibitedField(name) => {
+                write!(f, "prohibited trailer field: {}", name)
+            }
         }
     }
 }
@@ -46,6 +51,8 @@ pub struct Trailer {
 
 impl Trailer {
     /// Trailer ヘッダーをパース
+    ///
+    /// RFC 9112 Section 7.1.2: 禁止フィールドを含む場合はエラー
     pub fn parse(input: &str) -> Result<Self, TrailerError> {
         let input = input.trim();
         if input.is_empty() {
@@ -61,7 +68,14 @@ impl Trailer {
             if !is_valid_token(name) {
                 return Err(TrailerError::InvalidFieldName);
             }
-            fields.push(name.to_ascii_lowercase());
+            let lower_name = name.to_ascii_lowercase();
+
+            // RFC 9112 Section 7.1.2: 禁止フィールドチェック
+            if is_prohibited_trailer_field(&lower_name) {
+                return Err(TrailerError::ProhibitedField(lower_name));
+            }
+
+            fields.push(lower_name);
         }
 
         if fields.is_empty() {
@@ -95,6 +109,29 @@ fn is_token_char(b: u8) -> bool {
     )
 }
 
+/// RFC 9112 Section 7.1.2: トレーラーで禁止されているフィールドかどうか
+///
+/// 禁止フィールド:
+/// - Transfer-Encoding
+/// - Content-Length
+/// - Host
+/// - Trailer
+/// - Content-Encoding
+/// - Content-Type
+/// - Content-Range
+pub fn is_prohibited_trailer_field(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "transfer-encoding"
+            | "content-length"
+            | "host"
+            | "trailer"
+            | "content-encoding"
+            | "content-type"
+            | "content-range"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +155,94 @@ mod tests {
     fn display() {
         let trailer = Trailer::parse("Expires, X-Test").unwrap();
         assert_eq!(trailer.to_string(), "expires, x-test");
+    }
+
+    #[test]
+    fn prohibited_field_transfer_encoding() {
+        let result = Trailer::parse("Transfer-Encoding");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "transfer-encoding"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_content_length() {
+        let result = Trailer::parse("Content-Length");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "content-length"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_host() {
+        let result = Trailer::parse("Host");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "host"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_trailer() {
+        let result = Trailer::parse("Trailer");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "trailer"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_content_encoding() {
+        let result = Trailer::parse("Content-Encoding");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "content-encoding"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_content_type() {
+        let result = Trailer::parse("Content-Type");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "content-type"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_content_range() {
+        let result = Trailer::parse("Content-Range");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "content-range"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_in_list() {
+        // 複数フィールドの中に禁止フィールドがある場合
+        let result = Trailer::parse("X-Custom, Content-Length, X-Other");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "content-length"
+        ));
+    }
+
+    #[test]
+    fn allowed_fields() {
+        // 許可されたフィールドは通る
+        let trailer = Trailer::parse("Expires, X-Checksum, X-Custom").unwrap();
+        assert_eq!(trailer.fields().len(), 3);
+    }
+
+    #[test]
+    fn is_prohibited_trailer_field_function() {
+        assert!(is_prohibited_trailer_field("Transfer-Encoding"));
+        assert!(is_prohibited_trailer_field("transfer-encoding"));
+        assert!(is_prohibited_trailer_field("CONTENT-LENGTH"));
+        assert!(!is_prohibited_trailer_field("X-Custom"));
+        assert!(!is_prohibited_trailer_field("Expires"));
     }
 }
