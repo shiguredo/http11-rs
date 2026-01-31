@@ -46,6 +46,12 @@ pub enum UriError {
     InvalidHost,
     /// 不正な UTF-8 シーケンス
     InvalidUtf8,
+    /// 不正なパス文字 (RFC 3986 Section 3.3)
+    InvalidPathCharacter(u8),
+    /// 不正なクエリ文字 (RFC 3986 Section 3.4)
+    InvalidQueryCharacter(u8),
+    /// 不正なフラグメント文字 (RFC 3986 Section 3.5)
+    InvalidFragmentCharacter(u8),
 }
 
 impl fmt::Display for UriError {
@@ -58,6 +64,11 @@ impl fmt::Display for UriError {
             UriError::InvalidScheme => write!(f, "invalid scheme"),
             UriError::InvalidHost => write!(f, "invalid host"),
             UriError::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
+            UriError::InvalidPathCharacter(b) => write!(f, "invalid path character: 0x{:02X}", b),
+            UriError::InvalidQueryCharacter(b) => write!(f, "invalid query character: 0x{:02X}", b),
+            UriError::InvalidFragmentCharacter(b) => {
+                write!(f, "invalid fragment character: 0x{:02X}", b)
+            }
         }
     }
 }
@@ -68,6 +79,109 @@ impl std::error::Error for UriError {}
 /// RFC 3986 Section 2.3
 fn is_unreserved(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'-' || c == b'.' || c == b'_' || c == b'~'
+}
+
+/// sub-delims (RFC 3986 Section 2.2)
+/// sub-delims = "!" / "$" / "&" / "'" / "(" / ")" / "*" / "+" / "," / ";" / "="
+fn is_sub_delim(b: u8) -> bool {
+    matches!(
+        b,
+        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
+    )
+}
+
+/// pchar (RFC 3986 Section 3.3)
+/// pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
+fn is_pchar(b: u8) -> bool {
+    is_unreserved(b) || is_sub_delim(b) || b == b':' || b == b'@'
+}
+
+/// query/fragment で許可される文字 (RFC 3986 Section 3.4, 3.5)
+/// query = *( pchar / "/" / "?" )
+/// fragment = *( pchar / "/" / "?" )
+fn is_query_or_fragment_char(b: u8) -> bool {
+    is_pchar(b) || b == b'/' || b == b'?'
+}
+
+/// パーセントエンコーディング検証 (% + 2 桁 HEX)
+fn validate_percent_encoding(s: &str) -> Result<(), UriError> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return Err(UriError::InvalidPercentEncoding);
+            }
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+                return Err(UriError::InvalidPercentEncoding);
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    Ok(())
+}
+
+/// パス検証 (RFC 3986 Section 3.3)
+/// path = path-abempty / path-absolute / path-noscheme / path-rootless / path-empty
+/// segment = *pchar
+fn validate_path(path: &str) -> Result<(), UriError> {
+    validate_percent_encoding(path)?;
+    let bytes = path.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            // パーセントエンコーディングは既に検証済み
+            i += 3;
+        } else if is_pchar(b) || b == b'/' {
+            i += 1;
+        } else {
+            return Err(UriError::InvalidPathCharacter(b));
+        }
+    }
+    Ok(())
+}
+
+/// クエリ検証 (RFC 3986 Section 3.4)
+/// query = *( pchar / "/" / "?" )
+fn validate_query(query: &str) -> Result<(), UriError> {
+    validate_percent_encoding(query)?;
+    let bytes = query.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            // パーセントエンコーディングは既に検証済み
+            i += 3;
+        } else if is_query_or_fragment_char(b) {
+            i += 1;
+        } else {
+            return Err(UriError::InvalidQueryCharacter(b));
+        }
+    }
+    Ok(())
+}
+
+/// フラグメント検証 (RFC 3986 Section 3.5)
+/// fragment = *( pchar / "/" / "?" )
+fn validate_fragment(fragment: &str) -> Result<(), UriError> {
+    validate_percent_encoding(fragment)?;
+    let bytes = fragment.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            // パーセントエンコーディングは既に検証済み
+            i += 3;
+        } else if is_query_or_fragment_char(b) {
+            i += 1;
+        } else {
+            return Err(UriError::InvalidFragmentCharacter(b));
+        }
+    }
+    Ok(())
 }
 
 /// パーセントエンコーディング
@@ -319,6 +433,20 @@ impl Uri {
         } else {
             None
         };
+
+        // 各コンポーネントの厳格な検証 (RFC 3986)
+        let path = &input[path_start..path_end];
+        validate_path(path)?;
+
+        if let (Some(start), Some(end)) = (query_start, query_end) {
+            let query = &input[start..end];
+            validate_query(query)?;
+        }
+
+        if let Some(start) = fragment_start {
+            let fragment = &input[start..];
+            validate_fragment(fragment)?;
+        }
 
         Ok(Uri {
             source,

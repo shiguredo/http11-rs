@@ -543,6 +543,299 @@ pub(crate) fn is_valid_request_target(target: &str) -> bool {
     true
 }
 
+/// RFC 9112 Section 3.2 request-target の形式
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RequestTargetForm {
+    /// origin-form: absolute-path [ "?" query ]
+    /// 例: /path/to/resource?query=value
+    Origin,
+    /// absolute-form: absolute-URI
+    /// 例: http://example.com/path
+    Absolute,
+    /// authority-form: uri-host ":" port (CONNECT のみ)
+    /// 例: example.com:443
+    Authority,
+    /// asterisk-form: "*" (OPTIONS のみ)
+    Asterisk,
+}
+
+/// request-target の形式を判定
+///
+/// RFC 9112 Section 3.2:
+/// - origin-form: "/" で始まる (absolute-path [ "?" query ])
+/// - absolute-form: スキーム付き URI
+/// - authority-form: host:port (CONNECT 用)
+/// - asterisk-form: "*"
+pub(crate) fn parse_request_target_form(target: &str) -> Result<RequestTargetForm, Error> {
+    if target.is_empty() {
+        return Err(Error::InvalidData(
+            "invalid request-target: empty".to_string(),
+        ));
+    }
+
+    // asterisk-form: "*"
+    if target == "*" {
+        return Ok(RequestTargetForm::Asterisk);
+    }
+
+    // origin-form: "/" で始まる
+    if target.starts_with('/') {
+        return validate_origin_form(target).map(|()| RequestTargetForm::Origin);
+    }
+
+    // absolute-form: スキーム付き URI (http:// または https://)
+    if target.contains("://") {
+        // スキームの検証
+        let scheme_end = target.find("://").unwrap();
+        let scheme = &target[..scheme_end];
+        if !scheme
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+        {
+            return Err(Error::InvalidData(
+                "invalid request-target: invalid scheme".to_string(),
+            ));
+        }
+        for c in scheme.chars().skip(1) {
+            if !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.' {
+                return Err(Error::InvalidData(
+                    "invalid request-target: invalid scheme".to_string(),
+                ));
+            }
+        }
+        // absolute-URI にフラグメントは含まれない (RFC 3986)
+        if target.contains('#') {
+            return Err(Error::InvalidData(
+                "invalid request-target: fragment not allowed".to_string(),
+            ));
+        }
+        return Ok(RequestTargetForm::Absolute);
+    }
+
+    // authority-form: host:port (CONNECT 用)
+    validate_authority_form(target).map(|()| RequestTargetForm::Authority)
+}
+
+/// origin-form の検証
+///
+/// RFC 9112 Section 3.2.1:
+/// origin-form = absolute-path [ "?" query ]
+fn validate_origin_form(target: &str) -> Result<(), Error> {
+    if !target.starts_with('/') {
+        return Err(Error::InvalidData(
+            "invalid origin-form: must start with '/'".to_string(),
+        ));
+    }
+
+    // フラグメントは request-target に含まれない
+    if target.contains('#') {
+        return Err(Error::InvalidData(
+            "invalid request-target: fragment not allowed".to_string(),
+        ));
+    }
+
+    // "?" でパスとクエリを分割
+    let (path, query) = if let Some(pos) = target.find('?') {
+        (&target[..pos], Some(&target[pos + 1..]))
+    } else {
+        (target, None)
+    };
+
+    // パスの検証 (RFC 3986 pchar + "/")
+    validate_path_chars(path)?;
+
+    // クエリの検証 (RFC 3986 query)
+    if let Some(q) = query {
+        validate_query_chars(q)?;
+    }
+
+    Ok(())
+}
+
+/// パス文字の検証 (RFC 3986 Section 3.3)
+fn validate_path_chars(path: &str) -> Result<(), Error> {
+    let bytes = path.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            // パーセントエンコーディング検証
+            if i + 2 >= bytes.len() {
+                return Err(Error::InvalidData(
+                    "invalid path: incomplete percent-encoding".to_string(),
+                ));
+            }
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+                return Err(Error::InvalidData(
+                    "invalid path: invalid percent-encoding".to_string(),
+                ));
+            }
+            i += 3;
+        } else if is_pchar_or_slash(b) {
+            i += 1;
+        } else {
+            return Err(Error::InvalidData(format!(
+                "invalid path: illegal character 0x{:02X}",
+                b
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// クエリ文字の検証 (RFC 3986 Section 3.4)
+fn validate_query_chars(query: &str) -> Result<(), Error> {
+    let bytes = query.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            // パーセントエンコーディング検証
+            if i + 2 >= bytes.len() {
+                return Err(Error::InvalidData(
+                    "invalid query: incomplete percent-encoding".to_string(),
+                ));
+            }
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+                return Err(Error::InvalidData(
+                    "invalid query: invalid percent-encoding".to_string(),
+                ));
+            }
+            i += 3;
+        } else if is_query_char(b) {
+            i += 1;
+        } else {
+            return Err(Error::InvalidData(format!(
+                "invalid query: illegal character 0x{:02X}",
+                b
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// pchar または "/" か確認 (RFC 3986)
+fn is_pchar_or_slash(b: u8) -> bool {
+    is_pchar_byte(b) || b == b'/'
+}
+
+/// pchar か確認 (RFC 3986 Section 3.3)
+/// pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
+fn is_pchar_byte(b: u8) -> bool {
+    is_unreserved_byte(b) || is_sub_delim_byte(b) || b == b':' || b == b'@'
+}
+
+/// query で許可される文字か確認 (RFC 3986 Section 3.4)
+/// query = *( pchar / "/" / "?" )
+fn is_query_char(b: u8) -> bool {
+    is_pchar_byte(b) || b == b'/' || b == b'?'
+}
+
+/// unreserved か確認 (RFC 3986 Section 2.3)
+fn is_unreserved_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_' || b == b'~'
+}
+
+/// sub-delims か確認 (RFC 3986 Section 2.2)
+fn is_sub_delim_byte(b: u8) -> bool {
+    matches!(
+        b,
+        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
+    )
+}
+
+/// authority-form の検証
+///
+/// RFC 9112 Section 3.2.3:
+/// authority-form = uri-host ":" port
+/// CONNECT メソッドでのみ使用
+fn validate_authority_form(target: &str) -> Result<(), Error> {
+    // ポートは必須
+    let colon_pos = target
+        .rfind(':')
+        .ok_or_else(|| Error::InvalidData("invalid authority-form: missing port".to_string()))?;
+
+    let host = &target[..colon_pos];
+    let port_str = &target[colon_pos + 1..];
+
+    // ホストが空でないこと
+    if host.is_empty() {
+        return Err(Error::InvalidData(
+            "invalid authority-form: empty host".to_string(),
+        ));
+    }
+
+    // ポートの検証
+    if port_str.is_empty() {
+        return Err(Error::InvalidData(
+            "invalid authority-form: empty port".to_string(),
+        ));
+    }
+    if !port_str.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Error::InvalidData(
+            "invalid authority-form: port must be numeric".to_string(),
+        ));
+    }
+    let _port: u16 = port_str
+        .parse()
+        .map_err(|_| Error::InvalidData("invalid authority-form: port out of range".to_string()))?;
+
+    // Host パーサで host を検証
+    crate::host::Host::parse(host)
+        .map_err(|_| Error::InvalidData("invalid authority-form: invalid host".to_string()))?;
+
+    Ok(())
+}
+
+/// メソッドと request-target 形式の組み合わせ検証
+///
+/// RFC 9112 Section 3.2:
+/// - CONNECT: authority-form のみ
+/// - OPTIONS: asterisk-form または origin-form/absolute-form
+/// - その他: origin-form または absolute-form
+pub(crate) fn validate_request_target_for_method(
+    method: &str,
+    form: &RequestTargetForm,
+) -> Result<(), Error> {
+    match method {
+        "CONNECT" => {
+            if *form != RequestTargetForm::Authority {
+                return Err(Error::InvalidData(
+                    "CONNECT method requires authority-form request-target".to_string(),
+                ));
+            }
+        }
+        "OPTIONS" => {
+            // OPTIONS は asterisk-form, origin-form, absolute-form を許可
+            if *form == RequestTargetForm::Authority {
+                return Err(Error::InvalidData(
+                    "OPTIONS method does not allow authority-form request-target".to_string(),
+                ));
+            }
+        }
+        _ => {
+            // その他のメソッドは origin-form または absolute-form のみ
+            match form {
+                RequestTargetForm::Origin | RequestTargetForm::Absolute => {}
+                RequestTargetForm::Authority => {
+                    return Err(Error::InvalidData(format!(
+                        "{} method does not allow authority-form request-target",
+                        method
+                    )));
+                }
+                RequestTargetForm::Asterisk => {
+                    return Err(Error::InvalidData(format!(
+                        "{} method does not allow asterisk-form request-target",
+                        method
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// ステータスコードが有効か確認 (RFC 9110 Section 15)
 ///
 /// ステータスコードは 3 桁の数字で、100-599 の範囲

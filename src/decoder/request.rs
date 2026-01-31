@@ -7,7 +7,8 @@ use crate::request::Request;
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_method,
-    is_valid_request_target, parse_header_line, resolve_body_headers,
+    is_valid_request_target, parse_header_line, parse_request_target_form, resolve_body_headers,
+    validate_request_target_for_method,
 };
 use super::head::RequestHead;
 use super::phase::DecodePhase;
@@ -240,6 +241,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 "invalid request line: invalid request-target".to_string(),
                             ));
                         }
+
+                        // request-target の形式判定と検証 (RFC 9112 Section 3.2)
+                        let request_target_form = parse_request_target_form(parts[1])?;
+                        validate_request_target_for_method(parts[0], &request_target_form)?;
 
                         // HTTP バージョンの検証 (RFC 9112 Section 2.3)
                         if !is_valid_http_version(parts[2]) {

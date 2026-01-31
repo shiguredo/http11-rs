@@ -60,7 +60,7 @@ mod request;
 mod response;
 
 // 公開 API
-pub use body::{BodyKind, BodyProgress};
+pub use body::{BodyKind, BodyProgress, RequestTargetForm};
 pub use head::{HttpHead, RequestHead, ResponseHead};
 pub use request::RequestDecoder;
 pub use response::ResponseDecoder;

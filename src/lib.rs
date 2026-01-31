@@ -78,7 +78,8 @@ pub mod uri;
 pub mod vary;
 
 pub use decoder::{
-    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, ResponseDecoder, ResponseHead,
+    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, RequestTargetForm,
+    ResponseDecoder, ResponseHead,
 };
 pub use encoder::{
     RequestEncoder, ResponseEncoder, encode_chunk, encode_chunks, encode_request,
