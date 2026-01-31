@@ -474,8 +474,12 @@ pub(crate) fn is_valid_http_version(version: &str) -> bool {
     matches!(version, "HTTP/1.0" | "HTTP/1.1")
 }
 
-/// RFC 3986 で除外されている文字
-const RFC3986_EXCLUDED: &[u8] = b"\"<>\\^`{|}";
+/// RFC 3986 で除外されている文字および request-target で許可されない文字
+///
+/// RFC 9112 Section 3.2: request-target は origin-form / absolute-form / authority-form / asterisk-form のいずれか
+/// RFC 3986: absolute-URI にはフラグメントが含まれない (absolute-URI = scheme ":" hier-part [ "?" query ])
+/// したがって request-target では "#" (フラグメント区切り) は許可されない
+const RFC3986_EXCLUDED: &[u8] = b"\"#<>\\^`{|}";
 
 /// リクエストターゲット (URI) が有効か確認
 ///

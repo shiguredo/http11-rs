@@ -152,7 +152,8 @@ impl Range {
         let unit = input[..eq_pos].trim();
         let ranges_str = input[eq_pos + 1..].trim();
 
-        if unit.is_empty() {
+        // RFC 9110 Section 14.1: range-unit = token
+        if !is_valid_token(unit) {
             return Err(RangeError::InvalidUnit);
         }
 
@@ -270,7 +271,8 @@ impl ContentRange {
         let unit = input[..space_pos].trim();
         let rest = input[space_pos + 1..].trim();
 
-        if unit.is_empty() {
+        // RFC 9110 Section 14.1: range-unit = token
+        if !is_valid_token(unit) {
             return Err(RangeError::InvalidUnit);
         }
 
@@ -455,6 +457,24 @@ impl fmt::Display for AcceptRanges {
     }
 }
 
+/// 有効なトークン文字列かどうか (RFC 9110 Section 5.6.2)
+fn is_valid_token(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(is_token_char)
+}
+
+/// トークン文字 (RFC 9110 Section 5.6.2)
+///
+/// token = 1*tchar
+/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+fn is_token_char(b: u8) -> bool {
+    matches!(
+        b,
+        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
+        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,6 +522,17 @@ mod tests {
     #[test]
     fn test_parse_range_invalid_bounds() {
         assert!(Range::parse("bytes=500-100").is_err());
+    }
+
+    #[test]
+    fn test_parse_range_invalid_unit() {
+        // RFC 9110 Section 14.1: range-unit = token
+        // 不正な token 文字を含む unit は拒否されるべき
+        assert!(Range::parse("byt es=0-499").is_err()); // スペースは token に含まれない
+        assert!(Range::parse("bytes/foo=0-499").is_err()); // '/' は token に含まれない
+        assert!(Range::parse("=0-499").is_err()); // 空の unit
+        assert!(Range::parse("by\tes=0-499").is_err()); // タブは token に含まれない (unit の中)
+        assert!(Range::parse("byt(es=0-499").is_err()); // '(' は token に含まれない
     }
 
     #[test]

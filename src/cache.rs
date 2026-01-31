@@ -145,6 +145,14 @@ impl CacheControl {
                     "stale-if-error" => {
                         cc.stale_if_error = Some(parse_seconds(value)?);
                     }
+                    // RFC 9111 Section 5.2.2.4: no-cache の修飾形式
+                    // no-cache="field-name" は特定のフィールドのみキャッシュを防ぐ
+                    // 注: 修飾形式の特別な処理は広く実装されていないため、
+                    // 非修飾形式と同様に扱う (RFC 9111 の NOTE 参照)
+                    "no-cache" => cc.no_cache = true,
+                    // RFC 9111 Section 5.2.2.7: private の修飾形式
+                    // private="field-name" は共有キャッシュで特定のフィールドの保存を防ぐ
+                    "private" => cc.private = true,
                     _ => {} // 未知のディレクティブは無視
                 }
             } else {
@@ -515,6 +523,20 @@ mod tests {
         let cc = CacheControl::parse("private, max-age=600").unwrap();
         assert!(cc.is_private());
         assert_eq!(cc.max_age(), Some(600));
+    }
+
+    #[test]
+    fn test_cache_control_parse_no_cache_qualified() {
+        // RFC 9111 Section 5.2.2.4: no-cache の修飾形式
+        let cc = CacheControl::parse("no-cache=\"Set-Cookie\"").unwrap();
+        assert!(cc.is_no_cache());
+    }
+
+    #[test]
+    fn test_cache_control_parse_private_qualified() {
+        // RFC 9111 Section 5.2.2.7: private の修飾形式
+        let cc = CacheControl::parse("private=\"Content-Type\"").unwrap();
+        assert!(cc.is_private());
     }
 
     #[test]
