@@ -425,3 +425,161 @@ fn request_target_with_valid_percent_encoding_should_succeed() {
         );
     }
 }
+
+/// chunk-extension に obs-text (非 UTF-8 バイト) が含まれるケースのテスト
+///
+/// RFC 9112 Section 7.1.1: chunk-ext-val は quoted-string を許容し、
+/// quoted-string は obs-text (0x80-0xFF) を含むことができる。
+/// UTF-8 変換せずにバイト列として処理することで、正当なメッセージを受理する。
+#[test]
+fn chunked_with_obs_text_in_extension_should_succeed() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    // chunk-extension に obs-text (0x80) を含む: 5;ext="\x80"\r\nhello\r\n0\r\n\r\n
+    let chunk_with_obs_text: &[u8] = b"5;ext=\"\x80\"\r\nhello\r\n0\r\n\r\n";
+    decoder.feed(chunk_with_obs_text).unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    // ボディを正常に読み取れることを確認
+    let mut body = Vec::new();
+    let mut completed = false;
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            match decoder.consume_body(len).unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {}
+            }
+        } else {
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress().unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(completed);
+    assert_eq!(body, b"hello");
+}
+
+/// chunk-size の前後に空白がある場合のテスト (BWS)
+///
+/// RFC 9112 Section 7.1: chunk-ext の前には BWS (bad whitespace) が許容される
+#[test]
+fn chunked_with_bws_around_size_should_succeed() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    // chunk-size の前後に空白: " 5 ;ext\r\n" (拡張の前に空白)
+    decoder.feed(b" 5 ;ext\r\nhello\r\n0\r\n\r\n").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let mut body = Vec::new();
+    let mut completed = false;
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            match decoder.consume_body(len).unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {}
+            }
+        } else {
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress().unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(completed);
+    assert_eq!(body, b"hello");
+}
+
+/// absolute-form で IPv6 括弧が不整合な場合のエラーテスト
+///
+/// RFC 3986 Section 3.2.2: IP-literal = "[" ( IPv6address / IPvFuture ) "]"
+/// "[" があれば対応する "]" が必要
+#[test]
+fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
+    // "[" のみで "]" がない
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://[::1/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err(), "expected error for unmatched '['");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unmatched IPv6 brackets")
+    );
+
+    // "]" が先に来る
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://]::1[/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err(), "expected error for ']' before '['");
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unmatched IPv6 brackets")
+    );
+
+    // 括弧の数が合わない
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://[[::1]/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "expected error for mismatched bracket count"
+    );
+}
+
+/// absolute-form で IPv6 括弧が正しく対応している場合は成功
+#[test]
+fn absolute_form_with_valid_ipv6_should_succeed() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://[::1]:8080/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok(), "expected success for valid IPv6 literal");
+}

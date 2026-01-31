@@ -289,14 +289,33 @@ impl BodyDecoder {
                 });
             }
 
-            let line = String::from_utf8(buf[..pos].to_vec())
-                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
-            buf.drain(..pos + 2);
+            // RFC 9112 Section 7.1: chunk-ext の quoted-string は obs-text を含む可能性があるため
+            // UTF-8 変換せずバイト列として処理する。セミコロンまでを chunk-size として解釈。
+            let line_bytes = &buf[..pos];
 
-            // チャンクサイズをパース (拡張は無視)
-            let size_str = line.split(';').next().unwrap_or(&line).trim();
+            // セミコロンの位置を探す (chunk-ext の開始)
+            let size_end = line_bytes.iter().position(|&b| b == b';').unwrap_or(pos);
+            let size_bytes = &line_bytes[..size_end];
+
+            // chunk-size 部分の前後の空白を除去 (BWS)
+            let size_bytes = trim_ascii_whitespace(size_bytes);
+
+            // chunk-size は HEXDIG のみで構成される
+            if size_bytes.is_empty() || !size_bytes.iter().all(|b| b.is_ascii_hexdigit()) {
+                let display = String::from_utf8_lossy(size_bytes);
+                return Err(Error::InvalidData(format!(
+                    "invalid chunk size: {}",
+                    display
+                )));
+            }
+
+            // ASCII として解釈 (HEXDIG は ASCII の範囲内)
+            let size_str = std::str::from_utf8(size_bytes)
+                .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
             let chunk_size = usize::from_str_radix(size_str, 16)
                 .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
+
+            buf.drain(..pos + 2);
 
             if chunk_size == 0 {
                 *phase = DecodePhase::ChunkedTrailer;
@@ -382,6 +401,24 @@ impl BodyDecoder {
 /// CRLF で終わる行を探す
 pub(crate) fn find_line(buf: &[u8]) -> Option<usize> {
     buf.windows(2).position(|w| w == b"\r\n")
+}
+
+/// バイト列の前後の ASCII 空白を除去
+fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|&b| !b.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|&b| !b.is_ascii_whitespace())
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    if start >= end {
+        &[]
+    } else {
+        &bytes[start..end]
+    }
 }
 
 /// ヘッダー行をパース
@@ -641,11 +678,49 @@ pub(crate) fn parse_request_target_form(target: &str) -> Result<RequestTargetFor
                 "invalid request-target: fragment not allowed".to_string(),
             ));
         }
+        // IPv6 リテラルの括弧対応を検証 (RFC 3986 Section 3.2.2)
+        validate_ipv6_brackets(target)?;
         return Ok(RequestTargetForm::Absolute);
     }
 
     // authority-form: host:port (CONNECT 用)
     validate_authority_form(target).map(|()| RequestTargetForm::Authority)
+}
+
+/// IPv6 リテラルの括弧対応を検証
+///
+/// RFC 3986 Section 3.2.2:
+/// IP-literal = "[" ( IPv6address / IPvFuture ) "]"
+///
+/// "[" があれば対応する "]" が必要
+fn validate_ipv6_brackets(target: &str) -> Result<(), Error> {
+    let open_count = target.chars().filter(|&c| c == '[').count();
+    let close_count = target.chars().filter(|&c| c == ']').count();
+
+    if open_count != close_count {
+        return Err(Error::InvalidData(
+            "invalid request-target: unmatched IPv6 brackets".to_string(),
+        ));
+    }
+
+    // "[" の後に "]" があることを確認 (順序チェック)
+    let mut depth = 0i32;
+    for c in target.chars() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(Error::InvalidData(
+                        "invalid request-target: unmatched IPv6 brackets".to_string(),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }
 
 /// origin-form の検証

@@ -588,8 +588,8 @@ async fn stream_response_on_connection(
         log_debug(debug, "using Connection: close (close-delimited body)");
     }
 
-    let header_bytes = encode_response_headers(&response_for_headers)
-        .expect("RFC-compliant response headers");
+    let header_bytes =
+        encode_response_headers(&response_for_headers).expect("RFC-compliant response headers");
     downstream.write_all(&header_bytes).await?;
     downstream.flush().await?;
 
