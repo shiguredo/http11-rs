@@ -3106,3 +3106,269 @@ proptest! {
         prop_assert!(decoder.is_tunnel());
     }
 }
+
+// ========================================
+// RFC 9112 Section 6.3 準拠テスト
+// ========================================
+
+// --- 修正1: 1xx/204/304/HEAD で TE/CL を無視 ---
+
+proptest! {
+    /// 1xx レスポンスで不正な Transfer-Encoding があってもエラーにならない
+    #[test]
+    fn prop_1xx_ignores_invalid_te(status in 100u16..200u16) {
+        let mut decoder = ResponseDecoder::new();
+        // gzip のみは通常エラーだが、1xx では無視される
+        let response = format!(
+            "HTTP/1.1 {} Continue\r\nTransfer-Encoding: gzip\r\n\r\n",
+            status
+        );
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(result.1, BodyKind::None, "1xx should have no body");
+    }
+}
+
+/// 204 No Content で不正な Transfer-Encoding があってもエラーにならない
+#[test]
+fn test_204_ignores_invalid_te() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 204 No Content\r\nTransfer-Encoding: gzip\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::None);
+}
+
+/// 304 Not Modified で不正な Transfer-Encoding があってもエラーにならない
+#[test]
+fn test_304_ignores_invalid_te() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 304 Not Modified\r\nTransfer-Encoding: gzip\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::None);
+}
+
+/// HEAD レスポンスで不正な Transfer-Encoding があってもエラーにならない
+#[test]
+fn test_head_ignores_invalid_te() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_expect_no_body(true); // HEAD リクエストへのレスポンス
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::None);
+}
+
+/// HEAD レスポンスで不正な Content-Length があってもエラーにならない
+#[test]
+fn test_head_ignores_invalid_cl() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_expect_no_body(true);
+    // 通常は異なる値はエラーだが、HEAD では無視
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Length: 200\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::None);
+}
+
+/// 204 で TE と CL の両方があってもエラーにならない
+#[test]
+fn test_204_ignores_te_and_cl() {
+    let mut decoder = ResponseDecoder::new();
+    let response =
+        "HTTP/1.1 204 No Content\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::None);
+}
+
+// --- 修正2: Transfer-Encoding の RFC 準拠処理 ---
+
+/// レスポンス Transfer-Encoding: gzip, chunked → Chunked
+#[test]
+fn test_response_te_gzip_chunked_is_chunked() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Chunked);
+}
+
+/// レスポンス Transfer-Encoding: gzip → CloseDelimited
+#[test]
+fn test_response_te_gzip_is_close_delimited() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::CloseDelimited);
+}
+
+/// レスポンス Transfer-Encoding: chunked, gzip → CloseDelimited (chunked が最後でない)
+#[test]
+fn test_response_te_chunked_gzip_is_close_delimited() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked, gzip\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::CloseDelimited);
+}
+
+/// レスポンス Transfer-Encoding: deflate, chunked → Chunked
+#[test]
+fn test_response_te_deflate_chunked_is_chunked() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: deflate, chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Chunked);
+}
+
+/// レスポンスで Transfer-Encoding と Content-Length 両方ある場合、TE を優先
+#[test]
+fn test_response_te_and_cl_prefers_te() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    // TE が優先され、chunked フレーミング
+    assert_eq!(result.1, BodyKind::Chunked);
+}
+
+/// リクエスト Transfer-Encoding: gzip → エラー
+#[test]
+fn test_request_te_gzip_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// リクエスト Transfer-Encoding: gzip, chunked → エラー
+#[test]
+fn test_request_te_gzip_chunked_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: gzip, chunked\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// リクエスト Transfer-Encoding: chunked → OK
+#[test]
+fn test_request_te_chunked_ok() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::Chunked);
+}
+
+// --- 修正3: Content-Length カンマ区切り対応 ---
+
+/// Content-Length: 42, 42 → 42 として処理
+#[test]
+fn test_cl_comma_same_values_ok() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 42, 42\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::ContentLength(42));
+}
+
+/// Content-Length: 42, 42, 42 → 42 として処理
+#[test]
+fn test_cl_comma_three_same_values_ok() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 42, 42, 42\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(result.1, BodyKind::ContentLength(42));
+}
+
+/// Content-Length: 42, 43 → エラー (値が一致しない)
+#[test]
+fn test_cl_comma_different_values_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 42, 43\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// Content-Length: 42, → エラー (空の値)
+#[test]
+fn test_cl_comma_trailing_comma_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 42,\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// Content-Length: ,42 → エラー (空の値)
+#[test]
+fn test_cl_comma_leading_comma_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: ,42\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+proptest! {
+    /// 同じ値のカンマ区切り Content-Length は受理される
+    #[test]
+    fn prop_cl_comma_same_values(len in 0usize..10000) {
+        let mut decoder = ResponseDecoder::new();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}, {}, {}\r\n\r\n",
+            len, len, len
+        );
+        decoder.feed(response.as_bytes()).unwrap();
+
+        let result = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(result.1, BodyKind::ContentLength(len));
+    }
+}
+
+proptest! {
+    /// 異なる値のカンマ区切り Content-Length はエラー
+    #[test]
+    fn prop_cl_comma_different_values_error(
+        len1 in 0usize..10000,
+        len2 in 0usize..10000
+    ) {
+        prop_assume!(len1 != len2);
+
+        let mut decoder = ResponseDecoder::new();
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}, {}\r\n\r\n",
+            len1, len2
+        );
+        decoder.feed(response.as_bytes()).unwrap();
+
+        prop_assert!(decoder.decode_headers().is_err());
+    }
+}

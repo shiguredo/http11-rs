@@ -882,11 +882,28 @@ pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
         .all(|b| matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF))
 }
 
-/// Transfer-Encoding ヘッダーを解析
+/// Transfer-Encoding 解析結果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TransferEncodingResult {
+    /// Transfer-Encoding なし
+    None,
+    /// chunked が最後 (chunked フレーミング)
+    Chunked,
+    /// chunked がないか最後でない (レスポンス: close-delimited)
+    Other,
+}
+
+/// Transfer-Encoding ヘッダーを解析 (リクエスト用)
 ///
-/// RFC 9112: chunked は一度だけ指定可能で、最後のエンコーディングでなければならない
-/// 複数の Transfer-Encoding ヘッダーは連結して単一のリストとして扱う
-pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> Result<bool, Error> {
+/// RFC 9112 Section 6.1: リクエストでは chunked 以外のエンコーディングを
+/// サーバーがサポートしているか不明なため、chunked のみ許可する
+///
+/// - chunked のみ → Ok(true)
+/// - chunked 以外がある → Err (RFC: 400 Bad Request)
+/// - Transfer-Encoding なし → Ok(false)
+pub(crate) fn parse_transfer_encoding_for_request(
+    headers: &[(String, String)],
+) -> Result<bool, Error> {
     let mut chunked_count = 0;
 
     for (name, value) in headers {
@@ -909,7 +926,7 @@ pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> R
                         ));
                     }
                 } else {
-                    // chunked 以外のエンコーディングはサポートしない
+                    // リクエストでは chunked 以外のエンコーディングはサポートしない
                     return Err(Error::InvalidData(
                         "invalid Transfer-Encoding: unsupported coding".to_string(),
                     ));
@@ -925,6 +942,63 @@ pub(crate) fn parse_transfer_encoding_chunked(headers: &[(String, String)]) -> R
 
     Ok(chunked_count == 1)
 }
+
+/// Transfer-Encoding ヘッダーを解析 (レスポンス用)
+///
+/// RFC 9112 Section 6.1:
+/// - chunked が最後のエンコーディング → Chunked (chunked フレーミング)
+/// - chunked がないか最後でない → Other (close-delimited)
+/// - Transfer-Encoding なし → None
+pub(crate) fn parse_transfer_encoding_for_response(
+    headers: &[(String, String)],
+) -> Result<TransferEncodingResult, Error> {
+    // すべての Transfer-Encoding ヘッダーを連結してトークンリストを作成
+    let mut all_tokens: Vec<String> = Vec::new();
+    let mut chunked_count = 0;
+
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("Transfer-Encoding") {
+            let mut has_token = false;
+            for token in value.split(',') {
+                let token = token.trim();
+                if token.is_empty() {
+                    return Err(Error::InvalidData(
+                        "invalid Transfer-Encoding: empty token".to_string(),
+                    ));
+                }
+                has_token = true;
+
+                if token.eq_ignore_ascii_case("chunked") {
+                    chunked_count += 1;
+                    if chunked_count > 1 {
+                        return Err(Error::InvalidData(
+                            "invalid Transfer-Encoding: duplicate chunked".to_string(),
+                        ));
+                    }
+                }
+                all_tokens.push(token.to_ascii_lowercase());
+            }
+            if !has_token {
+                return Err(Error::InvalidData(
+                    "invalid Transfer-Encoding: empty value".to_string(),
+                ));
+            }
+        }
+    }
+
+    if all_tokens.is_empty() {
+        return Ok(TransferEncodingResult::None);
+    }
+
+    // RFC 9112 Section 6.3: chunked が最後の場合のみ chunked フレーミング
+    if all_tokens.last().map(|s| s.as_str()) == Some("chunked") {
+        Ok(TransferEncodingResult::Chunked)
+    } else {
+        // chunked がないか最後でない場合は close-delimited
+        Ok(TransferEncodingResult::Other)
+    }
+}
+
 
 /// Content-Length ヘッダーを解析
 pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<usize>, Error> {
@@ -947,23 +1021,51 @@ pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Optio
 }
 
 /// Content-Length 値をパース
+///
+/// RFC 9110 Section 8.6: Content-Length はカンマ区切りで複数値を持てる
+/// すべての値が同一でなければならない
 fn parse_content_length_value(input: &str) -> Result<usize, Error> {
-    let input = input.trim();
-    if input.is_empty() || !input.chars().all(|c| c.is_ascii_digit()) {
-        return Err(Error::InvalidData(
-            "invalid Content-Length: not a number".to_string(),
-        ));
+    let mut result: Option<usize> = None;
+
+    for part in input.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return Err(Error::InvalidData(
+                "invalid Content-Length: empty value in list".to_string(),
+            ));
+        }
+        if !part.chars().all(|c| c.is_ascii_digit()) {
+            return Err(Error::InvalidData(
+                "invalid Content-Length: not a number".to_string(),
+            ));
+        }
+        let value = part
+            .parse::<usize>()
+            .map_err(|_| Error::InvalidData("invalid Content-Length: overflow".to_string()))?;
+
+        match result {
+            None => result = Some(value),
+            Some(prev) if prev != value => {
+                return Err(Error::InvalidData(
+                    "invalid Content-Length: mismatched values in list".to_string(),
+                ));
+            }
+            Some(_) => {} // 同じ値なので OK
+        }
     }
-    input
-        .parse::<usize>()
-        .map_err(|_| Error::InvalidData("invalid Content-Length: overflow".to_string()))
+
+    result.ok_or_else(|| Error::InvalidData("invalid Content-Length: empty".to_string()))
 }
 
-/// ボディ関連ヘッダーを解決
-pub(crate) fn resolve_body_headers(
+/// リクエスト用: ボディヘッダー解決
+///
+/// RFC 9112 Section 6.3:
+/// - Transfer-Encoding と Content-Length の両方がある場合はエラー
+/// - リクエストでは chunked 以外の Transfer-Encoding は拒否
+pub(crate) fn resolve_body_headers_for_request(
     headers: &[(String, String)],
 ) -> Result<(bool, Option<usize>), Error> {
-    let transfer_encoding_chunked = parse_transfer_encoding_chunked(headers)?;
+    let transfer_encoding_chunked = parse_transfer_encoding_for_request(headers)?;
     let content_length = parse_content_length(headers)?;
 
     if transfer_encoding_chunked && content_length.is_some() {
@@ -973,4 +1075,25 @@ pub(crate) fn resolve_body_headers(
     }
 
     Ok((transfer_encoding_chunked, content_length))
+}
+
+/// レスポンス用: ボディヘッダー解決
+///
+/// RFC 9112 Section 6.3:
+/// - Transfer-Encoding と Content-Length の両方がある場合、Transfer-Encoding を優先
+///   (Content-Length は無視。ただし警告ログを出すべきとあるが、本実装では無視のみ)
+/// - chunked が最後でない場合は close-delimited
+pub(crate) fn resolve_body_headers_for_response(
+    headers: &[(String, String)],
+) -> Result<(TransferEncodingResult, Option<usize>), Error> {
+    let te_result = parse_transfer_encoding_for_response(headers)?;
+    let content_length = parse_content_length(headers)?;
+
+    // RFC 9112 Section 6.3: Transfer-Encoding がある場合は Content-Length を無視
+    // (リクエスト送信者はこの組み合わせを送るべきではないが、受信者は TE を優先)
+    if te_result != TransferEncodingResult::None {
+        return Ok((te_result, None));
+    }
+
+    Ok((TransferEncodingResult::None, content_length))
 }

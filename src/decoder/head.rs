@@ -72,11 +72,22 @@ pub trait HttpHead {
             .and_then(|v| v.parse().ok())
     }
 
-    /// Transfer-Encoding が chunked かどうかを判定
+    /// Transfer-Encoding が chunked のみかどうかを判定
     ///
-    /// RFC 9112: chunked のみの場合に true を返す。
-    /// chunked 以外のトークンがある場合は false を返す
-    /// (parse_transfer_encoding_chunked と整合)。
+    /// 「chunked のみ」の場合に true を返す。
+    /// `Transfer-Encoding: gzip, chunked` のような複合エンコーディングでは false を返す。
+    ///
+    /// # 注意
+    ///
+    /// この関数はユーザー向けのヘルパーであり、デコーダー内部のフレーミング決定には
+    /// 使用されない。RFC 9112 Section 6.3 に基づくボディ長の決定は、デコーダー内部で
+    /// 別途行われる。
+    ///
+    /// レスポンスで `Transfer-Encoding: gzip, chunked` を受信した場合:
+    /// - この関数は false を返す (chunked 以外がある)
+    /// - デコーダーは chunked フレーミングでボディを読み取る (chunked が最後)
+    /// - ユーザーは受け取ったボディを gzip 展開する必要がある
+    ///
     /// RFC 9110 Section 5.3: 複数の同名ヘッダーは結合して単一のリストとして扱う。
     fn is_chunked(&self) -> bool {
         let te_headers = self.get_headers("Transfer-Encoding");

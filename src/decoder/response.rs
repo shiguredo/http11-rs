@@ -6,8 +6,9 @@ use crate::limits::DecoderLimits;
 use crate::response::Response;
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_reason_phrase,
-    is_valid_status_code, parse_header_line, resolve_body_headers,
+    BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, is_valid_http_version,
+    is_valid_reason_phrase, is_valid_status_code, parse_header_line,
+    resolve_body_headers_for_response,
 };
 use super::head::ResponseHead;
 use super::phase::DecodePhase;
@@ -247,8 +248,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// RFC 9112 Section 6.3 の優先順位に従う:
     /// 1. CONNECT 2xx はトンネルモード (Transfer-Encoding/Content-Length は無視)
-    /// 2. HEAD レスポンス、1xx/204/304 はボディなし
-    /// 3. Transfer-Encoding がある場合は chunked
+    /// 2. HEAD レスポンス、1xx/204/304 はボディなし (Transfer-Encoding/Content-Length を解析しない)
+    /// 3. Transfer-Encoding がある場合:
+    ///    - chunked が最後 → chunked
+    ///    - chunked がないか最後でない → close-delimited
     /// 4. Content-Length がある場合は固定長
     /// 5. それ以外は close-delimited (接続が閉じるまでがボディ)
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
@@ -261,15 +264,20 @@ impl<D: Decompressor> ResponseDecoder<D> {
             return Ok(BodyKind::Tunnel);
         }
 
-        let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
-
-        // HEAD リクエストへのレスポンス、または 1xx/204/304 はボディなし
+        // RFC 9112 Section 6.3: HEAD/1xx/204/304 はボディなし
+        // これらのステータスでは Transfer-Encoding/Content-Length を解析しない
+        // (不正な TE/CL があってもエラーにしない)
         if self.expect_no_body || !Self::status_has_body(status_code) {
             return Ok(BodyKind::None);
         }
 
-        if transfer_encoding_chunked {
-            return Ok(BodyKind::Chunked);
+        // ボディがある場合のみ TE/CL を解析
+        let (te_result, content_length) = resolve_body_headers_for_response(&self.headers)?;
+
+        match te_result {
+            TransferEncodingResult::Chunked => return Ok(BodyKind::Chunked),
+            TransferEncodingResult::Other => return Ok(BodyKind::CloseDelimited),
+            TransferEncodingResult::None => {}
         }
 
         if let Some(len) = content_length {

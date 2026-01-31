@@ -7,8 +7,8 @@ use crate::request::Request;
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_method,
-    is_valid_request_target, parse_header_line, parse_request_target_form, resolve_body_headers,
-    validate_request_target_for_method,
+    is_valid_request_target, parse_header_line, parse_request_target_form,
+    resolve_body_headers_for_request, validate_request_target_for_method,
 };
 use super::head::RequestHead;
 use super::phase::DecodePhase;
@@ -174,8 +174,11 @@ impl<D: Decompressor> RequestDecoder<D> {
     ///
     /// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
     /// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする
+    ///
+    /// RFC 9112 Section 6.1: リクエストでは chunked 以外の Transfer-Encoding は拒否
     fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
-        let (transfer_encoding_chunked, content_length) = resolve_body_headers(&self.headers)?;
+        let (transfer_encoding_chunked, content_length) =
+            resolve_body_headers_for_request(&self.headers)?;
 
         if transfer_encoding_chunked {
             // RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていない
