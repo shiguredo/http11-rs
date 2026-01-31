@@ -513,7 +513,7 @@ proptest! {
     #[test]
     fn prop_encode_response_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
-        let encoded = encode_response(&res);
+        let encoded = encode_response(&res).unwrap();
 
         // ステータスラインを含む
         let status_line = format!("HTTP/1.1 {} {}\r\n", status, phrase);
@@ -532,7 +532,7 @@ proptest! {
         header_value in header_value()
     ) {
         let res = Response::new(status, phrase).header(&header_name, &header_value);
-        let encoded = encode_response(&res);
+        let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let header_line = format!("{}: {}\r\n", header_name, header_value);
@@ -544,7 +544,7 @@ proptest! {
     #[test]
     fn prop_encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
         let res = Response::new(status, phrase).body(data.clone());
-        let encoded = encode_response(&res);
+        let encoded = encode_response(&res).unwrap();
 
         // 1xx/204/304 はボディがないため Content-Length を追加しない
         let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
@@ -573,7 +573,7 @@ proptest! {
         let res = Response::new(status, "OK")
             .header("Content-Length", &content_length.to_string())
             .omit_content_length(true);
-        let encoded = encode_response(&res);
+        let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         // 明示的に設定した Content-Length は維持される
@@ -593,7 +593,7 @@ proptest! {
         // Content-Length は自動付与されない (close-delimited になる)
         let res = Response::new(status, "OK")
             .omit_content_length(true);
-        let encoded = encode_response(&res);
+        let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         // Content-Length は含まれない
@@ -607,7 +607,7 @@ fn prop_encode_response_no_content_length_with_transfer_encoding() {
     let res = Response::new(200, "OK")
         .header("Transfer-Encoding", "chunked")
         .body(b"hello".to_vec());
-    let encoded = encode_response(&res);
+    let encoded = encode_response(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(!encoded_str.contains("Content-Length"));
@@ -726,7 +726,7 @@ proptest! {
     fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
             .header("Content-Type", "text/html");
-        let encoded = encode_response_headers(&res);
+        let encoded = encode_response_headers(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         // ステータスラインを含む
@@ -742,7 +742,7 @@ proptest! {
 #[test]
 fn prop_encode_response_headers_ignores_body() {
     let res = Response::new(200, "OK").body(b"hello world".to_vec());
-    let encoded = encode_response_headers(&res);
+    let encoded = encode_response_headers(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // ボディは含まれない
@@ -768,7 +768,7 @@ proptest! {
     fn prop_response_encode_method(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let encoded = res.encode();
-        prop_assert_eq!(encoded, encode_response(&res));
+        prop_assert_eq!(encoded, encode_response(&res).unwrap());
     }
 }
 
@@ -863,6 +863,283 @@ proptest! {
     fn prop_response_encode_headers_method(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase);
         let encoded = res.encode_headers();
-        prop_assert_eq!(encoded, encode_response_headers(&res));
+        prop_assert_eq!(encoded, encode_response_headers(&res).unwrap());
     }
+}
+
+// ========================================
+// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信禁止
+// ========================================
+
+#[test]
+fn prop_encode_request_conflicting_te_and_cl() {
+    // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length を同時に送信してはならない
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+#[test]
+fn prop_encode_request_headers_conflicting_te_and_cl() {
+    // encode_request_headers でも同様にエラー
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = encode_request_headers(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+#[test]
+fn prop_request_try_encode_conflicting_te_and_cl() {
+    // Request::try_encode でも同様にエラー
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = req.try_encode();
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+#[test]
+fn prop_encode_response_conflicting_te_and_cl() {
+    // RFC 9112 Section 6.2: レスポンスでも Transfer-Encoding と Content-Length を同時に送信してはならない
+    let res = Response::new(200, "OK")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_conflicting_te_and_cl() {
+    // encode_response_headers でも同様にエラー
+    let res = Response::new(200, "OK")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+#[test]
+fn prop_response_try_encode_conflicting_te_and_cl() {
+    // Response::try_encode でも同様にエラー
+    let res = Response::new(200, "OK")
+        .header("Transfer-Encoding", "chunked")
+        .header("Content-Length", "100");
+    let result = res.try_encode();
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+    ));
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_te_and_cl_always_error(
+        method in http_method(),
+        uri in uri(),
+        cl in 1usize..10000
+    ) {
+        // Transfer-Encoding と Content-Length が両方あれば常にエラー
+        let req = Request::new(method, &uri)
+            .header("Host", "example.com")
+            .header("Transfer-Encoding", "chunked")
+            .header("Content-Length", &cl.to_string());
+        let result = encode_request(&req);
+        prop_assert!(matches!(
+            result,
+            Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+        ));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_te_and_cl_always_error(
+        // 1xx / 204 は別のエラーになる可能性があるため除外
+        status in (200u16..204).prop_union(205..600),
+        cl in 1usize..10000
+    ) {
+        // Transfer-Encoding と Content-Length が両方あれば常にエラー
+        let res = Response::new(status, "OK")
+            .header("Transfer-Encoding", "chunked")
+            .header("Content-Length", &cl.to_string());
+        let result = encode_response(&res);
+        prop_assert!(matches!(
+            result,
+            Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+        ));
+    }
+}
+
+// ========================================
+// RFC 9112 Section 6.1: 1xx / 204 レスポンスで Transfer-Encoding 禁止
+// ========================================
+
+#[test]
+fn prop_encode_response_1xx_with_te() {
+    // RFC 9112 Section 6.1: 1xx レスポンスに Transfer-Encoding は禁止
+    let res = Response::new(100, "Continue").header("Transfer-Encoding", "chunked");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 100 })
+    ));
+
+    let res = Response::new(101, "Switching Protocols").header("Transfer-Encoding", "chunked");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 101 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_204_with_te() {
+    // RFC 9112 Section 6.1: 204 No Content レスポンスに Transfer-Encoding は禁止
+    let res = Response::new(204, "No Content").header("Transfer-Encoding", "chunked");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 204 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_1xx_with_te() {
+    // encode_response_headers でも同様にエラー
+    let res = Response::new(100, "Continue").header("Transfer-Encoding", "chunked");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 100 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_204_with_te() {
+    // encode_response_headers でも同様にエラー
+    let res = Response::new(204, "No Content").header("Transfer-Encoding", "chunked");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 204 })
+    ));
+}
+
+#[test]
+fn prop_response_try_encode_1xx_with_te() {
+    // Response::try_encode でも同様にエラー
+    let res = Response::new(100, "Continue").header("Transfer-Encoding", "chunked");
+    let result = res.try_encode();
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 100 })
+    ));
+}
+
+#[test]
+fn prop_response_try_encode_204_with_te() {
+    // Response::try_encode でも同様にエラー
+    let res = Response::new(204, "No Content").header("Transfer-Encoding", "chunked");
+    let result = res.try_encode();
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 204 })
+    ));
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_1xx_with_te_always_error(status in 100u16..200) {
+        // 1xx レスポンスに Transfer-Encoding があれば常にエラー
+        let res = Response::new(status, "Info").header("Transfer-Encoding", "chunked");
+        let result = encode_response(&res);
+        match result {
+            Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
+                prop_assert_eq!(status_code, status);
+            }
+            other => {
+                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+            }
+        }
+    }
+}
+
+// ========================================
+// 正常ケース: Transfer-Encoding のみ、または Content-Length のみは許可
+// ========================================
+
+#[test]
+fn prop_encode_request_te_only_ok() {
+    // Transfer-Encoding のみは OK
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Transfer-Encoding", "chunked");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_cl_only_ok() {
+    // Content-Length のみは OK
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Content-Length", "100")
+        .body(vec![0u8; 100]);
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_te_only_ok() {
+    // Transfer-Encoding のみは OK (2xx 以上)
+    let res = Response::new(200, "OK").header("Transfer-Encoding", "chunked");
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_cl_only_ok() {
+    // Content-Length のみは OK
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "100")
+        .body(vec![0u8; 100]);
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_1xx_without_te_ok() {
+    // 1xx レスポンスで Transfer-Encoding がなければ OK
+    let res = Response::new(100, "Continue");
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_204_without_te_ok() {
+    // 204 レスポンスで Transfer-Encoding がなければ OK
+    let res = Response::new(204, "No Content");
+    let result = encode_response(&res);
+    assert!(result.is_ok());
 }

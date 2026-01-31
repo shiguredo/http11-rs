@@ -58,6 +58,14 @@ impl From<CompressionError> for Error {
 pub enum EncodeError {
     /// Host ヘッダーがない (HTTP/1.1 必須)
     MissingHostHeader,
+    /// Transfer-Encoding と Content-Length が同時に設定されている
+    /// RFC 9112 Section 6.2: 送信者は Transfer-Encoding を含むメッセージに
+    /// Content-Length を含めてはならない (MUST NOT)
+    ConflictingTransferEncodingAndContentLength,
+    /// 1xx / 204 レスポンスで Transfer-Encoding が設定されている
+    /// RFC 9112 Section 6.1: サーバーは 1xx または 204 レスポンスに
+    /// Transfer-Encoding を含めてはならない (MUST NOT)
+    ForbiddenTransferEncoding { status_code: u16 },
 }
 
 impl fmt::Display for EncodeError {
@@ -65,6 +73,19 @@ impl fmt::Display for EncodeError {
         match self {
             EncodeError::MissingHostHeader => {
                 write!(f, "missing Host header (required for HTTP/1.1)")
+            }
+            EncodeError::ConflictingTransferEncodingAndContentLength => {
+                write!(
+                    f,
+                    "conflicting Transfer-Encoding and Content-Length headers (RFC 9112 Section 6.2)"
+                )
+            }
+            EncodeError::ForbiddenTransferEncoding { status_code } => {
+                write!(
+                    f,
+                    "Transfer-Encoding not allowed for {} response (RFC 9112 Section 6.1)",
+                    status_code
+                )
             }
         }
     }

@@ -6,10 +6,16 @@ use crate::response::Response;
 /// リクエストをエンコード
 ///
 /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+/// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
     if request.version == "HTTP/1.1" && !request.has_header("Host") {
         return Err(EncodeError::MissingHostHeader);
+    }
+
+    // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
+    if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
+        return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
     let mut buf = Vec::new();
@@ -31,7 +37,6 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     }
 
     // Content-Length (if body is present, not already set, and not chunked)
-    // RFC 9112: Transfer-Encoding と Content-Length は同時に送信してはならない
     if !request.body.is_empty()
         && !request.has_header("Content-Length")
         && !request.has_header("Transfer-Encoding")
@@ -51,7 +56,23 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 }
 
 /// レスポンスをエンコード
-pub fn encode_response(response: &Response) -> Vec<u8> {
+///
+/// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
+/// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
+    // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
+    if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {
+        return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
+    }
+
+    // RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding は禁止
+    let is_1xx_or_204 = (100..200).contains(&response.status_code) || response.status_code == 204;
+    if is_1xx_or_204 && response.has_header("Transfer-Encoding") {
+        return Err(EncodeError::ForbiddenTransferEncoding {
+            status_code: response.status_code,
+        });
+    }
+
     let mut buf = Vec::new();
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
@@ -96,7 +117,7 @@ pub fn encode_response(response: &Response) -> Vec<u8> {
         buf.extend_from_slice(&response.body);
     }
 
-    buf
+    Ok(buf)
 }
 
 impl Request {
@@ -118,7 +139,18 @@ impl Request {
 
 impl Response {
     /// レスポンスをバイト列にエンコード
+    ///
+    /// RFC 違反のヘッダー組み合わせがある場合はパニックする。
+    /// エラーハンドリングが必要な場合は `try_encode()` を使用する。
     pub fn encode(&self) -> Vec<u8> {
+        encode_response(self).expect("invalid header combination")
+    }
+
+    /// レスポンスをバイト列にエンコード (Result 版)
+    ///
+    /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
+    /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+    pub fn try_encode(&self) -> Result<Vec<u8>, EncodeError> {
         encode_response(self)
     }
 }
@@ -169,10 +201,16 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 /// ヘッダー送信後に `encode_chunk` でボディを送信できます。
 ///
 /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
+/// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
     if request.version == "HTTP/1.1" && !request.has_header("Host") {
         return Err(EncodeError::MissingHostHeader);
+    }
+
+    // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
+    if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
+        return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
     let mut buf = Vec::new();
@@ -203,7 +241,23 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 ///
 /// Chunked Transfer Encoding を使う場合に便利です。
 /// ヘッダー送信後に `encode_chunk` でボディを送信できます。
-pub fn encode_response_headers(response: &Response) -> Vec<u8> {
+///
+/// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
+/// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeError> {
+    // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
+    if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {
+        return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
+    }
+
+    // RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding は禁止
+    let is_1xx_or_204 = (100..200).contains(&response.status_code) || response.status_code == 204;
+    if is_1xx_or_204 && response.has_header("Transfer-Encoding") {
+        return Err(EncodeError::ForbiddenTransferEncoding {
+            status_code: response.status_code,
+        });
+    }
+
     let mut buf = Vec::new();
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
@@ -225,7 +279,7 @@ pub fn encode_response_headers(response: &Response) -> Vec<u8> {
     // End of headers
     buf.extend_from_slice(b"\r\n");
 
-    buf
+    Ok(buf)
 }
 
 impl Request {
@@ -247,7 +301,18 @@ impl Request {
 
 impl Response {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
+    ///
+    /// RFC 違反のヘッダー組み合わせがある場合はパニックする。
+    /// エラーハンドリングが必要な場合は `try_encode_headers()` を使用する。
     pub fn encode_headers(&self) -> Vec<u8> {
+        encode_response_headers(self).expect("invalid header combination")
+    }
+
+    /// ヘッダーのみをエンコード (Result 版)
+    ///
+    /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
+    /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+    pub fn try_encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
         encode_response_headers(self)
     }
 }
