@@ -41,6 +41,9 @@
 
 - pbt 以下に unittest を書かないこと
 - unittest は pbt で実現できないものだけを書くこと
+- PBT はファイル名を prop_ で始めること
+- PBT は関数名を prop_ で始めること
+- `#[ignore]` を使わないこと
 
 ## pre-commit
 
