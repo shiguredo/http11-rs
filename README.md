@@ -87,6 +87,24 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 
 サンプル (`examples/`) では `flate2`, `brotli`, `zstd` クレートを使った実装例を提供しています。
 
+### ストリーミングエンコード
+
+ヘッダーのみをエンコードし、後からボディをチャンクで送信できます。
+
+```rust
+use shiguredo_http11::{Response, encode_chunk};
+
+let response = Response::new(200, "OK")
+    .header("Transfer-Encoding", "chunked");
+let headers = response.encode_headers();
+// headers を送信...
+
+// チャンクを送信
+let chunk1 = encode_chunk(b"Hello, ");
+let chunk2 = encode_chunk(b"World!");
+let last = encode_chunk(b""); // 終端チャンク
+```
+
 ### ストリーミングデコード
 
 大きなボディを扱う場合や、ボディを受信しながら処理したい場合はストリーミング API を使用します。
@@ -147,7 +165,12 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 
 ### キャッシュ (RFC 9111)
 
-- Cache-Control ヘッダー (max-age, public, private, no-cache, no-store など)
+- Cache-Control ヘッダー
+  - max-age, s-maxage, max-stale, min-fresh
+  - stale-while-revalidate, stale-if-error
+  - no-cache, no-store, no-transform
+  - only-if-cached, must-revalidate, proxy-revalidate
+  - must-understand, public, private, immutable
 - Age ヘッダー
 - Expires ヘッダー
 
@@ -155,11 +178,15 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 
 - If-Match / If-None-Match ヘッダー (ETag 比較)
 - If-Modified-Since / If-Unmodified-Since ヘッダー
+- If-Range ヘッダー (ETag または日時)
 
 ### Range リクエスト (RFC 9110)
 
 - Range ヘッダーのパース (bytes=0-499, 500-, -500)
+  - RangeSpec (Range, FromStart, Suffix)
+  - 実際のバイト範囲計算 (to_bounds)
 - Content-Range ヘッダーの生成
+  - 満たせない範囲 (unsatisfied) の表現
 - Accept-Ranges ヘッダー
 
 ### 認証 (RFC 7617, RFC 7616, RFC 6750)
@@ -172,7 +199,11 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 
 - URI のパース (scheme, host, port, path, query, fragment)
 - パーセントエンコーディング/デコーディング
+  - パス用 (percent_encode_path)
+  - クエリ用 (percent_encode_query)
 - 相対 URI の解決
+- URI の正規化 (normalize)
+- origin-form 生成 (HTTP request-target 用)
 
 ### その他のヘッダー
 
@@ -184,9 +215,9 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 - Date (HTTP-date 形式: IMF-fixdate, RFC 850, asctime)
 - ETag (Strong/Weak)
 - Cookie / Set-Cookie
-- Host ヘッダーのパース/検証
+- Host ヘッダーのパース/検証 (IPv4, IPv6 リテラル, IPv-future 対応)
 - Multipart (multipart/form-data)
-- Trailer ヘッダー
+- Trailer ヘッダー (RFC 9112 Section 7.1.2 禁止フィールド検証)
 - Expect ヘッダー
 - Upgrade ヘッダー
 - Content-Digest / Repr-Digest / Want-Content-Digest / Want-Repr-Digest (RFC 9530)
