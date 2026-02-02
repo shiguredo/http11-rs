@@ -16,6 +16,7 @@ readme = "README.md"
 members = [
     "examples/http11_client",
     "examples/http11_server",
+    "examples/http11_server_io_uring",
     "examples/http11_reverse_proxy",
     "pbt",
 ]
