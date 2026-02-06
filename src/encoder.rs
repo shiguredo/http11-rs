@@ -138,9 +138,7 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
 fn extract_authority_from_uri(uri: &str) -> Option<String> {
     let after_scheme = uri.find("://").map(|i| &uri[i + 3..])?;
     // authority は次の "/" または "?" または末尾まで
-    let end = after_scheme
-        .find(['/', '?'])
-        .unwrap_or(after_scheme.len());
+    let end = after_scheme.find(['/', '?']).unwrap_or(after_scheme.len());
     Some(after_scheme[..end].to_string())
 }
 

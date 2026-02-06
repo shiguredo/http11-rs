@@ -165,7 +165,7 @@ fn prop_day_of_week_short_name() {
 proptest! {
     #[test]
     fn prop_day_of_week_clone_eq(dow in day_of_week()) {
-        let cloned = dow.clone();
+        let cloned = dow;
         prop_assert_eq!(dow, cloned);
     }
 }
@@ -281,7 +281,7 @@ proptest! {
         // (具体的な期待値の検証は date.rs のユニットテストで行う)
         let parsed_year = date.year();
         // 年は 1900-2100 の範囲内であるべき
-        prop_assert!(parsed_year >= 1900 && parsed_year <= 2100);
+        prop_assert!((1900..=2100).contains(&parsed_year));
     }
 }
 

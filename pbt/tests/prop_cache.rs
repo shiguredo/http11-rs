@@ -407,7 +407,7 @@ proptest! {
     #[test]
     fn prop_age_clone_eq(secs in seconds()) {
         let age = Age::new(secs);
-        let cloned = age.clone();
+        let cloned = age;
         prop_assert_eq!(age, cloned);
     }
 }

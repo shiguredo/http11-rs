@@ -1508,23 +1508,21 @@ proptest! {
 
         // ボディを消費していくと max_body_size 超過でエラー
         let mut consumed = 0;
-        loop {
-            if let Some(data) = decoder.peek_body() {
-                let len = data.len();
-                match decoder.consume_body(len) {
-                    Ok(_) => consumed += len,
-                    Err(shiguredo_http11::Error::BodyTooLarge { .. }) => {
-                        // max_body_size を超えた時点でエラー
-                        prop_assert!(consumed <= 100);
-                        return Ok(());
-                    }
-                    Err(e) => return Err(proptest::test_runner::TestCaseError::fail(format!(
+        while let Some(data) = decoder.peek_body() {
+            let len = data.len();
+            match decoder.consume_body(len) {
+                Ok(_) => consumed += len,
+                Err(shiguredo_http11::Error::BodyTooLarge { .. }) => {
+                    // max_body_size を超えた時点でエラー
+                    prop_assert!(consumed <= 100);
+                    return Ok(());
+                }
+                Err(e) => {
+                    return Err(proptest::test_runner::TestCaseError::fail(format!(
                         "unexpected error: {:?}",
                         e
-                    ))),
+                    )));
                 }
-            } else {
-                break;
             }
         }
         // ここに到達した場合は問題

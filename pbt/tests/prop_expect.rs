@@ -252,7 +252,7 @@ fn prop_expect_mixed_escapes() {
 proptest! {
     #[test]
     fn prop_expectation_token_method(t in token()) {
-        let input = format!("{}", t);
+        let input = t.to_string();
         let expect = Expect::parse(&input).unwrap();
 
         prop_assert_eq!(expect.items()[0].token(), t.to_ascii_lowercase());

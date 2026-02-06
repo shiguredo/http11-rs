@@ -222,12 +222,12 @@ proptest! {
         for chunk in encoded.chunks(7) {
             decoder.feed(chunk).unwrap();
 
-            if !headers_decoded {
-                if let Ok(Some((head, kind))) = decoder.decode_headers() {
-                    headers_decoded = true;
-                    body_kind = kind;
-                    decoded_method = head.method;
-                }
+            if !headers_decoded
+                && let Ok(Some((head, kind))) = decoder.decode_headers()
+            {
+                headers_decoded = true;
+                body_kind = kind;
+                decoded_method = head.method;
             }
 
             if headers_decoded {
