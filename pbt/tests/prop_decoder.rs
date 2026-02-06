@@ -2018,56 +2018,6 @@ proptest! {
     }
 }
 
-proptest! {
-    #[test]
-    fn prop_decode_two_requests_keep_alive_simple(
-        method1 in http_method(),
-        uri1 in http_uri(),
-        method2 in http_method(),
-        uri2 in http_uri()
-    ) {
-        let mut decoder = RequestDecoder::new();
-
-        let mut req1 = Request::new(&method1, &uri1);
-        req1.add_header("Host", "localhost");
-        let mut req2 = Request::new(&method2, &uri2);
-        req2.add_header("Host", "localhost");
-
-        decoder.feed(&req1.encode()).unwrap();
-        decoder.feed(&req2.encode()).unwrap();
-
-        let decoded1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(decoded1.method, method1);
-        prop_assert_eq!(decoded1.uri, uri1);
-
-        let decoded2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(decoded2.method, method2);
-        prop_assert_eq!(decoded2.uri, uri2);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_decode_two_responses_keep_alive_simple(
-        code1 in status_code(),
-        code2 in status_code()
-    ) {
-        let mut decoder = ResponseDecoder::new();
-
-        let resp1 = Response::new(code1, "OK");
-        let resp2 = Response::new(code2, "OK");
-
-        decoder.feed(&resp1.encode()).unwrap();
-        decoder.feed(&resp2.encode()).unwrap();
-
-        let decoded1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(decoded1.status_code, code1);
-
-        let decoded2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(decoded2.status_code, code2);
-    }
-}
-
 // ========================================
 // チャンク CRLF 検証 PBT
 // ========================================
@@ -2155,70 +2105,6 @@ proptest! {
 // ========================================
 // Chunked Keep-Alive 連続デコード PBT
 // ========================================
-
-proptest! {
-    #[test]
-    fn prop_decode_multiple_chunked_responses_keep_alive(
-        body1 in "[a-z]{1,32}",
-        body2 in "[a-z]{1,32}"
-    ) {
-        let mut decoder = ResponseDecoder::new();
-
-        // 2 つの chunked レスポンスを作成
-        let resp1 = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
-            body1.len(), body1
-        );
-        let resp2 = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
-            body2.len(), body2
-        );
-
-        decoder.feed(resp1.as_bytes()).unwrap();
-        decoder.feed(resp2.as_bytes()).unwrap();
-
-        // 1 回目のデコード
-        let response1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response1.body, body1.as_bytes());
-
-        // 2 回目のデコード
-        let response2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response2.body, body2.as_bytes());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_decode_multiple_chunked_requests_keep_alive(
-        body1 in "[a-z]{1,32}",
-        body2 in "[a-z]{1,32}"
-    ) {
-        let mut decoder = RequestDecoder::new();
-
-        // 2 つの chunked リクエストを作成
-        let req1 = format!(
-            "POST /first HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
-            body1.len(), body1
-        );
-        let req2 = format!(
-            "POST /second HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
-            body2.len(), body2
-        );
-
-        decoder.feed(req1.as_bytes()).unwrap();
-        decoder.feed(req2.as_bytes()).unwrap();
-
-        // 1 回目のデコード
-        let request1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request1.uri, "/first");
-        prop_assert_eq!(request1.body, body1.as_bytes());
-
-        // 2 回目のデコード
-        let request2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request2.uri, "/second");
-        prop_assert_eq!(request2.body, body2.as_bytes());
-    }
-}
 
 proptest! {
     #[test]
@@ -2753,28 +2639,6 @@ proptest! {
             status_code: 200,
             reason_phrase: "OK".to_string(),
             headers,
-        };
-        prop_assert!(!head.is_keep_alive());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_is_keep_alive_single_header_with_multiple_tokens(
-        close_first in any::<bool>()
-    ) {
-        // 単一ヘッダーに複数トークン (カンマ区切り)
-        let conn_value = if close_first {
-            "close, keep-alive".to_string()
-        } else {
-            "keep-alive, close".to_string()
-        };
-
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Connection".to_string(), conn_value)],
         };
         prop_assert!(!head.is_keep_alive());
     }

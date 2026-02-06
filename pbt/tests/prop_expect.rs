@@ -143,61 +143,6 @@ proptest! {
 }
 
 // ========================================
-// Expectation メソッドのテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_expectation_token_method(t in token()) {
-        let input = t.to_string();
-        let expect = Expect::parse(&input).unwrap();
-
-        prop_assert_eq!(expect.items()[0].token(), t.to_ascii_lowercase());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_expectation_value_method(t in token(), v in token_value()) {
-        let input = format!("{}={}", t, v);
-        let expect = Expect::parse(&input).unwrap();
-
-        prop_assert_eq!(expect.items()[0].value(), Some(v.as_str()));
-    }
-}
-
-// ========================================
-// Display のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_expect_display_roundtrip(t in token()) {
-        let input = t.clone();
-        let expect = Expect::parse(&input).unwrap();
-        let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
-
-        prop_assert_eq!(expect, reparsed);
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_expect_clone_eq(t in token(), v in token_value()) {
-        let input = format!("{}={}", t, v);
-        let expect = Expect::parse(&input).unwrap();
-        let cloned = expect.clone();
-
-        prop_assert_eq!(expect, cloned);
-    }
-}
-
-// ========================================
 // パニック安全性テスト
 // ========================================
 

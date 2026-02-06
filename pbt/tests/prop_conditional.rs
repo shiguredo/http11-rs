@@ -15,21 +15,6 @@ fn etag_value() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9_-]{1,16}".prop_map(|s| s)
 }
 
-// ETag 文字列 (引用符付き)
-fn strong_etag_str() -> impl Strategy<Value = String> {
-    etag_value().prop_map(|v| format!("\"{}\"", v))
-}
-
-// Weak ETag 文字列
-fn weak_etag_str() -> impl Strategy<Value = String> {
-    etag_value().prop_map(|v| format!("W/\"{}\"", v))
-}
-
-// 任意の ETag 文字列
-fn any_etag_str() -> impl Strategy<Value = String> {
-    prop_oneof![strong_etag_str(), weak_etag_str(),]
-}
-
 // HTTP 日付文字列
 fn http_date_str() -> impl Strategy<Value = String> {
     (
@@ -59,21 +44,6 @@ fn http_date_str() -> impl Strategy<Value = String> {
 // ========================================
 // IfMatch のテスト
 // ========================================
-
-// 単一 ETag のラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_if_match_single_roundtrip(tag in etag_value()) {
-        let input = format!("\"{}\"", tag);
-        let im = IfMatch::parse(&input).unwrap();
-        prop_assert!(!im.is_any());
-
-        let displayed = im.to_string();
-        let reparsed = IfMatch::parse(&displayed).unwrap();
-
-        prop_assert_eq!(im, reparsed);
-    }
-}
 
 // 複数 ETag のラウンドトリップ
 proptest! {
@@ -122,19 +92,6 @@ proptest! {
 // ========================================
 // IfNoneMatch のテスト
 // ========================================
-
-// 単一 ETag のラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_if_none_match_single_roundtrip(tag in etag_value()) {
-        let input = format!("\"{}\"", tag);
-        let inm = IfNoneMatch::parse(&input).unwrap();
-        let displayed = inm.to_string();
-        let reparsed = IfNoneMatch::parse(&displayed).unwrap();
-
-        prop_assert_eq!(inm, reparsed);
-    }
-}
 
 // 複数 ETag のラウンドトリップ
 proptest! {
@@ -301,61 +258,6 @@ proptest! {
         let input = format!("w/\"{}\"", tag);
         // 小文字 w/ は RFC 非準拠のため拒否される
         prop_assert!(IfRange::parse(&input).is_err());
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_if_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
-        let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
-        let list_str = etag_strs.join(", ");
-
-        let im = IfMatch::parse(&list_str).unwrap();
-        let cloned = im.clone();
-        prop_assert_eq!(im, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_if_none_match_clone_eq(tags in proptest::collection::vec(etag_value(), 1..4)) {
-        let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
-        let list_str = etag_strs.join(", ");
-
-        let inm = IfNoneMatch::parse(&list_str).unwrap();
-        let cloned = inm.clone();
-        prop_assert_eq!(inm, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_if_modified_since_clone_eq(date_str in http_date_str()) {
-        let ims = IfModifiedSince::parse(&date_str).unwrap();
-        let cloned = ims.clone();
-        prop_assert_eq!(ims, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_if_unmodified_since_clone_eq(date_str in http_date_str()) {
-        let ius = IfUnmodifiedSince::parse(&date_str).unwrap();
-        let cloned = ius.clone();
-        prop_assert_eq!(ius, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_if_range_clone_eq(etag_str in any_etag_str()) {
-        let ir = IfRange::parse(&etag_str).unwrap();
-        let cloned = ir.clone();
-        prop_assert_eq!(ir, cloned);
     }
 }
 

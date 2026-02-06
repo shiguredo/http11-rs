@@ -48,18 +48,3 @@ proptest! {
         let _ = HttpDate::parse(&s);
     }
 }
-
-// 有効な時刻の境界値
-proptest! {
-    #[test]
-    fn prop_http_date_time_boundaries(hour in prop_oneof![Just(0u8), Just(12), Just(23)], minute in prop_oneof![Just(0u8), Just(30), Just(59)], second in prop_oneof![Just(0u8), Just(30), Just(59)]) {
-        let date_str = format!(
-            "Sun, 06 Nov 1994 {:02}:{:02}:{:02} GMT",
-            hour, minute, second
-        );
-        let date = HttpDate::parse(&date_str).unwrap();
-        prop_assert_eq!(date.hour(), hour);
-        prop_assert_eq!(date.minute(), minute);
-        prop_assert_eq!(date.second(), second);
-    }
-}

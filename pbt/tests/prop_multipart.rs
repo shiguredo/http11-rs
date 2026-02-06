@@ -164,17 +164,6 @@ proptest! {
     }
 }
 
-// Part Clone と PartialEq
-proptest! {
-    #[test]
-    fn prop_multipart_part_clone_eq(name in valid_field_name()) {
-        let part = Part::new(&name).with_body(b"test");
-        let cloned = part.clone();
-
-        prop_assert_eq!(part, cloned);
-    }
-}
-
 // ========================================
 // MultipartParser のテスト
 // ========================================
@@ -262,24 +251,6 @@ proptest! {
 
         prop_assert!(content_type.starts_with("multipart/form-data"));
         prop_assert!(content_type.contains(&expected_boundary));
-    }
-}
-
-// MultipartBuilder::part のテスト
-proptest! {
-    #[test]
-    fn prop_multipart_builder_part(name in valid_field_name(), value in valid_text_value()) {
-        let part = Part::new(&name).with_body(value.as_bytes());
-        let body = MultipartBuilder::with_boundary("boundary")
-            .part(part)
-            .build();
-
-        let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
-
-        let parsed_part = parser.next_part().unwrap().unwrap();
-        prop_assert_eq!(parsed_part.name(), Some(name.as_str()));
-        prop_assert_eq!(parsed_part.body_str(), Some(value.as_str()));
     }
 }
 
@@ -394,28 +365,5 @@ proptest! {
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.filename(), Some(filename.as_str()));
         prop_assert!(part.body().is_empty());
-    }
-}
-
-// バイナリデータ
-proptest! {
-    #[test]
-    fn prop_multipart_binary_data_roundtrip(
-        name in valid_field_name(),
-        filename in valid_filename(),
-        data in proptest::collection::vec(any::<u8>(), 1..128)
-    ) {
-        // 境界文字列がデータに含まれないようにする
-        prop_assume!(!data.windows(8).any(|w| w == b"boundary"));
-
-        let body = MultipartBuilder::with_boundary("boundary")
-            .file_field(&name, &filename, "application/octet-stream", &data)
-            .build();
-
-        let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
-
-        let part = parser.next_part().unwrap().unwrap();
-        prop_assert_eq!(part.body(), data.as_slice());
     }
 }

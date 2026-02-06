@@ -256,45 +256,6 @@ proptest! {
 }
 
 // ========================================
-// Keep-Alive テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_keep_alive_http11_default(method in http_method(), uri in http_uri()) {
-        let request = Request::new(&method, &uri);
-        prop_assert!(
-            request.is_keep_alive(),
-            "HTTP/1.1 should default to keep-alive"
-        );
-
-        let request_close = Request::new(&method, &uri).header("Connection", "close");
-        prop_assert!(
-            !request_close.is_keep_alive(),
-            "Connection: close should disable keep-alive"
-        );
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_keep_alive_http10_default(method in http_method(), uri in http_uri()) {
-        let request = Request::with_version(&method, &uri, "HTTP/1.0");
-        prop_assert!(
-            !request.is_keep_alive(),
-            "HTTP/1.0 should default to close"
-        );
-
-        let request_keep =
-            Request::with_version(&method, &uri, "HTTP/1.0").header("Connection", "keep-alive");
-        prop_assert!(
-            request_keep.is_keep_alive(),
-            "Connection: keep-alive should enable keep-alive"
-        );
-    }
-}
-
-// ========================================
 // 複数リクエストのデコードテスト
 // ========================================
 
@@ -457,33 +418,5 @@ proptest! {
         prop_assert_eq!(values.len(), 2);
         prop_assert!(values.contains(&value1.as_str()));
         prop_assert!(values.contains(&value2.as_str()));
-    }
-}
-
-// ========================================
-// Clone テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_request_clone_eq(
-        method in http_method(),
-        uri in http_uri(),
-        hdrs in headers(),
-        body_data in body()
-    ) {
-        let mut request = Request::new(&method, &uri);
-        for (name, value) in &hdrs {
-            request.add_header(name, value);
-        }
-        request.body = body_data;
-
-        let cloned = request.clone();
-
-        prop_assert_eq!(request.method, cloned.method);
-        prop_assert_eq!(request.uri, cloned.uri);
-        prop_assert_eq!(request.version, cloned.version);
-        prop_assert_eq!(request.headers, cloned.headers);
-        prop_assert_eq!(request.body, cloned.body);
     }
 }

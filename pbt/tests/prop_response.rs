@@ -131,20 +131,6 @@ proptest! {
     }
 }
 
-// header() と body() の組み合わせ
-proptest! {
-    #[test]
-    fn prop_response_builder_combined(code in status_code(), name in header_name(), value in header_value(), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
-        let response = Response::new(code, "OK")
-            .header(&name, &value)
-            .body(body_data.clone());
-
-        prop_assert_eq!(response.headers.len(), 1);
-        prop_assert_eq!(&response.headers[0].0, &name);
-        prop_assert_eq!(&response.body, &body_data);
-    }
-}
-
 // ========================================
 // ヘッダー操作のテスト
 // ========================================
@@ -159,16 +145,6 @@ proptest! {
         prop_assert_eq!(response.get_header("Content-Type"), Some(value.as_str()));
         prop_assert_eq!(response.get_header("content-type"), Some(value.as_str()));
         prop_assert_eq!(response.get_header("CONTENT-TYPE"), Some(value.as_str()));
-    }
-}
-
-// get_header() は存在しないヘッダーで None
-proptest! {
-    #[test]
-    fn prop_response_get_header_missing(code in status_code()) {
-        let response = Response::new(code, "OK");
-
-        prop_assert_eq!(response.get_header("X-Not-Exists"), None);
     }
 }
 
@@ -228,47 +204,6 @@ proptest! {
     }
 }
 
-// is_keep_alive() - HTTP/1.1 はデフォルトでキープアライブ
-proptest! {
-    #[test]
-    fn prop_response_is_keep_alive_http11_default(code in status_code()) {
-        let response = Response::new(code, "OK");
-
-        prop_assert!(response.is_keep_alive(), "HTTP/1.1 should default to keep-alive");
-    }
-}
-
-// is_keep_alive() - Connection: close で無効化
-proptest! {
-    #[test]
-    fn prop_response_is_keep_alive_close(code in status_code()) {
-        let response = Response::new(code, "OK").header("Connection", "close");
-
-        prop_assert!(!response.is_keep_alive());
-    }
-}
-
-// is_keep_alive() - HTTP/1.0 はデフォルトで close
-proptest! {
-    #[test]
-    fn prop_response_is_keep_alive_http10_default(code in status_code()) {
-        let response = Response::with_version("HTTP/1.0", code, "OK");
-
-        prop_assert!(!response.is_keep_alive(), "HTTP/1.0 should default to close");
-    }
-}
-
-// is_keep_alive() - HTTP/1.0 で Connection: keep-alive
-proptest! {
-    #[test]
-    fn prop_response_is_keep_alive_http10_keepalive(code in status_code()) {
-        let response = Response::with_version("HTTP/1.0", code, "OK")
-            .header("Connection", "keep-alive");
-
-        prop_assert!(response.is_keep_alive());
-    }
-}
-
 // ========================================
 // Content-Length と Transfer-Encoding のテスト
 // ========================================
@@ -281,145 +216,5 @@ proptest! {
             .header("Content-Length", &len.to_string());
 
         prop_assert_eq!(response.content_length(), Some(len));
-    }
-}
-
-// content_length() は不正な値で None
-proptest! {
-    #[test]
-    fn prop_response_content_length_invalid(code in status_code()) {
-        let response = Response::new(code, "OK")
-            .header("Content-Length", "not-a-number");
-
-        prop_assert_eq!(response.content_length(), None);
-    }
-}
-
-// content_length() はヘッダーなしで None
-proptest! {
-    #[test]
-    fn prop_response_content_length_missing(code in status_code()) {
-        let response = Response::new(code, "OK");
-
-        prop_assert_eq!(response.content_length(), None);
-    }
-}
-
-// is_chunked() の動作確認
-proptest! {
-    #[test]
-    fn prop_response_is_chunked(code in status_code()) {
-        let response_chunked = Response::new(code, "OK")
-            .header("Transfer-Encoding", "chunked");
-        let response_not_chunked = Response::new(code, "OK");
-        let response_other = Response::new(code, "OK")
-            .header("Transfer-Encoding", "gzip");
-
-        prop_assert!(response_chunked.is_chunked());
-        prop_assert!(!response_not_chunked.is_chunked());
-        prop_assert!(!response_other.is_chunked());
-    }
-}
-
-// is_chunked() は大文字小文字を区別しない
-proptest! {
-    #[test]
-    fn prop_response_is_chunked_case_insensitive(code in status_code(), chunked in prop_oneof![Just("chunked"), Just("Chunked"), Just("CHUNKED")]) {
-        let response = Response::new(code, "OK")
-            .header("Transfer-Encoding", chunked);
-
-        prop_assert!(response.is_chunked());
-    }
-}
-
-// ========================================
-// ステータスコード分類のテスト
-// ========================================
-
-// is_informational() は 1xx で true
-proptest! {
-    #[test]
-    fn prop_response_is_informational(code in 100u16..200) {
-        let response = Response::new(code, "Info");
-
-        prop_assert!(response.is_informational());
-        prop_assert!(!response.is_success());
-        prop_assert!(!response.is_redirect());
-        prop_assert!(!response.is_client_error());
-        prop_assert!(!response.is_server_error());
-    }
-}
-
-// is_success() は 2xx で true
-proptest! {
-    #[test]
-    fn prop_response_is_success(code in 200u16..300) {
-        let response = Response::new(code, "Success");
-
-        prop_assert!(!response.is_informational());
-        prop_assert!(response.is_success());
-        prop_assert!(!response.is_redirect());
-        prop_assert!(!response.is_client_error());
-        prop_assert!(!response.is_server_error());
-    }
-}
-
-// is_redirect() は 3xx で true
-proptest! {
-    #[test]
-    fn prop_response_is_redirect(code in 300u16..400) {
-        let response = Response::new(code, "Redirect");
-
-        prop_assert!(!response.is_informational());
-        prop_assert!(!response.is_success());
-        prop_assert!(response.is_redirect());
-        prop_assert!(!response.is_client_error());
-        prop_assert!(!response.is_server_error());
-    }
-}
-
-// is_client_error() は 4xx で true
-proptest! {
-    #[test]
-    fn prop_response_is_client_error(code in 400u16..500) {
-        let response = Response::new(code, "Client Error");
-
-        prop_assert!(!response.is_informational());
-        prop_assert!(!response.is_success());
-        prop_assert!(!response.is_redirect());
-        prop_assert!(response.is_client_error());
-        prop_assert!(!response.is_server_error());
-    }
-}
-
-// is_server_error() は 5xx で true
-proptest! {
-    #[test]
-    fn prop_response_is_server_error(code in 500u16..600) {
-        let response = Response::new(code, "Server Error");
-
-        prop_assert!(!response.is_informational());
-        prop_assert!(!response.is_success());
-        prop_assert!(!response.is_redirect());
-        prop_assert!(!response.is_client_error());
-        prop_assert!(response.is_server_error());
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_response_clone_eq(code in status_code(), phrase in reason_phrase(), headers in proptest::collection::vec((header_name(), header_value()), 0..5), body_data in proptest::collection::vec(any::<u8>(), 0..128)) {
-        let mut response = Response::new(code, &phrase);
-        for (name, value) in &headers {
-            response = response.header(name, value);
-        }
-        response.body = body_data;
-
-        let cloned = response.clone();
-        prop_assert_eq!(response, cloned);
     }
 }

@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 use shiguredo_http11::auth::{
     AuthChallenge, Authorization, BasicAuth, BearerChallenge, BearerToken, DigestAuth,
-    DigestChallenge, ProxyAuthenticate, ProxyAuthorization, WwwAuthenticate,
+    DigestChallenge, ProxyAuthenticate, ProxyAuthorization,
 };
 
 // ========================================
@@ -52,17 +52,6 @@ proptest! {
     }
 }
 
-// BearerToken Display
-proptest! {
-    #[test]
-    fn prop_bearer_token_display(token in token68_string(1, 32)) {
-        let bearer = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
-        let display = bearer.to_string();
-
-        prop_assert_eq!(display, format!("Bearer {}", token));
-    }
-}
-
 // 大文字小文字を区別しない
 proptest! {
     #[test]
@@ -95,18 +84,6 @@ proptest! {
 
         prop_assert_eq!(challenge.param("realm"), Some(realm.as_str()));
         prop_assert_eq!(challenge.param("error"), Some(error));
-    }
-}
-
-// BearerChallenge Display
-proptest! {
-    #[test]
-    fn prop_bearer_challenge_display(realm in param_value()) {
-        let header = format!("Bearer realm=\"{}\"", realm);
-        let challenge = BearerChallenge::parse(&header).unwrap();
-        let display = challenge.to_string();
-
-        prop_assert!(display.starts_with("Bearer "));
     }
 }
 
@@ -147,27 +124,6 @@ proptest! {
         // to_header_value で再エンコードできる
         let header_value = auth.to_header_value();
         prop_assert!(header_value.starts_with("Digest "));
-    }
-}
-
-// DigestAuth Display
-proptest! {
-    #[test]
-    fn prop_digest_auth_display(
-        username in param_value(),
-        realm in param_value(),
-        nonce in param_value(),
-        uri in "/[a-z]{1,8}",
-        response in "[a-f0-9]{32}"
-    ) {
-        let header = format!(
-            "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
-            username, realm, nonce, uri, response
-        );
-        let auth = DigestAuth::parse(&header).unwrap();
-        let display = auth.to_string();
-
-        prop_assert!(display.starts_with("Digest "));
     }
 }
 
@@ -217,18 +173,6 @@ proptest! {
         // to_header_value で再エンコードできる
         let header_value = challenge.to_header_value();
         prop_assert!(header_value.starts_with("Digest "));
-    }
-}
-
-// DigestChallenge Display
-proptest! {
-    #[test]
-    fn prop_digest_challenge_display(realm in param_value(), nonce in param_value()) {
-        let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
-        let challenge = DigestChallenge::parse(&header).unwrap();
-        let display = challenge.to_string();
-
-        prop_assert!(display.starts_with("Digest "));
     }
 }
 
@@ -308,18 +252,6 @@ proptest! {
     }
 }
 
-// Authorization Display
-proptest! {
-    #[test]
-    fn prop_authorization_display(token in token68_string(1, 32)) {
-        let header = format!("Bearer {}", token);
-        let parsed = Authorization::parse(&header).unwrap();
-        let display = parsed.to_string();
-
-        prop_assert_eq!(display, format!("Bearer {}", token));
-    }
-}
-
 // 任意の文字列で Authorization パースがパニックしない
 proptest! {
     #[test]
@@ -390,18 +322,6 @@ proptest! {
     }
 }
 
-// AuthChallenge Display
-proptest! {
-    #[test]
-    fn prop_auth_challenge_display(realm in param_value()) {
-        let header = format!("Basic realm=\"{}\"", realm);
-        let parsed = AuthChallenge::parse(&header).unwrap();
-        let display = parsed.to_string();
-
-        prop_assert!(display.starts_with("Basic "));
-    }
-}
-
 // 任意の文字列で AuthChallenge パースがパニックしない
 proptest! {
     #[test]
@@ -432,18 +352,6 @@ proptest! {
         // to_header_value
         let header_value = proxy_auth.to_header_value();
         prop_assert!(header_value.starts_with("Basic "));
-    }
-}
-
-// ProxyAuthorization Display
-proptest! {
-    #[test]
-    fn prop_proxy_authorization_display(token in token68_string(1, 32)) {
-        let header = format!("Bearer {}", token);
-        let proxy_auth = ProxyAuthorization::parse(&header).unwrap();
-        let display = proxy_auth.to_string();
-
-        prop_assert_eq!(display, format!("Bearer {}", token));
     }
 }
 
@@ -478,50 +386,10 @@ proptest! {
     }
 }
 
-// ProxyAuthenticate Display
-proptest! {
-    #[test]
-    fn prop_proxy_authenticate_display(realm in param_value()) {
-        let header = format!("Basic realm=\"{}\"", realm);
-        let proxy_auth = ProxyAuthenticate::parse(&header).unwrap();
-        let display = proxy_auth.to_string();
-
-        prop_assert!(display.starts_with("Basic "));
-    }
-}
-
 // 任意の文字列で ProxyAuthenticate パースがパニックしない
 proptest! {
     #[test]
     fn prop_proxy_authenticate_parse_no_panic(s in "[ -~]{0,128}") {
         let _ = ProxyAuthenticate::parse(&s);
-    }
-}
-
-// ========================================
-// BasicAuth / WwwAuthenticate 追加テスト
-// ========================================
-
-// BasicAuth Display
-proptest! {
-    #[test]
-    fn prop_basic_auth_display(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
-        let auth = BasicAuth::new(&username, &password);
-        let display = auth.to_string();
-
-        prop_assert!(display.starts_with("Basic "));
-        prop_assert_eq!(display, auth.to_header_value());
-    }
-}
-
-// WwwAuthenticate to_header_value
-proptest! {
-    #[test]
-    fn prop_www_authenticate_to_header_value(realm in param_value()) {
-        let auth = WwwAuthenticate::basic(&realm);
-        let header_value = auth.to_header_value();
-        let display = auth.to_string();
-
-        prop_assert_eq!(header_value, display);
     }
 }

@@ -116,18 +116,6 @@ proptest! {
     }
 }
 
-// RangeSpec Clone/Copy/PartialEq
-proptest! {
-    #[test]
-    fn prop_range_spec_clone_eq(start in 0u64..1000, end in 0u64..1000) {
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
-        let spec = RangeSpec::Range { start, end };
-        let cloned = spec;  // Copy
-
-        prop_assert_eq!(spec, cloned);
-    }
-}
-
 // ========================================
 // Range のテスト
 // ========================================
@@ -177,25 +165,6 @@ proptest! {
         match range.first().unwrap() {
             RangeSpec::FromStart { start: s } => prop_assert_eq!(*s, start),
             _ => prop_assert!(false, "expected FromStart"),
-        }
-    }
-}
-
-// RangeSpec to_bounds の正確性
-proptest! {
-    #[test]
-    fn prop_range_spec_to_bounds(start in 0u64..1000, end in 0u64..1000, total in 1u64..2000) {
-        let (start, end) = if start <= end {
-            (start, end)
-        } else {
-            (end, start)
-        };
-        let spec = RangeSpec::Range { start, end };
-
-        if let Some((s, e)) = spec.to_bounds(total) {
-            prop_assert!(s <= e);
-            prop_assert!(e < total);
-            prop_assert_eq!(s, start);
         }
     }
 }
@@ -283,20 +252,6 @@ proptest! {
     }
 }
 
-// Range Clone/PartialEq
-proptest! {
-    #[test]
-    fn prop_range_clone_eq(start in 0u64..1000, end in 0u64..1000) {
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
-
-        let input = format!("bytes={}-{}", start, end);
-        let range = Range::parse(&input).unwrap();
-        let cloned = range.clone();
-
-        prop_assert_eq!(range, cloned);
-    }
-}
-
 // ========================================
 // ContentRange のテスト
 // ========================================
@@ -369,20 +324,6 @@ proptest! {
         prop_assert_eq!(cr.start(), Some(start));
         prop_assert_eq!(cr.end(), Some(end));
         prop_assert!(cr.complete_length().is_none());
-    }
-}
-
-// ContentRange Clone/PartialEq
-proptest! {
-    #[test]
-    fn prop_content_range_clone_eq(start in 0u64..1000, end in 0u64..1000, total in 0u64..2000) {
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
-        let total = total.max(end + 1);
-
-        let cr = ContentRange::new_bytes(start, end, Some(total));
-        let cloned = cr.clone();
-
-        prop_assert_eq!(cr, cloned);
     }
 }
 

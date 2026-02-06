@@ -12,18 +12,6 @@ fn disposition_type_str() -> impl Strategy<Value = &'static str> {
     prop_oneof![Just("inline"), Just("attachment"), Just("form-data"),]
 }
 
-// 大文字小文字混在の disposition-type
-fn mixed_case_disposition_type() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("INLINE".to_string()),
-        Just("Inline".to_string()),
-        Just("ATTACHMENT".to_string()),
-        Just("Attachment".to_string()),
-        Just("FORM-DATA".to_string()),
-        Just("Form-Data".to_string()),
-    ]
-}
-
 // 引用符内で使える文字 (qdtext)
 fn qdtext_char() -> impl Strategy<Value = char> {
     prop_oneof![
@@ -128,18 +116,6 @@ proptest! {
         // Display で正規化される
         let display = cd.to_string();
         prop_assert_eq!(display, dtype);
-    }
-}
-
-// 大文字小文字混在のパース
-proptest! {
-    #[test]
-    fn prop_content_disposition_case_insensitive(dtype in mixed_case_disposition_type()) {
-        let cd = ContentDisposition::parse(&dtype).unwrap();
-
-        // Display は小文字に正規化される
-        let display = cd.to_string();
-        prop_assert_eq!(display, dtype.to_lowercase());
     }
 }
 
@@ -396,55 +372,6 @@ proptest! {
 
         prop_assert!(display.starts_with("attachment"));
         prop_assert!(display.contains("filename*=UTF-8''"));
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_disposition_clone_eq(
-        dtype in disposition_type_str(),
-        filename in prop::option::of(ascii_filename()),
-        name in prop::option::of(ascii_filename())
-    ) {
-        let mut cd = ContentDisposition::new(match dtype {
-            "inline" => DispositionType::Inline,
-            "attachment" => DispositionType::Attachment,
-            "form-data" => DispositionType::FormData,
-            _ => unreachable!(),
-        });
-
-        if let Some(f) = &filename {
-            cd = cd.with_filename(f);
-        }
-        if let Some(n) = &name {
-            cd = cd.with_name(n);
-        }
-
-        let cloned = cd.clone();
-        prop_assert_eq!(cd, cloned);
-    }
-}
-
-// ========================================
-// is_* ヘルパーメソッドのテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_disposition_type_helpers(dtype in prop_oneof![
-        Just(DispositionType::Inline),
-        Just(DispositionType::Attachment),
-        Just(DispositionType::FormData)
-    ]) {
-        let cd = ContentDisposition::new(dtype.clone());
-
-        prop_assert_eq!(cd.is_inline(), dtype == DispositionType::Inline);
-        prop_assert_eq!(cd.is_attachment(), dtype == DispositionType::Attachment);
-        prop_assert_eq!(cd.is_form_data(), dtype == DispositionType::FormData);
     }
 }
 

@@ -159,25 +159,6 @@ proptest! {
 }
 
 // ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_host_clone_eq(name in hostname(), port in prop::option::of(valid_port())) {
-        let input = if let Some(p) = port {
-            format!("{}:{}", name, p)
-        } else {
-            name.clone()
-        };
-        let host = Host::parse(&input).unwrap();
-        let cloned = host.clone();
-
-        prop_assert_eq!(host, cloned);
-    }
-}
-
-// ========================================
 // no_panic テスト
 // ========================================
 

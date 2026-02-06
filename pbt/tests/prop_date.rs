@@ -104,14 +104,6 @@ fn normal_second() -> impl Strategy<Value = u8> {
     0u8..=59u8
 }
 
-proptest! {
-    #[test]
-    fn prop_day_of_week_clone_eq(dow in day_of_week()) {
-        let cloned = dow;
-        prop_assert_eq!(dow, cloned);
-    }
-}
-
 // ========================================
 // IMF-fixdate 形式のテスト
 // ========================================
@@ -139,34 +131,6 @@ proptest! {
         prop_assert_eq!(date.minute(), reparsed.minute());
         prop_assert_eq!(date.second(), reparsed.second());
         prop_assert_eq!(date.day_of_week(), reparsed.day_of_week());
-    }
-}
-
-// IMF-fixdate パース
-proptest! {
-    #[test]
-    fn prop_http_date_parse_imf_fixdate(
-        dow_name in day_name_short(),
-        day in valid_day(),
-        month_str in month_name(),
-        year in 1900u16..=2100u16,
-        hour in valid_hour(),
-        minute in valid_minute(),
-        second in normal_second()
-    ) {
-        let date_str = format!(
-            "{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT",
-            dow_name, day, month_str, year, hour, minute, second
-        );
-        let result = HttpDate::parse(&date_str);
-        prop_assert!(result.is_ok());
-
-        let date = result.unwrap();
-        prop_assert_eq!(date.day(), day);
-        prop_assert_eq!(date.year(), year);
-        prop_assert_eq!(date.hour(), hour);
-        prop_assert_eq!(date.minute(), minute);
-        prop_assert_eq!(date.second(), second);
     }
 }
 
@@ -202,9 +166,7 @@ proptest! {
 }
 
 // RFC 850 2桁年の変換 (RFC 9110 Section 5.6.7)
-// 注意: この関数は現在の年に依存するため、テストは現在の年に基づいて
-// 期待値を計算する必要がある。
-// RFC 9110: 50年以上未来に見える場合は100年引く
+// 実装と同じロジックで期待値を計算し、パース結果を検証する
 proptest! {
     #[test]
     fn prop_http_date_rfc850_year_conversion(
@@ -215,15 +177,26 @@ proptest! {
             year
         );
         let date = HttpDate::parse(&date_str).unwrap();
-
-        // RFC 9110 Section 5.6.7:
-        // 50年以上未来に見える場合は100年引く
-        // 現在の年は実行時に決まるため、期待値も動的に計算する
-        // この PBT では、パースが成功することと年が妥当な範囲にあることのみ確認
-        // (具体的な期待値の検証は date.rs のユニットテストで行う)
         let parsed_year = date.year();
-        // 年は 1900-2100 の範囲内であるべき
-        prop_assert!((1900..=2100).contains(&parsed_year));
+
+        // 実装と同じロジックで期待値を計算する (RFC 9110 Section 5.6.7)
+        // current_year() は SystemTime から取得される
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let years_since_1970 = now.as_secs() / 31_557_600;
+        let current = (1970 + years_since_1970) as u16;
+        let current_century = (current / 100) * 100;
+        let candidate = current_century + year as u16;
+
+        // RFC 9110: 50 年以上未来に見える場合は 100 年引く
+        let expected_year = if candidate > current + 50 {
+            candidate - 100
+        } else {
+            candidate
+        };
+
+        prop_assert_eq!(parsed_year, expected_year);
     }
 }
 
@@ -363,52 +336,6 @@ proptest! {
 }
 
 // ========================================
-// Display のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_http_date_display_format(
-        dow in day_of_week(),
-        day in valid_day(),
-        month in valid_month(),
-        year in 1900u16..=2100u16,
-        hour in valid_hour(),
-        minute in valid_minute(),
-        second in normal_second()
-    ) {
-        let date = HttpDate::new(dow, day, month, year, hour, minute, second).unwrap();
-        let displayed = date.to_string();
-
-        // IMF-fixdate 形式であることを確認
-        prop_assert!(displayed.contains(", "));
-        prop_assert!(displayed.ends_with(" GMT"));
-        prop_assert!(displayed.contains(dow.short_name()));
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_http_date_clone_eq(
-        dow in day_of_week(),
-        day in valid_day(),
-        month in valid_month(),
-        year in valid_year(),
-        hour in valid_hour(),
-        minute in valid_minute(),
-        second in valid_second()
-    ) {
-        let date = HttpDate::new(dow, day, month, year, hour, minute, second).unwrap();
-        let cloned = date.clone();
-        prop_assert_eq!(date, cloned);
-    }
-}
-
-// ========================================
 // 空白処理のテスト
 // ========================================
 
@@ -429,19 +356,19 @@ proptest! {
         );
         let result = HttpDate::parse(&date_str);
         prop_assert!(result.is_ok());
+
+        let date = result.unwrap();
+        prop_assert_eq!(date.day(), day);
+        prop_assert_eq!(date.year(), year);
+        prop_assert_eq!(date.hour(), hour);
+        prop_assert_eq!(date.minute(), minute);
+        prop_assert_eq!(date.second(), second);
     }
 }
 
 // ========================================
 // no_panic テスト
 // ========================================
-
-proptest! {
-    #[test]
-    fn prop_http_date_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = HttpDate::parse(&s);
-    }
-}
 
 proptest! {
     #[test]

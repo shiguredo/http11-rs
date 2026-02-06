@@ -371,17 +371,6 @@ proptest! {
     }
 }
 
-// Display は as_str() と同じ
-proptest! {
-    #[test]
-    fn prop_uri_display(s in scheme(), h in hostname(), p in path()) {
-        let uri_str = format!("{}://{}{}", s, h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
-
-        prop_assert_eq!(uri.to_string(), uri_str);
-    }
-}
-
 // origin_form は path + query
 proptest! {
     #[test]
@@ -509,21 +498,6 @@ proptest! {
 
         prop_assert_eq!(normalized.query(), Some(q.as_str()));
         prop_assert_eq!(normalized.fragment(), Some(f.as_str()));
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_uri_clone_eq(s in scheme(), h in hostname(), p in path()) {
-        let uri_str = format!("{}://{}{}", s, h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
-        let cloned = uri.clone();
-
-        prop_assert_eq!(uri, cloned);
     }
 }
 

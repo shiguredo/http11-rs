@@ -23,11 +23,6 @@ fn http_method() -> impl Strategy<Value = &'static str> {
     ]
 }
 
-// HTTP バージョン
-fn http_version() -> impl Strategy<Value = &'static str> {
-    prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1"),]
-}
-
 // URI
 fn uri() -> impl Strategy<Value = String> {
     prop_oneof![
@@ -107,55 +102,6 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 
 proptest! {
     #[test]
-    fn prop_request_new_with_method_and_uri(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
-        prop_assert_eq!(req.method, method);
-        prop_assert_eq!(req.uri, uri);
-        prop_assert_eq!(req.version, "HTTP/1.1");
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_request_with_version(method in http_method(), uri in uri(), version in http_version()) {
-        let req = Request::with_version(method, &uri, version);
-        prop_assert_eq!(req.method, method);
-        prop_assert_eq!(req.uri, uri);
-        prop_assert_eq!(req.version, version);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_request_header_builder(name in header_name(), value in header_value()) {
-        let req = Request::new("GET", "/").header(&name, &value);
-        prop_assert_eq!(req.headers.len(), 1);
-        prop_assert_eq!(&req.headers[0].0, &name);
-        prop_assert_eq!(&req.headers[0].1, &value);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_request_body_builder(data in body()) {
-        let req = Request::new("POST", "/").body(data.clone());
-        prop_assert_eq!(req.body, data);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_request_add_header(name in header_name(), value in header_value()) {
-        let mut req = Request::new("GET", "/");
-        req.add_header(&name, &value);
-        prop_assert_eq!(req.headers.len(), 1);
-        prop_assert_eq!(&req.headers[0].0, &name);
-        prop_assert_eq!(&req.headers[0].1, &value);
-    }
-}
-
-proptest! {
-    #[test]
     fn prop_request_get_header(name in header_name(), value in header_value()) {
         let req = Request::new("GET", "/").header(&name, &value);
         prop_assert_eq!(req.get_header(&name), Some(value.as_str()));
@@ -175,67 +121,9 @@ proptest! {
     }
 }
 
-proptest! {
-    #[test]
-    fn prop_request_clone_eq(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
-        let cloned = req.clone();
-        prop_assert_eq!(req, cloned);
-    }
-}
-
 // ========================================
 // Response のテスト
 // ========================================
-
-proptest! {
-    #[test]
-    fn prop_response_new_with_status(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
-        prop_assert_eq!(res.status_code, status);
-        prop_assert_eq!(res.reason_phrase, phrase);
-        prop_assert_eq!(res.version, "HTTP/1.1");
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_with_version(version in http_version(), status in status_code(), phrase in reason_phrase()) {
-        let res = Response::with_version(version, status, phrase);
-        prop_assert_eq!(res.version, version);
-        prop_assert_eq!(res.status_code, status);
-        prop_assert_eq!(res.reason_phrase, phrase);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_header_builder(name in header_name(), value in header_value()) {
-        let res = Response::new(200, "OK").header(&name, &value);
-        prop_assert_eq!(res.headers.len(), 1);
-        prop_assert_eq!(&res.headers[0].0, &name);
-        prop_assert_eq!(&res.headers[0].1, &value);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_body_builder(data in body()) {
-        let res = Response::new(200, "OK").body(data.clone());
-        prop_assert_eq!(res.body, data);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_add_header(name in header_name(), value in header_value()) {
-        let mut res = Response::new(200, "OK");
-        res.add_header(&name, &value);
-        prop_assert_eq!(res.headers.len(), 1);
-        prop_assert_eq!(&res.headers[0].0, &name);
-        prop_assert_eq!(&res.headers[0].1, &value);
-    }
-}
 
 proptest! {
     #[test]
@@ -255,15 +143,6 @@ proptest! {
         prop_assert!(res.has_header(&name.to_uppercase()));
         prop_assert!(res.has_header(&name.to_lowercase()));
         prop_assert!(!res.has_header("NonExistent"));
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_clone_eq(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
-        let cloned = res.clone();
-        prop_assert_eq!(res, cloned);
     }
 }
 
@@ -509,43 +388,6 @@ proptest! {
 }
 
 // ========================================
-// Request::encode / Response::encode のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_request_encode_method(method in http_method(), uri in uri()) {
-        // HTTP/1.1 には Host ヘッダーが必須
-        let req = Request::new(method, &uri).header("Host", "example.com");
-        let encoded = req.encode();
-        prop_assert_eq!(encoded, encode_request(&req).unwrap());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_encode_method(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
-        let encoded = res.encode();
-        prop_assert_eq!(encoded, encode_response(&res).unwrap());
-    }
-}
-
-// ========================================
-// Request::encode_headers / Response::encode_headers のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_request_encode_headers_method(method in http_method(), uri in uri()) {
-        // HTTP/1.1 には Host ヘッダーが必須
-        let req = Request::new(method, &uri).header("Host", "example.com");
-        let encoded = req.encode_headers();
-        prop_assert_eq!(encoded, encode_request_headers(&req).unwrap());
-    }
-}
-
-// ========================================
 // Host 必須チェックのテスト (RFC 9112 Section 3.2)
 // ========================================
 
@@ -566,15 +408,6 @@ proptest! {
         let req = Request::with_version(method, &uri, "HTTP/1.0");
         let result = encode_request(&req);
         prop_assert!(result.is_ok());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_response_encode_headers_method(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
-        let encoded = res.encode_headers();
-        prop_assert_eq!(encoded, encode_response_headers(&res).unwrap());
     }
 }
 
@@ -638,110 +471,6 @@ proptest! {
             other => {
                 prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
             }
-        }
-    }
-}
-
-// ========================================
-// CRLF/NUL インジェクション拒否テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_encode_request_crlf_in_method(uri in uri()) {
-        // メソッドに CRLF を含む場合はエラー
-        for method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
-            let req = Request::new(method, &uri).header("Host", "example.com");
-            let result = encode_request(&req);
-            prop_assert!(result.is_err(), "CRLF in method should be rejected: {:?}", method);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_request_crlf_in_uri(method in http_method()) {
-        // URI に CRLF を含む場合はエラー
-        for uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
-            let req = Request::new(method, uri).header("Host", "example.com");
-            let result = encode_request(&req);
-            prop_assert!(result.is_err(), "CRLF in URI should be rejected: {:?}", uri);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_request_crlf_in_header_name(method in http_method(), uri in uri()) {
-        // ヘッダー名に CRLF を含む場合はエラー
-        for name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
-            let req = Request::new(method, &uri)
-                .header("Host", "example.com")
-                .header(name, "value");
-            let result = encode_request(&req);
-            prop_assert!(result.is_err(), "CRLF in header name should be rejected: {:?}", name);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_request_crlf_in_header_value(method in http_method(), uri in uri()) {
-        // ヘッダー値に CRLF を含む場合はエラー
-        for value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
-            let req = Request::new(method, &uri)
-                .header("Host", "example.com")
-                .header("X-Test", value);
-            let result = encode_request(&req);
-            prop_assert!(result.is_err(), "CRLF in header value should be rejected: {:?}", value);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_request_nul_in_header_value(method in http_method(), uri in uri()) {
-        // ヘッダー値に NUL を含む場合はエラー
-        let req = Request::new(method, &uri)
-            .header("Host", "example.com")
-            .header("X-Test", "evil\0value");
-        let result = encode_request(&req);
-        prop_assert!(result.is_err(), "NUL in header value should be rejected");
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_response_crlf_in_reason_phrase(status in status_code()) {
-        // reason-phrase に CRLF を含む場合はエラー
-        for phrase in &["OK\r\nEvil: header", "OK\n", "OK\r"] {
-            let res = Response::new(status, phrase);
-            let result = encode_response(&res);
-            prop_assert!(result.is_err(), "CRLF in reason-phrase should be rejected: {:?}", phrase);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_response_crlf_in_header_name(status in status_code(), phrase in reason_phrase()) {
-        // レスポンスでもヘッダー名に CRLF を含む場合はエラー
-        for name in &["Evil\r\nHeader", "Evil\nHeader"] {
-            let res = Response::new(status, phrase).header(name, "value");
-            let result = encode_response(&res);
-            prop_assert!(result.is_err(), "CRLF in response header name should be rejected: {:?}", name);
-        }
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_encode_response_crlf_in_header_value(status in status_code(), phrase in reason_phrase()) {
-        // レスポンスでもヘッダー値に CRLF を含む場合はエラー
-        for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
-            let res = Response::new(status, phrase).header("X-Test", value);
-            let result = encode_response(&res);
-            prop_assert!(result.is_err(), "CRLF in response header value should be rejected: {:?}", value);
         }
     }
 }

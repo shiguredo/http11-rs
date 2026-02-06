@@ -86,10 +86,11 @@ proptest! {
     #[test]
     fn prop_content_location_absolute_uri_roundtrip(uri in absolute_uri()) {
         let cl = ContentLocation::parse(&uri).unwrap();
-        let _display = cl.to_string();
+        let display = cl.to_string();
 
-        // URI が正しくパースされる
-        prop_assert!(cl.uri().as_str().starts_with("http") || cl.uri().as_str().starts_with("ftp") || cl.uri().as_str().starts_with("file"));
+        // Display した結果を再パースして path() が一致することを検証
+        let reparsed = ContentLocation::parse(&display).unwrap();
+        prop_assert_eq!(cl.uri().path(), reparsed.uri().path());
     }
 }
 
@@ -182,20 +183,6 @@ proptest! {
         // Display 結果を再パースできる
         let reparsed = ContentLocation::parse(&display);
         prop_assert!(reparsed.is_ok());
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_location_clone_eq(uri in valid_uri()) {
-        let cl = ContentLocation::parse(&uri).unwrap();
-        let cloned = cl.clone();
-
-        prop_assert_eq!(cl, cloned);
     }
 }
 

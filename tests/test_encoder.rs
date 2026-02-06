@@ -709,6 +709,118 @@ fn test_encode_request_empty_host_ok() {
 }
 
 // ========================================
+// CRLF/NUL インジェクション拒否テスト
+// ========================================
+
+#[test]
+fn test_encode_request_crlf_in_method() {
+    // メソッドに CRLF を含む場合はエラー
+    for method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
+        let req = Request::new(method, "/").header("Host", "example.com");
+        let result = encode_request(&req);
+        assert!(
+            result.is_err(),
+            "CRLF in method should be rejected: {:?}",
+            method
+        );
+    }
+}
+
+#[test]
+fn test_encode_request_crlf_in_uri() {
+    // URI に CRLF を含む場合はエラー
+    for uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
+        let req = Request::new("GET", uri).header("Host", "example.com");
+        let result = encode_request(&req);
+        assert!(result.is_err(), "CRLF in URI should be rejected: {:?}", uri);
+    }
+}
+
+#[test]
+fn test_encode_request_crlf_in_header_name() {
+    // ヘッダー名に CRLF を含む場合はエラー
+    for name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
+        let req = Request::new("GET", "/")
+            .header("Host", "example.com")
+            .header(name, "value");
+        let result = encode_request(&req);
+        assert!(
+            result.is_err(),
+            "CRLF in header name should be rejected: {:?}",
+            name
+        );
+    }
+}
+
+#[test]
+fn test_encode_request_crlf_in_header_value() {
+    // ヘッダー値に CRLF を含む場合はエラー
+    for value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
+        let req = Request::new("GET", "/")
+            .header("Host", "example.com")
+            .header("X-Test", value);
+        let result = encode_request(&req);
+        assert!(
+            result.is_err(),
+            "CRLF in header value should be rejected: {:?}",
+            value
+        );
+    }
+}
+
+#[test]
+fn test_encode_request_nul_in_header_value() {
+    // ヘッダー値に NUL を含む場合はエラー
+    let req = Request::new("GET", "/")
+        .header("Host", "example.com")
+        .header("X-Test", "evil\0value");
+    let result = encode_request(&req);
+    assert!(result.is_err(), "NUL in header value should be rejected");
+}
+
+#[test]
+fn test_encode_response_crlf_in_reason_phrase() {
+    // reason-phrase に CRLF を含む場合はエラー
+    for phrase in &["OK\r\nEvil: header", "OK\n", "OK\r"] {
+        let res = Response::new(200, phrase);
+        let result = encode_response(&res);
+        assert!(
+            result.is_err(),
+            "CRLF in reason-phrase should be rejected: {:?}",
+            phrase
+        );
+    }
+}
+
+#[test]
+fn test_encode_response_crlf_in_header_name() {
+    // レスポンスでもヘッダー名に CRLF を含む場合はエラー
+    for name in &["Evil\r\nHeader", "Evil\nHeader"] {
+        let res = Response::new(200, "OK").header(name, "value");
+        let result = encode_response(&res);
+        assert!(
+            result.is_err(),
+            "CRLF in response header name should be rejected: {:?}",
+            name
+        );
+    }
+}
+
+#[test]
+fn test_encode_response_crlf_in_header_value() {
+    // レスポンスでもヘッダー値に CRLF を含む場合はエラー
+    for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
+        let res = Response::new(200, "OK").header("X-Test", value);
+        let result = encode_response(&res);
+        assert!(
+            result.is_err(),
+            "CRLF in response header value should be rejected: {:?}",
+            value
+        );
+    }
+}
+
+// ========================================
 // userinfo 除外テスト (RFC 9112 Section 3.2)
 // ========================================
 

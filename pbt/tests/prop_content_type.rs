@@ -13,54 +13,6 @@ fn valid_token() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9!#$%&'*+.^_`|~-]{1,8}".prop_map(|s| s)
 }
 
-// メディアタイプ (一般的なもの)
-fn common_media_type() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("text"),
-        Just("application"),
-        Just("image"),
-        Just("audio"),
-        Just("video"),
-        Just("multipart"),
-        Just("message"),
-        Just("font"),
-    ]
-}
-
-// サブタイプ (一般的なもの)
-fn common_subtype() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("plain"),
-        Just("html"),
-        Just("json"),
-        Just("xml"),
-        Just("javascript"),
-        Just("css"),
-        Just("form-data"),
-        Just("x-www-form-urlencoded"),
-        Just("octet-stream"),
-        Just("png"),
-        Just("jpeg"),
-        Just("gif"),
-        Just("mp4"),
-        Just("mpeg"),
-        Just("mixed"),
-    ]
-}
-
-// charset 値
-fn charset_value() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("utf-8"),
-        Just("UTF-8"),
-        Just("iso-8859-1"),
-        Just("ISO-8859-1"),
-        Just("us-ascii"),
-        Just("shift_jis"),
-        Just("euc-jp"),
-    ]
-}
-
 // boundary 値 (トークン文字のみ)
 fn boundary_value() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9._-]{1,32}".prop_map(|s| s)
@@ -92,20 +44,6 @@ proptest! {
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.media_type(), media_type.as_str());
         prop_assert_eq!(ct.subtype(), subtype.as_str());
-    }
-}
-
-// 一般的なメディアタイプのパース
-proptest! {
-    #[test]
-    fn prop_content_type_common_types(
-        media_type in common_media_type(),
-        subtype in common_subtype()
-    ) {
-        let ct_str = format!("{}/{}", media_type, subtype);
-        let ct = ContentType::parse(&ct_str).unwrap();
-        prop_assert_eq!(ct.media_type(), media_type);
-        prop_assert_eq!(ct.subtype(), subtype);
     }
 }
 
@@ -150,16 +88,6 @@ proptest! {
         let ct_str = format!("{}/{}; charset={}", media_type, subtype, charset);
         let ct = ContentType::parse(&ct_str).unwrap();
         prop_assert_eq!(ct.charset(), Some(charset.as_str()));
-    }
-}
-
-// 一般的な charset 値
-proptest! {
-    #[test]
-    fn prop_content_type_common_charsets(charset in charset_value()) {
-        let ct_str = format!("text/html; charset={}", charset);
-        let ct = ContentType::parse(&ct_str).unwrap();
-        prop_assert_eq!(ct.charset(), Some(charset));
     }
 }
 
@@ -381,18 +309,6 @@ proptest! {
     }
 }
 
-// is_text() の否定
-proptest! {
-    #[test]
-    fn prop_content_type_is_not_text(
-        media_type in prop_oneof![Just("application"), Just("image"), Just("audio"), Just("video")],
-        subtype in "[a-z]{1,8}"
-    ) {
-        let ct = ContentType::parse(&format!("{}/{}", media_type, subtype)).unwrap();
-        prop_assert!(!ct.is_text());
-    }
-}
-
 // is_multipart()
 proptest! {
     #[test]
@@ -484,24 +400,6 @@ proptest! {
         let ct_str = format!("{}{}{}/{}", media_type, invalid_char, media_type, subtype);
         let result = ContentType::parse(&ct_str);
         prop_assert!(result.is_err());
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_type_clone_eq(
-        media_type in "[a-z]{1,8}",
-        subtype in "[a-z]{1,8}",
-        charset in "[a-z]{1,8}"
-    ) {
-        let ct = ContentType::new(&media_type, &subtype)
-            .with_parameter("charset", &charset);
-        let cloned = ct.clone();
-        prop_assert_eq!(ct, cloned);
     }
 }
 

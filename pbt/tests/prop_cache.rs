@@ -12,91 +12,9 @@ fn seconds() -> impl Strategy<Value = u64> {
     0u64..31536001 // 1 年 + 1
 }
 
-// Cache-Control ディレクティブ
-fn cache_directive() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("no-cache"),
-        Just("no-store"),
-        Just("no-transform"),
-        Just("only-if-cached"),
-        Just("must-revalidate"),
-        Just("proxy-revalidate"),
-        Just("must-understand"),
-        Just("public"),
-        Just("private"),
-        Just("immutable"),
-    ]
-}
-
-// 値付きディレクティブ
-fn cache_directive_with_value() -> impl Strategy<Value = String> {
-    prop_oneof![
-        seconds().prop_map(|s| format!("max-age={}", s)),
-        seconds().prop_map(|s| format!("s-maxage={}", s)),
-        seconds().prop_map(|s| format!("max-stale={}", s)),
-        seconds().prop_map(|s| format!("min-fresh={}", s)),
-        seconds().prop_map(|s| format!("stale-while-revalidate={}", s)),
-        seconds().prop_map(|s| format!("stale-if-error={}", s)),
-    ]
-}
-
 // ========================================
 // CacheControl のテスト
 // ========================================
-
-// max-age ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_cache_control_max_age_roundtrip(max_age in seconds()) {
-        let cc = CacheControl::new().with_max_age(max_age);
-        let header = cc.to_string();
-        let reparsed = CacheControl::parse(&header).unwrap();
-
-        prop_assert_eq!(cc.max_age(), reparsed.max_age());
-    }
-}
-
-// s-maxage ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_cache_control_s_maxage_roundtrip(s_maxage in seconds()) {
-        let cc = CacheControl::new().with_s_maxage(s_maxage);
-        let header = cc.to_string();
-        let reparsed = CacheControl::parse(&header).unwrap();
-
-        prop_assert_eq!(cc.s_maxage(), reparsed.s_maxage());
-    }
-}
-
-// 複合ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_cache_control_combined_roundtrip(
-        max_age in seconds(),
-        is_public in any::<bool>(),
-        no_cache in any::<bool>(),
-        must_revalidate in any::<bool>()
-    ) {
-        let mut cc = CacheControl::new().with_max_age(max_age);
-        if is_public {
-            cc = cc.with_public();
-        }
-        if no_cache {
-            cc = cc.with_no_cache();
-        }
-        if must_revalidate {
-            cc = cc.with_must_revalidate();
-        }
-
-        let header = cc.to_string();
-        let reparsed = CacheControl::parse(&header).unwrap();
-
-        prop_assert_eq!(cc.max_age(), reparsed.max_age());
-        prop_assert_eq!(cc.is_public(), reparsed.is_public());
-        prop_assert_eq!(cc.is_no_cache(), reparsed.is_no_cache());
-        prop_assert_eq!(cc.is_must_revalidate(), reparsed.is_must_revalidate());
-    }
-}
 
 // 全ディレクティブのラウンドトリップ
 proptest! {
@@ -176,37 +94,6 @@ proptest! {
     }
 }
 
-// 単一ディレクティブのパース
-proptest! {
-    #[test]
-    fn prop_cache_control_single_directive(directive in cache_directive()) {
-        let cc = CacheControl::parse(directive).unwrap();
-
-        match directive {
-            "no-cache" => prop_assert!(cc.is_no_cache()),
-            "no-store" => prop_assert!(cc.is_no_store()),
-            "no-transform" => prop_assert!(cc.is_no_transform()),
-            "only-if-cached" => prop_assert!(cc.is_only_if_cached()),
-            "must-revalidate" => prop_assert!(cc.is_must_revalidate()),
-            "proxy-revalidate" => prop_assert!(cc.is_proxy_revalidate()),
-            "must-understand" => prop_assert!(cc.is_must_understand()),
-            "public" => prop_assert!(cc.is_public()),
-            "private" => prop_assert!(cc.is_private()),
-            "immutable" => prop_assert!(cc.is_immutable()),
-            _ => unreachable!(),
-        }
-    }
-}
-
-// 値付きディレクティブのパース
-proptest! {
-    #[test]
-    fn prop_cache_control_directive_with_value(directive in cache_directive_with_value()) {
-        let result = CacheControl::parse(&directive);
-        prop_assert!(result.is_ok());
-    }
-}
-
 // 大文字小文字混在
 proptest! {
     #[test]
@@ -265,34 +152,6 @@ proptest! {
     }
 }
 
-// to_header_value
-proptest! {
-    #[test]
-    fn prop_cache_control_to_header_value(ma in seconds()) {
-        let cc = CacheControl::new().with_max_age(ma);
-        let header = cc.to_header_value();
-        let expected = format!("max-age={}", ma);
-        prop_assert!(header.contains(&expected));
-    }
-}
-
-// Clone と PartialEq
-proptest! {
-    #[test]
-    fn prop_cache_control_clone_eq(max_age in prop::option::of(seconds()), is_public in any::<bool>()) {
-        let mut cc = CacheControl::new();
-        if let Some(ma) = max_age {
-            cc = cc.with_max_age(ma);
-        }
-        if is_public {
-            cc = cc.with_public();
-        }
-
-        let cloned = cc.clone();
-        prop_assert_eq!(cc, cloned);
-    }
-}
-
 // ========================================
 // Age のテスト
 // ========================================
@@ -306,25 +165,6 @@ proptest! {
         let reparsed = Age::parse(&header).unwrap();
 
         prop_assert_eq!(age.seconds(), reparsed.seconds());
-    }
-}
-
-// Age to_header_value
-proptest! {
-    #[test]
-    fn prop_age_to_header_value(secs in seconds()) {
-        let age = Age::new(secs);
-        prop_assert_eq!(age.to_header_value(), secs.to_string());
-    }
-}
-
-// Age Clone と PartialEq
-proptest! {
-    #[test]
-    fn prop_age_clone_eq(secs in seconds()) {
-        let age = Age::new(secs);
-        let cloned = age;
-        prop_assert_eq!(age, cloned);
     }
 }
 

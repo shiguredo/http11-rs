@@ -144,24 +144,6 @@ proptest! {
     }
 }
 
-// DigestEntry の Display
-proptest! {
-    #[test]
-    fn prop_digest_entry_display(
-        algorithm in valid_algorithm(),
-        data in digest_bytes()
-    ) {
-        let b64 = base64_encode(&data);
-        let input = format!("{}=:{}:", algorithm, b64);
-
-        let digest = ContentDigest::parse(&input).unwrap();
-        let entry_display = digest.items()[0].to_string();
-
-        prop_assert!(entry_display.contains("=:"));
-        prop_assert!(entry_display.contains(":"));
-    }
-}
-
 // DigestValue::bytes
 proptest! {
     #[test]
@@ -173,21 +155,6 @@ proptest! {
         let value = digest.items()[0].value();
 
         prop_assert_eq!(value.bytes(), data.as_slice());
-    }
-}
-
-// DigestValue の Display
-proptest! {
-    #[test]
-    fn prop_digest_value_display(data in digest_bytes()) {
-        let b64 = base64_encode(&data);
-        let input = format!("sha-256=:{}:", b64);
-
-        let digest = ContentDigest::parse(&input).unwrap();
-        let value_display = digest.items()[0].value().to_string();
-
-        prop_assert!(value_display.starts_with(':'));
-        prop_assert!(value_display.ends_with(':'));
     }
 }
 
@@ -327,22 +294,6 @@ proptest! {
     }
 }
 
-// DigestPreference の Display
-proptest! {
-    #[test]
-    fn prop_digest_preference_display(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
-        let input = format!("{}={}", algorithm, weight);
-
-        let want = WantContentDigest::parse(&input).unwrap();
-        let pref_display = want.items()[0].to_string();
-
-        prop_assert!(pref_display.contains('='));
-    }
-}
-
 // ========================================
 // WantReprDigest のテスト
 // ========================================
@@ -406,60 +357,6 @@ proptest! {
 
         let reparsed = WantReprDigest::parse(&display);
         prop_assert!(reparsed.is_ok());
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_digest_clone_eq(data in digest_bytes()) {
-        let b64 = base64_encode(&data);
-        let input = format!("sha-256=:{}:", b64);
-
-        let digest = ContentDigest::parse(&input).unwrap();
-        let cloned = digest.clone();
-
-        prop_assert_eq!(digest, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_repr_digest_clone_eq(data in digest_bytes()) {
-        let b64 = base64_encode(&data);
-        let input = format!("sha-256=:{}:", b64);
-
-        let digest = ReprDigest::parse(&input).unwrap();
-        let cloned = digest.clone();
-
-        prop_assert_eq!(digest, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_want_content_digest_clone_eq(weight in valid_weight()) {
-        let input = format!("sha-256={}", weight);
-
-        let want = WantContentDigest::parse(&input).unwrap();
-        let cloned = want.clone();
-
-        prop_assert_eq!(want, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_clone_eq(weight in valid_weight()) {
-        let input = format!("sha-256={}", weight);
-
-        let want = WantReprDigest::parse(&input).unwrap();
-        let cloned = want.clone();
-
-        prop_assert_eq!(want, cloned);
     }
 }
 

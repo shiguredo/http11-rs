@@ -57,64 +57,6 @@ fn accept_qvalue_string(value: u16) -> String {
 // 言語タグ生成は pbt クレートを使用
 use pbt::language_tag as accept_language_tag;
 
-// 一般的なメディアタイプ
-fn common_media_type() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("text"),
-        Just("application"),
-        Just("image"),
-        Just("audio"),
-        Just("video"),
-        Just("multipart"),
-    ]
-}
-
-// 一般的なサブタイプ
-fn common_subtype() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("html"),
-        Just("plain"),
-        Just("json"),
-        Just("xml"),
-        Just("javascript"),
-        Just("*"),
-    ]
-}
-
-// 一般的な charset
-fn common_charset() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("utf-8"),
-        Just("iso-8859-1"),
-        Just("us-ascii"),
-        Just("shift_jis"),
-    ]
-}
-
-// 一般的なエンコーディング
-fn common_encoding() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("gzip"),
-        Just("deflate"),
-        Just("br"),
-        Just("identity"),
-        Just("*"),
-    ]
-}
-
-// 一般的な言語タグ
-fn common_language() -> impl Strategy<Value = &'static str> {
-    prop_oneof![
-        Just("en"),
-        Just("en-US"),
-        Just("ja"),
-        Just("ja-JP"),
-        Just("de"),
-        Just("fr"),
-        Just("*"),
-    ]
-}
-
 // ========================================
 // QValue のテスト
 // ========================================
@@ -167,22 +109,6 @@ proptest! {
         let displayed = parsed.to_string();
         let reparsed = Accept::parse(&displayed).unwrap();
         prop_assert_eq!(parsed, reparsed);
-    }
-}
-
-// Accept 一般的なメディアタイプ
-proptest! {
-    #[test]
-    fn prop_accept_common_types(
-        media_type in common_media_type(),
-        subtype in common_subtype()
-    ) {
-        let header = format!("{}/{}", media_type, subtype);
-        let result = Accept::parse(&header);
-        prop_assert!(result.is_ok());
-
-        let accept = result.unwrap();
-        prop_assert_eq!(accept.items().len(), 1);
     }
 }
 
@@ -270,18 +196,6 @@ proptest! {
     }
 }
 
-// AcceptCharset 一般的な charset
-proptest! {
-    #[test]
-    fn prop_accept_charset_common(charset in common_charset()) {
-        let result = AcceptCharset::parse(charset);
-        prop_assert!(result.is_ok());
-
-        let ac = result.unwrap();
-        prop_assert_eq!(ac.items().len(), 1);
-    }
-}
-
 // AcceptCharset アクセサ
 proptest! {
     #[test]
@@ -329,18 +243,6 @@ proptest! {
         let displayed = parsed.to_string();
         let reparsed = AcceptEncoding::parse(&displayed).unwrap();
         prop_assert_eq!(reparsed.items().len(), parsed.items().len());
-    }
-}
-
-// AcceptEncoding 一般的なエンコーディング
-proptest! {
-    #[test]
-    fn prop_accept_encoding_common(encoding in common_encoding()) {
-        let result = AcceptEncoding::parse(encoding);
-        prop_assert!(result.is_ok());
-
-        let ae = result.unwrap();
-        prop_assert_eq!(ae.items().len(), 1);
     }
 }
 
@@ -394,18 +296,6 @@ proptest! {
     }
 }
 
-// AcceptLanguage 一般的な言語タグ
-proptest! {
-    #[test]
-    fn prop_accept_language_common(language in common_language()) {
-        let result = AcceptLanguage::parse(language);
-        prop_assert!(result.is_ok());
-
-        let al = result.unwrap();
-        prop_assert_eq!(al.items().len(), 1);
-    }
-}
-
 // AcceptLanguage アクセサ
 proptest! {
     #[test]
@@ -423,47 +313,6 @@ proptest! {
 
         prop_assert_eq!(item.language(), tag.as_str());
         prop_assert_eq!(item.qvalue().value(), q);
-    }
-}
-
-// ========================================
-// Clone と PartialEq のテスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_accept_clone_eq(media_type in "[a-z]{1,8}", subtype in "[a-z]{1,8}") {
-        let header = format!("{}/{}", media_type, subtype);
-        let accept = Accept::parse(&header).unwrap();
-        let cloned = accept.clone();
-        prop_assert_eq!(accept, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_accept_charset_clone_eq(charset in "[a-zA-Z0-9-]{1,8}") {
-        let ac = AcceptCharset::parse(&charset).unwrap();
-        let cloned = ac.clone();
-        prop_assert_eq!(ac, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_accept_encoding_clone_eq(coding in "[a-zA-Z0-9-]{1,8}") {
-        let ae = AcceptEncoding::parse(&coding).unwrap();
-        let cloned = ae.clone();
-        prop_assert_eq!(ae, cloned);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_accept_language_clone_eq(tag in accept_language_tag()) {
-        let al = AcceptLanguage::parse(&tag).unwrap();
-        let cloned = al.clone();
-        prop_assert_eq!(al, cloned);
     }
 }
 
@@ -533,34 +382,5 @@ proptest! {
         prop_assert_eq!(item.media_type(), reparsed_item.media_type());
         prop_assert_eq!(item.subtype(), reparsed_item.subtype());
         prop_assert_eq!(item.qvalue().value(), reparsed_item.qvalue().value());
-    }
-}
-
-// ========================================
-// 空白処理テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_accept_trim_whitespace(media_type in "[a-z]{1,8}", subtype in "[a-z]{1,8}") {
-        let header = format!("  {}/{}  ", media_type, subtype);
-        let result = Accept::parse(&header);
-        prop_assert!(result.is_ok());
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_accept_whitespace_around_params(
-        media_type in "[a-z]{1,8}",
-        subtype in "[a-z]{1,8}",
-        q in 0u16..999u16
-    ) {
-        let header = format!(
-            "{}  /  {}  ;  q  =  {}",
-            media_type, subtype, accept_qvalue_string(q)
-        );
-        let result = Accept::parse(&header);
-        prop_assert!(result.is_ok());
     }
 }

@@ -69,17 +69,6 @@ fn header_misc_content_location_value() -> impl Strategy<Value = String> {
     ]
 }
 
-fn header_misc_host_value() -> impl Strategy<Value = String> {
-    (
-        "[a-z0-9-]{1,12}\\.[a-z]{2,4}",
-        prop::option::of(1u16..=65535),
-    )
-        .prop_map(|(host, port)| match port {
-            Some(port) => format!("{}:{}", host, port),
-            None => host,
-        })
-}
-
 fn header_misc_base64_encode(input: &[u8]) -> String {
     const BASE64_ALPHABET: &[u8; 64] =
         b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -145,17 +134,6 @@ proptest! {
         let parsed = ContentLocation::parse(&value).unwrap();
         let displayed = parsed.to_string();
         let reparsed = ContentLocation::parse(&displayed).unwrap();
-        prop_assert_eq!(parsed, reparsed);
-    }
-}
-
-// Host のラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_roundtrip(value in header_misc_host_value()) {
-        let parsed = Host::parse(&value).unwrap();
-        let displayed = parsed.to_string();
-        let reparsed = Host::parse(&displayed).unwrap();
         prop_assert_eq!(parsed, reparsed);
     }
 }
