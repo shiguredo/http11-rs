@@ -24,7 +24,9 @@ tokio = { version = "1", features = [
     "macros",
     "time",
 ] }
-tokio-rustls = "0.26"
+tokio-rustls = { version = "0.26", default-features = false, features = [
+    "aws-lc-rs",
+] }
 noargs = "0.4"
 
 # 圧縮 (オプション)
