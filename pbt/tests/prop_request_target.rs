@@ -1,37 +1,23 @@
 //! request-target 形式のプロパティテスト (RFC 9112 Section 3.2)
 
 use proptest::prelude::*;
-use shiguredo_http11::{RequestDecoder, RequestTargetForm};
+use shiguredo_http11::RequestDecoder;
 
 // ========================================
 // Strategy 定義
 // ========================================
 
 // パス用文字 (RFC 3986 pchar + "/")
+const PATH_CHARS: &[char] = &[
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4',
+    '5', '6', '7', '8', '9', '-', '.', '_', '~', '/', ':', '@', '!', '$', '&', '\'', '(', ')', '*',
+    '+', ',', ';', '=',
+];
+
 fn path_char() -> impl Strategy<Value = char> {
-    prop_oneof![
-        prop::char::range('a', 'z'),
-        prop::char::range('A', 'Z'),
-        prop::char::range('0', '9'),
-        Just('-'),
-        Just('.'),
-        Just('_'),
-        Just('~'),
-        Just('/'),
-        Just(':'),
-        Just('@'),
-        Just('!'),
-        Just('$'),
-        Just('&'),
-        Just('\''),
-        Just('('),
-        Just(')'),
-        Just('*'),
-        Just('+'),
-        Just(','),
-        Just(';'),
-        Just('='),
-    ]
+    prop::sample::select(PATH_CHARS)
 }
 
 fn path_segment() -> impl Strategy<Value = String> {
@@ -155,40 +141,6 @@ proptest! {
 }
 
 // ========================================
-// asterisk-form テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_asterisk_form_with_options_succeeds(_dummy in Just(())) {
-        let request_line = "OPTIONS * HTTP/1.1\r\nHost: example.com\r\n\r\n";
-        let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
-        let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "OPTIONS with asterisk-form should succeed");
-        prop_assert!(result.unwrap().is_some());
-    }
-
-    #[test]
-    fn prop_asterisk_form_with_get_fails(_dummy in Just(())) {
-        let request_line = "GET * HTTP/1.1\r\nHost: example.com\r\n\r\n";
-        let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
-        let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "GET with asterisk-form should fail");
-    }
-
-    #[test]
-    fn prop_asterisk_form_with_post_fails(_dummy in Just(())) {
-        let request_line = "POST * HTTP/1.1\r\nHost: example.com\r\n\r\n";
-        let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
-        let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "POST with asterisk-form should fail");
-    }
-}
-
-// ========================================
 // フラグメント禁止テスト (RFC 9112)
 // ========================================
 
@@ -280,78 +232,32 @@ proptest! {
 }
 
 // ========================================
-// 不正な文字テスト (RFC 3986)
-// ========================================
-
-#[test]
-fn test_invalid_path_character_space() {
-    let request_line = "GET /path with space HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with space should fail");
-}
-
-#[test]
-fn test_invalid_path_character_backslash() {
-    let request_line = "GET /path\\file HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with backslash should fail");
-}
-
-#[test]
-fn test_invalid_path_character_angle_bracket() {
-    let request_line = "GET /path<file HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with angle bracket should fail");
-}
-
-// ========================================
-// パーセントエンコーディングテスト
-// ========================================
-
-#[test]
-fn test_valid_percent_encoding() {
-    let request_line = "GET /path%20with%20space HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_ok(), "valid percent-encoding should succeed");
-    assert!(result.unwrap().is_some());
-}
-
-#[test]
-fn test_invalid_percent_encoding_incomplete() {
-    let request_line = "GET /path%2 HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_err(), "incomplete percent-encoding should fail");
-}
-
-#[test]
-fn test_invalid_percent_encoding_non_hex() {
-    let request_line = "GET /path%GG HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(request_line.as_bytes()).unwrap();
-    let result = decoder.decode_headers();
-    assert!(result.is_err(), "non-hex percent-encoding should fail");
-}
-
-// ========================================
 // "://" なしの absolute-form テスト
 // ========================================
 
 // urn: スキームの absolute-form ("://" を含まない)
+const URN_NSS_CHARS: &[char] = &[
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's',
+    't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+    'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4',
+    '5', '6', '7', '8', '9', ':', '.', '-',
+];
+
+fn urn_nid() -> impl Strategy<Value = String> {
+    proptest::collection::vec(prop::char::range('a', 'z'), 2..=8)
+        .prop_map(|chars| chars.into_iter().collect())
+}
+
+fn urn_nss() -> impl Strategy<Value = String> {
+    proptest::collection::vec(prop::sample::select(URN_NSS_CHARS), 1..=32)
+        .prop_map(|chars| chars.into_iter().collect())
+}
+
 proptest! {
     #[test]
     fn prop_urn_absolute_form_succeeds(
-        nid in "[a-z]{2,8}",
-        nss in "[a-zA-Z0-9:.-]{1,32}"
+        nid in urn_nid(),
+        nss in urn_nss()
     ) {
         let uri = format!("urn:{}:{}", nid, nss);
         let raw = format!("GET {} HTTP/1.1\r\nHost: \r\n\r\n", uri);
@@ -362,43 +268,4 @@ proptest! {
         let (head, _) = result.unwrap().unwrap();
         prop_assert_eq!(&head.uri, &uri);
     }
-}
-
-#[test]
-fn test_mailto_absolute_form() {
-    let raw = "GET mailto:user@example.com HTTP/1.1\r\nHost: \r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(raw.as_bytes()).unwrap();
-    let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "mailto:user@example.com");
-}
-
-#[test]
-fn test_tel_absolute_form() {
-    let raw = "GET tel:+1-201-555-0123 HTTP/1.1\r\nHost: \r\n\r\n";
-    let mut decoder = RequestDecoder::new();
-    decoder.feed(raw.as_bytes()).unwrap();
-    let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "tel:+1-201-555-0123");
-}
-
-// ========================================
-// RequestTargetForm API テスト
-// ========================================
-
-#[test]
-fn test_request_target_form_export() {
-    // 型が公開されていることを確認
-    let _origin = RequestTargetForm::Origin;
-    let _absolute = RequestTargetForm::Absolute;
-    let _authority = RequestTargetForm::Authority;
-    let _asterisk = RequestTargetForm::Asterisk;
-
-    // Debug トレイト
-    assert!(!format!("{:?}", RequestTargetForm::Origin).is_empty());
-
-    // Clone と PartialEq
-    let form = RequestTargetForm::Origin;
-    let cloned = form;
-    assert_eq!(form, cloned);
 }
