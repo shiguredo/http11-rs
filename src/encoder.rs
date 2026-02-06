@@ -1,17 +1,159 @@
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
 use crate::error::EncodeError;
+use crate::host::Host;
 use crate::request::Request;
 use crate::response::Response;
+use crate::validate::{
+    is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
+    is_valid_request_target, is_valid_status_code, is_valid_version_for_encode,
+};
+
+/// リクエストフィールドのバリデーション
+fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
+    // メソッドの検証
+    if !is_valid_method(&request.method) {
+        return Err(EncodeError::InvalidMethod {
+            method: request.method.clone(),
+        });
+    }
+
+    // リクエストターゲットの検証
+    if !is_valid_request_target(&request.uri) {
+        return Err(EncodeError::InvalidRequestTarget {
+            uri: request.uri.clone(),
+        });
+    }
+
+    // バージョンの検証
+    if !is_valid_version_for_encode(&request.version) {
+        return Err(EncodeError::InvalidVersion {
+            version: request.version.clone(),
+        });
+    }
+
+    // ヘッダーの検証
+    validate_headers(&request.headers)?;
+
+    Ok(())
+}
+
+/// レスポンスフィールドのバリデーション
+fn validate_response_fields(response: &Response) -> Result<(), EncodeError> {
+    // バージョンの検証
+    if !is_valid_version_for_encode(&response.version) {
+        return Err(EncodeError::InvalidVersion {
+            version: response.version.clone(),
+        });
+    }
+
+    // ステータスコードの検証
+    if !is_valid_status_code(response.status_code) {
+        return Err(EncodeError::InvalidStatusCode {
+            code: response.status_code,
+        });
+    }
+
+    // reason-phrase の検証
+    if !is_valid_reason_phrase(&response.reason_phrase) {
+        return Err(EncodeError::InvalidReasonPhrase {
+            phrase: response.reason_phrase.clone(),
+        });
+    }
+
+    // ヘッダーの検証
+    validate_headers(&response.headers)?;
+
+    Ok(())
+}
+
+/// ヘッダー名と値のバリデーション
+fn validate_headers(headers: &[(String, String)]) -> Result<(), EncodeError> {
+    for (name, value) in headers {
+        if !is_valid_header_name(name) {
+            return Err(EncodeError::InvalidHeaderName { name: name.clone() });
+        }
+        if !is_valid_field_value(value) {
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.clone(),
+                value: value.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Host ヘッダーの詳細バリデーション (リクエスト用)
+///
+/// RFC 9112 Section 3.2:
+/// - HTTP/1.1 リクエストには Host ヘッダーが必須
+/// - Host ヘッダーは重複してはならない
+/// - Host ヘッダーの値は有効な authority でなければならない
+fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
+    if request.version != "HTTP/1.1" {
+        return Ok(());
+    }
+
+    let host_headers: Vec<&str> = request
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
+        .map(|(_, value)| value.as_str())
+        .collect();
+
+    if host_headers.is_empty() {
+        return Err(EncodeError::MissingHostHeader);
+    }
+
+    if host_headers.len() > 1 {
+        return Err(EncodeError::DuplicateHostHeader);
+    }
+
+    let host_value = host_headers[0];
+    // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2: 空の field-value は許可)
+    if !host_value.is_empty() && Host::parse(host_value).is_err() {
+        return Err(EncodeError::InvalidHostHeader {
+            value: host_value.to_string(),
+        });
+    }
+
+    // absolute-form の場合、Host と authority の一致検証
+    if request.uri.contains("://")
+        && let Some(authority) = extract_authority_from_uri(&request.uri)
+        && !authority.is_empty()
+        && !host_value.is_empty()
+        && !authority.eq_ignore_ascii_case(host_value)
+    {
+        return Err(EncodeError::HostAuthorityMismatch {
+            host: host_value.to_string(),
+            authority: authority.to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+/// URI から authority 部分を抽出
+///
+/// scheme "://" authority ["/" path]
+fn extract_authority_from_uri(uri: &str) -> Option<String> {
+    let after_scheme = uri.find("://").map(|i| &uri[i + 3..])?;
+    // authority は次の "/" または "?" または末尾まで
+    let end = after_scheme
+        .find(['/', '?'])
+        .unwrap_or(after_scheme.len());
+    Some(after_scheme[..end].to_string())
+}
 
 /// リクエストをエンコード
 ///
 /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
-    // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
-    if request.version == "HTTP/1.1" && !request.has_header("Host") {
-        return Err(EncodeError::MissingHostHeader);
-    }
+    // フィールドバリデーション
+    validate_request_fields(request)?;
+
+    // Host ヘッダーの詳細バリデーション
+    validate_host_header(request)?;
 
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
@@ -60,6 +202,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
+    // フィールドバリデーション
+    validate_response_fields(response)?;
+
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
@@ -71,6 +216,16 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         return Err(EncodeError::ForbiddenTransferEncoding {
             status_code: response.status_code,
         });
+    }
+
+    // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
+    if response.status_code == 205 {
+        if !response.body.is_empty() {
+            return Err(EncodeError::ForbiddenBodyFor205);
+        }
+        if response.has_header("Transfer-Encoding") {
+            return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
+        }
     }
 
     let mut buf = Vec::new();
@@ -93,10 +248,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     // Content-Length (if not already set and not chunked)
     // RFC 9112: keep-alive を維持するために Content-Length または Transfer-Encoding が必要
-    // 1xx/204/304 はボディがないため Content-Length を追加しない
+    // 1xx/204/205/304 はボディがないため Content-Length を追加しない
     // omit_content_length が true の場合は自動付与しない (HEAD レスポンス用)
     let status_has_body = !((100..200).contains(&response.status_code)
         || response.status_code == 204
+        || response.status_code == 205
         || response.status_code == 304);
     if status_has_body
         && !response.omit_content_length
@@ -203,10 +359,11 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError> {
-    // RFC 9112 Section 3.2: HTTP/1.1 には Host ヘッダーが必須
-    if request.version == "HTTP/1.1" && !request.has_header("Host") {
-        return Err(EncodeError::MissingHostHeader);
-    }
+    // フィールドバリデーション
+    validate_request_fields(request)?;
+
+    // Host ヘッダーの詳細バリデーション
+    validate_host_header(request)?;
 
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
@@ -245,6 +402,9 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeError> {
+    // フィールドバリデーション
+    validate_response_fields(response)?;
+
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
@@ -256,6 +416,11 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         return Err(EncodeError::ForbiddenTransferEncoding {
             status_code: response.status_code,
         });
+    }
+
+    // RFC 9110 Section 15.3.6: 205 Reset Content の Transfer-Encoding 禁止
+    if response.status_code == 205 && response.has_header("Transfer-Encoding") {
+        return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
     }
 
     let mut buf = Vec::new();

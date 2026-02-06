@@ -1,7 +1,7 @@
 //! request-target 形式のプロパティテスト (RFC 9112 Section 3.2)
 
 use proptest::prelude::*;
-use shiguredo_http11::RequestDecoder;
+use shiguredo_http11::{RequestDecoder, RequestTargetForm};
 
 // ========================================
 // Strategy 定義
@@ -343,13 +343,51 @@ fn test_invalid_percent_encoding_non_hex() {
 }
 
 // ========================================
+// "://" なしの absolute-form テスト
+// ========================================
+
+// urn: スキームの absolute-form ("://" を含まない)
+proptest! {
+    #[test]
+    fn prop_urn_absolute_form_succeeds(
+        nid in "[a-z]{2,8}",
+        nss in "[a-zA-Z0-9:.-]{1,32}"
+    ) {
+        let uri = format!("urn:{}:{}", nid, nss);
+        let raw = format!("GET {} HTTP/1.1\r\nHost: \r\n\r\n", uri);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(raw.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_ok(), "urn: absolute-form should succeed: {}", uri);
+        let (head, _) = result.unwrap().unwrap();
+        prop_assert_eq!(&head.uri, &uri);
+    }
+}
+
+#[test]
+fn test_mailto_absolute_form() {
+    let raw = "GET mailto:user@example.com HTTP/1.1\r\nHost: \r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(raw.as_bytes()).unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.uri, "mailto:user@example.com");
+}
+
+#[test]
+fn test_tel_absolute_form() {
+    let raw = "GET tel:+1-201-555-0123 HTTP/1.1\r\nHost: \r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(raw.as_bytes()).unwrap();
+    let (head, _) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.uri, "tel:+1-201-555-0123");
+}
+
+// ========================================
 // RequestTargetForm API テスト
 // ========================================
 
 #[test]
 fn test_request_target_form_export() {
-    use shiguredo_http11::RequestTargetForm;
-
     // 型が公開されていることを確認
     let _origin = RequestTargetForm::Origin;
     let _absolute = RequestTargetForm::Absolute;

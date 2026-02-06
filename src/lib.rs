@@ -75,6 +75,7 @@ mod response;
 pub mod trailer;
 pub mod upgrade;
 pub mod uri;
+mod validate;
 pub mod vary;
 
 pub use decoder::{

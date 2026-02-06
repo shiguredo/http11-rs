@@ -3,6 +3,9 @@
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::trailer::is_prohibited_trailer_field;
+use crate::validate::{
+    is_pchar_or_slash, is_query_char, is_valid_field_value, is_valid_header_name,
+};
 
 use super::phase::DecodePhase;
 
@@ -471,146 +474,6 @@ pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
     Ok((name.to_string(), trimmed_value.to_string()))
 }
 
-/// ヘッダー名が有効か確認
-pub(crate) fn is_valid_header_name(name: &str) -> bool {
-    !name.is_empty() && name.bytes().all(is_token_char)
-}
-
-/// トークン文字か確認
-pub(crate) fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
-/// ヘッダー値に許可される文字か確認 (RFC 9110 Section 5.5)
-///
-/// field-value = *field-content
-/// field-vchar = VCHAR / obs-text
-/// VCHAR = %x21-7E (可視文字)
-/// obs-text = %x80-FF
-///
-/// SP (0x20) と HTAB (0x09) も許可される (field-content の一部)
-///
-/// # RFC 非準拠
-///
-/// 現在の実装ではヘッダー値を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
-/// バイト列として扱っていない。RFC 9110 Section 5.5 では obs-text は任意のバイト列
-/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
-/// シーケンスを含むヘッダー値は拒否される。現時点ではこの制限を維持する。
-pub(crate) fn is_valid_field_vchar(b: u8) -> bool {
-    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
-}
-
-/// ヘッダー値が有効か確認 (RFC 9110 Section 5.5)
-///
-/// 制御文字 (0x00-0x08, 0x0A-0x1F, 0x7F) を含む場合は無効
-///
-/// # RFC 非準拠
-///
-/// 現在の実装ではヘッダー値を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
-/// バイト列として扱っていない。RFC 9110 Section 5.5 では obs-text は任意のバイト列
-/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
-/// シーケンスを含むヘッダー値は拒否される。現時点ではこの制限を維持する。
-pub(crate) fn is_valid_field_value(value: &str) -> bool {
-    value.bytes().all(is_valid_field_vchar)
-}
-
-/// メソッド名が有効か確認
-///
-/// RFC 9110 Section 9 では method = token と定義されているが、
-/// セキュリティ上の理由から大文字アルファベット、アンダースコア、ハイフンのみを許可する。
-/// 小文字メソッドは正当なクライアントが使用しないため拒否する。
-///
-/// アンダースコアは RTSP (RFC 7826) の GET_PARAMETER, SET_PARAMETER などで使用されるため許可する。
-pub(crate) fn is_valid_method(method: &str) -> bool {
-    !method.is_empty()
-        && method
-            .bytes()
-            .all(|b| matches!(b, b'A'..=b'Z' | b'_' | b'-'))
-}
-
-/// HTTP バージョンが有効か確認 (RFC 9112 Section 2.3)
-///
-/// HTTP-version = HTTP-name "/" DIGIT "." DIGIT
-/// HTTP-name = %s"HTTP"
-///
-/// HTTP/1.0 または HTTP/1.1 のみ許可
-pub(crate) fn is_valid_http_version(version: &str) -> bool {
-    matches!(version, "HTTP/1.0" | "HTTP/1.1")
-}
-
-/// RFC 3986 で除外されている文字および request-target で許可されない文字
-///
-/// RFC 9112 Section 3.2: request-target は origin-form / absolute-form / authority-form / asterisk-form のいずれか
-/// RFC 3986: absolute-URI にはフラグメントが含まれない (absolute-URI = scheme ":" hier-part [ "?" query ])
-/// したがって request-target では "#" (フラグメント区切り) は許可されない
-const RFC3986_EXCLUDED: &[u8] = b"\"#<>\\^`{|}";
-
-/// リクエストターゲット (URI) が有効か確認
-///
-/// RFC 9112 Section 3: request-target には制御文字を含めない
-/// RFC 3986 Section 2: URI で許可されない文字を拒否
-///
-/// 拒否する文字:
-/// - 制御文字 (0x00-0x20, 0x7F)
-/// - RFC 3986 で除外されている文字: " < > \ ^ ` { | }
-/// - 不正なパーセントエンコーディング (% の後に 2 桁の 16 進数がない)
-/// - パーセントエンコーディングされた NUL バイト (%00)
-///
-/// 許可する文字:
-/// - VCHAR (0x21-0x7E) のうち RFC 3986 除外文字以外
-/// - obs-text (0x80-0xFF) - RFC 9112 準拠
-pub(crate) fn is_valid_request_target(target: &str) -> bool {
-    if target.is_empty() {
-        return false;
-    }
-
-    let bytes = target.as_bytes();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        let b = bytes[i];
-
-        // 制御文字の拒否 (0x00-0x20, 0x7F)
-        if b <= 0x20 || b == 0x7F {
-            return false;
-        }
-
-        // RFC 3986 除外文字の拒否
-        if RFC3986_EXCLUDED.contains(&b) {
-            return false;
-        }
-
-        // パーセントエンコーディングの検証
-        if b == b'%' {
-            if i + 2 >= bytes.len() {
-                return false; // 不完全
-            }
-            let high = bytes[i + 1];
-            let low = bytes[i + 2];
-
-            if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
-                return false; // 不正な 16 進数
-            }
-
-            // %00 (NUL) の拒否
-            if high == b'0' && low == b'0' {
-                return false;
-            }
-
-            i += 3;
-            continue;
-        }
-
-        i += 1;
-    }
-
-    true
-}
-
 /// RFC 9112 Section 3.2 request-target の形式
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestTargetForm {
@@ -651,40 +514,98 @@ pub(crate) fn parse_request_target_form(target: &str) -> Result<RequestTargetFor
         return validate_origin_form(target).map(|()| RequestTargetForm::Origin);
     }
 
-    // absolute-form: スキーム付き URI (http:// または https://)
+    // absolute-form: "://" を含む場合は明確に absolute-form
     if target.contains("://") {
-        // スキームの検証
-        let scheme_end = target.find("://").unwrap();
-        let scheme = &target[..scheme_end];
-        if !scheme
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_ascii_alphabetic())
-        {
+        return validate_absolute_form(target);
+    }
+
+    // authority-form: host:port (CONNECT 用)
+    // authority-form を先に試す (host:port は scheme:hier-part と文法的に曖昧なため)
+    if validate_authority_form(target).is_ok() {
+        return Ok(RequestTargetForm::Authority);
+    }
+
+    // absolute-form: "://" を含まない absolute-URI (例: urn:isbn:0451450523)
+    if let Some(_scheme_len) = detect_scheme(target) {
+        return validate_absolute_form(target);
+    }
+
+    Err(Error::InvalidData(
+        "invalid request-target: unrecognized form".to_string(),
+    ))
+}
+
+/// absolute-form の検証
+///
+/// RFC 3986: absolute-URI = scheme ":" hier-part [ "?" query ]
+fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
+    let scheme_len = detect_scheme(target)
+        .ok_or_else(|| Error::InvalidData("invalid request-target: invalid scheme".to_string()))?;
+    let scheme = &target[..scheme_len];
+    // スキームの検証
+    if !scheme
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic())
+    {
+        return Err(Error::InvalidData(
+            "invalid request-target: invalid scheme".to_string(),
+        ));
+    }
+    for c in scheme.chars().skip(1) {
+        if !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.' {
             return Err(Error::InvalidData(
                 "invalid request-target: invalid scheme".to_string(),
             ));
         }
-        for c in scheme.chars().skip(1) {
-            if !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.' {
-                return Err(Error::InvalidData(
-                    "invalid request-target: invalid scheme".to_string(),
-                ));
-            }
-        }
-        // absolute-URI にフラグメントは含まれない (RFC 3986)
-        if target.contains('#') {
-            return Err(Error::InvalidData(
-                "invalid request-target: fragment not allowed".to_string(),
-            ));
-        }
-        // IPv6 リテラルの括弧対応を検証 (RFC 3986 Section 3.2.2)
-        validate_ipv6_brackets(target)?;
-        return Ok(RequestTargetForm::Absolute);
+    }
+    // absolute-URI にフラグメントは含まれない (RFC 3986)
+    if target.contains('#') {
+        return Err(Error::InvalidData(
+            "invalid request-target: fragment not allowed".to_string(),
+        ));
+    }
+    // IPv6 リテラルの括弧対応を検証 (RFC 3986 Section 3.2.2)
+    validate_ipv6_brackets(target)?;
+    Ok(RequestTargetForm::Absolute)
+}
+
+/// スキームを検出する
+///
+/// RFC 3986 Section 3.1: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+/// absolute-URI = scheme ":" hier-part [ "?" query ]
+///
+/// target の先頭が有効なスキーム + ":" であればスキームの長さを返す。
+/// "://" を含む URI だけでなく、":" の後に "//" がない absolute-URI にも対応する。
+fn detect_scheme(target: &str) -> Option<usize> {
+    let bytes = target.as_bytes();
+
+    // 最初の文字が ALPHA でなければスキームではない
+    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
+        return None;
     }
 
-    // authority-form: host:port (CONNECT 用)
-    validate_authority_form(target).map(|()| RequestTargetForm::Authority)
+    // ":" を探す
+    let colon_pos = bytes.iter().position(|&b| b == b':')?;
+
+    // スキーム部分が空でないこと (最低 1 文字)
+    if colon_pos == 0 {
+        return None;
+    }
+
+    // スキーム文字の検証
+    for &b in &bytes[1..colon_pos] {
+        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
+            return None;
+        }
+    }
+
+    // ":" の後に何かがあること (空の hier-part は不正)
+    if colon_pos + 1 >= bytes.len() {
+        return None;
+    }
+
+    Some(colon_pos)
 }
 
 /// IPv6 リテラルの括弧対応を検証
@@ -821,36 +742,6 @@ fn validate_query_chars(query: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// pchar または "/" か確認 (RFC 3986)
-fn is_pchar_or_slash(b: u8) -> bool {
-    is_pchar_byte(b) || b == b'/'
-}
-
-/// pchar か確認 (RFC 3986 Section 3.3)
-/// pchar = unreserved / pct-encoded / sub-delims / ":" / "@"
-fn is_pchar_byte(b: u8) -> bool {
-    is_unreserved_byte(b) || is_sub_delim_byte(b) || b == b':' || b == b'@'
-}
-
-/// query で許可される文字か確認 (RFC 3986 Section 3.4)
-/// query = *( pchar / "/" / "?" )
-fn is_query_char(b: u8) -> bool {
-    is_pchar_byte(b) || b == b'/' || b == b'?'
-}
-
-/// unreserved か確認 (RFC 3986 Section 2.3)
-fn is_unreserved_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_' || b == b'~'
-}
-
-/// sub-delims か確認 (RFC 3986 Section 2.2)
-fn is_sub_delim_byte(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
-    )
-}
-
 /// authority-form の検証
 ///
 /// RFC 9112 Section 3.2.3:
@@ -940,31 +831,6 @@ pub(crate) fn validate_request_target_for_method(
         }
     }
     Ok(())
-}
-
-/// ステータスコードが有効か確認 (RFC 9110 Section 15)
-///
-/// ステータスコードは 3 桁の数字で、100-599 の範囲
-pub(crate) fn is_valid_status_code(code: u16) -> bool {
-    (100..=599).contains(&code)
-}
-
-/// reason-phrase が有効か確認 (RFC 9112 Section 4)
-///
-/// reason-phrase = 1*( HTAB / SP / VCHAR / obs-text )
-/// VCHAR = %x21-7E
-/// obs-text = %x80-FF
-///
-/// # RFC 非準拠
-///
-/// 現在の実装では reason-phrase を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
-/// バイト列として扱っていない。RFC 9112 Section 4 では obs-text は任意のバイト列
-/// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
-/// シーケンスを含む reason-phrase は拒否される。現時点ではこの制限を維持する。
-pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
-    phrase
-        .bytes()
-        .all(|b| matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF))
 }
 
 /// Transfer-Encoding 解析結果

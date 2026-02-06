@@ -32,7 +32,7 @@ pub enum ContentDispositionError {
     InvalidDispositionType,
     /// 不正なパラメータ
     InvalidParameter,
-    /// 不正な RFC 5987 エンコーディング
+    /// 不正な RFC 8187 エンコーディング
     InvalidExtValue,
 }
 
@@ -110,7 +110,7 @@ pub struct ContentDisposition {
     disposition_type: DispositionType,
     /// filename パラメータ (ASCII)
     filename: Option<String>,
-    /// filename* パラメータ (RFC 5987 エンコード済み、デコード後の値)
+    /// filename* パラメータ (RFC 8187 エンコード済み、デコード後の値)
     filename_ext: Option<String>,
     /// name パラメータ (form-data 用)
     name: Option<String>,
@@ -394,7 +394,7 @@ fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
     Ok(result)
 }
 
-/// RFC 5987 ext-value をパース
+/// RFC 8187 ext-value をパース
 ///
 /// 形式: charset'language'value
 /// 例: UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.txt
@@ -438,7 +438,7 @@ fn percent_decode(s: &str) -> Result<String, ContentDispositionError> {
                 .map_err(|_| ContentDispositionError::InvalidExtValue)?;
             bytes.push(byte);
         } else {
-            // RFC 5987 Section 3.2: パーセントエンコード以外は attr-char のみ許可
+            // RFC 8187 Section 3.2: パーセントエンコード以外は attr-char のみ許可
             if !c.is_ascii() || !is_attr_char(c as u8) {
                 return Err(ContentDispositionError::InvalidExtValue);
             }
@@ -449,7 +449,7 @@ fn percent_decode(s: &str) -> Result<String, ContentDispositionError> {
     String::from_utf8(bytes).map_err(|_| ContentDispositionError::InvalidExtValue)
 }
 
-/// RFC 5987 ext-value 用にエンコード
+/// RFC 8187 ext-value 用にエンコード
 fn encode_ext_value(s: &str) -> String {
     let mut result = String::new();
     for byte in s.bytes() {
@@ -463,7 +463,7 @@ fn encode_ext_value(s: &str) -> String {
     result
 }
 
-/// RFC 5987 attr-char
+/// RFC 8187 attr-char
 fn is_attr_char(b: u8) -> bool {
     matches!(b,
         b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' |
@@ -621,7 +621,7 @@ mod tests {
 
     #[test]
     fn test_ext_value_invalid_char() {
-        // RFC 5987 Section 3.2: attr-char 以外の生文字は不正
+        // RFC 8187 Section 3.2: attr-char 以外の生文字は不正
         // スペースは attr-char ではない
         assert!(ContentDisposition::parse("attachment; filename*=UTF-8''hello world.txt").is_err());
         // @ は attr-char ではない
@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn test_ext_value_valid_chars() {
-        // RFC 5987: 許可された attr-char はそのまま使える
+        // RFC 8187: 許可された attr-char はそのまま使える
         let cd =
             ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt").unwrap();
         assert_eq!(cd.filename(), Some("test-file_v1.0.txt"));

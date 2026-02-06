@@ -83,6 +83,20 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
     proptest::collection::vec(any::<u8>(), 0..256)
 }
 
+/// URI から Host ヘッダーの値を決定する
+///
+/// absolute-form の場合は URI の authority を返す。
+/// それ以外の場合は "localhost" を返す。
+fn host_for_uri(uri: &str) -> String {
+    if uri.contains("://") {
+        let after_scheme = uri.split("://").nth(1).unwrap_or("localhost");
+        let end = after_scheme.find('/').unwrap_or(after_scheme.len());
+        after_scheme[..end].to_string()
+    } else {
+        "localhost".to_string()
+    }
+}
+
 // ========================================
 // Request ラウンドトリップテスト
 // ========================================
@@ -96,9 +110,13 @@ proptest! {
         body_data in body()
     ) {
         let mut request = Request::new(&method, &uri);
-        request.add_header("Host", "localhost");
+        let host_value = host_for_uri(&uri);
+        request.add_header("Host", &host_value);
         for (name, value) in &hdrs {
-            request.add_header(name, value);
+            // Host ヘッダーの重複を避ける
+            if !name.eq_ignore_ascii_case("Host") {
+                request.add_header(name, value);
+            }
         }
         if !body_data.is_empty() {
             request.body = body_data.clone();
@@ -158,9 +176,12 @@ proptest! {
         hdrs in headers()
     ) {
         let mut request = Request::new(&method, &uri);
-        request.add_header("Host", "localhost");
+        let host_value = host_for_uri(&uri);
+        request.add_header("Host", &host_value);
         for (name, value) in &hdrs {
-            request.add_header(name, value);
+            if !name.eq_ignore_ascii_case("Host") {
+                request.add_header(name, value);
+            }
         }
 
         let encoded = request.encode();
@@ -186,7 +207,8 @@ proptest! {
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
         let mut request = Request::new(&method, &uri);
-        request.add_header("Host", "localhost");
+        let host_value = host_for_uri(&uri);
+        request.add_header("Host", &host_value);
         request.body = body_data.clone();
         let encoded = request.encode();
 
@@ -290,7 +312,8 @@ proptest! {
                 decoder.reset();
             }
             let mut request = Request::new(&methods[i], &uris[i]);
-            request.add_header("Host", "localhost");
+            let host_value = host_for_uri(&uris[i]);
+            request.add_header("Host", &host_value);
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -334,7 +357,8 @@ proptest! {
         // リセットして正常なリクエストをデコード
         decoder.reset();
         let mut request = Request::new(&method, &uri);
-        request.add_header("Host", "localhost");
+        let host_value = host_for_uri(&uri);
+        request.add_header("Host", &host_value);
         let encoded = request.encode();
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();

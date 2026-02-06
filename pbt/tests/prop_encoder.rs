@@ -44,7 +44,6 @@ fn header_name() -> impl Strategy<Value = String> {
         Just("Content-Type".to_string()),
         Just("Accept".to_string()),
         Just("User-Agent".to_string()),
-        Just("Host".to_string()),
         Just("Cache-Control".to_string()),
         "[A-Za-z]{1,8}(-[A-Za-z]{1,8})?".prop_map(|s| s),
     ]
@@ -1142,4 +1141,217 @@ fn prop_encode_response_204_without_te_ok() {
     let res = Response::new(204, "No Content");
     let result = encode_response(&res);
     assert!(result.is_ok());
+}
+
+// ========================================
+// CRLF/NUL インジェクション拒否テスト
+// ========================================
+
+proptest! {
+    #[test]
+    fn prop_encode_request_crlf_in_method(uri in uri()) {
+        // メソッドに CRLF を含む場合はエラー
+        for method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
+            let req = Request::new(method, &uri).header("Host", "example.com");
+            let result = encode_request(&req);
+            prop_assert!(result.is_err(), "CRLF in method should be rejected: {:?}", method);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_crlf_in_uri(method in http_method()) {
+        // URI に CRLF を含む場合はエラー
+        for uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
+            let req = Request::new(method, uri).header("Host", "example.com");
+            let result = encode_request(&req);
+            prop_assert!(result.is_err(), "CRLF in URI should be rejected: {:?}", uri);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_crlf_in_header_name(method in http_method(), uri in uri()) {
+        // ヘッダー名に CRLF を含む場合はエラー
+        for name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
+            let req = Request::new(method, &uri)
+                .header("Host", "example.com")
+                .header(name, "value");
+            let result = encode_request(&req);
+            prop_assert!(result.is_err(), "CRLF in header name should be rejected: {:?}", name);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_crlf_in_header_value(method in http_method(), uri in uri()) {
+        // ヘッダー値に CRLF を含む場合はエラー
+        for value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
+            let req = Request::new(method, &uri)
+                .header("Host", "example.com")
+                .header("X-Test", value);
+            let result = encode_request(&req);
+            prop_assert!(result.is_err(), "CRLF in header value should be rejected: {:?}", value);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_nul_in_header_value(method in http_method(), uri in uri()) {
+        // ヘッダー値に NUL を含む場合はエラー
+        let req = Request::new(method, &uri)
+            .header("Host", "example.com")
+            .header("X-Test", "evil\0value");
+        let result = encode_request(&req);
+        prop_assert!(result.is_err(), "NUL in header value should be rejected");
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_crlf_in_reason_phrase(status in status_code()) {
+        // reason-phrase に CRLF を含む場合はエラー
+        for phrase in &["OK\r\nEvil: header", "OK\n", "OK\r"] {
+            let res = Response::new(status, phrase);
+            let result = encode_response(&res);
+            prop_assert!(result.is_err(), "CRLF in reason-phrase should be rejected: {:?}", phrase);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_crlf_in_header_name(status in status_code(), phrase in reason_phrase()) {
+        // レスポンスでもヘッダー名に CRLF を含む場合はエラー
+        for name in &["Evil\r\nHeader", "Evil\nHeader"] {
+            let res = Response::new(status, phrase).header(name, "value");
+            let result = encode_response(&res);
+            prop_assert!(result.is_err(), "CRLF in response header name should be rejected: {:?}", name);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_crlf_in_header_value(status in status_code(), phrase in reason_phrase()) {
+        // レスポンスでもヘッダー値に CRLF を含む場合はエラー
+        for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
+            let res = Response::new(status, phrase).header("X-Test", value);
+            let result = encode_response(&res);
+            prop_assert!(result.is_err(), "CRLF in response header value should be rejected: {:?}", value);
+        }
+    }
+}
+
+// ========================================
+// 205 Reset Content ボディ禁止テスト
+// ========================================
+
+#[test]
+fn prop_encode_response_205_empty_body_ok() {
+    // 205 で空ボディは OK
+    let res = Response::new(205, "Reset Content");
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_205_with_body_error() {
+    // 205 で非空ボディはエラー
+    let res = Response::new(205, "Reset Content").body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
+}
+
+#[test]
+fn prop_encode_response_205_with_te_error() {
+    // 205 で Transfer-Encoding はエラー
+    let res = Response::new(205, "Reset Content").header("Transfer-Encoding", "chunked");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 })
+    ));
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_205_with_body_always_error(
+        data in proptest::collection::vec(any::<u8>(), 1..128)
+    ) {
+        // 205 で非空ボディは常にエラー
+        let res = Response::new(205, "Reset Content").body(data);
+        let result = encode_response(&res);
+        prop_assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
+    }
+}
+
+// ========================================
+// Host ヘッダーバリデーションテスト
+// ========================================
+
+#[test]
+fn prop_encode_request_duplicate_host_error() {
+    // Host ヘッダーの重複はエラー
+    let req = Request::new("GET", "/")
+        .header("Host", "example.com")
+        .header("Host", "other.com");
+    let result = encode_request(&req);
+    assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
+}
+
+#[test]
+fn prop_encode_request_invalid_host_error() {
+    // 不正な Host ヘッダー値はエラー
+    let req = Request::new("GET", "/").header("Host", "exam ple.com");
+    let result = encode_request(&req);
+    assert!(matches!(result, Err(EncodeError::InvalidHostHeader { .. })));
+}
+
+#[test]
+fn prop_encode_request_host_authority_mismatch_error() {
+    // Host と URI authority の不一致はエラー
+    let req = Request::new("GET", "http://example.com/path").header("Host", "other.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::HostAuthorityMismatch { .. })
+    ));
+}
+
+#[test]
+fn prop_encode_request_host_authority_match_ok() {
+    // Host と URI authority の一致は OK
+    let req = Request::new("GET", "http://example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_empty_host_ok() {
+    // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
+    let req = Request::new("GET", "/").header("Host", "");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_request_duplicate_host_always_error(
+        method in http_method(),
+        uri in uri(),
+        host1 in "[a-z]{3,8}\\.com",
+        host2 in "[a-z]{3,8}\\.org"
+    ) {
+        // 異なるドメインで Host を 2 つ付けると常にエラー
+        let req = Request::new(method, &uri)
+            .header("Host", &host1)
+            .header("Host", &host2);
+        let result = encode_request(&req);
+        prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
+    }
 }

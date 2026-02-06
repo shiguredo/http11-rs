@@ -1580,8 +1580,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_decoder_reset(
-        // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
-        status_code in prop_oneof![200u16..=203, 205u16..=299]
+        // 204, 205, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
+        status_code in prop_oneof![200u16..=203, 206u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
@@ -1595,8 +1595,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_decoder_reset_expect_no_body(
-        // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
-        status_code in prop_oneof![200u16..=203, 205u16..=299]
+        // 204, 205, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
+        status_code in prop_oneof![200u16..=203, 206u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
         decoder.set_expect_no_body(true);
@@ -1779,8 +1779,8 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(head.status_code, status_code);
-        // 1xx, 204, 304 はボディなし (RFC 9110)
-        if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
+        // 1xx, 204, 205, 304 はボディなし (RFC 9110)
+        if (100..200).contains(&status_code) || status_code == 204 || status_code == 205 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
         } else {
             prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
@@ -1826,7 +1826,13 @@ proptest! {
     ) {
         let mut response = Response::new(status, &reason);
 
-        if !body_data.is_empty() {
+        // RFC 9110: 1xx/204/205/304 はボディを含めてはならない
+        let status_forbids_body = (100..200).contains(&status)
+            || status == 204
+            || status == 205
+            || status == 304;
+
+        if !body_data.is_empty() && !status_forbids_body {
             response = response.body(body_data.clone());
         }
 
@@ -1836,7 +1842,7 @@ proptest! {
         let decoded = decoder.decode().unwrap().unwrap();
 
         prop_assert_eq!(decoded.status_code, status);
-        if status != 204 && status != 304 && !(100..200).contains(&status) {
+        if !status_forbids_body {
             prop_assert_eq!(decoded.body, body_data);
         }
     }
@@ -2864,9 +2870,10 @@ proptest! {
 proptest! {
     #![proptest_config(proptest::prelude::ProptestConfig::with_cases(100))]
 
-    /// 小文字メソッドが拒否されることを確認
+    /// RFC 9110 Section 9: method = token
+    /// 小文字メソッドも token として有効なので受理される
     #[test]
-    fn prop_lowercase_method_rejected(
+    fn prop_lowercase_method_accepted(
         method in prop_oneof![
             Just("get"),
             Just("post"),
@@ -2881,7 +2888,7 @@ proptest! {
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "expected error for lowercase method '{}', got {:?}", method, result);
+        prop_assert!(result.is_ok(), "token method '{}' should be accepted, got {:?}", method, result);
     }
 
     /// 大文字メソッドが許可されることを確認

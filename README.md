@@ -247,6 +247,10 @@ let last = encode_chunk(b""); // 終端チャンク
 
 `DecoderLimits` で各制限値をカスタマイズ可能です。
 
+### 既知の制限事項
+
+- obs-text (0x80-0xFF) の非 UTF-8 バイト列はヘッダー値として拒否されます。RFC 9110 では obs-text を含むフィールド値は構文上有効ですが、本ライブラリはヘッダー値を Rust の `String` として扱うため、非 UTF-8 バイト列を受け付けません。
+
 ## サンプル
 
 サンプルは [Tokio](https://github.com/tokio-rs/tokio) と [Rustls](https://github.com/rustls/rustls) を利用しています。引数のライブラリには [noargs](https://github.com/sile/noargs) を利用しています。
@@ -314,6 +318,8 @@ curl http://localhost:8888/
   - <https://datatracker.ietf.org/doc/html/rfc7616>
 - RFC 7617 - The 'Basic' HTTP Authentication Scheme
   - <https://datatracker.ietf.org/doc/html/rfc7617>
+- RFC 8187 - Indicating Character Encoding and Language for HTTP Header Field Parameters
+  - <https://datatracker.ietf.org/doc/html/rfc8187>
 - RFC 9110 - HTTP Semantics
   - <https://datatracker.ietf.org/doc/html/rfc9110>
 - RFC 9111 - HTTP Caching

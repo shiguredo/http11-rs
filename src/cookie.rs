@@ -472,7 +472,7 @@ fn is_valid_cookie_value(s: &str) -> bool {
     s.bytes().all(is_cookie_octet)
 }
 
-/// トークン文字 (RFC 7230)
+/// トークン文字 (RFC 9110)
 fn is_token_char(b: u8) -> bool {
     matches!(b,
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |

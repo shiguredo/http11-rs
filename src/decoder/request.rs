@@ -5,9 +5,10 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::request::Request;
 
+use crate::validate::{is_valid_http_version, is_valid_method, is_valid_request_target};
+
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, is_valid_http_version, is_valid_method,
-    is_valid_request_target, parse_header_line, parse_request_target_form,
+    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, parse_request_target_form,
     resolve_body_headers_for_request, validate_request_target_for_method,
 };
 use super::head::RequestHead;
@@ -291,8 +292,11 @@ impl<D: Decompressor> RequestDecoder<D> {
                                     ));
                                 }
                                 // Host ヘッダー値検証
+                                // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
                                 let (_, host_value) = host_headers[0];
-                                if crate::host::Host::parse(host_value).is_err() {
+                                if !host_value.is_empty()
+                                    && crate::host::Host::parse(host_value).is_err()
+                                {
                                     return Err(Error::InvalidData(
                                         "HTTP/1.1 request contains invalid Host header value"
                                             .to_string(),

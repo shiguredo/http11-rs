@@ -66,6 +66,29 @@ pub enum EncodeError {
     /// RFC 9112 Section 6.1: サーバーは 1xx または 204 レスポンスに
     /// Transfer-Encoding を含めてはならない (MUST NOT)
     ForbiddenTransferEncoding { status_code: u16 },
+    /// 不正なメソッド名
+    InvalidMethod { method: String },
+    /// 不正なリクエストターゲット
+    InvalidRequestTarget { uri: String },
+    /// 不正な HTTP バージョン
+    InvalidVersion { version: String },
+    /// 不正なヘッダー名
+    InvalidHeaderName { name: String },
+    /// 不正なヘッダー値
+    InvalidHeaderValue { name: String, value: String },
+    /// 不正なステータスコード
+    InvalidStatusCode { code: u16 },
+    /// 不正な reason-phrase
+    InvalidReasonPhrase { phrase: String },
+    /// Host ヘッダーが重複している
+    DuplicateHostHeader,
+    /// Host ヘッダーの値が不正
+    InvalidHostHeader { value: String },
+    /// Host ヘッダーと request-target の authority が一致しない
+    HostAuthorityMismatch { host: String, authority: String },
+    /// 205 Reset Content レスポンスにボディが含まれている
+    /// RFC 9110 Section 15.3.6: 205 レスポンスはボディを生成してはならない
+    ForbiddenBodyFor205,
 }
 
 impl fmt::Display for EncodeError {
@@ -85,6 +108,46 @@ impl fmt::Display for EncodeError {
                     f,
                     "Transfer-Encoding not allowed for {} response (RFC 9112 Section 6.1)",
                     status_code
+                )
+            }
+            EncodeError::InvalidMethod { method } => {
+                write!(f, "invalid method: {:?}", method)
+            }
+            EncodeError::InvalidRequestTarget { uri } => {
+                write!(f, "invalid request-target: {:?}", uri)
+            }
+            EncodeError::InvalidVersion { version } => {
+                write!(f, "invalid HTTP version: {:?}", version)
+            }
+            EncodeError::InvalidHeaderName { name } => {
+                write!(f, "invalid header name: {:?}", name)
+            }
+            EncodeError::InvalidHeaderValue { name, value } => {
+                write!(f, "invalid header value for {:?}: {:?}", name, value)
+            }
+            EncodeError::InvalidStatusCode { code } => {
+                write!(f, "invalid status code: {}", code)
+            }
+            EncodeError::InvalidReasonPhrase { phrase } => {
+                write!(f, "invalid reason-phrase: {:?}", phrase)
+            }
+            EncodeError::DuplicateHostHeader => {
+                write!(f, "duplicate Host header")
+            }
+            EncodeError::InvalidHostHeader { value } => {
+                write!(f, "invalid Host header value: {:?}", value)
+            }
+            EncodeError::HostAuthorityMismatch { host, authority } => {
+                write!(
+                    f,
+                    "Host header {:?} does not match request-target authority {:?}",
+                    host, authority
+                )
+            }
+            EncodeError::ForbiddenBodyFor205 => {
+                write!(
+                    f,
+                    "205 Reset Content must not contain a body (RFC 9110 Section 15.3.6)"
                 )
             }
         }

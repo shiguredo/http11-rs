@@ -5,9 +5,10 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
 
+use crate::validate::{is_valid_http_version, is_valid_reason_phrase, is_valid_status_code};
+
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, is_valid_http_version,
-    is_valid_reason_phrase, is_valid_status_code, parse_header_line,
+    BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, parse_header_line,
     resolve_body_headers_for_response,
 };
 use super::head::ResponseHead;
@@ -240,8 +241,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
     /// ステータスコードからボディがあるかどうかを判定
     fn status_has_body(status_code: u16) -> bool {
-        // 1xx, 204, 304 はボディなし
-        !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
+        // 1xx, 204, 205, 304 はボディなし
+        // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
+        !((100..200).contains(&status_code)
+            || status_code == 204
+            || status_code == 205
+            || status_code == 304)
     }
 
     /// ボディモードを決定
