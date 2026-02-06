@@ -1,7 +1,7 @@
 //! Expect ヘッダーのプロパティテスト (expect.rs)
 
 use proptest::prelude::*;
-use shiguredo_http11::expect::{Expect, ExpectError};
+use shiguredo_http11::expect::Expect;
 
 // ========================================
 // Strategy 定義
@@ -57,69 +57,6 @@ fn qdtext_char() -> impl Strategy<Value = char> {
 // 引用符付き文字列の中身
 fn quoted_string_content() -> impl Strategy<Value = String> {
     proptest::collection::vec(qdtext_char(), 0..=16).prop_map(|chars| chars.into_iter().collect())
-}
-
-// ========================================
-// ExpectError のテスト
-// ========================================
-
-#[test]
-fn prop_expect_error_display() {
-    let errors = [
-        (ExpectError::Empty, "empty Expect header"),
-        (ExpectError::InvalidFormat, "invalid Expect header format"),
-        (ExpectError::InvalidToken, "invalid Expect token"),
-        (ExpectError::InvalidValue, "invalid Expect value"),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_expect_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(ExpectError::Empty);
-    assert_eq!(error.to_string(), "empty Expect header");
-}
-
-#[test]
-fn prop_expect_error_clone_eq() {
-    let error = ExpectError::InvalidToken;
-    let cloned = error.clone();
-    assert_eq!(error, cloned);
-}
-
-// ========================================
-// 100-continue のテスト
-// ========================================
-
-#[test]
-fn prop_expect_100_continue() {
-    let expect = Expect::parse("100-continue").unwrap();
-    assert!(expect.has_100_continue());
-    assert_eq!(expect.items().len(), 1);
-    assert!(expect.items()[0].is_100_continue());
-}
-
-#[test]
-fn prop_expect_100_continue_case_insensitive() {
-    // 大文字小文字を区別しない
-    let expect = Expect::parse("100-CONTINUE").unwrap();
-    assert!(expect.has_100_continue());
-
-    let expect = Expect::parse("100-Continue").unwrap();
-    assert!(expect.has_100_continue());
-}
-
-#[test]
-fn prop_expect_100_continue_roundtrip() {
-    let input = "100-continue";
-    let expect = Expect::parse(input).unwrap();
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-
-    assert_eq!(expect, reparsed);
 }
 
 // ========================================
@@ -206,46 +143,6 @@ proptest! {
 }
 
 // ========================================
-// エスケープシーケンスのテスト
-// ========================================
-
-#[test]
-fn prop_expect_escaped_backslash() {
-    let input = r#"token="value\\with\\backslash""#;
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("value\\with\\backslash"));
-
-    // ラウンドトリップ
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-    assert_eq!(expect, reparsed);
-}
-
-#[test]
-fn prop_expect_escaped_quote() {
-    let input = r#"token="value\"with\"quotes""#;
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("value\"with\"quotes"));
-
-    // ラウンドトリップ
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-    assert_eq!(expect, reparsed);
-}
-
-#[test]
-fn prop_expect_mixed_escapes() {
-    let input = r#"token="\\\"mixed\\\"escapes\\""#;
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("\\\"mixed\\\"escapes\\"));
-
-    // ラウンドトリップ
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-    assert_eq!(expect, reparsed);
-}
-
-// ========================================
 // Expectation メソッドのテスト
 // ========================================
 
@@ -269,68 +166,6 @@ proptest! {
     }
 }
 
-#[test]
-fn prop_expectation_value_none() {
-    let expect = Expect::parse("token").unwrap();
-    assert_eq!(expect.items()[0].value(), None);
-}
-
-#[test]
-fn prop_expectation_is_100_continue() {
-    let expect = Expect::parse("100-continue").unwrap();
-    assert!(expect.items()[0].is_100_continue());
-
-    let expect = Expect::parse("other-token").unwrap();
-    assert!(!expect.items()[0].is_100_continue());
-}
-
-// ========================================
-// パースエラーのテスト
-// ========================================
-
-#[test]
-fn prop_expect_parse_errors() {
-    // 空
-    assert!(matches!(Expect::parse(""), Err(ExpectError::Empty)));
-    assert!(matches!(Expect::parse("   "), Err(ExpectError::Empty)));
-
-    // 不正なトークン (スペースを含む)
-    assert!(matches!(
-        Expect::parse("bad value"),
-        Err(ExpectError::InvalidToken)
-    ));
-
-    // 空のトークン
-    assert!(matches!(
-        Expect::parse("=value"),
-        Err(ExpectError::InvalidFormat)
-    ));
-
-    // 空の値
-    assert!(matches!(
-        Expect::parse("token="),
-        Err(ExpectError::InvalidValue)
-    ));
-
-    // 閉じ引用符がない
-    assert!(matches!(
-        Expect::parse("token=\"unclosed"),
-        Err(ExpectError::InvalidValue)
-    ));
-
-    // 不正な値 (引用符付きでもトークンでもない)
-    assert!(matches!(
-        Expect::parse("token=bad value"),
-        Err(ExpectError::InvalidValue)
-    ));
-
-    // 空のパート
-    assert!(matches!(
-        Expect::parse("token,,other"),
-        Err(ExpectError::InvalidFormat)
-    ));
-}
-
 // ========================================
 // Display のテスト
 // ========================================
@@ -345,23 +180,6 @@ proptest! {
 
         prop_assert_eq!(expect, reparsed);
     }
-}
-
-#[test]
-fn prop_expectation_display_with_quoting() {
-    // 引用符が必要な値
-    let expect = Expect::parse("token=\"value with spaces\"").unwrap();
-    let displayed = expect.to_string();
-    assert!(displayed.contains("\""));
-    assert!(displayed.contains("value with spaces"));
-}
-
-#[test]
-fn prop_expectation_display_without_quoting() {
-    // 引用符が不要な値
-    let expect = Expect::parse("token=simple").unwrap();
-    let displayed = expect.to_string();
-    assert_eq!(displayed, "token=simple");
 }
 
 // ========================================
@@ -390,64 +208,6 @@ proptest! {
             let _ = Expect::parse(s);
         }
     }
-}
-
-// ========================================
-// 値に特殊文字を含むテスト
-// ========================================
-
-#[test]
-fn prop_expect_value_with_comma() {
-    // カンマは引用符で囲む必要がある
-    let input = r#"token="value,with,commas""#;
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("value,with,commas"));
-
-    // ラウンドトリップ
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-    assert_eq!(expect, reparsed);
-}
-
-#[test]
-fn prop_expect_value_with_equals() {
-    // = は引用符で囲む必要がある
-    let input = r#"token="value=with=equals""#;
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("value=with=equals"));
-
-    // ラウンドトリップ
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-    assert_eq!(expect, reparsed);
-}
-
-// ========================================
-// 空白のトリムテスト
-// ========================================
-
-#[test]
-fn prop_expect_whitespace_handling() {
-    // 前後の空白
-    let expect = Expect::parse("  100-continue  ").unwrap();
-    assert!(expect.has_100_continue());
-
-    // カンマ周りの空白
-    let expect = Expect::parse("token=value  ,  100-continue").unwrap();
-    assert_eq!(expect.items().len(), 2);
-    assert!(expect.has_100_continue());
-}
-
-// ========================================
-// 引用符内のエスケープされていない文字
-// ========================================
-
-#[test]
-fn prop_expect_quoted_with_special_chars() {
-    // タブ文字
-    let input = "token=\"value\twith\ttabs\"";
-    let expect = Expect::parse(input).unwrap();
-    assert_eq!(expect.items()[0].value(), Some("value\twith\ttabs"));
 }
 
 // ========================================

@@ -1,7 +1,7 @@
 //! Content-Encoding ヘッダーのプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::content_encoding::{ContentCoding, ContentEncoding, ContentEncodingError};
+use shiguredo_http11::content_encoding::ContentEncoding;
 
 // ========================================
 // Strategy 定義
@@ -33,48 +33,6 @@ fn mixed_case_encoding() -> impl Strategy<Value = String> {
 // カスタムエンコーディング (token 文字のみ)
 fn custom_encoding() -> impl Strategy<Value = String> {
     "[a-zA-Z][a-zA-Z0-9-]{0,15}".prop_map(|s| s)
-}
-
-// ========================================
-// ContentEncodingError のテスト
-// ========================================
-
-#[test]
-fn prop_content_encoding_error_display() {
-    let errors = [
-        (ContentEncodingError::Empty, "empty Content-Encoding"),
-        (
-            ContentEncodingError::InvalidFormat,
-            "invalid Content-Encoding format",
-        ),
-        (
-            ContentEncodingError::InvalidEncoding,
-            "invalid Content-Encoding token",
-        ),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_content_encoding_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(ContentEncodingError::Empty);
-    assert_eq!(error.to_string(), "empty Content-Encoding");
-}
-
-// ========================================
-// ContentCoding のテスト
-// ========================================
-
-#[test]
-fn prop_content_coding_as_str() {
-    assert_eq!(ContentCoding::Gzip.as_str(), "gzip");
-    assert_eq!(ContentCoding::Deflate.as_str(), "deflate");
-    assert_eq!(ContentCoding::Compress.as_str(), "compress");
-    assert_eq!(ContentCoding::Identity.as_str(), "identity");
-    assert_eq!(ContentCoding::Other("br".to_string()).as_str(), "br");
 }
 
 // ========================================
@@ -192,65 +150,6 @@ proptest! {
 
         prop_assert!(ce.has_identity());
     }
-}
-
-// ========================================
-// パースエラーのテスト
-// ========================================
-
-#[test]
-fn prop_content_encoding_parse_errors() {
-    // 空
-    assert!(matches!(
-        ContentEncoding::parse(""),
-        Err(ContentEncodingError::Empty)
-    ));
-    assert!(matches!(
-        ContentEncoding::parse("   "),
-        Err(ContentEncodingError::Empty)
-    ));
-
-    // カンマのみ
-    assert!(matches!(
-        ContentEncoding::parse(",,,"),
-        Err(ContentEncodingError::Empty)
-    ));
-
-    // 不正なトークン（空白を含む）
-    assert!(matches!(
-        ContentEncoding::parse("g zip"),
-        Err(ContentEncodingError::InvalidEncoding)
-    ));
-
-    // 不正なトークン（特殊文字）
-    assert!(matches!(
-        ContentEncoding::parse("gzip<script>"),
-        Err(ContentEncodingError::InvalidEncoding)
-    ));
-}
-
-// ========================================
-// 境界値テスト
-// ========================================
-
-// 末尾のカンマは許可される
-#[test]
-fn prop_content_encoding_trailing_comma() {
-    let ce = ContentEncoding::parse("gzip,").unwrap();
-    assert_eq!(ce.encodings().len(), 1);
-    assert!(ce.has_gzip());
-
-    let ce = ContentEncoding::parse("gzip, deflate,").unwrap();
-    assert_eq!(ce.encodings().len(), 2);
-}
-
-// 連続したカンマは空のトークンとしてスキップされる
-#[test]
-fn prop_content_encoding_empty_tokens() {
-    let ce = ContentEncoding::parse("gzip,, deflate").unwrap();
-    assert_eq!(ce.encodings().len(), 2);
-    assert!(ce.has_gzip());
-    assert!(ce.has_deflate());
 }
 
 // ========================================

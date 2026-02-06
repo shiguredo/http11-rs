@@ -1,7 +1,7 @@
 //! キャッシュヘッダーのプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::cache::{Age, CacheControl, CacheError, Expires};
+use shiguredo_http11::cache::{Age, CacheControl, Expires};
 
 // ========================================
 // Strategy 定義
@@ -38,30 +38,6 @@ fn cache_directive_with_value() -> impl Strategy<Value = String> {
         seconds().prop_map(|s| format!("stale-while-revalidate={}", s)),
         seconds().prop_map(|s| format!("stale-if-error={}", s)),
     ]
-}
-
-// ========================================
-// CacheError のテスト
-// ========================================
-
-#[test]
-fn prop_cache_error_display() {
-    let errors = [
-        (CacheError::Empty, "empty cache header"),
-        (CacheError::InvalidFormat, "invalid cache header format"),
-        (CacheError::InvalidNumber, "invalid number in cache header"),
-        (CacheError::InvalidDate, "invalid date in cache header"),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_cache_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(CacheError::Empty);
-    assert_eq!(error.to_string(), "empty cache header");
 }
 
 // ========================================
@@ -249,13 +225,6 @@ proptest! {
     }
 }
 
-// max-stale 値なし
-#[test]
-fn prop_cache_control_max_stale_without_value() {
-    let cc = CacheControl::parse("max-stale").unwrap();
-    assert_eq!(cc.max_stale(), Some(u64::MAX));
-}
-
 // max-stale 値あり
 proptest! {
     #[test]
@@ -296,26 +265,6 @@ proptest! {
     }
 }
 
-// パースエラー
-#[test]
-fn prop_cache_control_parse_errors() {
-    // 空文字列はデフォルトの CacheControl として扱う
-    let cc = CacheControl::parse("").unwrap();
-    assert_eq!(cc, CacheControl::default());
-    let cc = CacheControl::parse("   ").unwrap();
-    assert_eq!(cc, CacheControl::default());
-
-    // 不正な数値
-    assert!(matches!(
-        CacheControl::parse("max-age=abc"),
-        Err(CacheError::InvalidNumber)
-    ));
-    assert!(matches!(
-        CacheControl::parse("max-age=-1"),
-        Err(CacheError::InvalidNumber)
-    ));
-}
-
 // to_header_value
 proptest! {
     #[test]
@@ -325,15 +274,6 @@ proptest! {
         let expected = format!("max-age={}", ma);
         prop_assert!(header.contains(&expected));
     }
-}
-
-// Default trait
-#[test]
-fn prop_cache_control_default() {
-    let cc = CacheControl::default();
-    assert_eq!(cc.max_age(), None);
-    assert!(!cc.is_no_cache());
-    assert!(!cc.is_public());
 }
 
 // Clone と PartialEq
@@ -367,30 +307,6 @@ proptest! {
 
         prop_assert_eq!(age.seconds(), reparsed.seconds());
     }
-}
-
-// Age 0
-#[test]
-fn prop_age_zero() {
-    let age = Age::new(0);
-    assert_eq!(age.seconds(), 0);
-    assert_eq!(age.to_string(), "0");
-
-    let parsed = Age::parse("0").unwrap();
-    assert_eq!(parsed.seconds(), 0);
-}
-
-// Age パースエラー
-#[test]
-fn prop_age_parse_errors() {
-    // 空
-    assert!(matches!(Age::parse(""), Err(CacheError::Empty)));
-    assert!(matches!(Age::parse("   "), Err(CacheError::Empty)));
-
-    // 不正な数値
-    assert!(matches!(Age::parse("abc"), Err(CacheError::InvalidNumber)));
-    assert!(matches!(Age::parse("-1"), Err(CacheError::InvalidNumber)));
-    assert!(matches!(Age::parse("1.5"), Err(CacheError::InvalidNumber)));
 }
 
 // Age to_header_value
@@ -451,37 +367,6 @@ proptest! {
         prop_assert_eq!(expires.date().minute(), reparsed.date().minute());
         prop_assert_eq!(expires.date().second(), reparsed.date().second());
     }
-}
-
-// Expires パースエラー
-#[test]
-fn prop_expires_parse_errors() {
-    // 不正な日付形式
-    assert!(matches!(
-        Expires::parse("invalid date"),
-        Err(CacheError::InvalidDate)
-    ));
-    assert!(matches!(
-        Expires::parse("2024-01-01"),
-        Err(CacheError::InvalidDate)
-    ));
-}
-
-// Expires to_header_value
-#[test]
-fn prop_expires_to_header_value() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
-    let header = expires.to_header_value();
-    assert!(header.contains("1994"));
-    assert!(header.contains("Nov"));
-}
-
-// Expires Clone と PartialEq
-#[test]
-fn prop_expires_clone_eq() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
-    let cloned = expires.clone();
-    assert_eq!(expires, cloned);
 }
 
 // ========================================

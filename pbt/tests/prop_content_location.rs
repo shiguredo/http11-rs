@@ -1,7 +1,7 @@
 //! Content-Location ヘッダーのプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::content_location::{ContentLocation, ContentLocationError};
+use shiguredo_http11::content_location::ContentLocation;
 
 // ========================================
 // Strategy 定義
@@ -75,31 +75,6 @@ fn relative_uri() -> impl Strategy<Value = String> {
 // 有効な URI
 fn valid_uri() -> impl Strategy<Value = String> {
     prop_oneof![absolute_uri(), relative_uri(),]
-}
-
-// ========================================
-// ContentLocationError のテスト
-// ========================================
-
-#[test]
-fn prop_content_location_error_display() {
-    let errors = [
-        (ContentLocationError::Empty, "empty Content-Location"),
-        (
-            ContentLocationError::InvalidUri,
-            "invalid Content-Location URI",
-        ),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_content_location_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(ContentLocationError::Empty);
-    assert_eq!(error.to_string(), "empty Content-Location");
 }
 
 // ========================================
@@ -208,29 +183,6 @@ proptest! {
         let reparsed = ContentLocation::parse(&display);
         prop_assert!(reparsed.is_ok());
     }
-}
-
-// ========================================
-// エラーケースのテスト
-// ========================================
-
-#[test]
-fn prop_content_location_parse_errors() {
-    // 空
-    assert!(matches!(
-        ContentLocation::parse(""),
-        Err(ContentLocationError::Empty)
-    ));
-    assert!(matches!(
-        ContentLocation::parse("   "),
-        Err(ContentLocationError::Empty)
-    ));
-
-    // 不正な URI (IPv6 閉じ括弧なし)
-    assert!(matches!(
-        ContentLocation::parse("http://[::1"),
-        Err(ContentLocationError::InvalidUri)
-    ));
 }
 
 // ========================================

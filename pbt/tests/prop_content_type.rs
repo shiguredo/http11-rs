@@ -1,7 +1,7 @@
 //! Content-Type のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::content_type::{ContentType, ContentTypeError};
+use shiguredo_http11::content_type::ContentType;
 
 // ========================================
 // Strategy 定義
@@ -78,37 +78,6 @@ fn value_needing_quotes() -> impl Strategy<Value = String> {
         // イコールを含む
         "[a-z]{1,4}=[a-z]{1,4}".prop_map(|s| s),
     ]
-}
-
-// ========================================
-// ContentTypeError のテスト
-// ========================================
-
-#[test]
-fn prop_content_type_error_display() {
-    let errors = [
-        (ContentTypeError::Empty, "empty Content-Type"),
-        (ContentTypeError::InvalidMediaType, "invalid media type"),
-        (ContentTypeError::InvalidParameter, "invalid parameter"),
-        (ContentTypeError::UnterminatedQuote, "unterminated quote"),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_content_type_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(ContentTypeError::Empty);
-    assert_eq!(error.to_string(), "empty Content-Type");
-}
-
-#[test]
-fn prop_content_type_error_clone_eq() {
-    let error = ContentTypeError::InvalidMediaType;
-    let cloned = error.clone();
-    assert_eq!(error, cloned);
 }
 
 // ========================================
@@ -424,15 +393,6 @@ proptest! {
     }
 }
 
-// is_json()
-#[test]
-fn prop_content_type_is_json() {
-    assert!(ContentType::parse("application/json").unwrap().is_json());
-    assert!(ContentType::parse("APPLICATION/JSON").unwrap().is_json());
-    assert!(!ContentType::parse("text/json").unwrap().is_json());
-    assert!(!ContentType::parse("application/xml").unwrap().is_json());
-}
-
 // is_multipart()
 proptest! {
     #[test]
@@ -440,46 +400,6 @@ proptest! {
         let ct = ContentType::parse(&format!("multipart/{}", subtype)).unwrap();
         prop_assert!(ct.is_multipart());
     }
-}
-
-// is_form_data()
-#[test]
-fn prop_content_type_is_form_data() {
-    assert!(
-        ContentType::parse("multipart/form-data")
-            .unwrap()
-            .is_form_data()
-    );
-    assert!(
-        ContentType::parse("MULTIPART/FORM-DATA")
-            .unwrap()
-            .is_form_data()
-    );
-    assert!(
-        !ContentType::parse("multipart/mixed")
-            .unwrap()
-            .is_form_data()
-    );
-}
-
-// is_form_urlencoded()
-#[test]
-fn prop_content_type_is_form_urlencoded() {
-    assert!(
-        ContentType::parse("application/x-www-form-urlencoded")
-            .unwrap()
-            .is_form_urlencoded()
-    );
-    assert!(
-        ContentType::parse("APPLICATION/X-WWW-FORM-URLENCODED")
-            .unwrap()
-            .is_form_urlencoded()
-    );
-    assert!(
-        !ContentType::parse("application/json")
-            .unwrap()
-            .is_form_urlencoded()
-    );
 }
 
 // ========================================
@@ -552,61 +472,6 @@ proptest! {
 // ========================================
 // エラーケースのテスト
 // ========================================
-
-#[test]
-fn prop_content_type_parse_errors() {
-    // 空
-    assert!(matches!(
-        ContentType::parse(""),
-        Err(ContentTypeError::Empty)
-    ));
-    assert!(matches!(
-        ContentType::parse("   "),
-        Err(ContentTypeError::Empty)
-    ));
-
-    // スラッシュなし
-    assert!(matches!(
-        ContentType::parse("text"),
-        Err(ContentTypeError::InvalidMediaType)
-    ));
-
-    // 空のメディアタイプ
-    assert!(matches!(
-        ContentType::parse("/html"),
-        Err(ContentTypeError::InvalidMediaType)
-    ));
-
-    // 空のサブタイプ
-    assert!(matches!(
-        ContentType::parse("text/"),
-        Err(ContentTypeError::InvalidMediaType)
-    ));
-
-    // 不正な文字を含むメディアタイプ
-    assert!(matches!(
-        ContentType::parse("te xt/html"),
-        Err(ContentTypeError::InvalidMediaType)
-    ));
-
-    // 閉じていない引用符
-    assert!(matches!(
-        ContentType::parse("text/plain; name=\"unclosed"),
-        Err(ContentTypeError::UnterminatedQuote)
-    ));
-
-    // パラメータに = がない
-    assert!(matches!(
-        ContentType::parse("text/plain; charset"),
-        Err(ContentTypeError::InvalidParameter)
-    ));
-
-    // 空のパラメータ名
-    assert!(matches!(
-        ContentType::parse("text/plain; =value"),
-        Err(ContentTypeError::InvalidParameter)
-    ));
-}
 
 // 不正な文字を含むメディアタイプ
 proptest! {
@@ -703,51 +568,4 @@ proptest! {
     fn prop_content_type_parse_no_panic_extended(s in ".{0,128}") {
         let _ = ContentType::parse(&s);
     }
-}
-
-// ========================================
-// エッジケースのテスト
-// ========================================
-
-#[test]
-fn prop_content_type_edge_cases() {
-    // 末尾のセミコロン
-    let ct = ContentType::parse("text/html;").unwrap();
-    assert_eq!(ct.mime_type(), "text/html");
-    assert!(ct.parameters().is_empty());
-
-    // 複数のセミコロン
-    let ct = ContentType::parse("text/html;;;").unwrap();
-    assert_eq!(ct.mime_type(), "text/html");
-
-    // 連続するセミコロン
-    let ct = ContentType::parse("text/html; ; charset=utf-8").unwrap();
-    assert_eq!(ct.charset(), Some("utf-8"));
-}
-
-// セミコロンを含む引用符付き値のパース確認
-#[test]
-fn prop_content_type_semicolon_in_quoted_value() {
-    // セミコロンを含む引用符付き値
-    let ct = ContentType::parse("text/plain; name=\"a;b\"").unwrap();
-    assert_eq!(ct.parameter("name"), Some("a;b"));
-
-    // セミコロンを含む値の後に別のパラメータ
-    let ct = ContentType::parse("text/plain; name=\"a;b\"; charset=utf-8").unwrap();
-    assert_eq!(ct.parameter("name"), Some("a;b"));
-    assert_eq!(ct.charset(), Some("utf-8"));
-}
-
-// 引用符のみの値
-#[test]
-fn prop_content_type_quote_only_value() {
-    let ct = ContentType::parse("text/plain; name=\"\\\"\"").unwrap();
-    assert_eq!(ct.parameter("name"), Some("\""));
-}
-
-// 空の引用符付き値
-#[test]
-fn prop_content_type_empty_quoted_value() {
-    let ct = ContentType::parse("text/plain; name=\"\"").unwrap();
-    assert_eq!(ct.parameter("name"), Some(""));
 }

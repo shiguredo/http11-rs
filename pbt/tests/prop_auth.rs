@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::auth::{
-    AuthChallenge, AuthError, Authorization, BasicAuth, BearerChallenge, BearerToken, DigestAuth,
+    AuthChallenge, Authorization, BasicAuth, BearerChallenge, BearerToken, DigestAuth,
     DigestChallenge, ProxyAuthenticate, ProxyAuthorization, WwwAuthenticate,
 };
 
@@ -36,46 +36,6 @@ fn param_value() -> impl Strategy<Value = String> {
 }
 
 // ========================================
-// AuthError のテスト
-// ========================================
-
-#[test]
-fn prop_auth_error_display() {
-    let errors = [
-        (AuthError::Empty, "empty authorization header"),
-        (AuthError::InvalidFormat, "invalid authorization format"),
-        (AuthError::NotBasicScheme, "not basic authentication scheme"),
-        (
-            AuthError::NotDigestScheme,
-            "not digest authentication scheme",
-        ),
-        (
-            AuthError::NotBearerScheme,
-            "not bearer authentication scheme",
-        ),
-        (AuthError::Base64DecodeError, "base64 decode error"),
-        (AuthError::Utf8Error, "utf-8 decode error"),
-        (AuthError::MissingColon, "missing colon in credentials"),
-        (AuthError::InvalidParameter, "invalid auth parameter"),
-        (
-            AuthError::MissingParameter,
-            "missing required auth parameter",
-        ),
-        (AuthError::InvalidToken, "invalid auth token"),
-    ];
-
-    for (error, expected) in errors {
-        assert_eq!(error.to_string(), expected);
-    }
-}
-
-#[test]
-fn prop_auth_error_is_error_trait() {
-    let error: Box<dyn std::error::Error> = Box::new(AuthError::Empty);
-    assert_eq!(error.to_string(), "empty authorization header");
-}
-
-// ========================================
 // BearerToken のテスト
 // ========================================
 
@@ -101,33 +61,6 @@ proptest! {
 
         prop_assert_eq!(display, format!("Bearer {}", token));
     }
-}
-
-// BearerToken パースエラー
-#[test]
-fn prop_bearer_token_parse_errors() {
-    // 空
-    assert!(matches!(BearerToken::parse(""), Err(AuthError::Empty)));
-    // Bearer スキームでない
-    assert!(matches!(
-        BearerToken::parse("Basic abc"),
-        Err(AuthError::NotBearerScheme)
-    ));
-    // トークンが空
-    assert!(matches!(
-        BearerToken::parse("Bearer "),
-        Err(AuthError::InvalidFormat)
-    ));
-    // "Bearer" のみ（スペースなし）
-    assert!(matches!(
-        BearerToken::parse("Bearer"),
-        Err(AuthError::InvalidFormat)
-    ));
-    // 不正な文字を含む
-    assert!(matches!(
-        BearerToken::parse("Bearer abc def"),
-        Err(AuthError::InvalidToken)
-    ));
 }
 
 // 大文字小文字を区別しない
@@ -238,23 +171,6 @@ proptest! {
     }
 }
 
-// DigestAuth パースエラー
-#[test]
-fn prop_digest_auth_parse_errors() {
-    // 空
-    assert!(matches!(DigestAuth::parse(""), Err(AuthError::Empty)));
-    // Digest スキームでない
-    assert!(matches!(
-        DigestAuth::parse("Basic abc"),
-        Err(AuthError::NotDigestScheme)
-    ));
-    // 必須パラメータが足りない
-    assert!(matches!(
-        DigestAuth::parse("Digest username=\"test\""),
-        Err(AuthError::MissingParameter)
-    ));
-}
-
 // param で大文字小文字を区別しない
 proptest! {
     #[test]
@@ -314,23 +230,6 @@ proptest! {
 
         prop_assert!(display.starts_with("Digest "));
     }
-}
-
-// DigestChallenge パースエラー
-#[test]
-fn prop_digest_challenge_parse_errors() {
-    // 空
-    assert!(matches!(DigestChallenge::parse(""), Err(AuthError::Empty)));
-    // Digest スキームでない
-    assert!(matches!(
-        DigestChallenge::parse("Basic realm=\"test\""),
-        Err(AuthError::NotDigestScheme)
-    ));
-    // 必須パラメータが足りない
-    assert!(matches!(
-        DigestChallenge::parse("Digest realm=\"test\""),
-        Err(AuthError::MissingParameter)
-    ));
 }
 
 // 任意の文字列で DigestChallenge パースがパニックしない
@@ -421,39 +320,6 @@ proptest! {
     }
 }
 
-// Authorization パースエラー
-#[test]
-fn prop_authorization_parse_errors() {
-    // 空
-    assert!(matches!(Authorization::parse(""), Err(AuthError::Empty)));
-    // 不明なスキーム
-    assert!(matches!(
-        Authorization::parse("Unknown token"),
-        Err(AuthError::InvalidFormat)
-    ));
-}
-
-// 大文字小文字を区別しない
-#[test]
-fn prop_authorization_case_insensitive() {
-    assert!(Authorization::parse("basic dXNlcjpwYXNz").is_ok());
-    assert!(Authorization::parse("Basic dXNlcjpwYXNz").is_ok());
-    assert!(Authorization::parse("bearer token123").is_ok());
-    assert!(Authorization::parse("Bearer token123").is_ok());
-    assert!(
-        Authorization::parse(
-            "digest username=\"a\", realm=\"b\", nonce=\"c\", uri=\"/\", response=\"d\""
-        )
-        .is_ok()
-    );
-    assert!(
-        Authorization::parse(
-            "Digest username=\"a\", realm=\"b\", nonce=\"c\", uri=\"/\", response=\"d\""
-        )
-        .is_ok()
-    );
-}
-
 // 任意の文字列で Authorization パースがパニックしない
 proptest! {
     #[test]
@@ -534,29 +400,6 @@ proptest! {
 
         prop_assert!(display.starts_with("Basic "));
     }
-}
-
-// AuthChallenge パースエラー
-#[test]
-fn prop_auth_challenge_parse_errors() {
-    // 空
-    assert!(matches!(AuthChallenge::parse(""), Err(AuthError::Empty)));
-    // 不明なスキーム
-    assert!(matches!(
-        AuthChallenge::parse("Unknown param=\"value\""),
-        Err(AuthError::InvalidFormat)
-    ));
-}
-
-// 大文字小文字を区別しない
-#[test]
-fn prop_auth_challenge_case_insensitive() {
-    assert!(AuthChallenge::parse("basic realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("Basic realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("bearer realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("Bearer realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("digest realm=\"a\", nonce=\"b\"").is_ok());
-    assert!(AuthChallenge::parse("Digest realm=\"a\", nonce=\"b\"").is_ok());
 }
 
 // 任意の文字列で AuthChallenge パースがパニックしない

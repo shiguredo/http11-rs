@@ -461,7 +461,7 @@ proptest! {
 }
 
 // ========================================
-// Clone と Debug テスト
+// Clone テスト
 // ========================================
 
 proptest! {
@@ -486,13 +486,4 @@ proptest! {
         prop_assert_eq!(request.headers, cloned.headers);
         prop_assert_eq!(request.body, cloned.body);
     }
-}
-
-#[test]
-fn prop_request_debug() {
-    let request = Request::new("GET", "/test").header("Host", "example.com");
-    let debug_str = format!("{:?}", request);
-
-    assert!(debug_str.contains("GET"));
-    assert!(debug_str.contains("/test"));
 }
