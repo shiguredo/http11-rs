@@ -1291,6 +1291,101 @@ proptest! {
 }
 
 // ========================================
+// RFC 9110 Section 8.6: 1xx / 204 レスポンスで Content-Length 禁止
+// ========================================
+
+#[test]
+fn prop_encode_response_1xx_with_cl() {
+    // RFC 9110 Section 8.6: 1xx レスポンスに Content-Length は禁止
+    let res = Response::new(100, "Continue").header("Content-Length", "0");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 100 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_204_with_cl() {
+    // RFC 9110 Section 8.6: 204 No Content レスポンスに Content-Length は禁止
+    let res = Response::new(204, "No Content").header("Content-Length", "0");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 204 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_1xx_with_cl() {
+    // encode_response_headers でも同様にエラー
+    let res = Response::new(100, "Continue").header("Content-Length", "0");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 100 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_204_with_cl() {
+    // encode_response_headers でも同様にエラー
+    let res = Response::new(204, "No Content").header("Content-Length", "0");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 204 })
+    ));
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_response_1xx_with_cl_always_error(status in 100u16..200) {
+        // 1xx レスポンスに Content-Length があれば常にエラー
+        let res = Response::new(status, "Info").header("Content-Length", "0");
+        let result = encode_response(&res);
+        match result {
+            Err(EncodeError::ForbiddenContentLength { status_code }) => {
+                prop_assert_eq!(status_code, status);
+            }
+            other => {
+                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+            }
+        }
+    }
+}
+
+#[test]
+fn prop_encode_response_205_with_cl_zero_ok() {
+    // 205 で Content-Length: 0 は許可
+    let res = Response::new(205, "Reset Content").header("Content-Length", "0");
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_response_205_with_cl_nonzero_error() {
+    // 205 で Content-Length > 0 はエラー
+    let res = Response::new(205, "Reset Content").header("Content-Length", "10");
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 205 })
+    ));
+}
+
+#[test]
+fn prop_encode_response_headers_205_with_cl_nonzero_error() {
+    // encode_response_headers でも 205 + CL > 0 はエラー
+    let res = Response::new(205, "Reset Content").header("Content-Length", "10");
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 205 })
+    ));
+}
+
+// ========================================
 // Host ヘッダーバリデーションテスト
 // ========================================
 
@@ -1354,4 +1449,55 @@ proptest! {
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
     }
+}
+
+// ========================================
+// userinfo 除外テスト (RFC 9112 Section 3.2)
+// ========================================
+
+#[test]
+fn prop_encode_request_absolute_form_userinfo_match() {
+    // absolute-form で userinfo 付き URI の Host 一致検証
+    // userinfo を除外して比較するので一致する
+    let req =
+        Request::new("GET", "http://user:pass@example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_absolute_form_userinfo_mismatch() {
+    // absolute-form で userinfo 付き URI の Host 不一致
+    let req = Request::new("GET", "http://user:pass@example.com/path").header("Host", "other.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::HostAuthorityMismatch { .. })
+    ));
+}
+
+#[test]
+fn prop_encode_request_absolute_form_userinfo_only_user() {
+    // userinfo がユーザー名のみ (パスワードなし)
+    let req = Request::new("GET", "http://user@example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_absolute_form_userinfo_with_port() {
+    // userinfo + ポート番号
+    let req =
+        Request::new("GET", "http://user@example.com:8080/path").header("Host", "example.com:8080");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn prop_encode_request_absolute_form_at_in_userinfo() {
+    // userinfo に @ を含むケース (RFC 3986 では非推奨だが rfind で正しく処理)
+    let req =
+        Request::new("GET", "http://user%40name@example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
 }

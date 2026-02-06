@@ -1,4 +1,10 @@
 //! HTTP レスポンスデコーダー
+//!
+//! # RFC 非準拠
+//!
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//!   本実装では UTF-8 として強制的に解析している。非 UTF-8 バイト列を含むレスポンスは
+//!   エラーとして拒否される。
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
@@ -241,12 +247,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
     /// ステータスコードからボディがあるかどうかを判定
     fn status_has_body(status_code: u16) -> bool {
-        // 1xx, 204, 205, 304 はボディなし
-        // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
-        !((100..200).contains(&status_code)
-            || status_code == 204
-            || status_code == 205
-            || status_code == 304)
+        // RFC 9112 Section 6.3: 1xx, 204, 304 はボディなし
+        !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
     }
 
     /// ボディモードを決定
@@ -254,6 +256,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// RFC 9112 Section 6.3 の優先順位に従う:
     /// 1. CONNECT 2xx はトンネルモード (Transfer-Encoding/Content-Length は無視)
     /// 2. HEAD レスポンス、1xx/204/304 はボディなし (Transfer-Encoding/Content-Length を解析しない)
+    ///    注: 205 は送信者制約 (RFC 9110) だが、受信者はメッセージ長決定規則に従う
     /// 3. Transfer-Encoding がある場合:
     ///    - chunked が最後 → chunked
     ///    - chunked がないか最後でない → close-delimited
@@ -270,6 +273,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // RFC 9112 Section 6.3: HEAD/1xx/204/304 はボディなし
+        // 205 は送信者がボディを生成してはならない (RFC 9110 Section 15.3.6) が、
+        // 受信者はメッセージ長決定規則に従って処理する必要がある
         // これらのステータスでは Transfer-Encoding/Content-Length を解析しない
         // (不正な TE/CL があってもエラーにしない)
         if self.expect_no_body || !Self::status_has_body(status_code) {

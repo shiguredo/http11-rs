@@ -1,4 +1,10 @@
 //! HTTP リクエストデコーダー
+//!
+//! # RFC 非準拠
+//!
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//!   本実装では UTF-8 として強制的に解析している。非 UTF-8 バイト列を含むリクエストは
+//!   エラーとして拒否される。
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;

@@ -89,6 +89,10 @@ pub enum EncodeError {
     /// 205 Reset Content レスポンスにボディが含まれている
     /// RFC 9110 Section 15.3.6: 205 レスポンスはボディを生成してはならない
     ForbiddenBodyFor205,
+    /// 1xx / 204 レスポンスで Content-Length が設定されている
+    /// RFC 9110 Section 8.6: サーバーは 1xx または 204 レスポンスに
+    /// Content-Length を含めてはならない (MUST NOT)
+    ForbiddenContentLength { status_code: u16 },
 }
 
 impl fmt::Display for EncodeError {
@@ -148,6 +152,13 @@ impl fmt::Display for EncodeError {
                 write!(
                     f,
                     "205 Reset Content must not contain a body (RFC 9110 Section 15.3.6)"
+                )
+            }
+            EncodeError::ForbiddenContentLength { status_code } => {
+                write!(
+                    f,
+                    "Content-Length not allowed for {} response (RFC 9110 Section 8.6)",
+                    status_code
                 )
             }
         }

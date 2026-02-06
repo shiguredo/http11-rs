@@ -1578,8 +1578,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_decoder_reset(
-        // 204, 205, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
-        status_code in prop_oneof![200u16..=203, 206u16..=299]
+        // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
@@ -1593,8 +1593,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_decoder_reset_expect_no_body(
-        // 204, 205, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
-        status_code in prop_oneof![200u16..=203, 206u16..=299]
+        // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
         decoder.set_expect_no_body(true);
@@ -1777,8 +1777,8 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(head.status_code, status_code);
-        // 1xx, 204, 205, 304 はボディなし (RFC 9110)
-        if (100..200).contains(&status_code) || status_code == 204 || status_code == 205 || status_code == 304 {
+        // RFC 9112 Section 6.3: 1xx, 204, 304 はボディなし
+        if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
         } else {
             prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
@@ -1824,7 +1824,9 @@ proptest! {
     ) {
         let mut response = Response::new(status, &reason);
 
-        // RFC 9110: 1xx/204/205/304 はボディを含めてはならない
+        // RFC 9110: 1xx/204/205/304 はエンコーダー側でボディ生成を禁止
+        // (デコーダー側では 205 はメッセージ長決定規則に従うが、ラウンドトリップテストでは
+        //  エンコーダーの制約に合わせる)
         let status_forbids_body = (100..200).contains(&status)
             || status == 204
             || status == 205

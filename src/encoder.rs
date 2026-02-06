@@ -132,14 +132,22 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
     Ok(())
 }
 
-/// URI から authority 部分を抽出
+/// URI から authority 部分を抽出 (userinfo を除外)
 ///
 /// scheme "://" authority ["/" path]
+/// RFC 9112 Section 3.2: Host ヘッダーとの比較では userinfo を除外する
 fn extract_authority_from_uri(uri: &str) -> Option<String> {
     let after_scheme = uri.find("://").map(|i| &uri[i + 3..])?;
     // authority は次の "/" または "?" または末尾まで
     let end = after_scheme.find(['/', '?']).unwrap_or(after_scheme.len());
-    Some(after_scheme[..end].to_string())
+    let authority = &after_scheme[..end];
+    // userinfo を除外して host:port のみを返す
+    let host_port = if let Some(at_pos) = authority.rfind('@') {
+        &authority[at_pos + 1..]
+    } else {
+        authority
+    };
+    Some(host_port.to_string())
 }
 
 /// リクエストをエンコード
@@ -216,6 +224,13 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         });
     }
 
+    // RFC 9110 Section 8.6: 1xx / 204 レスポンスに Content-Length は禁止
+    if is_1xx_or_204 && response.has_header("Content-Length") {
+        return Err(EncodeError::ForbiddenContentLength {
+            status_code: response.status_code,
+        });
+    }
+
     // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
     if response.status_code == 205 {
         if !response.body.is_empty() {
@@ -223,6 +238,12 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         }
         if response.has_header("Transfer-Encoding") {
             return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
+        }
+        // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+        if let Some(cl) = response.get_header("Content-Length")
+            && cl.trim() != "0"
+        {
+            return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
         }
     }
 
@@ -246,11 +267,12 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     // Content-Length (if not already set and not chunked)
     // RFC 9112: keep-alive を維持するために Content-Length または Transfer-Encoding が必要
-    // 1xx/204/205/304 はボディがないため Content-Length を追加しない
+    // 1xx/204/304 はボディがないため Content-Length を追加しない
+    // 205 は RFC 9110 Section 15.3.6 でボディ生成禁止だが、受信者のメッセージ長決定規則のため
+    // Content-Length: 0 を付与する (close-delimited にならないようにする)
     // omit_content_length が true の場合は自動付与しない (HEAD レスポンス用)
     let status_has_body = !((100..200).contains(&response.status_code)
         || response.status_code == 204
-        || response.status_code == 205
         || response.status_code == 304);
     if status_has_body
         && !response.omit_content_length
@@ -416,9 +438,24 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         });
     }
 
+    // RFC 9110 Section 8.6: 1xx / 204 レスポンスに Content-Length は禁止
+    if is_1xx_or_204 && response.has_header("Content-Length") {
+        return Err(EncodeError::ForbiddenContentLength {
+            status_code: response.status_code,
+        });
+    }
+
     // RFC 9110 Section 15.3.6: 205 Reset Content の Transfer-Encoding 禁止
     if response.status_code == 205 && response.has_header("Transfer-Encoding") {
         return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
+    }
+
+    // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+    if response.status_code == 205
+        && let Some(cl) = response.get_header("Content-Length")
+        && cl.trim() != "0"
+    {
+        return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
     }
 
     let mut buf = Vec::new();

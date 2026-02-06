@@ -1,4 +1,10 @@
 //! ボディデコーダーの定義
+//!
+//! # RFC 非準拠
+//!
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//!   本実装ではチャンクサイズ行やトレーラーを UTF-8 として強制的に解析している。
+//!   非 UTF-8 バイト列を含む場合はエラーとして拒否される。
 
 use crate::error::Error;
 use crate::limits::DecoderLimits;
