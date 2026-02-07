@@ -3,7 +3,7 @@
 use proptest::prelude::*;
 use shiguredo_http11::auth::{
     AuthChallenge, Authorization, BasicAuth, BearerChallenge, BearerToken, DigestAuth,
-    DigestChallenge, ProxyAuthenticate, ProxyAuthorization,
+    DigestChallenge, ProxyAuthenticate, ProxyAuthorization, WwwAuthenticate,
 };
 
 // ========================================
@@ -33,6 +33,98 @@ fn token68_string(min: usize, max: usize) -> impl Strategy<Value = String> {
 // realm / nonce などのパラメータ値
 fn param_value() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9._-]{1,32}".prop_map(|s| s)
+}
+
+// スキーム名のランダムケーシング ("Basic" -> "basic", "BASIC", "bAsIc" など)
+fn randomize_case(scheme: &'static str) -> impl Strategy<Value = String> {
+    proptest::collection::vec(proptest::bool::ANY, scheme.len()).prop_map(move |bools| {
+        scheme
+            .chars()
+            .zip(bools.iter())
+            .map(|(c, &upper)| {
+                if upper {
+                    c.to_uppercase().to_string()
+                } else {
+                    c.to_lowercase().to_string()
+                }
+            })
+            .collect()
+    })
+}
+
+// コロンを含むパスワード
+fn password_with_colon() -> impl Strategy<Value = String> {
+    ("[a-zA-Z0-9]{0,8}", "[a-zA-Z0-9]{0,8}").prop_map(|(a, b)| format!("{}:{}", a, b))
+}
+
+// ========================================
+// BasicAuth のテスト
+// ========================================
+
+// BasicAuth ラウンドトリップ (コロンを含むパスワード)
+proptest! {
+    #[test]
+    fn prop_basic_auth_colon_in_password(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in password_with_colon()) {
+        let auth = BasicAuth::new(&username, &password);
+        let header = auth.to_header_value();
+        let reparsed = BasicAuth::parse(&header).unwrap();
+
+        prop_assert_eq!(reparsed.username(), username.as_str());
+        prop_assert_eq!(reparsed.password(), password.as_str());
+    }
+}
+
+// BasicAuth スキーム名の大文字小文字を区別しない
+proptest! {
+    #[test]
+    fn prop_basic_auth_case_insensitive(
+        scheme in randomize_case("Basic"),
+        username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
+        password in "[a-zA-Z0-9]{0,16}",
+    ) {
+        let auth = BasicAuth::new(&username, &password);
+        let canonical = auth.to_header_value();
+        // スキーム名を差し替え
+        let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
+        let parsed = BasicAuth::parse(&header).unwrap();
+
+        prop_assert_eq!(parsed.username(), username.as_str());
+        prop_assert_eq!(parsed.password(), password.as_str());
+    }
+}
+
+// ========================================
+// WwwAuthenticate のテスト
+// ========================================
+
+// WwwAuthenticate charset 付きラウンドトリップ
+proptest! {
+    #[test]
+    fn prop_www_authenticate_charset_roundtrip(
+        realm in param_value(),
+        charset in prop_oneof![Just("UTF-8"), Just("ISO-8859-1")],
+    ) {
+        let auth = WwwAuthenticate::basic(&realm).with_charset(charset);
+        let header = auth.to_string();
+        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+
+        prop_assert_eq!(reparsed.realm(), realm.as_str());
+        prop_assert_eq!(reparsed.charset(), Some(charset));
+    }
+}
+
+// WwwAuthenticate スキーム名の大文字小文字を区別しない
+proptest! {
+    #[test]
+    fn prop_www_authenticate_case_insensitive(
+        scheme in randomize_case("Basic"),
+        realm in param_value(),
+    ) {
+        let header = format!("{} realm=\"{}\"", scheme, realm);
+        let parsed = WwwAuthenticate::parse(&header).unwrap();
+
+        prop_assert_eq!(parsed.realm(), realm.as_str());
+    }
 }
 
 // ========================================
@@ -279,6 +371,127 @@ proptest! {
         // to_header_value
         let header_value = parsed.to_header_value();
         prop_assert!(header_value.starts_with("Digest "));
+    }
+}
+
+// ========================================
+// Authorization スキーム名の大文字小文字を区別しない
+// ========================================
+
+proptest! {
+    #[test]
+    fn prop_authorization_case_insensitive_basic(
+        scheme in randomize_case("Basic"),
+        username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
+        password in "[a-zA-Z0-9]{0,16}",
+    ) {
+        let auth = BasicAuth::new(&username, &password);
+        let canonical = auth.to_header_value();
+        let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
+        let parsed = Authorization::parse(&header).unwrap();
+
+        if let Authorization::Basic(basic) = parsed {
+            prop_assert_eq!(basic.username(), username.as_str());
+        } else {
+            prop_assert!(false, "Expected Authorization::Basic");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_authorization_case_insensitive_bearer(
+        scheme in randomize_case("Bearer"),
+        token in token68_string(1, 32),
+    ) {
+        let header = format!("{} {}", scheme, token);
+        let parsed = Authorization::parse(&header).unwrap();
+
+        if let Authorization::Bearer(bearer) = parsed {
+            prop_assert_eq!(bearer.token(), token.as_str());
+        } else {
+            prop_assert!(false, "Expected Authorization::Bearer");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_authorization_case_insensitive_digest(
+        scheme in randomize_case("Digest"),
+        username in param_value(),
+        realm in param_value(),
+        nonce in param_value(),
+        uri in "/[a-z]{1,8}",
+        response in "[a-f0-9]{32}",
+    ) {
+        let header = format!(
+            "{} username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
+            scheme, username, realm, nonce, uri, response
+        );
+        let parsed = Authorization::parse(&header).unwrap();
+
+        if let Authorization::Digest(digest) = parsed {
+            prop_assert_eq!(digest.username(), Some(username.as_str()));
+        } else {
+            prop_assert!(false, "Expected Authorization::Digest");
+        }
+    }
+}
+
+// ========================================
+// AuthChallenge スキーム名の大文字小文字を区別しない
+// ========================================
+
+proptest! {
+    #[test]
+    fn prop_auth_challenge_case_insensitive_basic(
+        scheme in randomize_case("Basic"),
+        realm in param_value(),
+    ) {
+        let header = format!("{} realm=\"{}\"", scheme, realm);
+        let parsed = AuthChallenge::parse(&header).unwrap();
+
+        if let AuthChallenge::Basic(basic) = parsed {
+            prop_assert_eq!(basic.realm(), realm.as_str());
+        } else {
+            prop_assert!(false, "Expected AuthChallenge::Basic");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_auth_challenge_case_insensitive_bearer(
+        scheme in randomize_case("Bearer"),
+        realm in param_value(),
+    ) {
+        let header = format!("{} realm=\"{}\"", scheme, realm);
+        let parsed = AuthChallenge::parse(&header).unwrap();
+
+        if let AuthChallenge::Bearer(_) = parsed {
+            // OK
+        } else {
+            prop_assert!(false, "Expected AuthChallenge::Bearer");
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_auth_challenge_case_insensitive_digest(
+        scheme in randomize_case("Digest"),
+        realm in param_value(),
+        nonce in param_value(),
+    ) {
+        let header = format!("{} realm=\"{}\", nonce=\"{}\"", scheme, realm, nonce);
+        let parsed = AuthChallenge::parse(&header).unwrap();
+
+        if let AuthChallenge::Digest(digest) = parsed {
+            prop_assert_eq!(digest.realm(), Some(realm.as_str()));
+        } else {
+            prop_assert!(false, "Expected AuthChallenge::Digest");
+        }
     }
 }
 

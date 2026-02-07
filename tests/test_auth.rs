@@ -127,27 +127,6 @@ fn test_authorization_parse_errors() {
     ));
 }
 
-// 大文字小文字を区別しない
-#[test]
-fn test_authorization_case_insensitive() {
-    assert!(Authorization::parse("basic dXNlcjpwYXNz").is_ok());
-    assert!(Authorization::parse("Basic dXNlcjpwYXNz").is_ok());
-    assert!(Authorization::parse("bearer token123").is_ok());
-    assert!(Authorization::parse("Bearer token123").is_ok());
-    assert!(
-        Authorization::parse(
-            "digest username=\"a\", realm=\"b\", nonce=\"c\", uri=\"/\", response=\"d\""
-        )
-        .is_ok()
-    );
-    assert!(
-        Authorization::parse(
-            "Digest username=\"a\", realm=\"b\", nonce=\"c\", uri=\"/\", response=\"d\""
-        )
-        .is_ok()
-    );
-}
-
 // ========================================
 // AuthChallenge のテスト
 // ========================================
@@ -162,15 +141,4 @@ fn test_auth_challenge_parse_errors() {
         AuthChallenge::parse("Unknown param=\"value\""),
         Err(AuthError::InvalidFormat)
     ));
-}
-
-// 大文字小文字を区別しない
-#[test]
-fn test_auth_challenge_case_insensitive() {
-    assert!(AuthChallenge::parse("basic realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("Basic realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("bearer realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("Bearer realm=\"test\"").is_ok());
-    assert!(AuthChallenge::parse("digest realm=\"a\", nonce=\"b\"").is_ok());
-    assert!(AuthChallenge::parse("Digest realm=\"a\", nonce=\"b\"").is_ok());
 }

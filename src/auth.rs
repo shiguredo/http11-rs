@@ -930,42 +930,6 @@ mod tests {
     }
 
     #[test]
-    fn test_basic_auth_new() {
-        let auth = BasicAuth::new("user", "pass");
-        assert_eq!(auth.username(), "user");
-        assert_eq!(auth.password(), "pass");
-    }
-
-    #[test]
-    fn test_basic_auth_parse() {
-        let auth = BasicAuth::parse("Basic dXNlcjpwYXNzd29yZA==").unwrap();
-        assert_eq!(auth.username(), "user");
-        assert_eq!(auth.password(), "password");
-    }
-
-    #[test]
-    fn test_basic_auth_parse_lowercase() {
-        let auth = BasicAuth::parse("basic dXNlcjpwYXNzd29yZA==").unwrap();
-        assert_eq!(auth.username(), "user");
-        assert_eq!(auth.password(), "password");
-    }
-
-    #[test]
-    fn test_basic_auth_parse_empty_password() {
-        let auth = BasicAuth::parse("Basic dXNlcjo=").unwrap();
-        assert_eq!(auth.username(), "user");
-        assert_eq!(auth.password(), "");
-    }
-
-    #[test]
-    fn test_basic_auth_parse_colon_in_password() {
-        // user:pass:word -> dXNlcjpwYXNzOndvcmQ=
-        let auth = BasicAuth::parse("Basic dXNlcjpwYXNzOndvcmQ=").unwrap();
-        assert_eq!(auth.username(), "user");
-        assert_eq!(auth.password(), "pass:word");
-    }
-
-    #[test]
     fn test_basic_auth_parse_empty() {
         assert!(BasicAuth::parse("").is_err());
     }
@@ -974,56 +938,6 @@ mod tests {
     fn test_basic_auth_parse_not_basic() {
         assert!(BasicAuth::parse("Bearer token").is_err());
         assert!(BasicAuth::parse("Digest abc").is_err());
-    }
-
-    #[test]
-    fn test_basic_auth_to_header_value() {
-        let auth = BasicAuth::new("user", "password");
-        assert_eq!(auth.to_header_value(), "Basic dXNlcjpwYXNzd29yZA==");
-    }
-
-    #[test]
-    fn test_basic_auth_roundtrip() {
-        let original = BasicAuth::new("testuser", "testpass123");
-        let header = original.to_header_value();
-        let parsed = BasicAuth::parse(&header).unwrap();
-        assert_eq!(original.username(), parsed.username());
-        assert_eq!(original.password(), parsed.password());
-    }
-
-    #[test]
-    fn test_www_authenticate_basic() {
-        let auth = WwwAuthenticate::basic("example.com");
-        assert_eq!(auth.realm(), "example.com");
-        assert_eq!(auth.charset(), None);
-    }
-
-    #[test]
-    fn test_www_authenticate_with_charset() {
-        let auth = WwwAuthenticate::basic("example.com").with_charset("UTF-8");
-        assert_eq!(auth.realm(), "example.com");
-        assert_eq!(auth.charset(), Some("UTF-8"));
-    }
-
-    #[test]
-    fn test_www_authenticate_parse() {
-        let auth = WwwAuthenticate::parse("Basic realm=\"example.com\"").unwrap();
-        assert_eq!(auth.realm(), "example.com");
-        assert_eq!(auth.charset(), None);
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_with_charset() {
-        let auth =
-            WwwAuthenticate::parse("Basic realm=\"example.com\", charset=\"UTF-8\"").unwrap();
-        assert_eq!(auth.realm(), "example.com");
-        assert_eq!(auth.charset(), Some("UTF-8"));
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_lowercase() {
-        let auth = WwwAuthenticate::parse("basic realm=\"test\"").unwrap();
-        assert_eq!(auth.realm(), "test");
     }
 
     #[test]
@@ -1037,55 +951,9 @@ mod tests {
     }
 
     #[test]
-    fn test_www_authenticate_display() {
-        let auth = WwwAuthenticate::basic("example.com");
-        assert_eq!(auth.to_string(), "Basic realm=\"example.com\"");
-
-        let auth = WwwAuthenticate::basic("example.com").with_charset("UTF-8");
-        assert_eq!(
-            auth.to_string(),
-            "Basic realm=\"example.com\", charset=\"UTF-8\""
-        );
-    }
-
-    #[test]
-    fn test_www_authenticate_roundtrip() {
-        let original = WwwAuthenticate::basic("test.example.com");
-        let header = original.to_string();
-        let parsed = WwwAuthenticate::parse(&header).unwrap();
-        assert_eq!(original.realm(), parsed.realm());
-    }
-
-    #[test]
-    fn test_digest_auth_parse() {
-        let header = "Digest username=\"Mufasa\", realm=\"test\", nonce=\"abc\", uri=\"/\", response=\"xyz\"";
-        let auth = DigestAuth::parse(header).unwrap();
-        assert_eq!(auth.username(), Some("Mufasa"));
-        assert_eq!(auth.realm(), Some("test"));
-        assert_eq!(auth.nonce(), Some("abc"));
-        assert_eq!(auth.uri(), Some("/"));
-        assert_eq!(auth.response(), Some("xyz"));
-    }
-
-    #[test]
     fn test_digest_auth_missing_param() {
         let header = "Digest username=\"Mufasa\", realm=\"test\"";
         assert!(DigestAuth::parse(header).is_err());
-    }
-
-    #[test]
-    fn test_digest_challenge_parse() {
-        let header = "Digest realm=\"test\", nonce=\"abc\"";
-        let challenge = DigestChallenge::parse(header).unwrap();
-        assert_eq!(challenge.realm(), Some("test"));
-        assert_eq!(challenge.nonce(), Some("abc"));
-    }
-
-    #[test]
-    fn test_bearer_token_parse() {
-        let token = BearerToken::parse("Bearer abc.def.ghi").unwrap();
-        assert_eq!(token.token(), "abc.def.ghi");
-        assert_eq!(token.to_header_value(), "Bearer abc.def.ghi");
     }
 
     #[test]
@@ -1108,54 +976,8 @@ mod tests {
     }
 
     #[test]
-    fn test_bearer_challenge_parse() {
-        let header = "Bearer realm=\"example\", error=\"invalid_token\"";
-        let challenge = BearerChallenge::parse(header).unwrap();
-        assert_eq!(challenge.param("realm"), Some("example"));
-        assert_eq!(challenge.param("error"), Some("invalid_token"));
-    }
-
-    #[test]
-    fn test_authorization_parse() {
-        let auth = Authorization::parse("Bearer token123").unwrap();
-        assert!(matches!(auth, Authorization::Bearer(_)));
-    }
-
-    #[test]
-    fn test_proxy_headers_parse() {
-        let auth = ProxyAuthorization::parse("Basic dXNlcjpwYXNzd29yZA==").unwrap();
-        assert!(matches!(auth.authorization(), Authorization::Basic(_)));
-
-        let challenge = ProxyAuthenticate::parse("Basic realm=\"proxy\"").unwrap();
-        assert!(matches!(challenge.challenge(), AuthChallenge::Basic(_)));
-    }
-
-    #[test]
     fn test_digest_auth_non_ascii_input() {
         let input = ")ϓ )ϓ";
         assert!(DigestAuth::parse(input).is_err());
-    }
-
-    #[test]
-    fn test_basic_auth_case_insensitive() {
-        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
-        let auth1 = BasicAuth::parse("BASIC dXNlcjpwYXNzd29yZA==").unwrap();
-        let auth2 = BasicAuth::parse("BaSiC dXNlcjpwYXNzd29yZA==").unwrap();
-        assert_eq!(auth1.username(), "user");
-        assert_eq!(auth2.username(), "user");
-    }
-
-    #[test]
-    fn test_www_authenticate_case_insensitive() {
-        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
-        let auth = WwwAuthenticate::parse("BASIC realm=\"test\"").unwrap();
-        assert_eq!(auth.realm(), "test");
-    }
-
-    #[test]
-    fn test_authorization_case_insensitive() {
-        // RFC 9110 Section 11.1: 認証スキームは case-insensitive
-        let auth = Authorization::parse("BEARER token123").unwrap();
-        assert!(matches!(auth, Authorization::Bearer(_)));
     }
 }
