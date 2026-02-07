@@ -1,3 +1,11 @@
+//! Cookie / Set-Cookie ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - Cookie: 任意入力でパースし、各 cookie の name/value アクセサを呼び出す。
+//!   Display 出力を再パースして name と value の一致を確認する
+//! - Set-Cookie: パース成功時は expires, max_age, domain, path, secure,
+//!   http_only, same_site の全属性アクセサを呼び出す。
+//!   Display 出力の再パースで全属性の一致を確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

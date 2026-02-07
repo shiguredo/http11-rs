@@ -15,22 +15,22 @@ arbitrary = { version = "1", features = ["derive"] }
 path = ".."
 
 [[bin]]
-name = "fuzz_request_decoder"
-path = "fuzz_targets/fuzz_request_decoder.rs"
+name = "fuzz_decoder_request"
+path = "fuzz_targets/fuzz_decoder_request.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_response_decoder"
-path = "fuzz_targets/fuzz_response_decoder.rs"
+name = "fuzz_decoder_response"
+path = "fuzz_targets/fuzz_decoder_response.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_roundtrip"
-path = "fuzz_targets/fuzz_roundtrip.rs"
+name = "fuzz_decoder_roundtrip"
+path = "fuzz_targets/fuzz_decoder_roundtrip.rs"
 test = false
 doc = false
 bench = false
@@ -134,8 +134,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_chunked"
-path = "fuzz_targets/fuzz_chunked.rs"
+name = "fuzz_decoder_chunked"
+path = "fuzz_targets/fuzz_decoder_chunked.rs"
 test = false
 doc = false
 bench = false

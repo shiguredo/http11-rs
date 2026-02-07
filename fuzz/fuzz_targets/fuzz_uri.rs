@@ -1,3 +1,11 @@
+//! URI パーサーのパニック安全性と正規化・解決の検証をする
+//!
+//! - Uri::parse() で任意入力をパースし、scheme, authority, host, port,
+//!   path, query, fragment, origin_form 等の全アクセサを呼び出す
+//! - normalize() による URI 正規化のパニック安全性を確認する
+//! - 絶対 URI をベースとした resolve() による相対 URI 解決を検証する
+//! - percent_encode → percent_decode のラウンドトリップを確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

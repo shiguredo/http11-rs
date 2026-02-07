@@ -1,3 +1,15 @@
+//! コンテンツ関連ヘッダー群のパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - Content-Encoding: gzip, deflate 等のエンコーディング検出とアクセサを検証する
+//! - Content-Language: 言語タグのパースと Display ラウンドトリップを検証する
+//! - Content-Location: URI のパースと Display ラウンドトリップを検証する
+//! - Trailer: トレーラーフィールド名のパースと Display ラウンドトリップを検証する
+//! - Host: ホスト名・ポート・IPv6 のパースと Display ラウンドトリップを検証する
+//! - Expect: 100-continue 等のパースと Display ラウンドトリップを検証する
+//! - Upgrade: プロトコル名・バージョンのパースと Display ラウンドトリップを検証する
+//! - Content-Digest, Repr-Digest: ダイジェスト値のパースと Display ラウンドトリップを検証する
+//! - Want-Content-Digest, Want-Repr-Digest: 要求ダイジェストのパースと Display ラウンドトリップを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

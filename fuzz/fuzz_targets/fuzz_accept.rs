@@ -1,3 +1,10 @@
+//! Accept 関連ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - Accept, Accept-Charset, Accept-Encoding, Accept-Language の 4 種を
+//!   任意の UTF-8 文字列でパースし、パニックしないことを確認する
+//! - パース成功時はアクセサ (media_type, qvalue 等) を呼び出し、
+//!   Display 出力を再パースしてラウンドトリップを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

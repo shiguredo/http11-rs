@@ -1,3 +1,10 @@
+//! DecoderLimits の任意パラメータに対するパニック安全性を検証する
+//!
+//! - 任意の制限値 (max_buffer_size, max_headers_count, max_header_line_size,
+//!   max_body_size) でデコーダーを初期化する
+//! - 任意のバイト列を RequestDecoder / ResponseDecoder 双方に投入し、
+//!   制限値の組み合わせでパニックしないことを確認する
+
 #![no_main]
 
 use arbitrary::Arbitrary;

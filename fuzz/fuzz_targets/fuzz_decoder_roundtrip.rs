@@ -1,3 +1,10 @@
+//! Request / Response のエンコード → デコード ラウンドトリップを検証する
+//!
+//! - 任意の method, uri, ヘッダー, ボディから Request を構築し、
+//!   try_encode() → RequestDecoder でデコードした結果が一致することを確認する
+//! - 任意の status_code, reason_phrase, ヘッダー, ボディから Response を構築し、
+//!   try_encode() → ResponseDecoder でデコードした結果が一致することを確認する
+
 #![no_main]
 
 use arbitrary::Arbitrary;

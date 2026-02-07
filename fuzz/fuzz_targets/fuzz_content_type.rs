@@ -1,3 +1,10 @@
+//! Content-Type ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - 任意の UTF-8 文字列で ContentType::parse() を呼び出す
+//! - パース成功時は media_type, subtype, charset, boundary 等のアクセサと
+//!   is_text, is_json, is_multipart 等の判定メソッドを呼び出す
+//! - Display 出力を再パースし、media_type と subtype の一致を確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

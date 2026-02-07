@@ -1,3 +1,10 @@
+//! 認証関連ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - BasicAuth, DigestAuth, BearerToken の各認証スキームを任意入力でパースする
+//! - WwwAuthenticate, DigestChallenge, BearerChallenge のチャレンジをパースする
+//! - Authorization, ProxyAuthorization, ProxyAuthenticate の汎用パーサーを検証する
+//! - パース成功時はアクセサを呼び出し、Display 出力の再パースでラウンドトリップを確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

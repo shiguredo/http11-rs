@@ -1,11 +1,19 @@
+//! RequestDecoder の任意バイト列に対するパニック安全性を検証する
+//!
+//! - 一括 feed: 任意のバイト列をそのまま RequestDecoder に投入し、
+//!   ヘッダーデコード → ボディ消費の全パスでパニックしないことを確認する
+//! - ストリーミング feed: 同じデータを 17 バイト単位に分割して投入し、
+//!   段階的なデコードでもパニックしないことを確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{BodyKind, BodyProgress, ResponseDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, RequestDecoder};
 
 fuzz_target!(|data: &[u8]| {
-    // 通常のレスポンスデコード
-    let mut decoder = ResponseDecoder::new();
+    let mut decoder = RequestDecoder::new();
+
+    // データを一度に feed
     if decoder.feed(data).is_ok()
         && let Ok(Some((_, body_kind))) = decoder.decode_headers()
     {
@@ -24,16 +32,9 @@ fuzz_target!(|data: &[u8]| {
         }
     }
 
-    // HEAD リクエストへのレスポンスとしてデコード
-    decoder.reset();
-    decoder.set_expect_no_body(true);
-    if decoder.feed(data).is_ok() {
-        let _ = decoder.decode_headers();
-    }
-
     // データを分割して feed (ストリーミングシナリオ)
     decoder.reset();
-    for chunk in data.chunks(23) {
+    for chunk in data.chunks(17) {
         if decoder.feed(chunk).is_err() {
             return;
         }

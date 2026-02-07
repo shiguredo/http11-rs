@@ -1,3 +1,12 @@
+//! Request / Response のヘルパーメソッドの整合性を検証する
+//!
+//! - 任意の method, uri, version, ヘッダー, ボディから Request を構築し、
+//!   get_header, get_headers, has_header, connection, content_length,
+//!   is_chunked, is_keep_alive の各メソッドが期待値と一致することを確認する
+//! - 同様に Response を構築し、上記に加えて is_success, is_redirect,
+//!   is_client_error, is_server_error, is_informational の
+//!   ステータスコード分類メソッドの整合性を検証する
+
 #![no_main]
 
 use arbitrary::Arbitrary;

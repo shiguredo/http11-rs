@@ -1,3 +1,11 @@
+//! Range 関連ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - Range: パースと unit, ranges, first アクセサ、to_bounds(1000) / to_bounds(0)
+//!   による境界計算、Display ラウンドトリップを検証する
+//! - Content-Range: パースと start, end, complete_length, is_unsatisfied
+//!   アクセサ、Display ラウンドトリップを検証する
+//! - Accept-Ranges: パースと accepts_bytes, is_none アクセサを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

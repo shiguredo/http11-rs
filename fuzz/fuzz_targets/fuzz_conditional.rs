@@ -1,3 +1,10 @@
+//! 条件付きリクエストヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - If-Match, If-None-Match: ETag リストのパース、matches() メソッド、
+//!   Display ラウンドトリップを検証する
+//! - If-Modified-Since, If-Unmodified-Since: 日付のパースとアクセサを検証する
+//! - If-Range: ETag または日付のパースと Display ラウンドトリップを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

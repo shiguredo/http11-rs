@@ -1,3 +1,9 @@
+//! Vary ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - 任意の UTF-8 文字列で Vary::parse() を呼び出す
+//! - パース成功時は is_any() と fields() を呼び出し、
+//!   Display 出力の再パースで一致を確認する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

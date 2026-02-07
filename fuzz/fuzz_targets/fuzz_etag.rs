@@ -1,3 +1,11 @@
+//! ETag のパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - EntityTag: 任意入力でパースし、is_weak/is_strong/tag アクセサと
+//!   strong_compare/weak_compare 比較メソッドを呼び出す。
+//!   Display 出力の再パースで weak フラグと tag の一致を確認する
+//! - ETag リスト: parse_etag_list() でパースし、is_any() と
+//!   Display ラウンドトリップを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;

@@ -1,3 +1,10 @@
+//! キャッシュ関連ヘッダーのパニック安全性と Display ラウンドトリップを検証する
+//!
+//! - Cache-Control: 任意入力でパースし、max-age, no-cache, no-store 等の
+//!   全ディレクティブアクセサを呼び出す。Display 出力の再パースで一致を確認する
+//! - Age: 秒数のパースと Display ラウンドトリップを検証する
+//! - Expires: 日付のパースと Display ラウンドトリップを検証する
+
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
