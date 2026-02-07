@@ -2,8 +2,8 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    EncodeError, Request, Response, encode_chunk, encode_chunks, encode_request,
-    encode_request_headers, encode_response, encode_response_headers,
+    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, encode_chunk, encode_chunks,
+    encode_request, encode_request_headers, encode_response, encode_response_headers,
 };
 
 // ========================================
@@ -530,5 +530,177 @@ proptest! {
             .header("Host", &host2);
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
+    }
+}
+
+// ========================================
+// encode_response_headers のエラーパス PBT
+// ========================================
+
+proptest! {
+    /// encode_response_headers でも TE+CL 同時禁止
+    #[test]
+    fn prop_encode_response_headers_te_and_cl_error(
+        status in (200u16..204).prop_union(206..600),
+        cl in 1usize..10000
+    ) {
+        let res = Response::new(status, "OK")
+            .header("Transfer-Encoding", "chunked")
+            .header("Content-Length", &cl.to_string());
+        let result = encode_response_headers(&res);
+        prop_assert!(matches!(
+            result,
+            Err(EncodeError::ConflictingTransferEncodingAndContentLength)
+        ));
+    }
+}
+
+proptest! {
+    /// encode_response_headers で 1xx+TE 禁止
+    #[test]
+    fn prop_encode_response_headers_1xx_with_te_error(status in 100u16..200) {
+        let res = Response::new(status, "Info")
+            .header("Transfer-Encoding", "chunked");
+        let result = encode_response_headers(&res);
+        match result {
+            Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
+                prop_assert_eq!(status_code, status);
+            }
+            other => {
+                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+            }
+        }
+    }
+}
+
+proptest! {
+    /// encode_response_headers で 1xx/204+CL 禁止
+    #[test]
+    fn prop_encode_response_headers_1xx_with_cl_error(
+        status in prop_oneof![100u16..200, Just(204u16)]
+    ) {
+        let res = Response::new(status, "Info")
+            .header("Content-Length", "0");
+        let result = encode_response_headers(&res);
+        match result {
+            Err(EncodeError::ForbiddenContentLength { status_code }) => {
+                prop_assert_eq!(status_code, status);
+            }
+            other => {
+                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+            }
+        }
+    }
+}
+
+proptest! {
+    /// encode_response_headers で 205+TE 禁止
+    #[test]
+    fn prop_encode_response_headers_205_with_te_error(
+        te_value in prop_oneof![
+            Just("chunked".to_string()),
+            Just("gzip".to_string()),
+        ]
+    ) {
+        let res = Response::new(205, "Reset Content")
+            .header("Transfer-Encoding", &te_value);
+        let result = encode_response_headers(&res);
+        match result {
+            Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
+            other => {
+                prop_assert!(false, "Expected ForbiddenTransferEncoding for 205, got {:?}", other);
+            }
+        }
+    }
+}
+
+proptest! {
+    /// encode_response_headers で 205+CL(非 0) 禁止
+    #[test]
+    fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
+        let res = Response::new(205, "Reset Content")
+            .header("Content-Length", &cl.to_string());
+        let result = encode_response_headers(&res);
+        match result {
+            Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
+            other => {
+                prop_assert!(false, "Expected ForbiddenContentLength for 205, got {:?}", other);
+            }
+        }
+    }
+}
+
+// ========================================
+// 304 レスポンスのボディ除外 PBT
+// ========================================
+
+proptest! {
+    /// 304 レスポンスはボディを含めない
+    #[test]
+    fn prop_encode_response_304_no_body(
+        data in proptest::collection::vec(any::<u8>(), 1..128)
+    ) {
+        let res = Response::new(304, "Not Modified").body(data);
+        let encoded = encode_response(&res).unwrap();
+        // ヘッダー終了後にボディがないことを確認
+        let encoded_str = String::from_utf8_lossy(&encoded);
+        let header_end = encoded_str.find("\r\n\r\n").unwrap();
+        prop_assert_eq!(encoded.len(), header_end + 4);
+    }
+}
+
+// ========================================
+// ResponseEncoder / RequestEncoder の PBT
+// ========================================
+
+proptest! {
+    /// ResponseEncoder の compress_body / finish / reset
+    #[test]
+    fn prop_response_encoder_compress_body(
+        data in proptest::collection::vec(any::<u8>(), 1..256)
+    ) {
+        let mut encoder = ResponseEncoder::new();
+        let mut output = vec![0u8; 512];
+
+        // NoCompression: 入力をそのまま出力にコピー
+        let status = encoder.compress_body(&data, &mut output).unwrap();
+        prop_assert_eq!(status.consumed(), data.len());
+        prop_assert_eq!(status.produced(), data.len());
+        prop_assert_eq!(&output[..data.len()], &data[..]);
+
+        // finish
+        let finish_status = encoder.finish(&mut output).unwrap();
+        prop_assert!(finish_status.is_complete());
+
+        // reset して再利用
+        encoder.reset();
+        let status2 = encoder.compress_body(&data, &mut output).unwrap();
+        prop_assert_eq!(status2.consumed(), data.len());
+    }
+}
+
+proptest! {
+    /// RequestEncoder の compress_body / finish / reset
+    #[test]
+    fn prop_request_encoder_compress_body(
+        data in proptest::collection::vec(any::<u8>(), 1..256)
+    ) {
+        let mut encoder = RequestEncoder::new();
+        let mut output = vec![0u8; 512];
+
+        // NoCompression: 入力をそのまま出力にコピー
+        let status = encoder.compress_body(&data, &mut output).unwrap();
+        prop_assert_eq!(status.consumed(), data.len());
+        prop_assert_eq!(status.produced(), data.len());
+        prop_assert_eq!(&output[..data.len()], &data[..]);
+
+        // finish
+        let finish_status = encoder.finish(&mut output).unwrap();
+        prop_assert!(finish_status.is_complete());
+
+        // reset して再利用
+        encoder.reset();
+        let status2 = encoder.compress_body(&data, &mut output).unwrap();
+        prop_assert_eq!(status2.consumed(), data.len());
     }
 }

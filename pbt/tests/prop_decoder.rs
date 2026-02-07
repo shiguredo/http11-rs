@@ -2868,3 +2868,371 @@ proptest! {
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
+
+// ========================================
+// close-delimited ボディの PBT
+// ========================================
+
+proptest! {
+    /// close-delimited ボディの decode() + mark_eof() ラウンドトリップ
+    #[test]
+    fn prop_response_decode_close_delimited_with_mark_eof(
+        body_data in proptest::collection::vec(any::<u8>(), 1..256)
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        decoder.feed(&body_data).unwrap();
+
+        // mark_eof() 前は None
+        let result = decoder.decode().unwrap();
+        prop_assert!(result.is_none());
+
+        // mark_eof() 後に decode() で取得可能
+        decoder.mark_eof();
+        let response = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(response.status_code, 200);
+        prop_assert_eq!(&response.body, &body_data);
+    }
+}
+
+proptest! {
+    /// mark_eof() 前の close-delimited は常に None を返す
+    #[test]
+    fn prop_response_decode_close_delimited_returns_none_before_eof(
+        body_data in proptest::collection::vec(any::<u8>(), 0..256)
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        decoder.feed(&body_data).unwrap();
+
+        // mark_eof() を呼ばずに decode() → None
+        let result = decoder.decode().unwrap();
+        prop_assert!(result.is_none());
+
+        // 追加データを feed しても None
+        decoder.feed(b"more data").unwrap();
+        let result = decoder.decode().unwrap();
+        prop_assert!(result.is_none());
+    }
+}
+
+proptest! {
+    /// close-delimited のボディサイズ制限チェック
+    #[test]
+    fn prop_response_decode_close_delimited_body_too_large(
+        body_size in 128usize..512
+    ) {
+        let limits = DecoderLimits {
+            max_body_size: 64,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = ResponseDecoder::with_limits(limits);
+        let body_data = vec![0x41u8; body_size];
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        decoder.feed(&body_data).unwrap();
+
+        let result = decoder.decode();
+        let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
+        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
+    }
+}
+
+// ========================================
+// トンネルモードの PBT
+// ========================================
+
+proptest! {
+    /// CONNECT 2xx 後に decode() → エラー
+    #[test]
+    fn prop_response_decode_tunnel_error(status in 200u16..300) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+
+        let response_data = format!("HTTP/1.1 {} OK\r\n\r\n", status);
+        decoder.feed(response_data.as_bytes()).unwrap();
+
+        let result = decoder.decode();
+        prop_assert!(result.is_err());
+        if let Err(Error::InvalidData(msg)) = result {
+            prop_assert!(msg.contains("tunnel"));
+        }
+    }
+}
+
+proptest! {
+    /// is_close_delimited() の状態確認
+    #[test]
+    fn prop_response_is_close_delimited(
+        body_data in proptest::collection::vec(any::<u8>(), 0..64)
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+        decoder.feed(&body_data).unwrap();
+
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::CloseDelimited);
+        prop_assert!(decoder.is_close_delimited());
+
+        // mark_eof() 後は false
+        decoder.mark_eof();
+        prop_assert!(!decoder.is_close_delimited());
+    }
+}
+
+proptest! {
+    /// トンネルモード後の take_remaining()
+    #[test]
+    fn prop_response_take_remaining_tunnel(
+        extra_data in proptest::collection::vec(any::<u8>(), 1..128)
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+
+        let mut response = b"HTTP/1.1 200 OK\r\n\r\n".to_vec();
+        response.extend_from_slice(&extra_data);
+        decoder.feed(&response).unwrap();
+
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Tunnel);
+        prop_assert!(decoder.is_tunnel());
+
+        let remaining = decoder.take_remaining();
+        prop_assert_eq!(&remaining, &extra_data);
+    }
+}
+
+// ========================================
+// ストリーミング API 混在エラーの PBT
+// ========================================
+
+proptest! {
+    /// decode_headers() → body phase → decode() エラー
+    #[test]
+    fn prop_request_decode_mixed_api_error(
+        body_data in proptest::collection::vec(any::<u8>(), 1..64)
+    ) {
+        let headers = format!(
+            "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+            body_data.len()
+        );
+        let mut full = headers.into_bytes();
+        full.extend_from_slice(&body_data);
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&full).unwrap();
+
+        // ストリーミング API で decode_headers() を呼ぶ
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len()));
+
+        // decode() を呼ぶとエラー (ストリーミング API と混在)
+        let result = decoder.decode();
+        prop_assert!(result.is_err());
+        if let Err(Error::InvalidData(msg)) = result {
+            prop_assert!(msg.contains("mixed"));
+        }
+    }
+}
+
+// ========================================
+// decode() ラウンドトリップの PBT
+// ========================================
+
+proptest! {
+    /// リクエストの chunked ボディの decode() ラウンドトリップ
+    #[test]
+    fn prop_request_decode_chunked_roundtrip(
+        chunks in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 1..64),
+            1..4
+        )
+    ) {
+        let headers = b"POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let chunk_refs: Vec<&[u8]> = chunks.iter().map(|c| c.as_slice()).collect();
+        let chunked_body = encode_chunks(&chunk_refs);
+
+        let mut full = headers.to_vec();
+        full.extend_from_slice(&chunked_body);
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&full).unwrap();
+        let request = decoder.decode().unwrap().unwrap();
+
+        let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
+        prop_assert_eq!(&request.body, &expected_body);
+        prop_assert_eq!(&request.method, "POST");
+    }
+}
+
+proptest! {
+    /// レスポンスの chunked ボディの decode() ラウンドトリップ
+    #[test]
+    fn prop_response_decode_chunked_roundtrip(
+        chunks in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 1..64),
+            1..4
+        )
+    ) {
+        let headers = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let chunk_refs: Vec<&[u8]> = chunks.iter().map(|c| c.as_slice()).collect();
+        let chunked_body = encode_chunks(&chunk_refs);
+
+        let mut full = headers.to_vec();
+        full.extend_from_slice(&chunked_body);
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&full).unwrap();
+        let response = decoder.decode().unwrap().unwrap();
+
+        let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
+        prop_assert_eq!(&response.body, &expected_body);
+        prop_assert_eq!(response.status_code, 200);
+    }
+}
+
+// ========================================
+// HttpHead トレイトメソッドの PBT
+// ========================================
+
+proptest! {
+    /// 複数 TE ヘッダーの結合処理
+    #[test]
+    fn prop_is_chunked_multiple_te_headers(count in 2..5usize) {
+        // 複数の Transfer-Encoding: chunked ヘッダー → トークン数 > 1 → false
+        let headers: Vec<(String, String)> = (0..count)
+            .map(|_| ("Transfer-Encoding".to_string(), "chunked".to_string()))
+            .collect();
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers,
+        };
+        prop_assert!(!head.is_chunked());
+    }
+}
+
+proptest! {
+    /// 不正な Content-Length → content_length() は None を返す
+    #[test]
+    fn prop_content_length_invalid_returns_none(
+        invalid_value in "[a-zA-Z]{1,8}"
+    ) {
+        let head = ResponseHead {
+            version: "HTTP/1.1".to_string(),
+            status_code: 200,
+            reason_phrase: "OK".to_string(),
+            headers: vec![
+                ("Content-Length".to_string(), invalid_value),
+            ],
+        };
+        prop_assert!(head.content_length().is_none());
+    }
+}
+
+// ========================================
+// close-delimited 段階的フィードの PBT
+// ========================================
+
+proptest! {
+    /// close-delimited を段階的に feed + mark_eof
+    #[test]
+    fn prop_response_decode_close_delimited_incremental(
+        chunks in proptest::collection::vec(
+            proptest::collection::vec(any::<u8>(), 1..64),
+            2..5
+        )
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
+
+        // ヘッダーだけで decode → None
+        let result = decoder.decode().unwrap();
+        prop_assert!(result.is_none());
+
+        // 各チャンクを feed して decode (すべて None)
+        for chunk in &chunks {
+            decoder.feed(chunk).unwrap();
+            let result = decoder.decode().unwrap();
+            prop_assert!(result.is_none());
+        }
+
+        // mark_eof() 後に decode() で取得
+        decoder.mark_eof();
+        let response = decoder.decode().unwrap().unwrap();
+
+        let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
+        prop_assert_eq!(&response.body, &expected_body);
+    }
+}
+
+proptest! {
+    /// close-delimited 以外で mark_eof は無視
+    #[test]
+    fn prop_response_mark_eof_non_close_delimited(
+        body_data in proptest::collection::vec(any::<u8>(), 1..64)
+    ) {
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+            body_data.len()
+        );
+        let mut full = headers.into_bytes();
+        full.extend_from_slice(&body_data);
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&full).unwrap();
+
+        // mark_eof は Content-Length ボディには影響しない
+        decoder.mark_eof();
+        prop_assert!(!decoder.is_close_delimited());
+
+        let response = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(&response.body, &body_data);
+    }
+}
+
+// ========================================
+// Content-Length ボディの decode() ラウンドトリップ PBT
+// ========================================
+
+proptest! {
+    /// Content-Length ボディの decode() ラウンドトリップ (リクエスト)
+    #[test]
+    fn prop_request_decode_content_length_roundtrip(
+        body_data in proptest::collection::vec(any::<u8>(), 1..256)
+    ) {
+        let headers = format!(
+            "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n",
+            body_data.len()
+        );
+        let mut full = headers.into_bytes();
+        full.extend_from_slice(&body_data);
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&full).unwrap();
+        let request = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(&request.body, &body_data);
+        prop_assert_eq!(&request.method, "POST");
+    }
+}
+
+proptest! {
+    /// Content-Length ボディの decode() ラウンドトリップ (レスポンス)
+    #[test]
+    fn prop_response_decode_content_length_roundtrip(
+        body_data in proptest::collection::vec(any::<u8>(), 1..256)
+    ) {
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+            body_data.len()
+        );
+        let mut full = headers.into_bytes();
+        full.extend_from_slice(&body_data);
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&full).unwrap();
+        let response = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(&response.body, &body_data);
+        prop_assert_eq!(response.status_code, 200);
+    }
+}
