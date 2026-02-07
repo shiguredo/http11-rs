@@ -1,4 +1,4 @@
-.PHONY: test cover pbt pbt-cover fuzz fuzzing fuzzing-list check clippy fmt clean
+.PHONY: test cover pbt pbt-cover fuzz fuzzing fuzzing-parallel fuzzing-list check clippy fmt clean
 
 # 全テストを実行する
 test:
@@ -12,11 +12,29 @@ cover:
 pbt-with-cover:
 	cargo llvm-cov -p pbt --tests
 
-# Fuzzing を全ターゲットで 30 秒ずつ実行する
+# Fuzzing を全ターゲットで逐次実行する（fork 数はコア数に応じて自動調整）
 fuzzing:
-	@for target in $$(cargo fuzz list); do \
+	@FORKS=$$(( $$(nproc) - 2 )); \
+	if [ $$FORKS -lt 1 ]; then FORKS=1; fi; \
+	echo "Using fork=$$FORKS on $$(nproc) cores"; \
+	for target in $$(cargo fuzz list); do \
 		echo "=== Fuzzing $$target ==="; \
-		cargo +nightly fuzz run $$target -- -max_total_time=30 || exit 1; \
+		cargo +nightly fuzz run $$target -- -max_total_time=30 -fork=$$FORKS -max_len=4096 || exit 1; \
+	done
+
+# Fuzzing を全ターゲットで並列実行しレポートを出力する（fork 数はコア数に応じて自動調整）
+fuzzing-parallel:
+	@mkdir -p fuzz/logs
+	@FORKS=$$(( $$(nproc) - 2 )); \
+	if [ $$FORKS -lt 1 ]; then FORKS=1; fi; \
+	echo "Using fork=$$FORKS on $$(nproc) cores"; \
+	cargo fuzz list | xargs -P $$(cargo fuzz list | wc -l) -I {} \
+		sh -c 'cargo +nightly fuzz run {} -- -max_total_time=30 -fork=1 -max_len=4096 > fuzz/logs/{}.log 2>&1'
+	@echo "=== Fuzzing Report ==="
+	@for f in fuzz/logs/*.log; do \
+		target=$$(basename $$f .log); \
+		last=$$(grep -E '^#[0-9]+:' $$f | tail -1); \
+		echo "$$target: $$last"; \
 	done
 
 # Fuzzing ターゲット一覧を表示する
