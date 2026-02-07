@@ -106,8 +106,50 @@ doc = false
 bench = false
 
 [[bin]]
-name = "fuzz_content_headers"
-path = "fuzz_targets/fuzz_content_headers.rs"
+name = "fuzz_content_encoding"
+path = "fuzz_targets/fuzz_content_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_content_language"
+path = "fuzz_targets/fuzz_content_language.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_content_location"
+path = "fuzz_targets/fuzz_content_location.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_digest_fields"
+path = "fuzz_targets/fuzz_digest_fields.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_host"
+path = "fuzz_targets/fuzz_host.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_trailer"
+path = "fuzz_targets/fuzz_trailer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_upgrade"
+path = "fuzz_targets/fuzz_upgrade.rs"
 test = false
 doc = false
 bench = false
