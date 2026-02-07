@@ -1,6 +1,6 @@
 //! Decoder のユニットテスト
 
-use shiguredo_http11::{BodyKind, RequestDecoder, ResponseDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, RequestDecoder, ResponseDecoder};
 
 // ========================================
 // CONNECT トンネルモードのテスト (RFC 9112 Section 6.3)
@@ -380,5 +380,457 @@ fn test_cl_comma_leading_comma_error() {
     decoder.feed(response.as_bytes()).unwrap();
 
     let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// consume_body エラーパスのテスト
+// ========================================
+
+/// consume_body(0) はエラー (progress() を使うべき)
+#[test]
+fn test_request_consume_body_zero_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.consume_body(0);
+    assert!(result.is_err());
+}
+
+/// consume_body(0) はエラー (レスポンス)
+#[test]
+fn test_response_consume_body_zero_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.consume_body(0);
+    assert!(result.is_err());
+}
+
+/// トンネルモードで consume_body() はエラー
+#[test]
+fn test_response_consume_body_in_tunnel_error() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+    let response = "HTTP/1.1 200 OK\r\n\r\ndata";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.consume_body(4);
+    assert!(result.is_err());
+}
+
+// ========================================
+// ヘッダー値の制御文字エラーのテスト
+// ========================================
+
+/// ヘッダー値に制御文字 (NUL) を含むとエラー
+#[test]
+fn test_header_value_control_char_nul_error() {
+    let data = b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Bad: hello\x00world\r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// ヘッダー値に制御文字 (BEL) を含むとエラー
+#[test]
+fn test_header_value_control_char_bel_error() {
+    let data = b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Bad: hello\x07world\r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// HTTP/1.0 + Transfer-Encoding のテスト
+// ========================================
+
+/// HTTP/1.0 リクエストで Transfer-Encoding: chunked はエラー
+#[test]
+fn test_request_http10_transfer_encoding_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.0\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// トレーラー制限のテスト
+// ========================================
+
+/// トレーラーに禁止フィールド (Content-Length) を含むとエラー
+#[test]
+fn test_chunked_trailer_prohibited_field_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+/// トレーラーに禁止フィールド (Transfer-Encoding) を含むとエラー
+#[test]
+fn test_chunked_trailer_prohibited_transfer_encoding_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+/// トレーラー数制限超過エラー
+#[test]
+fn test_chunked_trailer_too_many_error() {
+    let limits = DecoderLimits {
+        max_headers_count: 2,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = ResponseDecoder::with_limits(limits);
+    // 3 つのトレーラーで制限 2 を超える
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\
+                    0\r\nX-A: 1\r\nX-B: 2\r\nX-C: 3\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+/// トレーラー行長制限超過エラー
+#[test]
+fn test_chunked_trailer_line_too_long_error() {
+    // ヘッダー行 ("Transfer-Encoding: chunked" = 26 文字) は通過するが
+    // トレーラー行が超過するサイズに設定
+    let limits = DecoderLimits {
+        max_header_line_size: 30,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = ResponseDecoder::with_limits(limits);
+    // トレーラー行 "X-Trailer: " + 30 文字 = 41 文字 > 30
+    let long_value = "a".repeat(30);
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Trailer: {}\r\n\r\n",
+        long_value
+    );
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+// ========================================
+// BodyChunkedDataCrlf 分割到着のテスト
+// ========================================
+
+/// チャンクデータ後の CRLF が別フィードで到着する場合
+#[test]
+fn test_chunked_crlf_arrives_in_separate_feed() {
+    let mut decoder = ResponseDecoder::new();
+    // ヘッダーとチャンクサイズ + データを送る (CRLF なし)
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // progress でチャンクサイズを処理し、チャンクデータを利用可能にする
+    let result = decoder.progress().unwrap();
+    assert_eq!(result, BodyProgress::Continue);
+
+    // チャンクデータを消費
+    let peeked = decoder.peek_body().unwrap();
+    assert_eq!(peeked, b"hello");
+    let result = decoder.consume_body(5).unwrap();
+    assert_eq!(result, BodyProgress::Continue);
+
+    // CRLF + 終端チャンクを別フィードで送る
+    decoder.feed(b"\r\n0\r\n\r\n").unwrap();
+    let result = decoder.progress().unwrap();
+    // BodyChunkedDataCrlf → BodyChunkedSize → 終端チャンク処理
+    assert_eq!(result, BodyProgress::Continue);
+    let result = decoder.progress().unwrap();
+    assert_eq!(
+        result,
+        BodyProgress::Complete {
+            trailers: Vec::new()
+        }
+    );
+}
+
+/// チャンクデータ後に不正な CRLF が到着
+#[test]
+fn test_chunked_invalid_crlf_in_separate_feed() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // progress でチャンクサイズを処理
+    let result = decoder.progress().unwrap();
+    assert_eq!(result, BodyProgress::Continue);
+
+    // チャンクデータを消費
+    let peeked = decoder.peek_body().unwrap();
+    assert_eq!(peeked, b"hello");
+    let result = decoder.consume_body(5).unwrap();
+    assert_eq!(result, BodyProgress::Continue);
+
+    // 不正な CRLF (LF LF)
+    decoder.feed(b"\n\n").unwrap();
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+// ========================================
+// Host ヘッダー検証のテスト (RFC 9112 Section 3.2)
+// ========================================
+
+/// HTTP/1.1 リクエストで Host ヘッダーがないとエラー
+#[test]
+fn test_request_http11_missing_host_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.1\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// HTTP/1.1 リクエストで Host ヘッダーが複数あるとエラー
+#[test]
+fn test_request_http11_multiple_host_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.1\r\nHost: a.com\r\nHost: b.com\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// HTTP/1.1 リクエストで空の Host ヘッダーは許可
+#[test]
+fn test_request_http11_empty_host_ok() {
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.1\r\nHost: \r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers().unwrap();
+    assert!(result.is_some());
+}
+
+/// HTTP/1.1 リクエストで不正な Host ヘッダー値はエラー
+#[test]
+fn test_request_http11_invalid_host_value_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.1\r\nHost: :invalid:host:\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// Default トレイト実装のテスト
+// ========================================
+
+/// RequestDecoder::default() は new() と同等
+#[test]
+fn test_request_decoder_default() {
+    let mut decoder = RequestDecoder::default();
+    let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    let result = decoder.decode_headers().unwrap();
+    assert!(result.is_some());
+}
+
+/// ResponseDecoder::default() は new() と同等
+#[test]
+fn test_response_decoder_default() {
+    let mut decoder = ResponseDecoder::default();
+    let response = "HTTP/1.1 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    let result = decoder.decode_headers().unwrap();
+    assert!(result.is_some());
+}
+
+// ========================================
+// decode() と streaming API 混在エラーのテスト
+// ========================================
+
+/// decode() をストリーミング API と混在して使うとエラー (リクエスト)
+#[test]
+fn test_request_decode_mixed_with_streaming_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    // streaming API でヘッダーをデコード
+    decoder.decode_headers().unwrap().unwrap();
+
+    // その後 decode() を呼ぶとエラー
+    let result = decoder.decode();
+    assert!(result.is_err());
+}
+
+/// decode() をストリーミング API と混在して使うとエラー (レスポンス)
+#[test]
+fn test_response_decode_mixed_with_streaming_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    // streaming API でヘッダーをデコード
+    decoder.decode_headers().unwrap().unwrap();
+
+    // その後 decode() を呼ぶとエラー
+    let result = decoder.decode();
+    assert!(result.is_err());
+}
+
+// ========================================
+// リクエスト行バリデーションのテスト
+// ========================================
+
+/// 不正な HTTP バージョン
+#[test]
+fn test_request_invalid_http_version_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/2.0\r\nHost: localhost\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// 不正なメソッド名 (スペースを含む)
+#[test]
+fn test_request_invalid_method_error() {
+    // メソッドに不正な文字を含む (トークン文字でない)
+    let data = b"G\x01T / HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// 不正な request-target (制御文字を含む)
+#[test]
+fn test_request_invalid_request_target_error() {
+    let data = b"GET /path\x01invalid HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(data).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// ボディデコード中に decode_headers() を呼ぶとエラー (リクエスト)
+#[test]
+fn test_request_decode_headers_during_body_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nhello";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // ボディ未消費のまま decode_headers を再度呼ぶ
+    // (Complete でないフェーズなのでエラー)
+    // 注: ボディが残っているのでフェーズは BodyContentLength
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// レスポンス行バリデーションのテスト
+// ========================================
+
+/// 不正な HTTP バージョン (レスポンス)
+#[test]
+fn test_response_invalid_http_version_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/3.0 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// 範囲外ステータスコード (600)
+#[test]
+fn test_response_status_code_out_of_range_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 600 Error\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// 範囲外ステータスコード (99)
+#[test]
+fn test_response_status_code_too_low_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 099 Error\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// ボディデコード中に decode_headers() を呼ぶとエラー (レスポンス)
+#[test]
+fn test_response_decode_headers_during_body_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // ボディ未消費のまま decode_headers を再度呼ぶ
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// consume_body の len 超過エラーのテスト
+// ========================================
+
+/// Content-Length で remaining を超える consume_body はエラー
+#[test]
+fn test_consume_body_exceeds_remaining_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // 5 バイトしかないのに 10 バイト消費しようとする
+    let result = decoder.consume_body(10);
+    assert!(result.is_err());
+}
+
+/// close-delimited で buf を超える consume_body はエラー
+#[test]
+fn test_consume_body_exceeds_buffer_close_delimited_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+
+    // バッファにある以上のバイト数を消費しようとする
+    let result = decoder.consume_body(100);
     assert!(result.is_err());
 }
