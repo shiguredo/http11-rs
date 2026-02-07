@@ -473,14 +473,16 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_is_chunked_with_other_token_returns_false(
+    fn prop_is_chunked_last_token_determines_result(
         other_token in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked")),
         chunked_first in any::<bool>()
     ) {
-        // chunked 以外のトークンがある場合は false
+        // RFC 9112 Section 6.3: 最後のトークンが chunked かどうかで判定
         let te_value = if chunked_first {
+            // "chunked, other" → 最後が chunked でない → false
             format!("chunked, {}", other_token)
         } else {
+            // "other, chunked" → 最後が chunked → true
             format!("{}, chunked", other_token)
         };
         let head = ResponseHead {
@@ -489,7 +491,11 @@ proptest! {
             reason_phrase: "OK".to_string(),
             headers: vec![("Transfer-Encoding".to_string(), te_value)],
         };
-        prop_assert!(!head.is_chunked());
+        if chunked_first {
+            prop_assert!(!head.is_chunked());
+        } else {
+            prop_assert!(head.is_chunked());
+        }
     }
 }
 
@@ -755,7 +761,7 @@ proptest! {
     /// 複数 TE ヘッダーの結合処理
     #[test]
     fn prop_is_chunked_multiple_te_headers(count in 2..5usize) {
-        // 複数の Transfer-Encoding: chunked ヘッダー → トークン数 > 1 → false
+        // 複数の Transfer-Encoding: chunked ヘッダー → 最後のトークンが chunked → true
         let headers: Vec<(String, String)> = (0..count)
             .map(|_| ("Transfer-Encoding".to_string(), "chunked".to_string()))
             .collect();
@@ -765,7 +771,7 @@ proptest! {
             reason_phrase: "OK".to_string(),
             headers,
         };
-        prop_assert!(!head.is_chunked());
+        prop_assert!(head.is_chunked());
     }
 }
 

@@ -72,36 +72,27 @@ pub trait HttpHead {
             .and_then(|v| v.parse().ok())
     }
 
-    /// Transfer-Encoding が chunked のみかどうかを判定
+    /// Transfer-Encoding の最後が chunked かどうかを判定
     ///
-    /// 「chunked のみ」の場合に true を返す。
-    /// `Transfer-Encoding: gzip, chunked` のような複合エンコーディングでは false を返す。
+    /// RFC 9112 Section 6.3: Transfer-Encoding の最後のエンコーディングが chunked
+    /// であればメッセージボディは chunked フレーミングで転送される。
     ///
-    /// # 注意
-    ///
-    /// この関数はユーザー向けのヘルパーであり、デコーダー内部のフレーミング決定には
-    /// 使用されない。RFC 9112 Section 6.3 に基づくボディ長の決定は、デコーダー内部で
-    /// 別途行われる。
-    ///
-    /// レスポンスで `Transfer-Encoding: gzip, chunked` を受信した場合:
-    /// - この関数は false を返す (chunked 以外がある)
-    /// - デコーダーは chunked フレーミングでボディを読み取る (chunked が最後)
-    /// - ユーザーは受け取ったボディを gzip 展開する必要がある
+    /// `Transfer-Encoding: gzip, chunked` → true (最後が chunked)
+    /// `Transfer-Encoding: chunked, gzip` → false (最後が chunked でない)
+    /// `Transfer-Encoding: chunked` → true
     ///
     /// RFC 9110 Section 5.3: 複数の同名ヘッダーは結合して単一のリストとして扱う。
     fn is_chunked(&self) -> bool {
-        let te_headers = self.get_headers("Transfer-Encoding");
-        if te_headers.is_empty() {
-            return false;
+        let mut last_token: Option<&str> = None;
+        for te in self.get_headers("Transfer-Encoding") {
+            for token in te.split(',') {
+                let token = token.trim();
+                if !token.is_empty() {
+                    last_token = Some(token);
+                }
+            }
         }
-        // 全ての Transfer-Encoding ヘッダーを結合してトークンリストを構築
-        let tokens: Vec<&str> = te_headers
-            .iter()
-            .flat_map(|v| v.split(',').map(|t| t.trim()))
-            .filter(|t| !t.is_empty())
-            .collect();
-        // chunked のみの場合に true (RFC 9112 準拠)
-        tokens.len() == 1 && tokens[0].eq_ignore_ascii_case("chunked")
+        last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
     }
 }
 

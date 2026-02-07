@@ -50,17 +50,37 @@ fn expected_content_length(headers: &[(String, String)]) -> Option<usize> {
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {
-    header_value(headers, "Transfer-Encoding").is_some_and(|v| v.eq_ignore_ascii_case("chunked"))
+    let mut last_token: Option<&str> = None;
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("Transfer-Encoding") {
+            for token in value.split(',') {
+                let token = token.trim();
+                if !token.is_empty() {
+                    last_token = Some(token);
+                }
+            }
+        }
+    }
+    last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
 }
 
-fn expected_keep_alive(version: &str, connection: Option<&str>) -> bool {
-    if let Some(conn) = connection {
-        if conn.eq_ignore_ascii_case("close") {
-            return false;
+fn expected_keep_alive(version: &str, headers: &[(String, String)]) -> bool {
+    let mut has_keep_alive = false;
+    for (name, value) in headers {
+        if name.eq_ignore_ascii_case("Connection") {
+            for token in value.split(',') {
+                let token = token.trim();
+                if token.eq_ignore_ascii_case("close") {
+                    return false;
+                }
+                if token.eq_ignore_ascii_case("keep-alive") {
+                    has_keep_alive = true;
+                }
+            }
         }
-        if conn.eq_ignore_ascii_case("keep-alive") {
-            return true;
-        }
+    }
+    if has_keep_alive {
+        return true;
     }
     version.ends_with("/1.1")
 }
@@ -88,13 +108,12 @@ fn exercise_request(input: FuzzRequest) {
         assert_eq!(request.has_header(name), header_count(&headers, name) > 0);
     }
 
-    let connection = header_value(&headers, "Connection");
-    assert_eq!(request.connection(), connection);
+    assert_eq!(request.connection(), header_value(&headers, "Connection"));
     assert_eq!(request.content_length(), expected_content_length(&headers));
     assert_eq!(request.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         request.is_keep_alive(),
-        expected_keep_alive(&version, connection)
+        expected_keep_alive(&version, &headers)
     );
 }
 
@@ -121,13 +140,12 @@ fn exercise_response(input: FuzzResponse) {
         assert_eq!(response.has_header(name), header_count(&headers, name) > 0);
     }
 
-    let connection = header_value(&headers, "Connection");
-    assert_eq!(response.connection(), connection);
+    assert_eq!(response.connection(), header_value(&headers, "Connection"));
     assert_eq!(response.content_length(), expected_content_length(&headers));
     assert_eq!(response.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         response.is_keep_alive(),
-        expected_keep_alive(&version, connection)
+        expected_keep_alive(&version, &headers)
     );
 
     assert_eq!(response.is_success(), (200..300).contains(&status_code));
