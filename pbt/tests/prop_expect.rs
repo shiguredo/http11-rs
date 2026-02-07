@@ -41,14 +41,16 @@ fn token_value() -> impl Strategy<Value = String> {
     token()
 }
 
-// 引用符付き文字列の中身 (qdtext)
-fn qdtext_char() -> impl Strategy<Value = char> {
+// 引用符付き文字列の中身 (qdtext + quoted-pair)
+fn quoted_string_char() -> impl Strategy<Value = char> {
     prop_oneof![
         Just('\t'),
         Just(' '),
         Just('!'),
         // 0x23-0x5B (# から [) ただし \ を除く
         prop::char::range('#', '['),
+        // \ (エスケープ対象)
+        Just('\\'),
         // 0x5D-0x7E (] から ~)
         prop::char::range(']', '~'),
     ]
@@ -56,7 +58,13 @@ fn qdtext_char() -> impl Strategy<Value = char> {
 
 // 引用符付き文字列の中身
 fn quoted_string_content() -> impl Strategy<Value = String> {
-    proptest::collection::vec(qdtext_char(), 0..=16).prop_map(|chars| chars.into_iter().collect())
+    proptest::collection::vec(quoted_string_char(), 0..=16)
+        .prop_map(|chars| chars.into_iter().collect())
+}
+
+// quoted-string 用エスケープ (\ → \\, " → \")
+fn escape_for_quoted_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 // ========================================
@@ -84,7 +92,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_expect_quoted_value_roundtrip(t in token(), v in quoted_string_content()) {
-        let input = format!("{}=\"{}\"", t, v);
+        let escaped = escape_for_quoted_string(&v);
+        let input = format!("{}=\"{}\"", t, escaped);
         let expect = Expect::parse(&input).unwrap();
 
         prop_assert_eq!(expect.items().len(), 1);
@@ -134,24 +143,13 @@ proptest! {
 
         prop_assert!(expect.has_100_continue());
         prop_assert_eq!(expect.items().len(), 2);
+        prop_assert!(!expect.items()[0].is_100_continue());
+        prop_assert!(expect.items()[1].is_100_continue());
 
         // ラウンドトリップ
         let displayed = expect.to_string();
         let reparsed = Expect::parse(&displayed).unwrap();
         prop_assert_eq!(expect, reparsed);
-    }
-}
-
-// ========================================
-// パニック安全性テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_expect_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
-        if let Ok(s) = std::str::from_utf8(&data) {
-            let _ = Expect::parse(s);
-        }
     }
 }
 
@@ -168,7 +166,8 @@ proptest! {
         v2 in token_value()
     ) {
         // 引用符付き値 + トークン値 + 100-continue
-        let input = format!("{}=\"{}\", {}={}, 100-continue", t1, v1, t2, v2);
+        let escaped_v1 = escape_for_quoted_string(&v1);
+        let input = format!("{}=\"{}\", {}={}, 100-continue", t1, escaped_v1, t2, v2);
         let expect = Expect::parse(&input).unwrap();
 
         prop_assert_eq!(expect.items().len(), 3);

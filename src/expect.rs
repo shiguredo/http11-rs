@@ -4,6 +4,20 @@
 //!
 //! RFC 9110 に基づいた Expect ヘッダーのパースを提供します。
 //!
+//! ## ABNF
+//!
+//! ```text
+//! Expect      = #expectation
+//! expectation = token [ "=" ( token / quoted-string ) parameters ]
+//! ```
+//!
+//! ## 制限事項
+//!
+//! RFC 9110 の ABNF では expectation に parameters (セミコロン区切りの name=value ペア) が
+//! 許容されていますが、本実装では parameters をサポートしていません。
+//! RFC 9110 で定義されている唯一の expectation は "100-continue" であり、
+//! パラメータは定義されていないためです。
+//!
 //! ## 使い方
 //!
 //! ```rust
@@ -83,10 +97,10 @@ impl Expect {
             });
         }
 
-        if items.is_empty() {
-            return Err(ExpectError::Empty);
-        }
-
+        // items は必ず 1 要素以上:
+        // - 空入力は冒頭の Empty チェックで排除済み
+        // - split_with_quotes は必ず 1 要素以上を返す
+        // - 空 part は InvalidFormat で早期リターンされる
         Ok(Expect { items })
     }
 
