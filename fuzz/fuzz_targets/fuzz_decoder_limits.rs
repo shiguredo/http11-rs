@@ -19,6 +19,7 @@ fn build_limits(input: &FuzzLimits) -> DecoderLimits {
         max_headers_count: input.max_headers_count as usize,
         max_header_line_size: input.max_header_line_size as usize,
         max_body_size: input.max_body_size as usize,
+        max_chunk_line_size: 64,
     }
 }
 
@@ -39,7 +40,7 @@ fuzz_target!(|input: FuzzLimits| {
                     }
                 }
             }
-            BodyKind::None => {}
+            BodyKind::None | BodyKind::Tunnel => {}
         }
     }
 
@@ -57,7 +58,7 @@ fuzz_target!(|input: FuzzLimits| {
                     }
                 }
             }
-            BodyKind::None => {}
+            BodyKind::None | BodyKind::Tunnel => {}
         }
     }
 });

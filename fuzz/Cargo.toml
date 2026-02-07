@@ -160,3 +160,10 @@ path = "fuzz_targets/fuzz_percent_encoding.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_expect"
+path = "fuzz_targets/fuzz_expect.rs"
+test = false
+doc = false
+bench = false

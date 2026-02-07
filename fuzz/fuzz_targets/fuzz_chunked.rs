@@ -70,7 +70,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     }
                 }
             },
-            BodyKind::None => return Some(decoded_body),
+            BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
         }
     }
 
@@ -103,7 +103,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             }
         },
-        BodyKind::None => Some(decoded_body),
+        BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
     }
 }
 
@@ -148,7 +148,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     }
                 }
             },
-            BodyKind::None => return Some(decoded_body),
+            BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
         }
     }
 
@@ -181,14 +181,17 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             }
         },
-        BodyKind::None => Some(decoded_body),
+        BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
     }
 }
 
 fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
     let mut request = Request::new("POST", "/");
     request.add_header("Transfer-Encoding", "chunked");
-    let mut encoded = encode_request_headers(&request);
+    let mut encoded = match encode_request_headers(&request) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
     encoded.extend_from_slice(body);
 
     if let Some(decoded_body) = decode_request(&encoded, split_size) {
@@ -199,7 +202,10 @@ fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
 fn exercise_response(body: &[u8], expected: &[u8], split_size: usize) {
     let mut response = Response::new(200, "OK");
     response.add_header("Transfer-Encoding", "chunked");
-    let mut encoded = encode_response_headers(&response);
+    let mut encoded = match encode_response_headers(&response) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
     encoded.extend_from_slice(body);
 
     if let Some(decoded_body) = decode_response(&encoded, split_size) {

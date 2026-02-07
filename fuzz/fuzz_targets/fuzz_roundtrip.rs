@@ -65,7 +65,10 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             request.body = fuzz_req.body.clone();
         }
 
-        let encoded = request.encode();
+        let encoded = match request.try_encode() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
 
         let mut decoder = RequestDecoder::new();
         if decoder.feed(&encoded).is_ok()
@@ -87,7 +90,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                         }
                     }
                 }
-                BodyKind::None => {}
+                BodyKind::None | BodyKind::Tunnel => {}
             }
             assert_eq!(decoded_body, request.body);
         }
@@ -120,7 +123,10 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             response.body = fuzz_resp.body.clone();
         }
 
-        let encoded = response.encode();
+        let encoded = match response.try_encode() {
+            Ok(v) => v,
+            Err(_) => return,
+        };
 
         let mut decoder = ResponseDecoder::new();
         if decoder.feed(&encoded).is_ok()
@@ -143,7 +149,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                             }
                         }
                     }
-                    BodyKind::None => {}
+                    BodyKind::None | BodyKind::Tunnel => {}
                 }
                 assert_eq!(decoded_body, response.body);
             }
