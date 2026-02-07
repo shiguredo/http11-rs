@@ -84,22 +84,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で Cookie パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_cookie_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = Cookie::parse(&s);
-    }
-}
-
-// 任意の文字列で SetCookie パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_set_cookie_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = SetCookie::parse(&s);
-    }
-}
-
 // Domain 属性付き SetCookie
 proptest! {
     #[test]

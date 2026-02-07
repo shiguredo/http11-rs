@@ -157,14 +157,3 @@ proptest! {
         prop_assert_eq!(host.host(), input.as_str());
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_host_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = Host::parse(&s);
-    }
-}

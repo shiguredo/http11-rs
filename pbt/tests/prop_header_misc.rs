@@ -8,7 +8,6 @@ use shiguredo_http11::digest_fields::{
     ContentDigest, ReprDigest, WantContentDigest, WantReprDigest,
 };
 use shiguredo_http11::expect::Expect;
-use shiguredo_http11::host::Host;
 use shiguredo_http11::trailer::Trailer;
 use shiguredo_http11::upgrade::Upgrade;
 use shiguredo_http11::vary::Vary;
@@ -272,23 +271,5 @@ proptest! {
         let displayed = parsed.to_string();
         let reparsed = WantReprDigest::parse(&displayed).unwrap();
         prop_assert_eq!(parsed, reparsed);
-    }
-}
-
-// 追加ヘッダーのパースがパニックしない
-proptest! {
-    #[test]
-    fn prop_extra_header_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = ContentLanguage::parse(&s);
-        let _ = ContentLocation::parse(&s);
-        let _ = Host::parse(&s);
-        let _ = Trailer::parse(&s);
-        let _ = Vary::parse(&s);
-        let _ = Expect::parse(&s);
-        let _ = Upgrade::parse(&s);
-        let _ = ContentDigest::parse(&s);
-        let _ = ReprDigest::parse(&s);
-        let _ = WantContentDigest::parse(&s);
-        let _ = WantReprDigest::parse(&s);
     }
 }

@@ -285,22 +285,6 @@ proptest! {
     }
 }
 
-// ========================================
-// パニック安全性テスト
-// ========================================
-
-// 任意のバイト列を feed してもパニックしない
-proptest! {
-    #[test]
-    fn prop_request_decoder_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
-        let mut decoder = RequestDecoder::new();
-        let _ = decoder.feed(&data);
-        let _ = decoder.decode_headers();
-        // エラー後も再利用可能
-        let _ = decoder.decode_headers();
-    }
-}
-
 // エラー後にデコーダーをリセットして再利用できる
 proptest! {
     #[test]

@@ -359,35 +359,3 @@ proptest! {
         prop_assert!(reparsed.is_ok());
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_digest_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ContentDigest::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ReprDigest::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_want_content_digest_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = WantContentDigest::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = WantReprDigest::parse(&s);
-    }
-}

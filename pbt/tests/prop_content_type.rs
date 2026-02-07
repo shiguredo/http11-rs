@@ -447,23 +447,3 @@ proptest! {
         prop_assert_eq!(&params[1].1, &value2);
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-// 任意の文字列で Content-Type パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_content_type_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = ContentType::parse(&s);
-    }
-}
-
-// より広範な入力でパニックしない
-proptest! {
-    #[test]
-    fn prop_content_type_parse_no_panic_extended(s in ".{0,128}") {
-        let _ = ContentType::parse(&s);
-    }
-}

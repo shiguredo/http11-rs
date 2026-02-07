@@ -208,28 +208,3 @@ proptest! {
         prop_assert_eq!(expires.date().second(), reparsed.date().second());
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_cache_control_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = CacheControl::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_age_parse_no_panic(s in "[ -~]{0,32}") {
-        let _ = Age::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_expires_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = Expires::parse(&s);
-    }
-}

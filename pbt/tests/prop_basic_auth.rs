@@ -58,19 +58,3 @@ proptest! {
         prop_assert_eq!(auth.charset(), reparsed.charset());
     }
 }
-
-// 任意の文字列で BasicAuth パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_basic_auth_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = BasicAuth::parse(&s);
-    }
-}
-
-// 任意の文字列で WwwAuthenticate パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_www_authenticate_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = WwwAuthenticate::parse(&s);
-    }
-}

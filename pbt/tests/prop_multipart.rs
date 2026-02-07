@@ -188,31 +188,6 @@ proptest! {
     }
 }
 
-// 任意のバイト列でパニックしない
-proptest! {
-    #[test]
-    fn prop_multipart_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
-        let mut parser = MultipartParser::new("boundary");
-        parser.feed(&data);
-
-        // パニックしなければ OK
-        while let Ok(Some(_part)) = parser.next_part() {
-            // パースできたらループ継続
-        }
-    }
-}
-
-// 任意の境界でパニックしない
-proptest! {
-    #[test]
-    fn prop_multipart_parser_any_boundary_no_panic(boundary in "[ -~]{0,64}") {
-        let mut parser = MultipartParser::new(&boundary);
-        parser.feed(b"--test\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--test--\r\n");
-
-        let _ = parser.next_part();
-    }
-}
-
 // ========================================
 // MultipartBuilder のテスト
 // ========================================

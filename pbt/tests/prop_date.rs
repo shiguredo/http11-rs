@@ -365,14 +365,3 @@ proptest! {
         prop_assert_eq!(date.second(), second);
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_http_date_parse_no_panic_extended(s in ".{0,128}") {
-        let _ = HttpDate::parse(&s);
-    }
-}

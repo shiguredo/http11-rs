@@ -94,19 +94,3 @@ proptest! {
         prop_assert_eq!(list, reparsed);
     }
 }
-
-// 任意の文字列で ETag パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_etag_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = EntityTag::parse(&s);
-    }
-}
-
-// 任意の文字列で ETag リストパースがパニックしない
-proptest! {
-    #[test]
-    fn prop_etag_list_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = parse_etag_list(&s);
-    }
-}

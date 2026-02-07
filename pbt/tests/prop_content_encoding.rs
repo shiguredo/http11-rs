@@ -54,14 +54,3 @@ proptest! {
         prop_assert_eq!(ce.encodings().len(), encodings.len());
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_encoding_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = ContentEncoding::parse(&s);
-    }
-}

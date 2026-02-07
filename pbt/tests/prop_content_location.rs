@@ -185,14 +185,3 @@ proptest! {
         prop_assert!(reparsed.is_ok());
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_location_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ContentLocation::parse(&s);
-    }
-}

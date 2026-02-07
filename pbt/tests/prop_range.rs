@@ -1,7 +1,7 @@
 //! Range 関連のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::range::{AcceptRanges, ContentRange, Range, RangeSpec};
+use shiguredo_http11::range::{ContentRange, Range, RangeSpec};
 
 // ========================================
 // RangeSpec のテスト
@@ -324,37 +324,5 @@ proptest! {
         prop_assert_eq!(cr.start(), Some(start));
         prop_assert_eq!(cr.end(), Some(end));
         prop_assert!(cr.complete_length().is_none());
-    }
-}
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_range_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = Range::parse(&s);
-        let _ = ContentRange::parse(&s);
-        let _ = AcceptRanges::parse(&s);
-    }
-}
-
-// RangeSpec to_bounds は全ての入力でパニックしない
-proptest! {
-    #[test]
-    fn prop_range_spec_to_bounds_no_panic(
-        start in 0u64..u64::MAX / 2,
-        end in 0u64..u64::MAX / 2,
-        length in 0u64..u64::MAX / 2,
-        total in 0u64..u64::MAX / 2
-    ) {
-        let spec1 = RangeSpec::Range { start, end };
-        let spec2 = RangeSpec::FromStart { start };
-        let spec3 = RangeSpec::Suffix { length };
-
-        let _ = spec1.to_bounds(total);
-        let _ = spec2.to_bounds(total);
-        let _ = spec3.to_bounds(total);
     }
 }

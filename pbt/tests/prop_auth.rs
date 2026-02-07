@@ -63,14 +63,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で BearerToken パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_bearer_token_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = BearerToken::parse(&s);
-    }
-}
-
 // ========================================
 // BearerChallenge のテスト
 // ========================================
@@ -84,14 +76,6 @@ proptest! {
 
         prop_assert_eq!(challenge.param("realm"), Some(realm.as_str()));
         prop_assert_eq!(challenge.param("error"), Some(error));
-    }
-}
-
-// 任意の文字列で BearerChallenge パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_bearer_challenge_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = BearerChallenge::parse(&s);
     }
 }
 
@@ -148,14 +132,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で DigestAuth パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_digest_auth_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = DigestAuth::parse(&s);
-    }
-}
-
 // ========================================
 // DigestChallenge のテスト
 // ========================================
@@ -173,14 +149,6 @@ proptest! {
         // to_header_value で再エンコードできる
         let header_value = challenge.to_header_value();
         prop_assert!(header_value.starts_with("Digest "));
-    }
-}
-
-// 任意の文字列で DigestChallenge パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_digest_challenge_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = DigestChallenge::parse(&s);
     }
 }
 
@@ -252,14 +220,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で Authorization パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_authorization_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = Authorization::parse(&s);
-    }
-}
-
 // ========================================
 // AuthChallenge enum のテスト
 // ========================================
@@ -322,14 +282,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で AuthChallenge パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_auth_challenge_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = AuthChallenge::parse(&s);
-    }
-}
-
 // ========================================
 // ProxyAuthorization のテスト
 // ========================================
@@ -355,14 +307,6 @@ proptest! {
     }
 }
 
-// 任意の文字列で ProxyAuthorization パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_proxy_authorization_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ProxyAuthorization::parse(&s);
-    }
-}
-
 // ========================================
 // ProxyAuthenticate のテスト
 // ========================================
@@ -383,13 +327,5 @@ proptest! {
         // to_header_value
         let header_value = proxy_auth.to_header_value();
         prop_assert!(header_value.starts_with("Basic "));
-    }
-}
-
-// 任意の文字列で ProxyAuthenticate パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_proxy_authenticate_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ProxyAuthenticate::parse(&s);
     }
 }

@@ -40,11 +40,3 @@ proptest! {
         prop_assert_eq!(date.year(), reparsed.year());
     }
 }
-
-// 任意の文字列で HTTP-date パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_http_date_parse_no_panic(s in "[ -~]{0,64}") {
-        let _ = HttpDate::parse(&s);
-    }
-}

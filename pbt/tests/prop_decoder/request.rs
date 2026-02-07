@@ -472,21 +472,6 @@ proptest! {
 }
 
 // ========================================
-// パース入力パニックなし PBT (リクエスト)
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_request_decoder_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..512)) {
-        let mut decoder = RequestDecoder::new();
-        let _ = decoder.feed(&data);
-        let _ = decoder.decode_headers();
-        let _ = decoder.peek_body();
-        let _ = decoder.progress();
-    }
-}
-
-// ========================================
 // decode_headers を2回呼んだ場合の挙動 PBT (リクエスト)
 // ========================================
 

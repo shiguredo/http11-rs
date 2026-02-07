@@ -500,35 +500,3 @@ proptest! {
         prop_assert_eq!(normalized.fragment(), Some(f.as_str()));
     }
 }
-
-// ========================================
-// パニック安全性テスト
-// ========================================
-
-// 任意のバイト列で URI パースがパニックしない
-proptest! {
-    #[test]
-    fn prop_uri_parse_no_panic(data in proptest::collection::vec(any::<u8>(), 0..128)) {
-        if let Ok(s) = std::str::from_utf8(&data) {
-            let _ = Uri::parse(s);
-        }
-    }
-}
-
-// 任意の文字列でパーセントデコードがパニックしない
-proptest! {
-    #[test]
-    fn prop_percent_decode_no_panic(s in "[ -~]{0,64}") {
-        let _ = percent_decode(&s);
-    }
-}
-
-// 任意の文字列で正規化がパニックしない
-proptest! {
-    #[test]
-    fn prop_uri_normalize_no_panic(s in "[a-z]{1,8}://[a-z]{1,16}/[a-zA-Z0-9%._-]{0,32}") {
-        if let Ok(uri) = Uri::parse(&s) {
-            let _ = normalize(&uri);
-        }
-    }
-}

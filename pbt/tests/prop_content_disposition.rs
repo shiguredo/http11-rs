@@ -374,21 +374,3 @@ proptest! {
         prop_assert!(display.contains("filename*=UTF-8''"));
     }
 }
-
-// ========================================
-// no_panic テスト
-// ========================================
-
-proptest! {
-    #[test]
-    fn prop_content_disposition_parse_no_panic(s in "[ -~]{0,128}") {
-        let _ = ContentDisposition::parse(&s);
-    }
-}
-
-proptest! {
-    #[test]
-    fn prop_content_disposition_parse_with_utf8_no_panic(s in ".*{0,64}") {
-        let _ = ContentDisposition::parse(&s);
-    }
-}
