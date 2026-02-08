@@ -166,6 +166,20 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
+    // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
+    if !request.has_header("Transfer-Encoding")
+        && let Some(cl_value) = request.get_header("Content-Length")
+        && let Ok(header_value) = cl_value.trim().parse::<u64>()
+    {
+        let body_length = request.body.len() as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
+        }
+    }
+
     let mut buf = Vec::new();
 
     // Request line: METHOD SP URI SP VERSION CRLF
@@ -244,6 +258,23 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
             && cl.trim() != "0"
         {
             return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
+        }
+    }
+
+    // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
+    // omit_content_length: true の場合はスキップ (HEAD レスポンス用: body は空だが
+    // Content-Length は GET と同じ値を返す)
+    if !response.omit_content_length
+        && !response.has_header("Transfer-Encoding")
+        && let Some(cl_value) = response.get_header("Content-Length")
+        && let Ok(header_value) = cl_value.trim().parse::<u64>()
+    {
+        let body_length = response.body.len() as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
         }
     }
 

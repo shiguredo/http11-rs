@@ -93,6 +93,8 @@ pub enum EncodeError {
     /// RFC 9110 Section 8.6: サーバーは 1xx または 204 レスポンスに
     /// Content-Length を含めてはならない (MUST NOT)
     ForbiddenContentLength { status_code: u16 },
+    /// Content-Length ヘッダーの値と実際のボディサイズが一致しない
+    ContentLengthMismatch { header_value: u64, body_length: u64 },
 }
 
 impl fmt::Display for EncodeError {
@@ -159,6 +161,16 @@ impl fmt::Display for EncodeError {
                     f,
                     "Content-Length not allowed for {} response (RFC 9110 Section 8.6)",
                     status_code
+                )
+            }
+            EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            } => {
+                write!(
+                    f,
+                    "Content-Length header value {} does not match body length {}",
+                    header_value, body_length
                 )
             }
         }

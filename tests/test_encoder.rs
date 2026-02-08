@@ -408,6 +408,53 @@ fn test_encode_request_absolute_form_userinfo_with_port() {
     assert!(result.is_ok());
 }
 
+// ========================================
+// Content-Length と body.len() の整合性検証テスト
+// ========================================
+
+#[test]
+fn test_encode_response_content_length_mismatch() {
+    // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "10")
+        .body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ContentLengthMismatch {
+            header_value: 10,
+            body_length: 5,
+        })
+    ));
+}
+
+#[test]
+fn test_encode_request_content_length_mismatch() {
+    // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Content-Length", "10")
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ContentLengthMismatch {
+            header_value: 10,
+            body_length: 5,
+        })
+    ));
+}
+
+#[test]
+fn test_encode_response_omit_content_length_skips_mismatch_check() {
+    // omit_content_length: true の場合はミスマッチチェックをスキップ (HEAD レスポンス用)
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "1000")
+        .omit_content_length(true);
+    let result = encode_response(&res);
+    assert!(result.is_ok());
+}
+
 #[test]
 fn test_encode_request_absolute_form_at_in_userinfo() {
     let req =
