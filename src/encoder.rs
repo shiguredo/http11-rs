@@ -44,9 +44,14 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
 ///
 /// RFC 9112 Section 3.2:
 /// - origin-form: "/" で始まる (例: /path?query)
-/// - absolute-form: "://" を含む (例: http://host/path)
-/// - authority-form: 上記以外で ":" を含む (例: host:port)
+/// - absolute-form: absolute-URI (例: http://host/path, urn:isbn:0451450523)
+/// - authority-form: uri-host ":" port (例: host:port)
 /// - asterisk-form: "*" のみ
+///
+/// authority-form と "://" なし absolute-form は文法的に曖昧なため、
+/// デコーダー (decoder/body.rs) と同じ順序で判定する:
+/// 1. port が数値の host:port → authority-form
+/// 2. 有効なスキームが検出 → absolute-form
 fn detect_request_target_form(uri: &str) -> RequestTargetForm {
     if uri == "*" {
         RequestTargetForm::Asterisk
@@ -54,9 +59,53 @@ fn detect_request_target_form(uri: &str) -> RequestTargetForm {
         RequestTargetForm::Absolute
     } else if uri.starts_with('/') {
         RequestTargetForm::Origin
+    } else if looks_like_authority_form(uri) {
+        RequestTargetForm::Authority
+    } else if detect_scheme(uri).is_some() {
+        // "://" を含まない absolute-URI (例: urn:isbn:0451450523)
+        RequestTargetForm::Absolute
     } else {
         RequestTargetForm::Authority
     }
+}
+
+/// authority-form かどうかの簡易判定
+///
+/// authority-form = uri-host ":" port (RFC 9112 Section 3.2.3)
+/// 最後の ":" 以降が数値で u16 範囲内であれば authority-form と見なす
+fn looks_like_authority_form(uri: &str) -> bool {
+    if let Some(colon_pos) = uri.rfind(':') {
+        let port_str = &uri[colon_pos + 1..];
+        !port_str.is_empty()
+            && port_str.bytes().all(|b| b.is_ascii_digit())
+            && port_str.parse::<u16>().is_ok()
+    } else {
+        false
+    }
+}
+
+/// スキームを検出する (RFC 3986 Section 3.1)
+///
+/// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+/// 先頭が有効なスキーム + ":" であればスキームの長さを返す
+fn detect_scheme(target: &str) -> Option<usize> {
+    let bytes = target.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
+        return None;
+    }
+    let colon_pos = bytes.iter().position(|&b| b == b':')?;
+    if colon_pos == 0 {
+        return None;
+    }
+    for &b in &bytes[1..colon_pos] {
+        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
+            return None;
+        }
+    }
+    if colon_pos + 1 >= bytes.len() {
+        return None;
+    }
+    Some(colon_pos)
 }
 
 /// request-target の形式
@@ -234,6 +283,15 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
+    }
+
+    // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
+    if request.method.eq_ignore_ascii_case("CONNECT")
+        && (!request.body.is_empty()
+            || request.has_header("Content-Length")
+            || request.has_header("Transfer-Encoding"))
+    {
+        return Err(EncodeError::ConnectRequestWithContent);
     }
 
     // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
@@ -496,6 +554,13 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
+    }
+
+    // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
+    if request.method.eq_ignore_ascii_case("CONNECT")
+        && (request.has_header("Content-Length") || request.has_header("Transfer-Encoding"))
+    {
+        return Err(EncodeError::ConnectRequestWithContent);
     }
 
     let mut buf = Vec::new();

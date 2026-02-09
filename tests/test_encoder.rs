@@ -464,6 +464,70 @@ fn test_encode_request_absolute_form_at_in_userinfo() {
 }
 
 // ========================================
+// CONNECT リクエスト content 禁止テスト (RFC 9110 Section 9.3.6)
+// ========================================
+
+#[test]
+fn test_encode_request_connect_with_body_error() {
+    // CONNECT リクエストに body があるとエラー
+    let req = Request::new("CONNECT", "example.com:443")
+        .header("Host", "example.com:443")
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConnectRequestWithContent)
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_with_content_length_error() {
+    // CONNECT リクエストに Content-Length があるとエラー
+    let req = Request::new("CONNECT", "example.com:443")
+        .header("Host", "example.com:443")
+        .header("Content-Length", "0");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConnectRequestWithContent)
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_with_transfer_encoding_error() {
+    // CONNECT リクエストに Transfer-Encoding があるとエラー
+    let req = Request::new("CONNECT", "example.com:443")
+        .header("Host", "example.com:443")
+        .header("Transfer-Encoding", "chunked");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConnectRequestWithContent)
+    ));
+}
+
+#[test]
+fn test_encode_request_headers_connect_with_content_length_error() {
+    // encode_request_headers でも CONNECT + CL は拒否
+    let req = Request::new("CONNECT", "example.com:443")
+        .header("Host", "example.com:443")
+        .header("Content-Length", "0");
+    let result = encode_request_headers(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ConnectRequestWithContent)
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_no_body_ok() {
+    // CONNECT リクエストで body なしは OK
+    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+// ========================================
 // method/request-target form 整合性テスト (RFC 9112 Section 3.2)
 // ========================================
 
@@ -536,4 +600,32 @@ fn test_encode_request_get_authority_form_error() {
         result,
         Err(EncodeError::InvalidRequestTargetForm { .. })
     ));
+}
+
+// ========================================
+// absolute-form 判定テスト ("://" なし absolute-URI)
+// ========================================
+
+#[test]
+fn test_encode_request_absolute_form_without_double_slash_ok() {
+    // "://" を含まない absolute-URI (urn:isbn:...) は absolute-form
+    let req = Request::with_version("GET", "urn:isbn:0451450523", "HTTP/1.0");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_encode_request_absolute_form_urn_nid_nss() {
+    // urn:nid:nss 形式の absolute-URI
+    let req = Request::with_version("GET", "urn:example:animal:ferret:nose", "HTTP/1.0");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_encode_request_authority_form_still_works() {
+    // 通常の authority-form (host:port) は引き続き authority-form と判定
+    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
 }

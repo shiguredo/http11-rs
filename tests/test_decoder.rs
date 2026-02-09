@@ -834,3 +834,48 @@ fn test_consume_body_exceeds_buffer_close_delimited_error() {
     let result = decoder.consume_body(100);
     assert!(result.is_err());
 }
+
+// ========================================
+// CONNECT リクエスト content 禁止テスト (RFC 9110 Section 9.3.6)
+// ========================================
+
+/// CONNECT リクエストに Content-Length があるとエラー
+#[test]
+fn test_connect_request_with_content_length_error() {
+    let mut decoder = RequestDecoder::new();
+    let request =
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+    assert!(
+        result.unwrap_err().to_string().contains("CONNECT"),
+        "error should mention CONNECT"
+    );
+}
+
+/// CONNECT リクエストに Transfer-Encoding があるとエラー
+#[test]
+fn test_connect_request_with_transfer_encoding_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// CONNECT リクエストで body なしは正常
+#[test]
+fn test_connect_request_no_body_ok() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok());
+    let (head, body_kind) = result.unwrap().unwrap();
+    assert_eq!(head.method, "CONNECT");
+    assert_eq!(body_kind, BodyKind::None);
+}
