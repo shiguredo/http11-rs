@@ -138,6 +138,11 @@ impl BasicAuth {
             return Err(AuthError::InvalidFormat);
         }
 
+        // RFC 7617 Section 2: credentials は token68 形式
+        if !is_token68(credentials) {
+            return Err(AuthError::InvalidToken);
+        }
+
         // Base64 デコード
         let decoded = base64_decode(credentials)?;
 

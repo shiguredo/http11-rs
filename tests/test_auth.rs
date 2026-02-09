@@ -1,7 +1,7 @@
 //! HTTP 認証のユニットテスト
 
 use shiguredo_http11::auth::{
-    AuthChallenge, AuthError, Authorization, BearerToken, DigestAuth, DigestChallenge,
+    AuthChallenge, AuthError, Authorization, BasicAuth, BearerToken, DigestAuth, DigestChallenge,
 };
 
 // ========================================
@@ -130,6 +130,24 @@ fn test_authorization_parse_errors() {
     assert!(matches!(
         Authorization::parse("Unknown token"),
         Err(AuthError::InvalidFormat)
+    ));
+}
+
+// ========================================
+// BasicAuth token68 バリデーションのテスト
+// ========================================
+
+#[test]
+fn test_basic_auth_token68_internal_whitespace_rejected() {
+    // RFC 7617 Section 2: credentials は token68 形式
+    // 内部の空白は token68 で不正
+    assert!(matches!(
+        BasicAuth::parse("Basic ab cd"),
+        Err(AuthError::InvalidToken)
+    ));
+    assert!(matches!(
+        BasicAuth::parse("Basic ab\tcd"),
+        Err(AuthError::InvalidToken)
     ));
 }
 
