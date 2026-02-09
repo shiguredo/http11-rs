@@ -95,6 +95,9 @@ pub enum EncodeError {
     ForbiddenContentLength { status_code: u16 },
     /// Content-Length ヘッダーの値と実際のボディサイズが一致しない
     ContentLengthMismatch { header_value: u64, body_length: u64 },
+    /// メソッドと request-target 形式が不整合
+    /// RFC 9112 Section 3.2: CONNECT は authority-form、OPTIONS * は asterisk-form のみ
+    InvalidRequestTargetForm { method: String, uri: String },
 }
 
 impl fmt::Display for EncodeError {
@@ -171,6 +174,13 @@ impl fmt::Display for EncodeError {
                     f,
                     "Content-Length header value {} does not match body length {}",
                     header_value, body_length
+                )
+            }
+            EncodeError::InvalidRequestTargetForm { method, uri } => {
+                write!(
+                    f,
+                    "request-target form {:?} is invalid for method {:?} (RFC 9112 Section 3.2)",
+                    uri, method
                 )
             }
         }

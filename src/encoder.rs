@@ -24,6 +24,9 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
         });
     }
 
+    // RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証
+    validate_request_target_form(&request.method, &request.uri)?;
+
     // バージョンの検証
     if !is_valid_version_for_encode(&request.version) {
         return Err(EncodeError::InvalidVersion {
@@ -35,6 +38,73 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
     validate_headers(&request.headers)?;
 
     Ok(())
+}
+
+/// request-target の形式を判定
+///
+/// RFC 9112 Section 3.2:
+/// - origin-form: "/" で始まる (例: /path?query)
+/// - absolute-form: "://" を含む (例: http://host/path)
+/// - authority-form: 上記以外で ":" を含む (例: host:port)
+/// - asterisk-form: "*" のみ
+fn detect_request_target_form(uri: &str) -> RequestTargetForm {
+    if uri == "*" {
+        RequestTargetForm::Asterisk
+    } else if uri.contains("://") {
+        RequestTargetForm::Absolute
+    } else if uri.starts_with('/') {
+        RequestTargetForm::Origin
+    } else {
+        RequestTargetForm::Authority
+    }
+}
+
+/// request-target の形式
+enum RequestTargetForm {
+    /// origin-form: "/" path ["?" query]
+    Origin,
+    /// absolute-form: absolute-URI
+    Absolute,
+    /// authority-form: uri-host ":" port
+    Authority,
+    /// asterisk-form: "*"
+    Asterisk,
+}
+
+/// RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証
+///
+/// - CONNECT は authority-form のみ (Section 3.2.3)
+/// - asterisk-form ("*") は OPTIONS のみ (Section 3.2.4)
+/// - その他のメソッドは origin-form または absolute-form (Section 3.2.1, 3.2.2)
+fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeError> {
+    let form = detect_request_target_form(uri);
+
+    match (method.to_ascii_uppercase().as_str(), &form) {
+        // CONNECT は authority-form のみ
+        ("CONNECT", RequestTargetForm::Authority) => Ok(()),
+        ("CONNECT", _) => Err(EncodeError::InvalidRequestTargetForm {
+            method: method.to_string(),
+            uri: uri.to_string(),
+        }),
+        // asterisk-form は OPTIONS のみ
+        (_, RequestTargetForm::Asterisk) => {
+            if method.eq_ignore_ascii_case("OPTIONS") {
+                Ok(())
+            } else {
+                Err(EncodeError::InvalidRequestTargetForm {
+                    method: method.to_string(),
+                    uri: uri.to_string(),
+                })
+            }
+        }
+        // CONNECT 以外が authority-form を使うのは不正
+        (_, RequestTargetForm::Authority) => Err(EncodeError::InvalidRequestTargetForm {
+            method: method.to_string(),
+            uri: uri.to_string(),
+        }),
+        // origin-form / absolute-form は OK
+        (_, RequestTargetForm::Origin | RequestTargetForm::Absolute) => Ok(()),
+    }
 }
 
 /// レスポンスフィールドのバリデーション
@@ -221,6 +291,13 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 ///
 /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+///
+/// # CONNECT 2xx レスポンスについて
+///
+/// RFC 9112 Section 6.1 / RFC 9110 Section 8.6 により、CONNECT リクエストへの
+/// 2xx レスポンスには Transfer-Encoding / Content-Length を含めてはならない (MUST NOT)。
+/// しかし、エンコーダーはリクエストメソッドの情報を持たないため、この制約は
+/// 呼び出し側アプリケーションの責務とする。
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_response_fields(response)?;
@@ -452,6 +529,13 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 ///
 /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+///
+/// # CONNECT 2xx レスポンスについて
+///
+/// RFC 9112 Section 6.1 / RFC 9110 Section 8.6 により、CONNECT リクエストへの
+/// 2xx レスポンスには Transfer-Encoding / Content-Length を含めてはならない (MUST NOT)。
+/// しかし、エンコーダーはリクエストメソッドの情報を持たないため、この制約は
+/// 呼び出し側アプリケーションの責務とする。
 pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_response_fields(response)?;

@@ -462,3 +462,78 @@ fn test_encode_request_absolute_form_at_in_userinfo() {
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
+
+// ========================================
+// method/request-target form 整合性テスト (RFC 9112 Section 3.2)
+// ========================================
+
+#[test]
+fn test_encode_request_connect_authority_form_ok() {
+    // CONNECT は authority-form (host:port) のみ許可
+    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_encode_request_connect_origin_form_error() {
+    // CONNECT で origin-form は不正
+    let req = Request::new("CONNECT", "/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_absolute_form_error() {
+    // CONNECT で absolute-form は不正
+    let req = Request::new("CONNECT", "http://example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_asterisk_form_error() {
+    // CONNECT で asterisk-form は不正
+    let req = Request::new("CONNECT", "*").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_options_asterisk_form_ok() {
+    // OPTIONS * は asterisk-form 許可
+    let req = Request::new("OPTIONS", "*").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_encode_request_get_asterisk_form_error() {
+    // GET で asterisk-form は不正
+    let req = Request::new("GET", "*").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_get_authority_form_error() {
+    // GET で authority-form は不正
+    let req = Request::new("GET", "example.com:80").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+    ));
+}
