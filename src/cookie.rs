@@ -457,6 +457,11 @@ fn parse_cookie_pair(pair: &str) -> Result<(&str, &str), CookieError> {
         value
     };
 
+    // RFC 6265 Section 4.1.1: cookie-value = *cookie-octet / ( DQUOTE *cookie-octet DQUOTE )
+    if !is_valid_cookie_value(value) {
+        return Err(CookieError::InvalidValue);
+    }
+
     Ok((name, value))
 }
 

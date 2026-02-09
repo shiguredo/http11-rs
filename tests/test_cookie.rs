@@ -63,24 +63,44 @@ fn test_set_cookie_expires_roundtrip() {
 
 #[test]
 fn test_cookie_quoted_value() {
-    // 引用符付きの値
-    let input = "name=\"quoted value\"";
+    // 引用符付きの値 (cookie-octet のみ)
+    let input = "name=\"quotedvalue\"";
     let cookies = Cookie::parse(input).unwrap();
 
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].name(), "name");
-    assert_eq!(cookies[0].value(), "quoted value");
+    assert_eq!(cookies[0].value(), "quotedvalue");
+}
+
+#[test]
+fn test_cookie_quoted_value_with_space_rejected() {
+    // RFC 6265 Section 4.1.1: スペースは cookie-octet ではない
+    let input = "name=\"quoted value\"";
+    assert!(matches!(
+        Cookie::parse(input),
+        Err(CookieError::InvalidValue)
+    ));
 }
 
 #[test]
 fn test_set_cookie_quoted_value() {
-    // 引用符付きの値
-    let input = "name=\"quoted value\"; Path=/";
+    // 引用符付きの値 (cookie-octet のみ)
+    let input = "name=\"quotedvalue\"; Path=/";
     let cookie = SetCookie::parse(input).unwrap();
 
     assert_eq!(cookie.name(), "name");
-    assert_eq!(cookie.value(), "quoted value");
+    assert_eq!(cookie.value(), "quotedvalue");
     assert_eq!(cookie.path(), Some("/"));
+}
+
+#[test]
+fn test_set_cookie_quoted_value_with_space_rejected() {
+    // RFC 6265 Section 4.1.1: スペースは cookie-octet ではない
+    let input = "name=\"quoted value\"; Path=/";
+    assert!(matches!(
+        SetCookie::parse(input),
+        Err(CookieError::InvalidValue)
+    ));
 }
 
 // ========================================
