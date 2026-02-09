@@ -28,6 +28,10 @@ fn test_content_disposition_error_display() {
             ContentDispositionError::InvalidExtValue,
             "invalid ext-value encoding",
         ),
+        (
+            ContentDispositionError::DuplicateParameter("filename".to_string()),
+            "duplicate parameter: filename",
+        ),
     ];
 
     for (error, expected) in errors {

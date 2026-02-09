@@ -34,6 +34,8 @@ pub enum ContentDispositionError {
     InvalidParameter,
     /// 不正な RFC 8187 エンコーディング
     InvalidExtValue,
+    /// 重複パラメータ (RFC 6266)
+    DuplicateParameter(String),
 }
 
 impl fmt::Display for ContentDispositionError {
@@ -48,6 +50,9 @@ impl fmt::Display for ContentDispositionError {
             }
             ContentDispositionError::InvalidParameter => write!(f, "invalid parameter"),
             ContentDispositionError::InvalidExtValue => write!(f, "invalid ext-value encoding"),
+            ContentDispositionError::DuplicateParameter(name) => {
+                write!(f, "duplicate parameter: {}", name)
+            }
         }
     }
 }
@@ -154,6 +159,9 @@ impl ContentDisposition {
         };
 
         // パラメータをパース
+        // RFC 6266: 同名パラメータの複数出現は無効
+        let mut seen_params = Vec::new();
+
         for part in parts.iter().skip(1) {
             let part = part.trim();
             if part.is_empty() {
@@ -163,6 +171,12 @@ impl ContentDisposition {
             if let Some(eq_pos) = part.find('=') {
                 let param_name = part[..eq_pos].trim().to_ascii_lowercase();
                 let param_value = part[eq_pos + 1..].trim();
+
+                // 重複パラメータチェック
+                if seen_params.iter().any(|n: &String| n == &param_name) {
+                    return Err(ContentDispositionError::DuplicateParameter(param_name));
+                }
+                seen_params.push(param_name.clone());
 
                 match param_name.as_str() {
                     "filename" => {
