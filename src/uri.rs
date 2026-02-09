@@ -569,6 +569,50 @@ fn find_scheme_end(bytes: &[u8]) -> Option<usize> {
     None
 }
 
+/// host の検証 (RFC 3986 Section 3.2.2)
+///
+/// host = IP-literal / IPv4address / reg-name
+fn validate_host(host: &str) -> Result<(), UriError> {
+    if host.is_empty() {
+        return Ok(());
+    }
+    // IP-literal は bracket チェックで別途検証済み
+    if host.starts_with('[') {
+        return Ok(());
+    }
+    // RFC 3986 Section 3.2.2: "first-match-wins" - IPv4 を先に試す
+    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+        return Ok(());
+    }
+    // それ以外は reg-name として検証
+    validate_reg_name(host)
+}
+
+/// reg-name の検証 (RFC 3986 Section 3.2.2)
+///
+/// reg-name = *( unreserved / pct-encoded / sub-delims )
+fn validate_reg_name(name: &str) -> Result<(), UriError> {
+    let bytes = name.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if is_unreserved(b) || is_sub_delim(b) {
+            i += 1;
+        } else if b == b'%' {
+            if i + 2 >= bytes.len() {
+                return Err(UriError::InvalidHost);
+            }
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+                return Err(UriError::InvalidHost);
+            }
+            i += 3;
+        } else {
+            return Err(UriError::InvalidHost);
+        }
+    }
+    Ok(())
+}
+
 /// authority をパース
 /// 戻り値: (host_end, port)
 fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
@@ -602,7 +646,10 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
 
     // 通常のホスト:ポート
     if let Some(colon_pos) = host_part.rfind(':') {
+        let host_str = &host_part[..colon_pos];
         let port_str = &host_part[colon_pos + 1..];
+        // RFC 3986 Section 3.2.2: host の文字種検証
+        validate_host(host_str)?;
         if !port_str.is_empty() {
             let port = port_str.parse::<u16>().map_err(|_| UriError::InvalidPort)?;
             let host_end = if let Some(at_pos) = authority.rfind('@') {
@@ -612,6 +659,9 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
             };
             return Ok((host_end, Some(port)));
         }
+    } else {
+        // RFC 3986 Section 3.2.2: host の文字種検証
+        validate_host(host_part)?;
     }
 
     Ok((authority.len(), None))

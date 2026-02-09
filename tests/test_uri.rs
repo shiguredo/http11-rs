@@ -309,6 +309,55 @@ fn test_uri_empty_authority() {
 }
 
 // ========================================
+// host 文字種検証のテスト (RFC 3986 Section 3.2.2)
+// ========================================
+
+// スペースを含む host は拒否
+#[test]
+fn test_uri_parse_invalid_host_space() {
+    assert!(matches!(
+        Uri::parse("http://exa mple.com/path"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// 制御文字を含む host は拒否
+#[test]
+fn test_uri_parse_invalid_host_control_char() {
+    assert!(matches!(
+        Uri::parse("http://exam\x01ple.com"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// reg-name に許可されない文字 (角括弧) は拒否
+#[test]
+fn test_uri_parse_invalid_host_bracket_in_reg_name() {
+    // "[" は IP-literal の開始でのみ許可される
+    // reg-name 中の "[" は不正
+    assert!(matches!(
+        Uri::parse("http://exam[ple.com/path"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// パーセントエンコーディングを含む reg-name は受理
+#[test]
+fn test_uri_parse_valid_host_percent_encoded() {
+    let uri = Uri::parse("http://exam%70le.com/path").unwrap();
+    assert_eq!(uri.host(), Some("exam%70le.com"));
+}
+
+// ポート付きの不正 host は拒否
+#[test]
+fn test_uri_parse_invalid_host_with_port() {
+    assert!(matches!(
+        Uri::parse("http://exa mple.com:8080/path"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// ========================================
 // ポートが空の場合
 // ========================================
 
