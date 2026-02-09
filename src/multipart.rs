@@ -42,6 +42,9 @@ pub enum MultipartError {
     InvalidPart,
     /// パースが不完全
     Incomplete,
+    /// Content-Disposition が欠落している
+    /// RFC 7578 Section 4.2: 各パートは Content-Disposition ヘッダーを含まなければならない
+    MissingContentDisposition,
 }
 
 impl fmt::Display for MultipartError {
@@ -52,6 +55,12 @@ impl fmt::Display for MultipartError {
             MultipartError::InvalidHeader => write!(f, "invalid part header"),
             MultipartError::InvalidPart => write!(f, "invalid part"),
             MultipartError::Incomplete => write!(f, "incomplete multipart data"),
+            MultipartError::MissingContentDisposition => {
+                write!(
+                    f,
+                    "missing Content-Disposition header (RFC 7578 Section 4.2)"
+                )
+            }
         }
     }
 }
@@ -303,6 +312,11 @@ impl MultipartParser {
                             }
                         }
 
+                        // RFC 7578 Section 4.2: 各パートは Content-Disposition ヘッダーを
+                        // 含まなければならない (MUST)
+                        let content_disposition =
+                            content_disposition.ok_or(MultipartError::MissingContentDisposition)?;
+
                         // 次の境界を探す
                         let body_buffer = &self.buffer[body_start..];
                         let next_delim = format!("\r\n--{}", self.boundary);
@@ -326,7 +340,7 @@ impl MultipartParser {
                             }
 
                             return Ok(Some(Part {
-                                content_disposition,
+                                content_disposition: Some(content_disposition),
                                 content_type,
                                 headers,
                                 body,

@@ -14,6 +14,10 @@ fn test_multipart_error_display() {
         (MultipartError::InvalidHeader, "invalid part header"),
         (MultipartError::InvalidPart, "invalid part"),
         (MultipartError::Incomplete, "incomplete multipart data"),
+        (
+            MultipartError::MissingContentDisposition,
+            "missing Content-Disposition header (RFC 7578 Section 4.2)",
+        ),
     ];
 
     for (error, expected) in errors {
@@ -131,4 +135,41 @@ fn test_multipart_parser_clone() {
 
     let cloned = parser.clone();
     assert!(!cloned.is_finished());
+}
+
+// ========================================
+// Content-Disposition 必須チェックのテスト (RFC 7578 Section 4.2)
+// ========================================
+
+#[test]
+fn test_multipart_missing_content_disposition() {
+    // Content-Disposition ヘッダーがないパートはエラー
+    let body = b"--boundary\r\n\
+        Content-Type: text/plain\r\n\r\n\
+        value\r\n\
+        --boundary--\r\n";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body);
+
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::MissingContentDisposition)
+    ));
+}
+
+#[test]
+fn test_multipart_empty_headers_missing_content_disposition() {
+    // ヘッダーなしのパートはエラー
+    // Initial 状態が --boundary\r\n を消費するため、
+    // 空ヘッダーセクションは \r\n\r\n として表現する
+    let body = b"--boundary\r\n\r\n\r\nvalue\r\n--boundary--\r\n";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body);
+
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::MissingContentDisposition)
+    ));
 }
