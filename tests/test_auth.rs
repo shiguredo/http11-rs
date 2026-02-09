@@ -31,6 +31,12 @@ fn test_auth_error_display() {
             "missing required auth parameter",
         ),
         (AuthError::InvalidToken, "invalid auth token"),
+        (AuthError::ColonInUserId, "colon in user-id"),
+        (
+            AuthError::ControlCharacter,
+            "control character in credentials",
+        ),
+        (AuthError::InvalidCharset, "charset must be UTF-8"),
     ];
 
     for (error, expected) in errors {

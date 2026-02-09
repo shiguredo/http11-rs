@@ -10,7 +10,7 @@
 //! use shiguredo_http11::auth::{BasicAuth, BearerToken, WwwAuthenticate};
 //!
 //! // クライアント: Authorization ヘッダーの作成 (Basic)
-//! let auth = BasicAuth::new("user", "password");
+//! let auth = BasicAuth::new("user", "password").unwrap();
 //! let header = auth.to_header_value();
 //! assert!(header.starts_with("Basic "));
 //!
@@ -55,6 +55,12 @@ pub enum AuthError {
     MissingParameter,
     /// 不正なトークン
     InvalidToken,
+    /// user-id にコロンが含まれている (RFC 7617 Section 2)
+    ColonInUserId,
+    /// 制御文字が含まれている (RFC 7617 Section 2)
+    ControlCharacter,
+    /// charset が UTF-8 でない (RFC 7617 Section 2.1)
+    InvalidCharset,
 }
 
 impl fmt::Display for AuthError {
@@ -71,6 +77,9 @@ impl fmt::Display for AuthError {
             AuthError::InvalidParameter => write!(f, "invalid auth parameter"),
             AuthError::MissingParameter => write!(f, "missing required auth parameter"),
             AuthError::InvalidToken => write!(f, "invalid auth token"),
+            AuthError::ColonInUserId => write!(f, "colon in user-id"),
+            AuthError::ControlCharacter => write!(f, "control character in credentials"),
+            AuthError::InvalidCharset => write!(f, "charset must be UTF-8"),
         }
     }
 }
@@ -90,11 +99,20 @@ pub struct BasicAuth {
 
 impl BasicAuth {
     /// 新しい Basic 認証を作成
-    pub fn new(username: &str, password: &str) -> Self {
-        BasicAuth {
+    ///
+    /// RFC 7617 Section 2: user-id にコロンを含めてはならない。
+    /// user-id と password に制御文字 (CTL) を含めてはならない。
+    pub fn new(username: &str, password: &str) -> Result<Self, AuthError> {
+        if username.contains(':') {
+            return Err(AuthError::ColonInUserId);
+        }
+        if has_control_chars(username) || has_control_chars(password) {
+            return Err(AuthError::ControlCharacter);
+        }
+        Ok(BasicAuth {
             username: username.to_string(),
             password: password.to_string(),
-        }
+        })
     }
 
     /// Authorization ヘッダー値をパース
@@ -131,6 +149,11 @@ impl BasicAuth {
         let username = &decoded_str[..colon_pos];
         let password = &decoded_str[colon_pos + 1..];
 
+        // RFC 7617 Section 2: user-id と password に制御文字を含めてはならない
+        if has_control_chars(username) || has_control_chars(password) {
+            return Err(AuthError::ControlCharacter);
+        }
+
         Ok(BasicAuth {
             username: username.to_string(),
             password: password.to_string(),
@@ -154,7 +177,7 @@ impl BasicAuth {
     /// ```rust
     /// use shiguredo_http11::auth::BasicAuth;
     ///
-    /// let auth = BasicAuth::new("user", "password");
+    /// let auth = BasicAuth::new("user", "password").unwrap();
     /// assert_eq!(auth.to_header_value(), "Basic dXNlcjpwYXNzd29yZA==");
     /// ```
     pub fn to_header_value(&self) -> String {
@@ -189,9 +212,11 @@ impl WwwAuthenticate {
         }
     }
 
-    /// charset パラメータを設定
-    pub fn with_charset(mut self, charset: &str) -> Self {
-        self.charset = Some(charset.to_string());
+    /// charset パラメータを UTF-8 に設定
+    ///
+    /// RFC 7617 Section 2.1: charset の許容値は "UTF-8" のみ
+    pub fn with_charset_utf8(mut self) -> Self {
+        self.charset = Some("UTF-8".to_string());
         self
     }
 
@@ -236,7 +261,13 @@ impl WwwAuthenticate {
 
                 match key.as_str() {
                     "realm" => realm = Some(value.to_string()),
-                    "charset" => charset = Some(value.to_string()),
+                    "charset" => {
+                        // RFC 7617 Section 2.1: charset の許容値は "UTF-8" のみ
+                        if !value.eq_ignore_ascii_case("UTF-8") {
+                            return Err(AuthError::InvalidCharset);
+                        }
+                        charset = Some(value.to_string());
+                    }
                     _ => {} // 未知のパラメータは無視
                 }
             }
@@ -826,6 +857,11 @@ fn is_token68_char(b: u8) -> bool {
 
 fn is_ows(b: u8) -> bool {
     b == b' ' || b == b'\t'
+}
+
+/// RFC 5234 Appendix B.1: CTL = %x00-1F / %x7F
+fn has_control_chars(s: &str) -> bool {
+    s.bytes().any(|b| b <= 0x1F || b == 0x7F)
 }
 
 // Base64 エンコード/デコード (依存なし実装)

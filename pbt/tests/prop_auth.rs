@@ -65,7 +65,7 @@ fn password_with_colon() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_basic_auth_colon_in_password(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in password_with_colon()) {
-        let auth = BasicAuth::new(&username, &password);
+        let auth = BasicAuth::new(&username, &password).unwrap();
         let header = auth.to_header_value();
         let reparsed = BasicAuth::parse(&header).unwrap();
 
@@ -82,7 +82,7 @@ proptest! {
         username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
         password in "[a-zA-Z0-9]{0,16}",
     ) {
-        let auth = BasicAuth::new(&username, &password);
+        let auth = BasicAuth::new(&username, &password).unwrap();
         let canonical = auth.to_header_value();
         // スキーム名を差し替え
         let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
@@ -97,19 +97,18 @@ proptest! {
 // WwwAuthenticate のテスト
 // ========================================
 
-// WwwAuthenticate charset 付きラウンドトリップ
+// WwwAuthenticate charset UTF-8 付きラウンドトリップ
 proptest! {
     #[test]
     fn prop_www_authenticate_charset_roundtrip(
         realm in param_value(),
-        charset in prop_oneof![Just("UTF-8"), Just("ISO-8859-1")],
     ) {
-        let auth = WwwAuthenticate::basic(&realm).with_charset(charset);
+        let auth = WwwAuthenticate::basic(&realm).with_charset_utf8();
         let header = auth.to_string();
         let reparsed = WwwAuthenticate::parse(&header).unwrap();
 
         prop_assert_eq!(reparsed.realm(), realm.as_str());
-        prop_assert_eq!(reparsed.charset(), Some(charset));
+        prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
     }
 }
 
@@ -252,7 +251,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_authorization_basic_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
-        let auth = BasicAuth::new(&username, &password);
+        let auth = BasicAuth::new(&username, &password).unwrap();
         let header = auth.to_header_value();
         let parsed = Authorization::parse(&header).unwrap();
 
@@ -385,7 +384,7 @@ proptest! {
         username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
         password in "[a-zA-Z0-9]{0,16}",
     ) {
-        let auth = BasicAuth::new(&username, &password);
+        let auth = BasicAuth::new(&username, &password).unwrap();
         let canonical = auth.to_header_value();
         let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
         let parsed = Authorization::parse(&header).unwrap();
@@ -503,7 +502,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_proxy_authorization_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
-        let auth = BasicAuth::new(&username, &password);
+        let auth = BasicAuth::new(&username, &password).unwrap();
         let header = auth.to_header_value();
         let proxy_auth = ProxyAuthorization::parse(&header).unwrap();
 
