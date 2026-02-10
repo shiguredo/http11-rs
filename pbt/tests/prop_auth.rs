@@ -61,6 +61,19 @@ fn password_with_colon() -> impl Strategy<Value = String> {
 // BasicAuth のテスト
 // ========================================
 
+// BasicAuth ラウンドトリップ
+proptest! {
+    #[test]
+    fn prop_basic_auth_roundtrip(username in "[a-zA-Z][a-zA-Z0-9_]{0,15}", password in "[a-zA-Z0-9!@#$%^&*]{0,16}") {
+        let auth = BasicAuth::new(&username, &password).unwrap();
+        let header = auth.to_header_value();
+        let reparsed = BasicAuth::parse(&header).unwrap();
+
+        prop_assert_eq!(auth.username(), reparsed.username());
+        prop_assert_eq!(auth.password(), reparsed.password());
+    }
+}
+
 // BasicAuth ラウンドトリップ (コロンを含むパスワード)
 proptest! {
     #[test]
@@ -539,5 +552,34 @@ proptest! {
         // to_header_value
         let header_value = proxy_auth.to_header_value();
         prop_assert!(header_value.starts_with("Basic "));
+    }
+}
+
+// ========================================
+// WwwAuthenticate のテスト
+// ========================================
+
+// WwwAuthenticate ラウンドトリップ
+proptest! {
+    #[test]
+    fn prop_www_authenticate_roundtrip(realm in "[a-z]{1,8}\\.[a-z]{2,6}") {
+        let auth = WwwAuthenticate::basic(&realm);
+        let header = auth.to_string();
+        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+
+        prop_assert_eq!(auth.realm(), reparsed.realm());
+    }
+}
+
+// WwwAuthenticate with charset UTF-8 ラウンドトリップ
+proptest! {
+    #[test]
+    fn prop_www_authenticate_with_charset_utf8_roundtrip(realm in "[a-z]{1,8}\\.[a-z]{2,6}") {
+        let auth = WwwAuthenticate::basic(&realm).with_charset_utf8();
+        let header = auth.to_string();
+        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+
+        prop_assert_eq!(reparsed.realm(), realm.as_str());
+        prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
     }
 }

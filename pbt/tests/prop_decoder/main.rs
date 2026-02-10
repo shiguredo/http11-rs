@@ -3,6 +3,7 @@
 mod body;
 mod head;
 mod request;
+mod request_target;
 mod response;
 
 use proptest::prelude::*;
