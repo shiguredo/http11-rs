@@ -265,8 +265,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
         // RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
         // トンネルモードに切り替わる。Transfer-Encoding と Content-Length は無視される。
+        // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
         if let Some(ref method) = self.request_method
-            && method.eq_ignore_ascii_case("CONNECT")
+            && method == "CONNECT"
             && (200..300).contains(&status_code)
         {
             return Ok(BodyKind::Tunnel);

@@ -52,20 +52,22 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
 /// デコーダー (decoder/body.rs) と同じ順序で判定する:
 /// 1. port が数値の host:port → authority-form
 /// 2. 有効なスキームが検出 → absolute-form
-fn detect_request_target_form(uri: &str) -> RequestTargetForm {
+fn detect_request_target_form(uri: &str) -> Result<RequestTargetForm, EncodeError> {
     if uri == "*" {
-        RequestTargetForm::Asterisk
+        Ok(RequestTargetForm::Asterisk)
     } else if uri.contains("://") {
-        RequestTargetForm::Absolute
+        Ok(RequestTargetForm::Absolute)
     } else if uri.starts_with('/') {
-        RequestTargetForm::Origin
+        Ok(RequestTargetForm::Origin)
     } else if looks_like_authority_form(uri) {
-        RequestTargetForm::Authority
+        Ok(RequestTargetForm::Authority)
     } else if detect_scheme(uri).is_some() {
         // "://" を含まない absolute-URI (例: urn:isbn:0451450523)
-        RequestTargetForm::Absolute
+        Ok(RequestTargetForm::Absolute)
     } else {
-        RequestTargetForm::Authority
+        Err(EncodeError::InvalidRequestTarget {
+            uri: uri.to_string(),
+        })
     }
 }
 
@@ -126,18 +128,19 @@ enum RequestTargetForm {
 /// - asterisk-form ("*") は OPTIONS のみ (Section 3.2.4)
 /// - その他のメソッドは origin-form または absolute-form (Section 3.2.1, 3.2.2)
 fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeError> {
-    let form = detect_request_target_form(uri);
+    let form = detect_request_target_form(uri)?;
 
-    match (method.to_ascii_uppercase().as_str(), &form) {
-        // CONNECT は authority-form のみ
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
+    match (method, &form) {
+        // CONNECT は authority-form のみ (RFC 9112 Section 3.2.3)
         ("CONNECT", RequestTargetForm::Authority) => Ok(()),
         ("CONNECT", _) => Err(EncodeError::InvalidRequestTargetForm {
             method: method.to_string(),
             uri: uri.to_string(),
         }),
-        // asterisk-form は OPTIONS のみ
+        // asterisk-form は OPTIONS のみ (RFC 9112 Section 3.2.4)
         (_, RequestTargetForm::Asterisk) => {
-            if method.eq_ignore_ascii_case("OPTIONS") {
+            if method == "OPTIONS" {
                 Ok(())
             } else {
                 Err(EncodeError::InvalidRequestTargetForm {
@@ -286,7 +289,8 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     }
 
     // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
-    if request.method.eq_ignore_ascii_case("CONNECT")
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
+    if request.method == "CONNECT"
         && (!request.body.is_empty()
             || request.has_header("Content-Length")
             || request.has_header("Transfer-Encoding"))
@@ -557,7 +561,8 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
     }
 
     // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
-    if request.method.eq_ignore_ascii_case("CONNECT")
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
+    if request.method == "CONNECT"
         && (request.has_header("Content-Length") || request.has_header("Transfer-Encoding"))
     {
         return Err(EncodeError::ConnectRequestWithContent);

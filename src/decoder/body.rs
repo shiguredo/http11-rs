@@ -412,6 +412,29 @@ pub(crate) fn find_line(buf: &[u8]) -> Option<usize> {
     buf.windows(2).position(|w| w == b"\r\n")
 }
 
+/// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
+///
+/// OWS = *( SP / HTAB )
+/// Rust の str::trim() は Unicode 空白全般を除去するため使用しない
+fn trim_ows(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let start = bytes
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|&b| b != b' ' && b != b'\t')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    if start >= end {
+        ""
+    } else {
+        // SP/HTAB は ASCII なので UTF-8 境界は安全
+        &s[start..end]
+    }
+}
+
 /// バイト列の前後の ASCII 空白を除去
 fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
     let start = bytes
@@ -469,8 +492,8 @@ pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
         ));
     }
 
-    // ヘッダー値の検証 (RFC 9110 Section 5.5)
-    let trimmed_value = value.trim();
+    // ヘッダー値の OWS を除去 (RFC 9110 Section 5.5: OWS = *( SP / HTAB ))
+    let trimmed_value = trim_ows(value);
     if !is_valid_field_value(trimmed_value) {
         return Err(Error::InvalidData(
             "invalid header line: invalid value (contains control characters)".to_string(),
