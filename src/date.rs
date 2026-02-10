@@ -131,6 +131,33 @@ pub struct HttpDate {
     second: u8,
 }
 
+impl PartialOrd for HttpDate {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HttpDate {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+        )
+            .cmp(&(
+                other.year,
+                other.month,
+                other.day,
+                other.hour,
+                other.minute,
+                other.second,
+            ))
+    }
+}
+
 impl HttpDate {
     /// HTTP-date 文字列をパース
     ///
@@ -627,5 +654,18 @@ mod tests {
             let date = HttpDate::parse(&date_str).unwrap();
             assert_eq!(date.day_of_week(), dow);
         }
+    }
+
+    #[test]
+    fn test_ord() {
+        let d1 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let d2 = HttpDate::parse("Mon, 07 Nov 1994 08:49:37 GMT").unwrap();
+        let d3 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+
+        assert!(d1 < d2);
+        assert!(d2 > d1);
+        assert_eq!(d1, d3);
+        assert!(d1 <= d3);
+        assert!(d1 >= d3);
     }
 }

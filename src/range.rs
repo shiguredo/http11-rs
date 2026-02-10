@@ -292,7 +292,11 @@ impl ContentRange {
         };
 
         if range_str == "*" {
-            // unsatisfied range: bytes */1000
+            // RFC 9110 Section 14.4: unsatisfied-range = "*/" complete-length
+            // complete-length = 1*DIGIT (必須)
+            if complete_length.is_none() {
+                return Err(RangeError::InvalidFormat);
+            }
             return Ok(ContentRange {
                 unit: unit.to_string(),
                 start: None,
@@ -311,6 +315,13 @@ impl ContentRange {
             .map_err(|_| RangeError::InvalidFormat)?;
 
         if start > end {
+            return Err(RangeError::InvalidBounds);
+        }
+
+        // RFC 9110 Section 14.4: complete-length が last-pos 以下なら invalid
+        if let Some(len) = complete_length
+            && len <= end
+        {
             return Err(RangeError::InvalidBounds);
         }
 
@@ -416,6 +427,14 @@ impl AcceptRanges {
 
         if units.is_empty() {
             return Err(RangeError::Empty);
+        }
+
+        // RFC 9110 Section 14.3: acceptable-ranges = 1#range-unit
+        // range-unit = token
+        for unit in &units {
+            if !is_valid_token(unit) {
+                return Err(RangeError::InvalidUnit);
+            }
         }
 
         Ok(AcceptRanges { units })
@@ -589,6 +608,21 @@ mod tests {
     }
 
     #[test]
+    fn test_content_range_unsatisfied_requires_length() {
+        // unsatisfied-range = "*/" complete-length (complete-length 必須)
+        assert!(ContentRange::parse("bytes */*").is_err());
+    }
+
+    #[test]
+    fn test_content_range_complete_length_must_exceed_last_pos() {
+        // complete-length <= last-pos は invalid
+        assert!(ContentRange::parse("bytes 0-999/500").is_err());
+        assert!(ContentRange::parse("bytes 0-999/999").is_err());
+        // complete-length > last-pos は OK
+        assert!(ContentRange::parse("bytes 0-999/1000").is_ok());
+    }
+
+    #[test]
     fn test_content_range_display() {
         let cr = ContentRange::new_bytes(0, 499, Some(1000));
         assert_eq!(cr.to_string(), "bytes 0-499/1000");
@@ -615,5 +649,11 @@ mod tests {
     fn test_accept_ranges_display() {
         let ar = AcceptRanges::bytes();
         assert_eq!(ar.to_string(), "bytes");
+    }
+
+    #[test]
+    fn test_accept_ranges_invalid_token() {
+        assert!(AcceptRanges::parse("inv@lid").is_err());
+        assert!(AcceptRanges::parse("bytes, inv@lid").is_err());
     }
 }

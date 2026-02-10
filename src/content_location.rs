@@ -23,6 +23,8 @@ pub enum ContentLocationError {
     Empty,
     /// 不正な URI
     InvalidUri,
+    /// フラグメントは許可されない (RFC 9110 Section 8.7)
+    FragmentNotAllowed,
 }
 
 impl fmt::Display for ContentLocationError {
@@ -30,6 +32,9 @@ impl fmt::Display for ContentLocationError {
         match self {
             ContentLocationError::Empty => write!(f, "empty Content-Location"),
             ContentLocationError::InvalidUri => write!(f, "invalid Content-Location URI"),
+            ContentLocationError::FragmentNotAllowed => {
+                write!(f, "Content-Location must not contain a fragment")
+            }
         }
     }
 }
@@ -51,6 +56,14 @@ impl ContentLocation {
         }
 
         let uri = Uri::parse(input).map_err(|_| ContentLocationError::InvalidUri)?;
+
+        // RFC 9110 Section 8.7: Content-Location = absolute-URI / partial-URI
+        // absolute-URI はフラグメントを含まない (RFC 3986 Section 4.3)
+        // partial-URI もフラグメントを含まない (RFC 9110 Section 4)
+        if uri.fragment().is_some() {
+            return Err(ContentLocationError::FragmentNotAllowed);
+        }
+
         Ok(ContentLocation { uri })
     }
 
@@ -86,5 +99,17 @@ mod tests {
     fn parse_invalid() {
         assert!(ContentLocation::parse("").is_err());
         assert!(ContentLocation::parse("http://[::1").is_err());
+    }
+
+    #[test]
+    fn parse_fragment_rejected() {
+        assert_eq!(
+            ContentLocation::parse("https://example.com/path#frag"),
+            Err(ContentLocationError::FragmentNotAllowed)
+        );
+        assert_eq!(
+            ContentLocation::parse("/path#frag"),
+            Err(ContentLocationError::FragmentNotAllowed)
+        );
     }
 }

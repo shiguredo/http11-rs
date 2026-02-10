@@ -55,21 +55,18 @@ fn query() -> impl Strategy<Value = String> {
 
 // フラグメント
 fn fragment() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("".to_string()),
-        "[a-z]{1,8}".prop_map(|s| format!("#{}", s)),
-    ]
+    "[a-z]{1,8}".prop_map(|s| format!("#{}", s))
 }
 
-// 絶対 URI
+// 絶対 URI (フラグメントなし: RFC 9110 Section 8.7)
 fn absolute_uri() -> impl Strategy<Value = String> {
-    (scheme(), hostname(), path(), query(), fragment())
-        .prop_map(|(s, h, p, q, f)| format!("{}://{}{}{}{}", s, h, p, q, f))
+    (scheme(), hostname(), path(), query())
+        .prop_map(|(s, h, p, q)| format!("{}://{}{}{}", s, h, p, q))
 }
 
-// 相対 URI (パスのみ)
+// 相対 URI (フラグメントなし: RFC 9110 Section 8.7)
 fn relative_uri() -> impl Strategy<Value = String> {
-    (path(), query(), fragment()).prop_map(|(p, q, f)| format!("{}{}{}", p, q, f))
+    (path(), query()).prop_map(|(p, q)| format!("{}{}", p, q))
 }
 
 // 有効な URI
@@ -157,15 +154,12 @@ proptest! {
     }
 }
 
-// パス + フラグメント
+// フラグメント付き URI は拒否される (RFC 9110 Section 8.7)
 proptest! {
     #[test]
-    fn prop_content_location_path_with_fragment(p in path(), frag in "[a-z]{1,8}") {
-        let uri = format!("{}#{}", p, frag);
-        let cl = ContentLocation::parse(&uri).unwrap();
-
-        prop_assert_eq!(cl.uri().path(), p.as_str());
-        prop_assert_eq!(cl.uri().fragment(), Some(frag.as_str()));
+    fn prop_content_location_fragment_rejected(p in path(), frag in fragment()) {
+        let uri = format!("{}{}", p, frag);
+        prop_assert!(ContentLocation::parse(&uri).is_err());
     }
 }
 

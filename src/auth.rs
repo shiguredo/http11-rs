@@ -840,8 +840,14 @@ fn is_token_char(b: u8) -> bool {
     )
 }
 
+/// RFC 9110 Section 11.2: token68 = 1*( ALPHA / DIGIT / "-" / "." / "_" / "~" / "+" / "/" ) *"="
 fn is_token68(value: &str) -> bool {
-    !value.is_empty() && value.bytes().all(is_token68_char)
+    if value.is_empty() {
+        return false;
+    }
+    let trimmed = value.trim_end_matches('=');
+    // 末尾の = を除去した残りが 1 文字以上必要
+    !trimmed.is_empty() && trimmed.bytes().all(is_token68_char)
 }
 
 fn is_token68_char(b: u8) -> bool {
@@ -856,7 +862,6 @@ fn is_token68_char(b: u8) -> bool {
             | b'~'
             | b'+'
             | b'/'
-            | b'='
     )
 }
 
@@ -1020,5 +1025,21 @@ mod tests {
     fn test_digest_auth_non_ascii_input() {
         let input = ")ϓ )ϓ";
         assert!(DigestAuth::parse(input).is_err());
+    }
+
+    #[test]
+    fn test_token68_equals_only_at_end() {
+        // 末尾の = は OK (Base64 パディング)
+        assert!(is_token68("Zm8="));
+        assert!(is_token68("Zg=="));
+        assert!(is_token68("abc"));
+        // 途中の = は NG
+        assert!(!is_token68("a=b"));
+        assert!(!is_token68("a=b="));
+        // = のみは NG (1*(...) が必要)
+        assert!(!is_token68("="));
+        assert!(!is_token68("=="));
+        // 空は NG
+        assert!(!is_token68(""));
     }
 }

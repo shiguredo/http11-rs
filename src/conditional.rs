@@ -154,17 +154,14 @@ impl IfModifiedSince {
         &self.0
     }
 
-    /// 指定した Last-Modified が条件を満たすか
+    /// 指定した Last-Modified が条件を満たすか (RFC 9110 Section 13.1.3)
     ///
     /// 戻り値が true = リクエストを処理すべき (変更されている)
     /// 戻り値が false = 304 を返すべき (変更されていない)
     ///
-    /// 注意: 正確な比較には日時の比較関数が必要です。
-    /// ここでは単純な文字列比較を行います。
+    /// RFC 9110: last-modified が if-modified-since 以前または等しい場合 false
     pub fn is_modified(&self, last_modified: &HttpDate) -> bool {
-        // 簡易実装: Display 出力を比較
-        // 本来は日時として比較すべき
-        self.0.to_string() != last_modified.to_string()
+        last_modified > &self.0
     }
 }
 
@@ -335,6 +332,24 @@ mod tests {
         assert_eq!(ims.date().day(), 6);
         assert_eq!(ims.date().month(), 11);
         assert_eq!(ims.date().year(), 1994);
+    }
+
+    #[test]
+    fn test_if_modified_since_is_modified() {
+        // If-Modified-Since: 1994-11-06
+        let ims = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+
+        // last-modified が同じ → false (304)
+        let same = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        assert!(!ims.is_modified(&same));
+
+        // last-modified が古い → false (304)
+        let older = HttpDate::parse("Sat, 05 Nov 1994 08:49:37 GMT").unwrap();
+        assert!(!ims.is_modified(&older));
+
+        // last-modified が新しい → true (処理する)
+        let newer = HttpDate::parse("Mon, 07 Nov 1994 08:49:37 GMT").unwrap();
+        assert!(ims.is_modified(&newer));
     }
 
     #[test]
