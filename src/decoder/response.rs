@@ -263,6 +263,23 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// 4. Content-Length がある場合は固定長
     /// 5. それ以外は close-delimited (接続が閉じるまでがボディ)
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
+        // RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault
+        let version = self
+            .start_line
+            .as_ref()
+            .and_then(|sl| sl.split(' ').next())
+            .unwrap_or("");
+        if version == "HTTP/1.0"
+            && self
+                .headers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case("Transfer-Encoding"))
+        {
+            return Err(Error::InvalidData(
+                "Transfer-Encoding is not defined in HTTP/1.0".to_string(),
+            ));
+        }
+
         // RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
         // トンネルモードに切り替わる。Transfer-Encoding と Content-Length は無視される。
         // RFC 9110 Section 9.1: メソッドトークンは case-sensitive

@@ -311,6 +311,35 @@ fn reject_http_userinfo(uri: &str) -> Result<(), EncodeError> {
     Ok(())
 }
 
+/// RFC 9110 Section 4.2.1/4.2.2: http/https URI の空 host を検出して拒否する
+///
+/// 送信者は空 host 識別子を持つ http/https URI を生成してはならない (MUST NOT)
+fn reject_http_empty_host(uri: &str) -> Result<(), EncodeError> {
+    let lower = uri.to_ascii_lowercase();
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return Ok(());
+    }
+    let after_scheme = match uri.find("://") {
+        Some(i) => &uri[i + 3..],
+        None => return Ok(()),
+    };
+    let end = after_scheme.find(['/', '?']).unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..end];
+    // userinfo を除外して host 部分を取得
+    let host_port = if let Some(at_pos) = authority.rfind('@') {
+        &authority[at_pos + 1..]
+    } else {
+        authority
+    };
+    // host が空 (authority 自体が空、またはポートのみ)
+    if host_port.is_empty() || host_port.starts_with(':') {
+        return Err(EncodeError::EmptyHostInHttpUri {
+            uri: uri.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// URI から authority 部分を抽出 (userinfo を除外)
 ///
 /// scheme "://" authority ["/" path]
@@ -339,6 +368,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 
     // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
     reject_http_userinfo(&request.uri)?;
+
+    // RFC 9110 Section 4.2.1/4.2.2: http/https URI の空 host を拒否する
+    reject_http_empty_host(&request.uri)?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;
@@ -621,6 +653,9 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 
     // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
     reject_http_userinfo(&request.uri)?;
+
+    // RFC 9110 Section 4.2.1/4.2.2: http/https URI の空 host を拒否する
+    reject_http_empty_host(&request.uri)?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;

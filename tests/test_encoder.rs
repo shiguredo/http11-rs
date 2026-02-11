@@ -708,6 +708,32 @@ fn test_encode_request_authority_less_uri_empty_host_ok() {
     assert!(result.is_ok());
 }
 
+// ========================================
+// http/https 空 host 拒否テスト (RFC 9110 Section 4.2)
+// ========================================
+
+#[test]
+fn test_encode_request_http_empty_host_error() {
+    // http:///path は空 host で不正
+    let req = Request::new("GET", "http:///path").header("Host", "");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::EmptyHostInHttpUri { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_https_port_only_host_error() {
+    // https://:443/path は空 host で不正
+    let req = Request::new("GET", "https://:443/path").header("Host", "");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::EmptyHostInHttpUri { .. })
+    ));
+}
+
 #[test]
 fn test_encode_request_authority_form_still_works() {
     // 通常の authority-form (host:port) は引き続き authority-form と判定

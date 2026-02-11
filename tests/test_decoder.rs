@@ -879,3 +879,82 @@ fn test_connect_request_no_body_ok() {
     assert_eq!(head.method, "CONNECT");
     assert_eq!(body_kind, BodyKind::None);
 }
+
+// ========================================
+// HTTP/1.0 + Transfer-Encoding 拒否テスト (RFC 9112 Section 6.1)
+// ========================================
+
+#[test]
+fn test_response_http10_transfer_encoding_error() {
+    // HTTP/1.0 + Transfer-Encoding は framing fault
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_response_http11_transfer_encoding_ok() {
+    // HTTP/1.1 + Transfer-Encoding は正常
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok());
+}
+
+// ========================================
+// http/https 空 host 拒否テスト (RFC 9110 Section 4.2)
+// ========================================
+
+#[test]
+fn test_request_http_empty_host_error() {
+    // http:///path は空 host で不正
+    let mut decoder = RequestDecoder::new();
+    let request = "GET http:///path HTTP/1.1\r\nHost: \r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_request_https_port_only_host_error() {
+    // https://:443/path は空 host で不正
+    let mut decoder = RequestDecoder::new();
+    let request = "GET https://:443/path HTTP/1.1\r\nHost: \r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+// ========================================
+// chunked パラメータ拒否テスト (RFC 9112 Section 7.1)
+// ========================================
+
+#[test]
+fn test_request_chunked_with_params_error() {
+    // chunked; param=value はエラー
+    let mut decoder = RequestDecoder::new();
+    let request =
+        "POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked; q=1.0\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_response_chunked_with_params_error() {
+    // chunked; param=value はエラー
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked; q=1.0\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}

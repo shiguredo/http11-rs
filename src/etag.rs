@@ -188,6 +188,30 @@ fn is_etagc(b: u8) -> bool {
     b == 0x21 || (0x23..=0x7E).contains(&b) || b >= 0x80
 }
 
+/// ETag リストを引用符を考慮してカンマ分割する
+///
+/// etagc (RFC 9110 Section 8.8.3) はカンマを含み得るため、
+/// DQUOTE 内のカンマはデリミタとして扱わない
+fn split_etag_list_raw(input: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quotes = false;
+    let bytes = input.as_bytes();
+
+    for i in 0..bytes.len() {
+        match bytes[i] {
+            b'"' => in_quotes = !in_quotes,
+            b',' if !in_quotes => {
+                parts.push(&input[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&input[start..]);
+    parts
+}
+
 /// ETag リストをパース (If-Match, If-None-Match 用)
 ///
 /// カンマ区切りの ETag リストをパースします。
@@ -203,7 +227,7 @@ pub fn parse_etag_list(input: &str) -> Result<ETagList, ETagError> {
     }
 
     let mut etags = Vec::new();
-    for part in input.split(',') {
+    for part in split_etag_list_raw(input) {
         let part = part.trim();
         if !part.is_empty() {
             etags.push(EntityTag::parse(part)?);
@@ -380,6 +404,34 @@ mod tests {
 
         assert!(list.contains_strong(&etag_a));
         assert!(!list.contains_strong(&etag_b)); // W/"b" は strong compare で false
+    }
+
+    #[test]
+    fn test_parse_etag_list_with_comma_in_tag() {
+        // etagc はカンマを含み得る (0x2C は %x23-7E の範囲内)
+        let list = parse_etag_list("\"a,b\", \"c\"").unwrap();
+        match list {
+            ETagList::Tags(tags) => {
+                assert_eq!(tags.len(), 2);
+                assert_eq!(tags[0].tag(), "a,b");
+                assert_eq!(tags[1].tag(), "c");
+            }
+            _ => panic!("expected Tags"),
+        }
+    }
+
+    #[test]
+    fn test_parse_etag_list_weak_with_comma_in_tag() {
+        let list = parse_etag_list("W/\"x,y\", \"z\"").unwrap();
+        match list {
+            ETagList::Tags(tags) => {
+                assert_eq!(tags.len(), 2);
+                assert_eq!(tags[0].tag(), "x,y");
+                assert!(tags[0].is_weak());
+                assert_eq!(tags[1].tag(), "z");
+            }
+            _ => panic!("expected Tags"),
+        }
     }
 
     #[test]

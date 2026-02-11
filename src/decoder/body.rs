@@ -604,7 +604,7 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
     let rest = &target[scheme_len + 1..];
     validate_absolute_uri_parts(rest)?;
 
-    // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する (SHOULD)
+    // RFC 9110 Section 4.2.1/4.2.2: http/https URI の検証
     let scheme_lower = scheme.to_ascii_lowercase();
     if (scheme_lower == "http" || scheme_lower == "https")
         && let Some(after_slashes) = rest.strip_prefix("//")
@@ -612,9 +612,19 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
         let authority_end = after_slashes
             .find(['/', '?'])
             .unwrap_or(after_slashes.len());
-        if after_slashes[..authority_end].contains('@') {
+        let authority = &after_slashes[..authority_end];
+
+        // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する (SHOULD)
+        if authority.contains('@') {
             return Err(Error::InvalidData(
                 "userinfo not allowed in http/https URI (RFC 9110 Section 4.2.4)".to_string(),
+            ));
+        }
+
+        // RFC 9110 Section 4.2.1/4.2.2: 空 host を拒否する (MUST)
+        if authority.is_empty() || authority.starts_with(':') {
+            return Err(Error::InvalidData(
+                "empty host identifier in http/https URI (RFC 9110 Section 4.2)".to_string(),
             ));
         }
     }
@@ -995,7 +1005,14 @@ pub(crate) fn parse_transfer_encoding_for_request(
                     continue;
                 }
 
-                if token.eq_ignore_ascii_case("chunked") {
+                // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
+                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                if base_coding.eq_ignore_ascii_case("chunked") {
+                    if token.contains(';') {
+                        return Err(Error::InvalidData(
+                            "invalid Transfer-Encoding: chunked does not accept parameters (RFC 9112 Section 7.1)".to_string(),
+                        ));
+                    }
                     chunked_count += 1;
                     if chunked_count > 1 {
                         return Err(Error::InvalidData(
@@ -1037,7 +1054,14 @@ pub(crate) fn parse_transfer_encoding_for_response(
                     continue;
                 }
 
-                if token.eq_ignore_ascii_case("chunked") {
+                // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
+                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                if base_coding.eq_ignore_ascii_case("chunked") {
+                    if token.contains(';') {
+                        return Err(Error::InvalidData(
+                            "invalid Transfer-Encoding: chunked does not accept parameters (RFC 9112 Section 7.1)".to_string(),
+                        ));
+                    }
                     chunked_count += 1;
                     if chunked_count > 1 {
                         return Err(Error::InvalidData(
@@ -1045,7 +1069,7 @@ pub(crate) fn parse_transfer_encoding_for_response(
                         ));
                     }
                 }
-                all_tokens.push(token.to_ascii_lowercase());
+                all_tokens.push(base_coding.to_ascii_lowercase());
             }
         }
     }

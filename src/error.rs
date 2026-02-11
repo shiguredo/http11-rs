@@ -107,6 +107,9 @@ pub enum EncodeError {
     /// authority がない target URI で Host ヘッダーが非空
     /// RFC 9112 Section 3.2: authority がない場合、Host は空でなければならない (MUST)
     NonEmptyHostWithoutAuthority { host: String, uri: String },
+    /// http/https URI の host が空
+    /// RFC 9110 Section 4.2.1/4.2.2: 空 host 識別子を生成してはならない (MUST NOT)
+    EmptyHostInHttpUri { uri: String },
 }
 
 impl fmt::Display for EncodeError {
@@ -210,6 +213,13 @@ impl fmt::Display for EncodeError {
                     f,
                     "Host header {:?} must be empty for authority-less URI {:?} (RFC 9112 Section 3.2)",
                     host, uri
+                )
+            }
+            EncodeError::EmptyHostInHttpUri { uri } => {
+                write!(
+                    f,
+                    "empty host identifier in http/https URI {:?} (RFC 9110 Section 4.2)",
+                    uri
                 )
             }
         }
