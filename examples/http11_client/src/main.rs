@@ -19,8 +19,11 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{Request, ResponseDecoder};
+use tracing::{error, info};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let mut args = noargs::raw_args();
     args.metadata_mut().app_name = "http11_client";
 
@@ -53,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (scheme, host, port, path) = parse_url(&url)?;
 
-    println!("Connecting to {}:{} ...", host, port);
+    info!(host, port, "Connecting");
 
     let mut request = Request::new("GET", &path)
         .header("Host", &host)
@@ -185,17 +188,16 @@ fn https_request(
 }
 
 fn print_response(response: &shiguredo_http11::Response) {
-    println!("\n--- Response ---");
-    println!(
-        "{} {} {}",
-        response.version, response.status_code, response.reason_phrase
+    info!(
+        version = %response.version,
+        status_code = response.status_code,
+        reason_phrase = %response.reason_phrase,
+        "Response received"
     );
 
     for (name, value) in &response.headers {
-        println!("{}: {}", name, value);
+        info!(name, value, "Header");
     }
-
-    println!();
 
     // Content-Encoding ヘッダーを取得
     let content_encoding = response
@@ -209,16 +211,16 @@ fn print_response(response: &shiguredo_http11::Response) {
         Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
             match decompress_body(&response.body, encoding) {
                 Ok(decompressed) => {
-                    println!(
-                        "[Decompressed from {} ({} bytes -> {} bytes)]",
+                    info!(
                         encoding,
-                        response.body.len(),
-                        decompressed.len()
+                        original_size = response.body.len(),
+                        decompressed_size = decompressed.len(),
+                        "Decompressed"
                     );
                     decompressed
                 }
                 Err(e) => {
-                    eprintln!("[Decompression failed ({}): {}]", encoding, e);
+                    error!(encoding, error = %e, "Decompression failed");
                     response.body.clone()
                 }
             }
@@ -229,12 +231,12 @@ fn print_response(response: &shiguredo_http11::Response) {
     // ボディを表示 (テキストの場合)
     if let Ok(text) = std::str::from_utf8(&body) {
         if text.len() > 1000 {
+            info!(total_bytes = body.len(), "Body truncated");
             println!("{}...", &text[..1000]);
-            println!("\n[Body truncated, {} bytes total]", body.len());
         } else {
             println!("{}", text);
         }
     } else {
-        println!("[Binary body, {} bytes]", body.len());
+        info!(bytes = body.len(), "Binary body");
     }
 }

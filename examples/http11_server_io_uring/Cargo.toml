@@ -22,6 +22,8 @@ rustls = { version = "0.23", default-features = false, features = [
 # ktls 6.0.2+ for CryptoInfo::from_rustls() and as_ptr()
 ktls = "6"
 noargs = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"
 libc = "0.2"
 slab = "0.4"
 

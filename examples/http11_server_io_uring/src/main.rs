@@ -33,6 +33,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
 use shiguredo_http11::{RequestDecoder, Response};
 use slab::Slab;
+use tracing::{error, info};
 
 /// Keep-Alive タイムアウト (秒)
 /// TODO: io_uring でタイムアウト処理を実装する際に使用
@@ -163,6 +164,8 @@ impl Connection {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let options = parse_args()?;
 
     // io_uring のサポートを確認
@@ -176,10 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&addr)?;
     listener.set_nonblocking(true)?;
 
-    println!(
-        "HTTPS server listening on https://{} (io_uring + kTLS)",
-        addr
-    );
+    info!(addr = %addr, "HTTPS server listening (io_uring + kTLS)");
 
     // io_uring を初期化
     let mut ring: IoUring = IoUring::builder()
@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if result < 0 {
                         let err = std::io::Error::from_raw_os_error(-result);
                         if err.kind() != std::io::ErrorKind::WouldBlock {
-                            eprintln!("Accept error: {}", err);
+                            error!(error = %err, "Accept error");
                         }
                         continue;
                     }
@@ -224,7 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let peer_addr = get_peer_addr(client_fd)
                         .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
 
-                    println!("Connection from {}", peer_addr);
+                    info!(peer_addr = %peer_addr, "Connection accepted");
 
                     // 新しい接続を登録
                     let conn = Connection::new(client_fd, peer_addr, tls_config.clone());
@@ -242,15 +242,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if result < 0 {
                             let err = std::io::Error::from_raw_os_error(-result);
                             if err.kind() != std::io::ErrorKind::WouldBlock {
-                                eprintln!(
-                                    "Read error from {}: {}",
-                                    connections[user_data.conn_id].peer_addr, err
+                                error!(
+                                    peer_addr = %connections[user_data.conn_id].peer_addr,
+                                    error = %err,
+                                    "Read error"
                                 );
                             }
                         } else {
-                            println!(
-                                "Connection closed by {}",
-                                connections[user_data.conn_id].peer_addr
+                            info!(
+                                peer_addr = %connections[user_data.conn_id].peer_addr,
+                                "Connection closed by client"
                             );
                         }
                         close_connection(&mut ring, &mut connections, user_data.conn_id)?;
@@ -267,9 +268,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if result < 0 {
                         let err = std::io::Error::from_raw_os_error(-result);
-                        eprintln!(
-                            "Write error to {}: {}",
-                            connections[user_data.conn_id].peer_addr, err
+                        error!(
+                            peer_addr = %connections[user_data.conn_id].peer_addr,
+                            error = %err,
+                            "Write error"
                         );
                         close_connection(&mut ring, &mut connections, user_data.conn_id)?;
                         continue;
@@ -290,9 +292,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     if result < 0 {
                         let err = std::io::Error::from_raw_os_error(-result);
-                        eprintln!(
-                            "SetSockOpt error for {}: {}",
-                            connections[user_data.conn_id].peer_addr, err
+                        error!(
+                            peer_addr = %connections[user_data.conn_id].peer_addr,
+                            error = %err,
+                            "SetSockOpt error"
                         );
                         close_connection(&mut ring, &mut connections, user_data.conn_id)?;
                         continue;
@@ -569,7 +572,7 @@ fn handle_read(
             match tls_conn.read_tls(&mut rd) {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("TLS read error from {}: {}", peer_addr, e);
+                    error!(peer_addr = %peer_addr, error = %e, "TLS read error");
                     close_connection(ring, connections, conn_id)?;
                     return Ok(());
                 }
@@ -579,7 +582,7 @@ fn handle_read(
             match tls_conn.process_new_packets() {
                 Ok(_) => {}
                 Err(e) => {
-                    eprintln!("TLS handshake error from {}: {}", peer_addr, e);
+                    error!(peer_addr = %peer_addr, error = %e, "TLS handshake error");
                     close_connection(ring, connections, conn_id)?;
                     return Ok(());
                 }
@@ -599,7 +602,7 @@ fn handle_read(
 
             // ハンドシェイク完了チェック
             if !tls_conn.is_handshaking() {
-                println!("TLS handshake completed for {}", peer_addr);
+                info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
                 let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
@@ -644,9 +647,13 @@ fn handle_read(
             while let Some(request) = conn.decoder.decode()? {
                 request_count += 1;
 
-                println!(
-                    "{} {} {} from {} (kTLS, request #{})",
-                    request.method, request.uri, request.version, peer_addr, request_count
+                info!(
+                    method = %request.method,
+                    uri = %request.uri,
+                    version = %request.version,
+                    peer_addr = %peer_addr,
+                    request_count,
+                    "Request received (kTLS)"
                 );
 
                 // Keep-Alive 継続判定
@@ -706,7 +713,7 @@ fn handle_write(
         ConnectionState::HandshakeWriting => {
             let tls_conn = conn.tls_conn.as_ref().unwrap();
             if !tls_conn.is_handshaking() {
-                println!("TLS handshake completed for {}", peer_addr);
+                info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
                 let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
@@ -763,7 +770,7 @@ fn handle_setsockopt_complete(
 
     if conn.ktls_pending_ops == 0 {
         // すべての setsockopt が完了
-        println!("kTLS enabled for {}", conn.peer_addr);
+        info!(peer_addr = %conn.peer_addr, "kTLS enabled");
 
         // kTLS 情報をクリア (もう不要)
         conn.ktls_tx = None;
@@ -789,7 +796,7 @@ fn close_connection(
 
     let conn = &connections[conn_id];
     let fd = conn.fd;
-    println!("Closing connection from {}", conn.peer_addr);
+    info!(peer_addr = %conn.peer_addr, "Closing connection");
     submit_close(ring, conn_id, fd)?;
     Ok(())
 }

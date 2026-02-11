@@ -29,6 +29,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
 
 use compressor::{compress_body, encoding_header, select_encoding};
+use tracing::{error, info};
 
 /// Keep-Alive タイムアウト (秒)
 const DEFAULT_KEEP_ALIVE_TIMEOUT: u64 = 60;
@@ -51,6 +52,8 @@ struct ConnectionState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
     let options = parse_args()?;
 
     let addr = format!("0.0.0.0:{}", options.port);
@@ -69,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let config = load_tls_config(cert_path, key_path)?;
         let acceptor = TlsAcceptor::from(Arc::new(config));
 
-        println!("HTTPS server listening on https://{}", addr);
+        info!(addr = %addr, "HTTPS server listening");
 
         loop {
             let (stream, peer_addr) = listener.accept().await?;
@@ -79,22 +82,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
                         if let Err(e) = handle_tls_client(tls_stream, peer_addr).await {
-                            eprintln!("TLS client error: {}", e);
+                            error!(peer_addr = %peer_addr, error = %e, "TLS client error");
                         }
                     }
-                    Err(e) => eprintln!("TLS handshake error from {}: {}", peer_addr, e),
+                    Err(e) => error!(peer_addr = %peer_addr, error = %e, "TLS handshake error"),
                 }
             });
         }
     } else {
-        println!("HTTP server listening on http://{}", addr);
+        info!(addr = %addr, "HTTP server listening");
 
         loop {
             let (stream, peer_addr) = listener.accept().await?;
 
             tokio::spawn(async move {
                 if let Err(e) = handle_client(stream, peer_addr).await {
-                    eprintln!("Client error: {}", e);
+                    error!(peer_addr = %peer_addr, error = %e, "Client error");
                 }
             });
         }
@@ -187,7 +190,7 @@ async fn handle_client(
     stream: TcpStream,
     peer_addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("Connection from {}", peer_addr);
+    info!(peer_addr = %peer_addr, "Connection accepted");
 
     let (reader, writer) = stream.into_split();
     let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
@@ -208,17 +211,17 @@ async fn handle_client(
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
-                eprintln!("Read error from {}: {}", peer_addr, e);
+                error!(peer_addr = %peer_addr, error = %e, "Read error");
                 break;
             }
             Err(_) => {
-                println!("Keep-Alive timeout for {}", peer_addr);
+                info!(peer_addr = %peer_addr, "Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
-            println!("Connection closed by {}", peer_addr);
+            info!(peer_addr = %peer_addr, "Connection closed by client");
             break;
         }
 
@@ -227,9 +230,13 @@ async fn handle_client(
         while let Some(request) = decoder.decode()? {
             conn_state.request_count += 1;
 
-            println!(
-                "{} {} {} from {} (request #{})",
-                request.method, request.uri, request.version, peer_addr, conn_state.request_count
+            info!(
+                method = %request.method,
+                uri = %request.uri,
+                version = %request.version,
+                peer_addr = %peer_addr,
+                request_count = conn_state.request_count,
+                "Request received"
             );
 
             // Keep-Alive 継続判定
@@ -243,12 +250,13 @@ async fn handle_client(
 
             if !should_keep_alive {
                 if conn_state.request_count >= conn_state.max_requests {
-                    println!(
-                        "Max requests ({}) reached for {}",
-                        conn_state.max_requests, peer_addr
+                    info!(
+                        max_requests = conn_state.max_requests,
+                        peer_addr = %peer_addr,
+                        "Max requests reached"
                     );
                 } else {
-                    println!("Connection close requested by {}", peer_addr);
+                    info!(peer_addr = %peer_addr, "Connection close requested by client");
                 }
                 return Ok(());
             }
@@ -262,7 +270,7 @@ async fn handle_tls_client(
     stream: tokio_rustls::server::TlsStream<TcpStream>,
     peer_addr: std::net::SocketAddr,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("TLS connection from {}", peer_addr);
+    info!(peer_addr = %peer_addr, "TLS connection accepted");
 
     let (reader, writer) = tokio::io::split(stream);
     let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
@@ -283,17 +291,17 @@ async fn handle_tls_client(
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
-                eprintln!("TLS read error from {}: {}", peer_addr, e);
+                error!(peer_addr = %peer_addr, error = %e, "TLS read error");
                 break;
             }
             Err(_) => {
-                println!("TLS Keep-Alive timeout for {}", peer_addr);
+                info!(peer_addr = %peer_addr, "TLS Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
-            println!("TLS connection closed by {}", peer_addr);
+            info!(peer_addr = %peer_addr, "TLS connection closed by client");
             break;
         }
 
@@ -302,9 +310,14 @@ async fn handle_tls_client(
         while let Some(request) = decoder.decode()? {
             conn_state.request_count += 1;
 
-            println!(
-                "{} {} {} from {} (TLS, request #{})",
-                request.method, request.uri, request.version, peer_addr, conn_state.request_count
+            info!(
+                method = %request.method,
+                uri = %request.uri,
+                version = %request.version,
+                peer_addr = %peer_addr,
+                tls = true,
+                request_count = conn_state.request_count,
+                "Request received"
             );
 
             // Keep-Alive 継続判定
@@ -318,12 +331,14 @@ async fn handle_tls_client(
 
             if !should_keep_alive {
                 if conn_state.request_count >= conn_state.max_requests {
-                    println!(
-                        "Max requests ({}) reached for {} (TLS)",
-                        conn_state.max_requests, peer_addr
+                    info!(
+                        max_requests = conn_state.max_requests,
+                        peer_addr = %peer_addr,
+                        tls = true,
+                        "Max requests reached"
                     );
                 } else {
-                    println!("Connection close requested by {} (TLS)", peer_addr);
+                    info!(peer_addr = %peer_addr, tls = true, "Connection close requested by client");
                 }
                 return Ok(());
             }

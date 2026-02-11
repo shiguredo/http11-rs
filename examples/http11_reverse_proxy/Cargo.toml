@@ -24,3 +24,5 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
 ] }
 rustls-platform-verifier = "0.6"
 noargs = "0.4"
+tracing = "0.1"
+tracing-subscriber = "0.3"

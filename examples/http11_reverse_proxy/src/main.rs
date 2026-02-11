@@ -20,6 +20,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
+use tracing::{debug, error, info};
 
 /// 接続プールの設定
 #[derive(Debug, Clone)]
@@ -202,6 +203,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(0);
     }
 
+    // tracing の初期化
+    tracing_subscriber::fmt()
+        .with_max_level(if debug {
+            tracing::Level::DEBUG
+        } else {
+            tracing::Level::INFO
+        })
+        .init();
+
     // upstream URL からホスト名を抽出
     let upstream_host = parse_upstream_url(&upstream_url)?;
 
@@ -218,35 +228,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 定期的なクリーンアップタスク
     let cleanup_pool = pool.clone();
-    let cleanup_debug = debug;
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
             interval.tick().await;
             let mut pool = cleanup_pool.lock().await;
             pool.cleanup_expired();
-            if cleanup_debug {
-                let (hosts, conns) = pool.stats();
-                eprintln!(
-                    "[{}] POOL: cleanup done, {} hosts, {} connections",
-                    now_timestamp(),
-                    hosts,
-                    conns
-                );
-            }
+            let (hosts, conns) = pool.stats();
+            debug!(hosts, connections = conns, "Pool cleanup done");
         }
     });
 
     let addr = format!("0.0.0.0:{}", port);
     let listener = TcpListener::bind(&addr).await?;
 
-    println!("リバースプロキシをバインド: {}", addr);
-    println!("  http://localhost:{}/ -> {}/", port, upstream_url);
-    println!(
-        "  接続プール有効（最大 {} 接続/ホスト、アイドル {}秒、最大生存 {}秒）",
-        pool_config.max_connections_per_host,
-        pool_config.idle_timeout_secs,
-        pool_config.max_lifetime_secs
+    info!(addr = %addr, upstream = %upstream_url, "Reverse proxy listening");
+    info!(
+        max_connections_per_host = pool_config.max_connections_per_host,
+        idle_timeout_secs = pool_config.idle_timeout_secs,
+        max_lifetime_secs = pool_config.max_lifetime_secs,
+        "Connection pool enabled"
     );
 
     loop {
@@ -254,8 +255,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let upstream_host = upstream_host.clone();
         let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, &upstream_host, pool, debug).await {
-                eprintln!("クライアント処理エラー: {}", e);
+            if let Err(e) = handle_client(socket, &upstream_host, pool).await {
+                error!(error = %e, "Client handler error");
             }
         });
     }
@@ -265,7 +266,6 @@ async fn handle_client(
     mut socket: TcpStream,
     upstream_host: &str,
     pool: SharedPool,
-    debug: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // クライアントからリクエストヘッダーを受信
     let mut decoder = RequestDecoder::new();
@@ -273,12 +273,12 @@ async fn handle_client(
         let mut buffer = vec![0u8; 4096];
         let n = socket.read(&mut buffer).await?;
         if n == 0 {
-            log_debug(debug, "client input is empty");
+            debug!("client input is empty");
             return Ok(());
         }
 
         buffer.truncate(n);
-        log_debug(debug, &format!("received bytes: {}", n));
+        debug!(bytes = n, "Received bytes from client");
 
         decoder.feed(&buffer)?;
         if let Some(result) = decoder.decode_headers()? {
@@ -286,17 +286,13 @@ async fn handle_client(
         }
     };
 
-    log_debug(
-        debug,
-        &format!(
-            "request line: {} {} {}",
-            req_head.method, req_head.uri, req_head.version
-        ),
+    debug!(
+        method = %req_head.method,
+        uri = %req_head.uri,
+        version = %req_head.version,
+        "Request line"
     );
-    log_debug(
-        debug,
-        &format!("received headers: {}", req_head.headers.len()),
-    );
+    debug!(count = req_head.headers.len(), "Received headers");
 
     // リクエストボディを収集
     let mut request_body = Vec::new();
@@ -377,12 +373,9 @@ async fn handle_client(
     upstream_request.add_header("Connection", "keep-alive");
     upstream_request.body = request_body;
 
-    log_debug(
-        debug,
-        &format!(
-            "upstream request body size: {}",
-            upstream_request.body.len()
-        ),
+    debug!(
+        body_size = upstream_request.body.len(),
+        "Upstream request body"
     );
 
     // 接続プールから接続を取得してリクエストを送信
@@ -391,13 +384,12 @@ async fn handle_client(
         &upstream_request,
         upstream_host,
         pool.clone(),
-        debug,
     )
     .await;
 
     // エラーの場合はログに出力
     if let Err(ref e) = result {
-        log_debug(debug, &format!("upstream error: {}", e));
+        debug!(error = %e, "Upstream error");
     }
 
     result
@@ -408,7 +400,6 @@ async fn stream_upstream_response_pooled(
     request: &Request,
     upstream_host: &str,
     pool: SharedPool,
-    debug: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start = Instant::now();
 
@@ -429,25 +420,16 @@ async fn stream_upstream_response_pooled(
     };
 
     let acquire_time = start.elapsed();
-    log_debug(
-        debug,
-        &format!(
-            "acquired connection for: {} ({}ms, {})",
-            upstream_host,
-            acquire_time.as_millis(),
-            if from_pool { "from pool" } else { "new" }
-        ),
+    debug!(
+        upstream_host,
+        acquire_time_ms = acquire_time.as_millis() as u64,
+        source = if from_pool { "pool" } else { "new" },
+        "Acquired connection"
     );
 
     // リクエスト送信とレスポンス受信
-    let result = stream_response_on_connection(
-        downstream,
-        request,
-        &request.method,
-        &mut conn.stream,
-        debug,
-    )
-    .await;
+    let result =
+        stream_response_on_connection(downstream, request, &request.method, &mut conn.stream).await;
 
     // 接続を再利用するかどうかを判定
     let should_reuse = match &result {
@@ -458,9 +440,9 @@ async fn stream_upstream_response_pooled(
     if should_reuse {
         conn.last_used = Instant::now();
         pool.lock().await.release(upstream_host, conn);
-        log_debug(debug, "connection returned to pool");
+        debug!("connection returned to pool");
     } else {
-        log_debug(debug, "connection closed (not reusable)");
+        debug!("connection closed (not reusable)");
     }
 
     result.map(|_| ())
@@ -473,17 +455,13 @@ async fn stream_response_on_connection(
     request: &Request,
     method: &str,
     upstream: &mut TlsStream<TcpStream>,
-    debug: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // ダウンストリームをバッファリング（64KB バッファ）
     let mut downstream = BufWriter::with_capacity(65536, downstream);
 
     // リクエスト送信
     let request_bytes = request.encode();
-    log_debug(
-        debug,
-        &format!("upstream request bytes: {}", request_bytes.len()),
-    );
+    debug!(bytes = request_bytes.len(), "Upstream request bytes");
     upstream.write_all(&request_bytes).await?;
 
     // レスポンスヘッダーを受信
@@ -496,7 +474,7 @@ async fn stream_response_on_connection(
     // RFC 9110 Section 9.3.2: HEAD レスポンスにはボディが存在しない
     if method.eq_ignore_ascii_case("HEAD") {
         decoder.set_expect_no_body(true);
-        log_debug(debug, "HEAD request: expecting no body in response");
+        debug!("HEAD request: expecting no body in response");
     }
 
     let mut buf = [0u8; 8192];
@@ -507,7 +485,7 @@ async fn stream_response_on_connection(
             return Err("接続が閉じられました".into());
         }
 
-        log_debug(debug, &format!("upstream received bytes: {}", n));
+        debug!(bytes = n, "Upstream received bytes");
         decoder.feed(&buf[..n])?;
 
         if let Some(result) = decoder.decode_headers()? {
@@ -515,12 +493,11 @@ async fn stream_response_on_connection(
         }
     };
 
-    log_debug(
-        debug,
-        &format!(
-            "upstream response: {} {} {}",
-            resp_head.version, resp_head.status_code, resp_head.reason_phrase
-        ),
+    debug!(
+        version = %resp_head.version,
+        status_code = resp_head.status_code,
+        reason_phrase = %resp_head.reason_phrase,
+        "Upstream response"
     );
 
     // Keep-Alive かどうかで再利用可能性を判定
@@ -532,10 +509,7 @@ async fn stream_response_on_connection(
 
     if is_close_delimited {
         can_reuse = false;
-        log_debug(
-            debug,
-            "close-delimited body detected, connection will be closed",
-        );
+        debug!("Close-delimited body detected, connection will be closed");
     }
 
     // クライアントへレスポンスヘッダーを送信
@@ -578,14 +552,14 @@ async fn stream_response_on_connection(
 
     if let Some(len) = content_length {
         response_for_headers.add_header("Content-Length", &len.to_string());
-        log_debug(debug, &format!("using Content-Length: {}", len));
+        debug!(content_length = len, "Using Content-Length");
     } else if use_chunked {
         response_for_headers.add_header("Transfer-Encoding", "chunked");
-        log_debug(debug, "using Transfer-Encoding: chunked");
+        debug!("using Transfer-Encoding: chunked");
     } else if is_close_delimited {
         // close-delimited body: 接続が閉じるまでがボディ
         response_for_headers.add_header("Connection", "close");
-        log_debug(debug, "using Connection: close (close-delimited body)");
+        debug!("using Connection: close (close-delimited body)");
     }
 
     let header_bytes =
@@ -598,27 +572,21 @@ async fn stream_response_on_connection(
     // - ボディをメモリに蓄積せずにリアルタイムで downstream に転送するため
     // - 大容量レスポンスでもメモリ効率が良い
     if is_close_delimited {
-        log_debug(
-            debug,
-            "streaming close-delimited body until connection closes",
-        );
+        debug!("Streaming close-delimited body until connection closes");
         let mut close_delimited_bytes = 0usize;
         loop {
             let n = upstream.read(&mut buf).await?;
             if n == 0 {
                 // upstream が閉じた = ボディ終了
-                log_debug(
-                    debug,
-                    &format!(
-                        "close-delimited body complete, total: {} bytes",
-                        close_delimited_bytes
-                    ),
+                debug!(
+                    total_bytes = close_delimited_bytes,
+                    "Close-delimited body complete"
                 );
                 break;
             }
             downstream.write_all(&buf[..n]).await?;
             close_delimited_bytes += n;
-            log_debug(debug, &format!("close-delimited body bytes: {}", n));
+            debug!(bytes = n, "Close-delimited body chunk");
         }
         downstream.flush().await?;
         return Ok(can_reuse);
@@ -654,10 +622,7 @@ async fn stream_response_on_connection(
                                     end_chunk.extend_from_slice(b"\r\n");
                                     downstream.write_all(&end_chunk).await?;
                                 }
-                                log_debug(
-                                    debug,
-                                    &format!("body complete, total: {} bytes", total_body_bytes),
-                                );
+                                debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
                             }
                             BodyProgress::Continue => {}
@@ -677,10 +642,7 @@ async fn stream_response_on_connection(
                                     end_chunk.extend_from_slice(b"\r\n");
                                     downstream.write_all(&end_chunk).await?;
                                 }
-                                log_debug(
-                                    debug,
-                                    &format!("body complete, total: {} bytes", total_body_bytes),
-                                );
+                                debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
                             }
                             BodyProgress::Continue => {
@@ -697,11 +659,11 @@ async fn stream_response_on_connection(
             if n == 0 {
                 // upstream が予期せず切断 - 終端チャンクを送らずにエラーを返す
                 // 不完全なレスポンスを完了扱いにしてはいけない
-                log_debug(debug, "upstream disconnected during response body");
+                debug!("upstream disconnected during response body");
                 return Err("upstream disconnected during response body".into());
             }
 
-            log_debug(debug, &format!("upstream body bytes: {}", n));
+            debug!(bytes = n, "Upstream body bytes");
             decoder.feed(&buf[..n])?;
         }
     }
@@ -709,10 +671,7 @@ async fn stream_response_on_connection(
     // バッファをフラッシュ
     downstream.flush().await?;
 
-    log_debug(
-        debug,
-        &format!("response body streamed: {} bytes", total_body_bytes),
-    );
+    debug!(total_bytes = total_body_bytes, "Response body streamed");
 
     Ok(can_reuse)
 }
@@ -735,21 +694,6 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     }
 
     connection_headers.contains(&name_lower)
-}
-
-fn log_debug(enabled: bool, message: &str) {
-    if enabled {
-        eprintln!("[{}] DEBUG: {}", now_timestamp(), message);
-    }
-}
-
-fn now_timestamp() -> String {
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_else(|_| std::time::Duration::from_secs(0));
-    let secs = duration.as_secs();
-    let millis = duration.subsec_millis();
-    format!("{}.{:03}", secs, millis)
 }
 
 fn parse_upstream_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
