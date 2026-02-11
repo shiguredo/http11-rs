@@ -10,7 +10,8 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
-    is_pchar_or_slash, is_query_char, is_valid_field_value, is_valid_header_name,
+    is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_unreserved_byte, is_valid_field_value,
+    is_valid_header_name,
 };
 
 use super::phase::DecodePhase;
@@ -596,6 +597,9 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
     }
     // IPv6 リテラルの括弧対応を検証 (RFC 3986 Section 3.2.2)
     validate_ipv6_brackets(target)?;
+    // scheme ":" 以降の URI 文字検証 (RFC 3986)
+    let rest = &target[scheme_len + 1..];
+    validate_absolute_uri_parts(rest)?;
     Ok(RequestTargetForm::Absolute)
 }
 
@@ -670,6 +674,81 @@ fn validate_ipv6_brackets(target: &str) -> Result<(), Error> {
         }
     }
 
+    Ok(())
+}
+
+/// absolute-URI の hier-part と query の文字を検証する
+///
+/// RFC 3986: absolute-URI = scheme ":" hier-part [ "?" query ]
+/// hier-part = "//" authority path-abempty / path-absolute / path-rootless / path-empty
+///
+/// authority 部分では "[" / "]" を IPv6 リテラル用に許可する
+/// path/query 部分では pchar + "/" + "?" のみを許可する
+fn validate_absolute_uri_parts(rest: &str) -> Result<(), Error> {
+    // "//" で始まる場合は authority + path-abempty
+    let path_start = if let Some(after_slashes) = rest.strip_prefix("//") {
+        let authority_len = after_slashes
+            .find(['/', '?'])
+            .unwrap_or(after_slashes.len());
+        validate_authority_chars(&after_slashes[..authority_len])?;
+        authority_len + 2
+    } else {
+        0
+    };
+
+    let rest = &rest[path_start..];
+
+    // "?" でパスとクエリを分割
+    let (path, query) = if let Some(pos) = rest.find('?') {
+        (&rest[..pos], Some(&rest[pos + 1..]))
+    } else {
+        (rest, None)
+    };
+
+    if !path.is_empty() {
+        validate_path_chars(path)?;
+    }
+    if let Some(q) = query {
+        validate_query_chars(q)?;
+    }
+
+    Ok(())
+}
+
+/// authority 部分の文字検証 (RFC 3986 Section 3.2)
+///
+/// authority = [ userinfo "@" ] host [ ":" port ]
+/// "[" / "]" は IP-literal 用に許可する
+fn validate_authority_chars(authority: &str) -> Result<(), Error> {
+    let bytes = authority.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return Err(Error::InvalidData(
+                    "invalid authority: invalid percent-encoding".to_string(),
+                ));
+            }
+            i += 3;
+        } else if is_unreserved_byte(b)
+            || is_sub_delim_byte(b)
+            || b == b':'
+            || b == b'@'
+            || b == b'['
+            || b == b']'
+        {
+            i += 1;
+        } else {
+            return Err(Error::InvalidData(format!(
+                "invalid authority: illegal character 0x{:02X}",
+                b
+            )));
+        }
+    }
     Ok(())
 }
 

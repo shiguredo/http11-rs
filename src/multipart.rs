@@ -27,6 +27,7 @@
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
+use crate::validate::is_token_char;
 use core::fmt;
 
 /// multipart パースエラー
@@ -415,8 +416,14 @@ impl MultipartBuilder {
     }
 
     /// Content-Type ヘッダー値を取得
+    ///
+    /// RFC 9110 Section 5.6.6: boundary が token に該当しない場合は quoted-string で囲む
     pub fn content_type(&self) -> String {
-        format!("multipart/form-data; boundary={}", self.boundary)
+        if self.boundary.bytes().all(is_token_char) {
+            format!("multipart/form-data; boundary={}", self.boundary)
+        } else {
+            format!("multipart/form-data; boundary=\"{}\"", self.boundary)
+        }
     }
 
     /// テキストフィールドを追加

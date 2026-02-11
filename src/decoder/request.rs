@@ -5,6 +5,10 @@
 //! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
 //!   本実装では UTF-8 として強制的に解析している。非 UTF-8 バイト列を含むリクエストは
 //!   エラーとして拒否される。
+//!
+//! - RFC 9112 Section 2.2: request-line の前に受信した空行 (CRLF) を少なくとも 1 行は
+//!   無視すべき (SHOULD) だが、本実装では厳格にパースし、先頭の空行を不正なリクエスト行
+//!   として拒否する。アプリケーション層で必要に応じて先頭の空行を除去すること。
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;

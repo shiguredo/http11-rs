@@ -55,6 +55,8 @@ pub enum AuthError {
     MissingParameter,
     /// 不正なトークン
     InvalidToken,
+    /// パラメータ名が重複している (RFC 9110 Section 11.2)
+    DuplicateParameter,
     /// user-id にコロンが含まれている (RFC 7617 Section 2)
     ColonInUserId,
     /// 制御文字が含まれている (RFC 7617 Section 2)
@@ -77,6 +79,7 @@ impl fmt::Display for AuthError {
             AuthError::InvalidParameter => write!(f, "invalid auth parameter"),
             AuthError::MissingParameter => write!(f, "missing required auth parameter"),
             AuthError::InvalidToken => write!(f, "invalid auth token"),
+            AuthError::DuplicateParameter => write!(f, "duplicate auth parameter"),
             AuthError::ColonInUserId => write!(f, "colon in user-id"),
             AuthError::ControlCharacter => write!(f, "control character in credentials"),
             AuthError::InvalidCharset => write!(f, "charset must be UTF-8"),
@@ -247,34 +250,23 @@ impl WwwAuthenticate {
             return Err(AuthError::InvalidFormat);
         }
 
+        // RFC 9110 Section 11.2: quoted-string 内のカンマを正しく処理する
+        let parsed_params = parse_auth_params(params)?;
+
         let mut realm = None;
         let mut charset = None;
 
-        // パラメータをパース
-        for param in params.split(',') {
-            let param = param.trim();
-            if let Some((key, value)) = param.split_once('=') {
-                let key = key.trim().to_lowercase();
-                let value = value.trim();
-
-                // 引用符を除去
-                let value = if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
-                    &value[1..value.len() - 1]
-                } else {
-                    value
-                };
-
-                match key.as_str() {
-                    "realm" => realm = Some(value.to_string()),
-                    "charset" => {
-                        // RFC 7617 Section 2.1: charset の許容値は "UTF-8" のみ
-                        if !value.eq_ignore_ascii_case("UTF-8") {
-                            return Err(AuthError::InvalidCharset);
-                        }
-                        charset = Some(value.to_string());
+        for (key, value) in &parsed_params {
+            match key.as_str() {
+                "realm" => realm = Some(value.clone()),
+                "charset" => {
+                    // RFC 7617 Section 2.1: charset の許容値は "UTF-8" のみ
+                    if !value.eq_ignore_ascii_case("UTF-8") {
+                        return Err(AuthError::InvalidCharset);
                     }
-                    _ => {} // 未知のパラメータは無視
+                    charset = Some(value.clone());
                 }
+                _ => {} // 未知のパラメータは無視
             }
         }
 
@@ -785,7 +777,12 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             token.to_string()
         };
 
-        params.push((name.to_ascii_lowercase(), value));
+        // RFC 9110 Section 11.2: 各パラメータ名は 1 回のみ
+        let key = name.to_ascii_lowercase();
+        if params.iter().any(|(n, _)| n == &key) {
+            return Err(AuthError::DuplicateParameter);
+        }
+        params.push((key, value));
         while i < bytes.len() && is_ows(bytes[i]) {
             i += 1;
         }
