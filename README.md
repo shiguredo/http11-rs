@@ -87,6 +87,40 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 
 サンプル (`examples/`) では `flate2`, `brotli`, `zstd` クレートを使った実装例を提供しています。
 
+### HEAD リクエストの処理
+
+HEAD リクエストへのレスポンスは、RFC 9110 Section 9.3.2 に基づき GET と同じヘッダーを返しますがボディは送信しません。
+
+```rust
+use shiguredo_http11::{Request, Response, ResponseDecoder};
+
+// サーバー側: HEAD リクエストへのレスポンス
+// RFC 9110 Section 9.3.2: GET と同じヘッダーを返すがボディは送信しない
+let is_head = request.method.eq_ignore_ascii_case("HEAD");
+
+let body = b"Hello, World!";
+let mut response = Response::new(200, "OK")
+    .header("Content-Type", "text/plain")
+    .header("Content-Length", &body.len().to_string())
+    .omit_body(is_head);
+
+if !is_head {
+    response = response.body(body.to_vec());
+}
+let bytes = response.encode();
+
+// クライアント側: HEAD レスポンスの受信
+let request = Request::new("HEAD", "/")
+    .header("Host", "example.com");
+let bytes = request.encode();
+// bytes を送信...
+
+let mut decoder = ResponseDecoder::new();
+decoder.set_expect_no_body(true); // HEAD レスポンスではボディなし
+// decoder.feed(&received_data)?;
+// if let Some(response) = decoder.decode()? { ... }
+```
+
 ### ストリーミングエンコード
 
 ヘッダーのみをエンコードし、後からボディをチャンクで送信できます。
@@ -120,6 +154,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - `ContentLength(usize)` - Content-Length による固定長
 - `Chunked` - Transfer-Encoding: chunked
 - `CloseDelimited` - 接続終了までがボディ (レスポンスのみ、RFC 9112)
+- `Tunnel` - CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視)
 - `None` - ボディなし
 
 `BodyProgress` はデコードの進捗を表します:
@@ -156,6 +191,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - Content-Length による固定長ボディ
 - ステータスコード 1xx/204/304 はボディなし
 - HEAD リクエストへのレスポンスはボディなし
+- CONNECT 2xx レスポンスはトンネルモードに移行
 
 ### ヘッダー
 
@@ -199,8 +235,10 @@ let last = encode_chunk(b""); // 終端チャンク
 
 - URI のパース (scheme, host, port, path, query, fragment)
 - パーセントエンコーディング/デコーディング
+  - 汎用 (percent_encode)
   - パス用 (percent_encode_path)
   - クエリ用 (percent_encode_query)
+  - デコード (percent_decode, percent_decode_bytes)
 - 相対 URI の解決
 - URI の正規化 (normalize)
 - origin-form 生成 (HTTP request-target 用)
@@ -208,7 +246,7 @@ let last = encode_chunk(b""); // 終端チャンク
 ### その他のヘッダー
 
 - Content-Type (メディアタイプ、charset、boundary)
-- Content-Encoding (gzip, deflate, compress, identity)
+- Content-Encoding (gzip, deflate, compress, identity, 拡張エンコーディング対応)
 - Content-Disposition (inline/attachment、filename、filename*)
 - Content-Language
 - Content-Location
@@ -244,6 +282,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - 最大ヘッダー数: 100
 - 最大ヘッダー行長: 8KB
 - 最大ボディサイズ: 10MB
+- 最大チャンクサイズ行長: 64 bytes
 
 `DecoderLimits` で各制限値をカスタマイズ可能です。
 
@@ -269,6 +308,7 @@ cargo run -p http11_client -- http://httpbin.org/get
 - HTTP/HTTPS リクエスト送信
 - レスポンス受信とボディ表示
 - rustls-platform-verifier による TLS 検証
+- 圧縮レスポンスの展開 (gzip, br, zstd)
 
 ### http11_server
 
@@ -286,6 +326,13 @@ cargo run -p http11_server -- --port 8443 --tls --cert cert.pem --key key.pem
 - `--cert <PATH>`: 証明書ファイル (PEM 形式)
 - `--key <PATH>`: 秘密鍵ファイル (PEM 形式)
 
+**機能:**
+
+- HEAD リクエスト対応 (RFC 9110 Section 9.3.2)
+- Keep-Alive 対応 (タイムアウト 60 秒、最大リクエスト数 1000)
+- Accept-Encoding に基づく圧縮 (gzip, br, zstd)
+- エンドポイント: `/` (HTML), `/info` (JSON), `/echo` (リクエスト詳細)
+
 ### http11_reverse_proxy
 
 HTTP/HTTPS リバースプロキシの例です。
@@ -299,6 +346,41 @@ curl http://localhost:8888/
 
 - `-p, --port <PORT>`: リッスンポート (デフォルト: 8888)
 - `-u, --upstream <URL>`: アップストリーム URL (デフォルト: <https://example.com>)
+- `--debug`: デバッグログ有効化
+
+**機能:**
+
+- ストリーミング転送 (chunked, content-length, close-delimited 対応)
+- 接続プール (ホストあたり最大 10 接続)
+- hop-by-hop ヘッダーの処理
+- HEAD リクエスト対応
+
+### http11_server_io_uring
+
+io_uring + kTLS を使った HTTPS サーバーの例です。Linux 専用です。
+
+```bash
+cargo run -p http11_server_io_uring -- --port 8443 --cert cert.pem --key key.pem
+```
+
+**前提条件:**
+
+- Linux カーネル 6.7 以上
+- CONFIG_TLS=y または CONFIG_TLS=m
+
+**オプション:**
+
+- `-p, --port <PORT>`: リッスンポート (デフォルト: 8443)
+- `--cert <PATH>`: 証明書ファイル (PEM 形式)
+- `--key <PATH>`: 秘密鍵ファイル (PEM 形式)
+
+**機能:**
+
+- io_uring SQPOLL モード
+- kTLS (Kernel TLS) によるカーネルレベル暗号化
+- HEAD リクエスト対応 (RFC 9110 Section 9.3.2)
+- Keep-Alive 対応 (最大リクエスト数 1000)
+- Accept-Encoding に基づく圧縮 (gzip, br, zstd)
 
 ## 規格書
 
