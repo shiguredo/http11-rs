@@ -24,6 +24,14 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
         });
     }
 
+    // RFC 3986: URI は ASCII のみで構成される
+    // obs-text (0x80-0xFF) は受信側では許容するが、送信側では拒否する
+    if request.uri.bytes().any(|b| b > 0x7E) {
+        return Err(EncodeError::InvalidRequestTarget {
+            uri: request.uri.clone(),
+        });
+    }
+
     // RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証
     validate_request_target_form(&request.method, &request.uri)?;
 
@@ -154,8 +162,19 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
             method: method.to_string(),
             uri: uri.to_string(),
         }),
-        // origin-form / absolute-form は OK
-        (_, RequestTargetForm::Origin | RequestTargetForm::Absolute) => Ok(()),
+        // origin-form: path と query の文字を検証
+        (_, RequestTargetForm::Origin) => {
+            // RFC 3986 Section 3.3/3.4: origin-form では "[" "]" は pchar に含まれない
+            // (authority 内の IP-literal でのみ合法)
+            if uri.bytes().any(|b| b == b'[' || b == b']') {
+                return Err(EncodeError::InvalidRequestTarget {
+                    uri: uri.to_string(),
+                });
+            }
+            Ok(())
+        }
+        // absolute-form は OK (authority 部分で "[" "]" が合法)
+        (_, RequestTargetForm::Absolute) => Ok(()),
     }
 }
 
@@ -584,6 +603,9 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
 pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_request_fields(request)?;
+
+    // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
+    reject_http_userinfo(&request.uri)?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;

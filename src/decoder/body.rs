@@ -986,15 +986,12 @@ pub(crate) fn parse_transfer_encoding_for_request(
 
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
-            let mut has_token = false;
             for token in value.split(',') {
                 let token = token.trim();
+                // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
-                    return Err(Error::InvalidData(
-                        "invalid Transfer-Encoding: empty token".to_string(),
-                    ));
+                    continue;
                 }
-                has_token = true;
 
                 if token.eq_ignore_ascii_case("chunked") {
                     chunked_count += 1;
@@ -1009,11 +1006,6 @@ pub(crate) fn parse_transfer_encoding_for_request(
                         "invalid Transfer-Encoding: unsupported coding".to_string(),
                     ));
                 }
-            }
-            if !has_token {
-                return Err(Error::InvalidData(
-                    "invalid Transfer-Encoding: empty value".to_string(),
-                ));
             }
         }
     }
@@ -1036,15 +1028,12 @@ pub(crate) fn parse_transfer_encoding_for_response(
 
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
-            let mut has_token = false;
             for token in value.split(',') {
                 let token = token.trim();
+                // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
-                    return Err(Error::InvalidData(
-                        "invalid Transfer-Encoding: empty token".to_string(),
-                    ));
+                    continue;
                 }
-                has_token = true;
 
                 if token.eq_ignore_ascii_case("chunked") {
                     chunked_count += 1;
@@ -1055,11 +1044,6 @@ pub(crate) fn parse_transfer_encoding_for_response(
                     }
                 }
                 all_tokens.push(token.to_ascii_lowercase());
-            }
-            if !has_token {
-                return Err(Error::InvalidData(
-                    "invalid Transfer-Encoding: empty value".to_string(),
-                ));
             }
         }
     }

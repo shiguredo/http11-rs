@@ -214,11 +214,12 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_transfer_encoding_empty_token_error(
+    fn prop_transfer_encoding_duplicate_or_unsupported_with_empty_elements(
         before_comma in 0..3usize,
         after_comma in 0..3usize
     ) {
-        // 空のトークン (連続カンマ) はエラー
+        // RFC 9110 Section 5.6.1.2: 空リスト要素は無視する
+        // 空要素を無視した後も duplicate chunked または unsupported coding でエラー
         let data = format!(
             "GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: {},,{}\r\n\r\n",
             "chunked".repeat(before_comma.max(1)),
@@ -232,14 +233,15 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_transfer_encoding_empty_value_error(
+    fn prop_transfer_encoding_empty_value_accepted(
         method in http_method()
     ) {
-        // 空の Transfer-Encoding はエラー
+        // RFC 9110 Section 5.6.1.2: 空リスト要素は無視する (MUST)
+        // 有効要素なし → Transfer-Encoding なしとして受理する
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: \r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
-        prop_assert!(decoder.decode_headers().is_err());
+        prop_assert!(decoder.decode_headers().is_ok());
     }
 }
 
