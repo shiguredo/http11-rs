@@ -307,14 +307,19 @@ impl BodyDecoder {
             let line_bytes = &buf[..pos];
 
             // セミコロンの位置を探す (chunk-ext の開始)
-            let size_end = line_bytes.iter().position(|&b| b == b';').unwrap_or(pos);
+            let semi_pos = line_bytes.iter().position(|&b| b == b';');
+            let size_end = semi_pos.unwrap_or(pos);
             let size_bytes = &line_bytes[..size_end];
 
-            // chunk-size 部分の前後の空白を除去 (BWS)
-            let size_bytes = trim_ascii_whitespace(size_bytes);
+            // chunk-size = 1*HEXDIG (RFC 9112 Section 7.1)
+            // HEXDIG の末尾位置を探す
+            let hex_end = size_bytes
+                .iter()
+                .position(|b| !b.is_ascii_hexdigit())
+                .unwrap_or(size_bytes.len());
 
-            // chunk-size は HEXDIG のみで構成される
-            if size_bytes.is_empty() || !size_bytes.iter().all(|b| b.is_ascii_hexdigit()) {
+            // chunk-size は 1 文字以上の HEXDIG で始まらなければならない
+            if hex_end == 0 {
                 let display = String::from_utf8_lossy(size_bytes);
                 return Err(Error::InvalidData(format!(
                     "invalid chunk size: {}",
@@ -322,8 +327,32 @@ impl BodyDecoder {
                 )));
             }
 
-            // ASCII として解釈 (HEXDIG は ASCII の範囲内)
-            let size_str = std::str::from_utf8(size_bytes)
+            // HEXDIG の後にバイトがある場合の検証
+            let trailing = &size_bytes[hex_end..];
+            if !trailing.is_empty() {
+                if semi_pos.is_some() {
+                    // chunk-ext がある場合: HEXDIG と ";" の間は BWS (SP / HTAB) のみ許容
+                    // RFC 9112 Section 7.1.1: chunk-ext = *( BWS ";" ... )
+                    if !trailing.iter().all(|&b| b == b' ' || b == b'\t') {
+                        let display = String::from_utf8_lossy(size_bytes);
+                        return Err(Error::InvalidData(format!(
+                            "invalid chunk size: {}",
+                            display
+                        )));
+                    }
+                } else {
+                    // chunk-ext がない場合: chunk-size の後は CRLF のみ (BWS は不可)
+                    let display = String::from_utf8_lossy(size_bytes);
+                    return Err(Error::InvalidData(format!(
+                        "invalid chunk size: {}",
+                        display
+                    )));
+                }
+            }
+
+            // HEXDIG 部分のみを chunk-size として解釈
+            let hex_bytes = &size_bytes[..hex_end];
+            let size_str = std::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
             let chunk_size = usize::from_str_radix(size_str, 16)
                 .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
@@ -436,24 +465,6 @@ fn trim_ows(s: &str) -> &str {
     } else {
         // SP/HTAB は ASCII なので UTF-8 境界は安全
         &s[start..end]
-    }
-}
-
-/// バイト列の前後の ASCII 空白を除去
-fn trim_ascii_whitespace(bytes: &[u8]) -> &[u8] {
-    let start = bytes
-        .iter()
-        .position(|&b| !b.is_ascii_whitespace())
-        .unwrap_or(bytes.len());
-    let end = bytes
-        .iter()
-        .rposition(|&b| !b.is_ascii_whitespace())
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    if start >= end {
-        &[]
-    } else {
-        &bytes[start..end]
     }
 }
 

@@ -480,16 +480,17 @@ fn chunked_with_obs_text_in_extension_should_succeed() {
 
 /// chunk-size の前後に空白がある場合のテスト (BWS)
 ///
-/// RFC 9112 Section 7.1: chunk-ext の前には BWS (bad whitespace) が許容される
+/// RFC 9112 Section 7.1.1: chunk-ext の前には BWS (SP / HTAB) が許容される
+/// chunk-ext = *( BWS ";" BWS chunk-ext-name ... )
 #[test]
-fn chunked_with_bws_around_size_should_succeed() {
+fn chunked_with_bws_before_extension_should_succeed() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
         .unwrap();
 
-    // chunk-size の前後に空白: " 5 ;ext\r\n" (拡張の前に空白)
-    decoder.feed(b" 5 ;ext\r\nhello\r\n0\r\n\r\n").unwrap();
+    // chunk-size と ";" の間に BWS: "5 ;ext\r\n"
+    decoder.feed(b"5 ;ext\r\nhello\r\n0\r\n\r\n").unwrap();
 
     let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert!(matches!(body_kind, BodyKind::Chunked));
@@ -524,6 +525,44 @@ fn chunked_with_bws_around_size_should_succeed() {
     }
     assert!(completed);
     assert_eq!(body, b"hello");
+}
+
+/// RFC 9112 Section 7.1: chunk-size = 1*HEXDIG
+/// chunk-size の前に空白があるのは不正
+#[test]
+fn chunked_with_leading_whitespace_should_fail() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    // chunk-size の前に空白: " 5;ext\r\n"
+    decoder.feed(b" 5;ext\r\nhello\r\n0\r\n\r\n").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    // chunk-size の先頭空白はエラーになる
+    let result = decoder.progress();
+    assert!(result.is_err());
+}
+
+/// RFC 9112 Section 7.1: chunk-size の後に空白があり、chunk-ext がない場合は不正
+#[test]
+fn chunked_with_trailing_whitespace_without_extension_should_fail() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+
+    // chunk-ext なしで chunk-size の後に空白: "5 \r\n"
+    decoder.feed(b"5 \r\nhello\r\n0\r\n\r\n").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let result = decoder.progress();
+    assert!(result.is_err());
 }
 
 /// absolute-form で IPv6 括弧が不整合な場合のエラーテスト

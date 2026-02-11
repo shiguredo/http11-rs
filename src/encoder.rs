@@ -103,6 +103,20 @@ fn looks_like_authority_form(uri: &str) -> bool {
     }
 }
 
+/// authority-form の host を検証 (エンコーダー用)
+///
+/// RFC 9112 Section 3.2.3: authority-form = uri-host ":" port
+/// デコーダー (decoder/body.rs) と同等の Host::parse による host 検証を行う
+fn validate_encoder_authority_form(uri: &str) -> Result<(), EncodeError> {
+    if let Some(colon_pos) = uri.rfind(':') {
+        let host = &uri[..colon_pos];
+        Host::parse(host).map_err(|_| EncodeError::InvalidRequestTarget {
+            uri: uri.to_string(),
+        })?;
+    }
+    Ok(())
+}
+
 /// スキームを検出する (RFC 3986 Section 3.1)
 ///
 /// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
@@ -153,7 +167,11 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
     // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
     match (method, &form) {
         // CONNECT は authority-form のみ (RFC 9112 Section 3.2.3)
-        ("CONNECT", RequestTargetForm::Authority) => Ok(()),
+        ("CONNECT", RequestTargetForm::Authority) => {
+            // RFC 3986: authority-form の host を検証
+            validate_encoder_authority_form(uri)?;
+            Ok(())
+        }
         ("CONNECT", _) => Err(EncodeError::InvalidRequestTargetForm {
             method: method.to_string(),
             uri: uri.to_string(),
@@ -283,6 +301,48 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
             host: host_value.to_string(),
             authority: authority.to_string(),
         });
+    }
+
+    // RFC 9112 Section 3.2: CONNECT (authority-form) の場合、
+    // Host は request-target の authority と意味的に一致しなければならない (MUST)
+    // RFC 9110 Section 7.2: Host = uri-host [ ":" port ] (port は省略可能)
+    // RFC 9112 Section 3.2.3 / RFC 9110 Section 9.3.6 の例:
+    //   CONNECT www.example.com:80 HTTP/1.1
+    //   Host: www.example.com
+    if request.method == "CONNECT"
+        && let Some(colon_pos) = request.uri.rfind(':')
+    {
+        let target_host = &request.uri[..colon_pos];
+        let target_port_str = &request.uri[colon_pos + 1..];
+
+        // CONNECT の authority は常に存在するため、Host は非空でなければならない
+        if host_value.is_empty() {
+            return Err(EncodeError::HostAuthorityMismatch {
+                host: host_value.to_string(),
+                authority: request.uri.clone(),
+            });
+        }
+
+        if let Ok(parsed_host) = Host::parse(host_value) {
+            // host 部分の比較 (case-insensitive)
+            if !parsed_host.host().eq_ignore_ascii_case(target_host) {
+                return Err(EncodeError::HostAuthorityMismatch {
+                    host: host_value.to_string(),
+                    authority: request.uri.clone(),
+                });
+            }
+
+            // Host にポートが指定されている場合、request-target のポートと一致するか確認
+            if let Some(host_port) = parsed_host.port()
+                && let Ok(target_port) = target_port_str.parse::<u16>()
+                && host_port != target_port
+            {
+                return Err(EncodeError::HostAuthorityMismatch {
+                    host: host_value.to_string(),
+                    authority: request.uri.clone(),
+                });
+            }
+        }
     }
 
     // RFC 9112 Section 3.2: authority がない target URI では Host を空にしなければならない (MUST)
