@@ -112,6 +112,9 @@ fn detect_scheme(target: &str) -> Option<usize> {
             return None;
         }
     }
+    // 意図的な RFC 非準拠: path-empty (scheme ":" のみ) を拒否する。
+    // RFC 3986 の ABNF では path-empty は合法だが、HTTP request-target として
+    // path-empty が単独で出現する実用的なケースはないため、不正な入力として扱う。
     if colon_pos + 1 >= bytes.len() {
         return None;
     }
@@ -267,6 +270,18 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
         return Err(EncodeError::HostAuthorityMismatch {
             host: host_value.to_string(),
             authority: authority.to_string(),
+        });
+    }
+
+    // RFC 9112 Section 3.2: authority がない target URI では Host を空にしなければならない (MUST)
+    // "://" を含まない absolute-form (例: urn:isbn:xxx) が該当する
+    if let Ok(RequestTargetForm::Absolute) = detect_request_target_form(&request.uri)
+        && !request.uri.contains("://")
+        && !host_value.is_empty()
+    {
+        return Err(EncodeError::NonEmptyHostWithoutAuthority {
+            host: host_value.to_string(),
+            uri: request.uri.clone(),
         });
     }
 

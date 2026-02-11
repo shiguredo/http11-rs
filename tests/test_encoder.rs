@@ -685,6 +685,29 @@ fn test_encode_request_absolute_form_urn_nid_nss() {
     assert!(result.is_ok());
 }
 
+// ========================================
+// authority なし URI の Host 検証テスト (RFC 9112 Section 3.2)
+// ========================================
+
+#[test]
+fn test_encode_request_authority_less_uri_non_empty_host_error() {
+    // authority がない absolute-form で Host が非空はエラー
+    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::NonEmptyHostWithoutAuthority { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_authority_less_uri_empty_host_ok() {
+    // authority がない absolute-form で Host が空は OK
+    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
 #[test]
 fn test_encode_request_authority_form_still_works() {
     // 通常の authority-form (host:port) は引き続き authority-form と判定

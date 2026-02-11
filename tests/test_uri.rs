@@ -16,6 +16,7 @@ fn test_uri_error_display() {
         (UriError::InvalidScheme, "invalid scheme"),
         (UriError::InvalidHost, "invalid host"),
         (UriError::InvalidUtf8, "invalid UTF-8 sequence"),
+        (UriError::InvalidUserinfo, "invalid userinfo"),
     ];
 
     for (error, expected) in errors {
@@ -355,6 +356,102 @@ fn test_uri_parse_invalid_host_with_port() {
         Uri::parse("http://exa mple.com:8080/path"),
         Err(UriError::InvalidHost)
     ));
+}
+
+// ========================================
+// IP-literal 検証のテスト (RFC 3986 Section 3.2.2)
+// ========================================
+
+// 不正な IP-literal は拒否
+#[test]
+fn test_uri_parse_invalid_ip_literal() {
+    // IPv6address でも IPvFuture でもない文字列
+    assert!(matches!(
+        Uri::parse("http://[not-an-ip]/"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// 空の IP-literal は拒否
+#[test]
+fn test_uri_parse_empty_ip_literal() {
+    assert!(matches!(
+        Uri::parse("http://[]/"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// 有効な IPv6 アドレスは受理
+#[test]
+fn test_uri_parse_valid_ipv6() {
+    let uri = Uri::parse("http://[2001:db8::1]/path").unwrap();
+    assert_eq!(uri.host(), Some("[2001:db8::1]"));
+
+    let uri = Uri::parse("http://[::ffff:192.168.1.1]:8080/path").unwrap();
+    assert_eq!(uri.host(), Some("[::ffff:192.168.1.1]"));
+    assert_eq!(uri.port(), Some(8080));
+}
+
+// 有効な IPvFuture は受理
+#[test]
+fn test_uri_parse_valid_ipv_future() {
+    let uri = Uri::parse("http://[v1.test]/path").unwrap();
+    assert_eq!(uri.host(), Some("[v1.test]"));
+}
+
+// 不正な IPvFuture は拒否 (HEXDIG なし)
+#[test]
+fn test_uri_parse_invalid_ipv_future_no_hexdig() {
+    assert!(matches!(
+        Uri::parse("http://[v.test]/path"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// 不正な IPvFuture は拒否 (ドット後が空)
+#[test]
+fn test_uri_parse_invalid_ipv_future_empty_after_dot() {
+    assert!(matches!(
+        Uri::parse("http://[vFF.]/path"),
+        Err(UriError::InvalidHost)
+    ));
+}
+
+// ========================================
+// userinfo 検証のテスト (RFC 3986 Section 3.2.1)
+// ========================================
+
+// 空白を含む userinfo は拒否
+#[test]
+fn test_uri_parse_invalid_userinfo_space() {
+    assert!(matches!(
+        Uri::parse("http://user name@example.com/"),
+        Err(UriError::InvalidUserinfo)
+    ));
+}
+
+// 制御文字を含む userinfo は拒否
+#[test]
+fn test_uri_parse_invalid_userinfo_control_char() {
+    assert!(matches!(
+        Uri::parse("http://user\x01@example.com/"),
+        Err(UriError::InvalidUserinfo)
+    ));
+}
+
+// 有効な userinfo は受理
+#[test]
+fn test_uri_parse_valid_userinfo() {
+    let uri = Uri::parse("http://user:pass@example.com/path").unwrap();
+    assert_eq!(uri.host(), Some("example.com"));
+
+    // パーセントエンコーディング含む userinfo
+    let uri = Uri::parse("http://user%40name@example.com/").unwrap();
+    assert_eq!(uri.host(), Some("example.com"));
+
+    // sub-delims を含む userinfo
+    let uri = Uri::parse("http://u$er!@example.com/").unwrap();
+    assert_eq!(uri.host(), Some("example.com"));
 }
 
 // ========================================

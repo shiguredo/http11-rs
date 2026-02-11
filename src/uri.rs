@@ -52,6 +52,8 @@ pub enum UriError {
     InvalidQueryCharacter(u8),
     /// 不正なフラグメント文字 (RFC 3986 Section 3.5)
     InvalidFragmentCharacter(u8),
+    /// 不正な userinfo 文字 (RFC 3986 Section 3.2.1)
+    InvalidUserinfo,
 }
 
 impl fmt::Display for UriError {
@@ -69,6 +71,7 @@ impl fmt::Display for UriError {
             UriError::InvalidFragmentCharacter(b) => {
                 write!(f, "invalid fragment character: 0x{:02X}", b)
             }
+            UriError::InvalidUserinfo => write!(f, "invalid userinfo"),
         }
     }
 }
@@ -576,9 +579,13 @@ fn validate_host(host: &str) -> Result<(), UriError> {
     if host.is_empty() {
         return Ok(());
     }
-    // IP-literal は bracket チェックで別途検証済み
+    // IP-literal: "[" ( IPv6address / IPvFuture ) "]"
     if host.starts_with('[') {
-        return Ok(());
+        let bracket_end = host.find(']').ok_or(UriError::InvalidHost)?;
+        if bracket_end != host.len() - 1 {
+            return Err(UriError::InvalidHost);
+        }
+        return validate_ip_literal(&host[1..bracket_end]);
     }
     // RFC 3986 Section 3.2.2: "first-match-wins" - IPv4 を先に試す
     if host.parse::<std::net::Ipv4Addr>().is_ok() {
@@ -613,6 +620,81 @@ fn validate_reg_name(name: &str) -> Result<(), UriError> {
     Ok(())
 }
 
+/// IP-literal の検証 (RFC 3986 Section 3.2.2)
+///
+/// IP-literal = "[" ( IPv6address / IPvFuture ) "]"
+/// 括弧の中身 (IPv6address または IPvFuture) を検証する
+fn validate_ip_literal(literal: &str) -> Result<(), UriError> {
+    if literal.is_empty() {
+        return Err(UriError::InvalidHost);
+    }
+    // IPvFuture: "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+    if literal.as_bytes()[0] == b'v' || literal.as_bytes()[0] == b'V' {
+        return validate_ipv_future(literal);
+    }
+    // IPv6address
+    if literal.parse::<std::net::Ipv6Addr>().is_err() {
+        return Err(UriError::InvalidHost);
+    }
+    Ok(())
+}
+
+/// IPvFuture の検証 (RFC 3986 Section 3.2.2)
+///
+/// IPvFuture = "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
+fn validate_ipv_future(literal: &str) -> Result<(), UriError> {
+    let bytes = literal.as_bytes();
+    let dot_pos = bytes
+        .iter()
+        .position(|&b| b == b'.')
+        .ok_or(UriError::InvalidHost)?;
+    // "v" と "." の間に 1 文字以上の HEXDIG が必要
+    if dot_pos <= 1 {
+        return Err(UriError::InvalidHost);
+    }
+    for &b in &bytes[1..dot_pos] {
+        if !b.is_ascii_hexdigit() {
+            return Err(UriError::InvalidHost);
+        }
+    }
+    // "." の後に 1 文字以上の ( unreserved / sub-delims / ":" ) が必要
+    let after_dot = &bytes[dot_pos + 1..];
+    if after_dot.is_empty() {
+        return Err(UriError::InvalidHost);
+    }
+    for &b in after_dot {
+        if !is_unreserved(b) && !is_sub_delim(b) && b != b':' {
+            return Err(UriError::InvalidHost);
+        }
+    }
+    Ok(())
+}
+
+/// userinfo の検証 (RFC 3986 Section 3.2.1)
+///
+/// userinfo = *( unreserved / pct-encoded / sub-delims / ":" )
+fn validate_userinfo(userinfo: &str) -> Result<(), UriError> {
+    let bytes = userinfo.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if is_unreserved(b) || is_sub_delim(b) || b == b':' {
+            i += 1;
+        } else if b == b'%' {
+            if i + 2 >= bytes.len() {
+                return Err(UriError::InvalidUserinfo);
+            }
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+                return Err(UriError::InvalidUserinfo);
+            }
+            i += 3;
+        } else {
+            return Err(UriError::InvalidUserinfo);
+        }
+    }
+    Ok(())
+}
+
 /// authority をパース
 /// 戻り値: (host_end, port)
 fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
@@ -620,8 +702,10 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
         return Ok((0, None));
     }
 
-    // userinfo を除去
+    // userinfo を検証して除去
     let host_part = if let Some(at_pos) = authority.rfind('@') {
+        let userinfo = &authority[..at_pos];
+        validate_userinfo(userinfo)?;
         &authority[at_pos + 1..]
     } else {
         authority
@@ -630,6 +714,7 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
     // IPv6 アドレス
     if host_part.starts_with('[') {
         if let Some(bracket_end) = host_part.find(']') {
+            validate_ip_literal(&host_part[1..bracket_end])?;
             let after_bracket = &host_part[bracket_end + 1..];
             if after_bracket.is_empty() {
                 return Ok((authority.len(), None));

@@ -652,7 +652,9 @@ fn detect_scheme(target: &str) -> Option<usize> {
         }
     }
 
-    // ":" の後に何かがあること (空の hier-part は不正)
+    // 意図的な RFC 非準拠: path-empty (scheme ":" のみ) を拒否する。
+    // RFC 3986 の ABNF では path-empty は合法だが、HTTP request-target として
+    // path-empty が単独で出現する実用的なケースはないため、不正な入力として扱う。
     if colon_pos + 1 >= bytes.len() {
         return None;
     }

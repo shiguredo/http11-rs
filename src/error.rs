@@ -104,6 +104,9 @@ pub enum EncodeError {
     /// http/https URI に userinfo が含まれている
     /// RFC 9110 Section 4.2.4: 送信者は http/https URI に userinfo を生成してはならない (MUST NOT)
     UserinfoInHttpUri { uri: String },
+    /// authority がない target URI で Host ヘッダーが非空
+    /// RFC 9112 Section 3.2: authority がない場合、Host は空でなければならない (MUST)
+    NonEmptyHostWithoutAuthority { host: String, uri: String },
 }
 
 impl fmt::Display for EncodeError {
@@ -200,6 +203,13 @@ impl fmt::Display for EncodeError {
                     f,
                     "userinfo not allowed in http/https URI {:?} (RFC 9110 Section 4.2.4)",
                     uri
+                )
+            }
+            EncodeError::NonEmptyHostWithoutAuthority { host, uri } => {
+                write!(
+                    f,
+                    "Host header {:?} must be empty for authority-less URI {:?} (RFC 9112 Section 3.2)",
+                    host, uri
                 )
             }
         }
