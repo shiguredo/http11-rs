@@ -254,6 +254,29 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
     Ok(())
 }
 
+/// RFC 9110 Section 4.2.4: http/https URI の userinfo を検出して拒否する
+///
+/// 送信者は http/https URI に userinfo を生成してはならない (MUST NOT)
+/// 他のスキームには適用しない
+fn reject_http_userinfo(uri: &str) -> Result<(), EncodeError> {
+    let lower = uri.to_ascii_lowercase();
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return Ok(());
+    }
+    let after_scheme = match uri.find("://") {
+        Some(i) => &uri[i + 3..],
+        None => return Ok(()),
+    };
+    let end = after_scheme.find(['/', '?']).unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..end];
+    if authority.contains('@') {
+        return Err(EncodeError::UserinfoInHttpUri {
+            uri: uri.to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// URI から authority 部分を抽出 (userinfo を除外)
 ///
 /// scheme "://" authority ["/" path]
@@ -279,6 +302,9 @@ fn extract_authority_from_uri(uri: &str) -> Option<String> {
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_request_fields(request)?;
+
+    // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
+    reject_http_userinfo(&request.uri)?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;

@@ -221,6 +221,9 @@ impl fmt::Display for MediaRange {
 }
 
 /// Accept-Charset ヘッダー
+///
+/// 注: RFC 9110 Section 12.5.2 で deprecated とされている。
+/// 一般的に使われていないが、後方互換性のために実装を残している。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcceptCharset {
     items: Vec<CharsetRange>,

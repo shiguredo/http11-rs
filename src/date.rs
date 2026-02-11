@@ -111,8 +111,11 @@ impl DayOfWeek {
 /// RFC 9110 Section 5.6.7 に基づいた日時構造。
 /// 3つの形式をパースできます:
 /// - IMF-fixdate: Sun, 06 Nov 1994 08:49:37 GMT (推奨)
-/// - RFC 850: Sunday, 06-Nov-94 08:49:37 GMT (廃止)
-/// - ANSI C asctime: Sun Nov  6 08:49:37 1994 (廃止)
+/// - RFC 850: Sunday, 06-Nov-94 08:49:37 GMT (obs-date, 廃止)
+/// - ANSI C asctime: Sun Nov  6 08:49:37 1994 (obs-date, 廃止)
+///
+/// 注: RFC 850 / asctime 形式 (obs-date) は一般的に使われていないが、
+/// RFC 9110 Section 5.6.7 の受信者要件 (MUST accept) に準拠するために実装している。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpDate {
     /// 曜日

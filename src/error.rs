@@ -101,6 +101,9 @@ pub enum EncodeError {
     /// CONNECT リクエストに content が含まれている
     /// RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
     ConnectRequestWithContent,
+    /// http/https URI に userinfo が含まれている
+    /// RFC 9110 Section 4.2.4: 送信者は http/https URI に userinfo を生成してはならない (MUST NOT)
+    UserinfoInHttpUri { uri: String },
 }
 
 impl fmt::Display for EncodeError {
@@ -190,6 +193,13 @@ impl fmt::Display for EncodeError {
                 write!(
                     f,
                     "CONNECT request must not have content (RFC 9110 Section 9.3.6)"
+                )
+            }
+            EncodeError::UserinfoInHttpUri { uri } => {
+                write!(
+                    f,
+                    "userinfo not allowed in http/https URI {:?} (RFC 9110 Section 4.2.4)",
+                    uri
                 )
             }
         }

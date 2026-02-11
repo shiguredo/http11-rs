@@ -4,6 +4,9 @@
 //!
 //! RFC 9112 に基づいた Trailer ヘッダーのパースを提供します。
 //!
+//! 注: trailer フィールドは一般的に使われていない (RFC 9110 Section 6.5.1 が
+//! "trailers are often ignored" と明記)。RFC 準拠のために実装している。
+//!
 //! ## 使い方
 //!
 //! ```rust
@@ -52,18 +55,17 @@ pub struct Trailer {
 impl Trailer {
     /// Trailer ヘッダーをパース
     ///
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     /// RFC 9112 Section 7.1.2: 禁止フィールドを含む場合はエラー
     pub fn parse(input: &str) -> Result<Self, TrailerError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(TrailerError::Empty);
-        }
 
         let mut fields = Vec::new();
         for part in input.split(',') {
             let name = part.trim();
+            // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if name.is_empty() {
-                return Err(TrailerError::InvalidFormat);
+                continue;
             }
             if !is_valid_token(name) {
                 return Err(TrailerError::InvalidFieldName);
@@ -76,10 +78,6 @@ impl Trailer {
             }
 
             fields.push(lower_name);
-        }
-
-        if fields.is_empty() {
-            return Err(TrailerError::Empty);
         }
 
         Ok(Trailer { fields })
@@ -147,8 +145,20 @@ mod tests {
 
     #[test]
     fn parse_invalid() {
-        assert!(Trailer::parse("").is_err());
         assert!(Trailer::parse("bad value").is_err());
+    }
+
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
+    #[test]
+    fn parse_empty_elements() {
+        let trailer = Trailer::parse("").unwrap();
+        assert!(trailer.fields().is_empty());
+
+        let trailer = Trailer::parse(",").unwrap();
+        assert!(trailer.fields().is_empty());
+
+        let trailer = Trailer::parse("Expires,,X-Test").unwrap();
+        assert_eq!(trailer.fields().len(), 2);
     }
 
     #[test]

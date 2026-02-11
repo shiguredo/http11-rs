@@ -488,9 +488,18 @@ impl fmt::Display for Expires {
     }
 }
 
-/// 秒数をパース
+/// RFC 9111 Section 1.2.2 で定義されたオーバーフロー時の飽和値
+const DELTA_SECONDS_OVERFLOW: u64 = 2_147_483_648; // 2^31
+
+/// delta-seconds をパース (RFC 9111 Section 1.2.2)
+///
+/// delta-seconds = 1*DIGIT
+/// オーバーフロー時は 2^31 にクランプする (RFC 9111 Section 1.2.2 MUST)
 fn parse_seconds(s: &str) -> Result<u64, CacheError> {
-    s.parse::<u64>().map_err(|_| CacheError::InvalidNumber)
+    if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(CacheError::InvalidNumber);
+    }
+    Ok(s.parse::<u64>().unwrap_or(DELTA_SECONDS_OVERFLOW))
 }
 
 #[cfg(test)]
@@ -638,6 +647,27 @@ mod tests {
     fn test_age_parse_invalid() {
         assert!(Age::parse("abc").is_err());
         assert!(Age::parse("-1").is_err());
+        // RFC 9111 Section 1.2.2: 1*DIGIT 制約 (+ は DIGIT ではない)
+        assert!(Age::parse("+1").is_err());
+    }
+
+    /// RFC 9111 Section 1.2.2: オーバーフロー時は 2^31 にクランプする
+    #[test]
+    fn test_age_parse_overflow_clamp() {
+        let age = Age::parse("99999999999999999999999").unwrap();
+        assert_eq!(age.seconds(), 2_147_483_648);
+    }
+
+    #[test]
+    fn test_cache_control_delta_seconds_overflow() {
+        let cc = CacheControl::parse("max-age=99999999999999999999999").unwrap();
+        assert_eq!(cc.max_age(), Some(2_147_483_648));
+    }
+
+    /// RFC 9111 Section 1.2.2: delta-seconds は 1*DIGIT のみ
+    #[test]
+    fn test_cache_control_delta_seconds_plus_sign() {
+        assert!(CacheControl::parse("max-age=+3600").is_err());
     }
 
     #[test]

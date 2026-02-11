@@ -299,7 +299,10 @@ impl BodyDecoder {
                 });
             }
 
-            // RFC 9112 Section 7.1: chunk-ext の quoted-string は obs-text を含む可能性があるため
+            // RFC 9112 Section 7.1.1: chunk extension の処理
+            // 注: chunk extension は一般的に使われていない (RFC 9112 が "specialized service" 向けと明記)。
+            // RFC 準拠のために処理しているが、内容は破棄する。
+            // chunk-ext の quoted-string は obs-text を含む可能性があるため
             // UTF-8 変換せずバイト列として処理する。セミコロンまでを chunk-size として解釈。
             let line_bytes = &buf[..pos];
 
@@ -600,6 +603,22 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
     // scheme ":" 以降の URI 文字検証 (RFC 3986)
     let rest = &target[scheme_len + 1..];
     validate_absolute_uri_parts(rest)?;
+
+    // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する (SHOULD)
+    let scheme_lower = scheme.to_ascii_lowercase();
+    if (scheme_lower == "http" || scheme_lower == "https")
+        && let Some(after_slashes) = rest.strip_prefix("//")
+    {
+        let authority_end = after_slashes
+            .find(['/', '?'])
+            .unwrap_or(after_slashes.len());
+        if after_slashes[..authority_end].contains('@') {
+            return Err(Error::InvalidData(
+                "userinfo not allowed in http/https URI (RFC 9110 Section 4.2.4)".to_string(),
+            ));
+        }
+    }
+
     Ok(RequestTargetForm::Absolute)
 }
 

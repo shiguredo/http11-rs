@@ -372,40 +372,45 @@ fn test_encode_response_crlf_in_header_value() {
 }
 
 // ========================================
-// userinfo 除外テスト (RFC 9112 Section 3.2)
+// userinfo テスト (RFC 9110 Section 4.2.4)
 // ========================================
 
 #[test]
-fn test_encode_request_absolute_form_userinfo_match() {
+fn test_encode_request_http_userinfo_rejected() {
+    // RFC 9110 Section 4.2.4: http URI の userinfo は MUST NOT
     let req =
         Request::new("GET", "http://user:pass@example.com/path").header("Host", "example.com");
-    let result = encode_request(&req);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn test_encode_request_absolute_form_userinfo_mismatch() {
-    let req = Request::new("GET", "http://user:pass@example.com/path").header("Host", "other.com");
-    let result = encode_request(&req);
     assert!(matches!(
-        result,
-        Err(EncodeError::HostAuthorityMismatch { .. })
+        encode_request(&req),
+        Err(EncodeError::UserinfoInHttpUri { .. })
     ));
 }
 
 #[test]
-fn test_encode_request_absolute_form_userinfo_only_user() {
-    let req = Request::new("GET", "http://user@example.com/path").header("Host", "example.com");
-    let result = encode_request(&req);
-    assert!(result.is_ok());
+fn test_encode_request_https_userinfo_rejected() {
+    // RFC 9110 Section 4.2.4: https URI の userinfo は MUST NOT
+    let req = Request::new("GET", "https://user@example.com/path").header("Host", "example.com");
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::UserinfoInHttpUri { .. })
+    ));
 }
 
 #[test]
-fn test_encode_request_absolute_form_userinfo_with_port() {
+fn test_encode_request_http_userinfo_with_port_rejected() {
     let req =
         Request::new("GET", "http://user@example.com:8080/path").header("Host", "example.com:8080");
-    let result = encode_request(&req);
-    assert!(result.is_ok());
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::UserinfoInHttpUri { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_non_http_scheme_userinfo_allowed() {
+    // http/https 以外のスキームでは userinfo は許可
+    let req = Request::new("GET", "ftp://user@example.com/path").header("Host", "example.com");
+    assert!(encode_request(&req).is_ok());
 }
 
 // ========================================
@@ -457,10 +462,13 @@ fn test_encode_response_omit_content_length_skips_mismatch_check() {
 
 #[test]
 fn test_encode_request_absolute_form_at_in_userinfo() {
+    // RFC 9110 Section 4.2.4: userinfo の "@" は http URI で禁止
     let req =
         Request::new("GET", "http://user%40name@example.com/path").header("Host", "example.com");
-    let result = encode_request(&req);
-    assert!(result.is_ok());
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::UserinfoInHttpUri { .. })
+    ));
 }
 
 // ========================================

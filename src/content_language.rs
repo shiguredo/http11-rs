@@ -50,15 +50,15 @@ pub struct ContentLanguage {
 
 impl ContentLanguage {
     /// Content-Language ヘッダーをパース
+    ///
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, ContentLanguageError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(ContentLanguageError::Empty);
-        }
 
         let mut tags = Vec::new();
         for part in input.split(',') {
             let tag = part.trim();
+            // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if tag.is_empty() {
                 continue;
             }
@@ -66,10 +66,6 @@ impl ContentLanguage {
                 return Err(ContentLanguageError::InvalidLanguageTag);
             }
             tags.push(tag.to_string());
-        }
-
-        if tags.is_empty() {
-            return Err(ContentLanguageError::Empty);
         }
 
         Ok(ContentLanguage { tags })
@@ -135,9 +131,21 @@ mod tests {
 
     #[test]
     fn parse_invalid() {
-        assert!(ContentLanguage::parse("").is_err());
         assert!(ContentLanguage::parse("en-").is_err());
         assert!(ContentLanguage::parse("en--us").is_err());
+    }
+
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
+    #[test]
+    fn parse_empty_elements() {
+        let cl = ContentLanguage::parse("").unwrap();
+        assert!(cl.tags().is_empty());
+
+        let cl = ContentLanguage::parse(",").unwrap();
+        assert!(cl.tags().is_empty());
+
+        let cl = ContentLanguage::parse("en,,ja").unwrap();
+        assert_eq!(cl.tags().len(), 2);
     }
 
     #[test]

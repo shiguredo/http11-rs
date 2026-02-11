@@ -63,17 +63,17 @@ pub struct Expect {
 
 impl Expect {
     /// Expect ヘッダーをパース
+    ///
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, ExpectError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(ExpectError::Empty);
-        }
 
         let mut items = Vec::new();
         for part in split_with_quotes(input, ',') {
             let part = part.trim();
+            // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if part.is_empty() {
-                return Err(ExpectError::InvalidFormat);
+                continue;
             }
 
             let (token, value) = if let Some((token, value)) = part.split_once('=') {
@@ -97,10 +97,6 @@ impl Expect {
             });
         }
 
-        // items は必ず 1 要素以上:
-        // - 空入力は冒頭の Empty チェックで排除済み
-        // - split_with_quotes は必ず 1 要素以上を返す
-        // - 空 part は InvalidFormat で早期リターンされる
         Ok(Expect { items })
     }
 
@@ -279,9 +275,21 @@ mod tests {
 
     #[test]
     fn parse_invalid() {
-        assert!(Expect::parse("").is_err());
         assert!(Expect::parse("bad value").is_err());
         assert!(Expect::parse("token=").is_err());
+    }
+
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
+    #[test]
+    fn parse_empty_elements() {
+        let expect = Expect::parse("").unwrap();
+        assert!(expect.items().is_empty());
+
+        let expect = Expect::parse(",").unwrap();
+        assert!(expect.items().is_empty());
+
+        let expect = Expect::parse("100-continue,,foo=bar").unwrap();
+        assert_eq!(expect.items().len(), 2);
     }
 
     #[test]

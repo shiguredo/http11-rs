@@ -49,17 +49,17 @@ pub struct Upgrade {
 
 impl Upgrade {
     /// Upgrade ヘッダーをパース
+    ///
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, UpgradeError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(UpgradeError::Empty);
-        }
 
         let mut protocols = Vec::new();
         for part in input.split(',') {
             let part = part.trim();
+            // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if part.is_empty() {
-                return Err(UpgradeError::InvalidFormat);
+                continue;
             }
 
             let (name, version) = if let Some((name, version)) = part.split_once('/') {
@@ -92,10 +92,6 @@ impl Upgrade {
             };
 
             protocols.push(Protocol { name, version });
-        }
-
-        if protocols.is_empty() {
-            return Err(UpgradeError::Empty);
         }
 
         Ok(Upgrade { protocols })
@@ -181,10 +177,22 @@ mod tests {
 
     #[test]
     fn parse_invalid() {
-        assert!(Upgrade::parse("").is_err());
         assert!(Upgrade::parse("bad value").is_err());
         assert!(Upgrade::parse("websocket/").is_err());
         assert!(Upgrade::parse("websocket/1/2").is_err());
+    }
+
+    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
+    #[test]
+    fn parse_empty_elements() {
+        let upgrade = Upgrade::parse("").unwrap();
+        assert!(upgrade.protocols().is_empty());
+
+        let upgrade = Upgrade::parse(",").unwrap();
+        assert!(upgrade.protocols().is_empty());
+
+        let upgrade = Upgrade::parse("websocket,,h2c").unwrap();
+        assert_eq!(upgrade.protocols().len(), 2);
     }
 
     #[test]

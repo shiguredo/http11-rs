@@ -117,9 +117,11 @@ fn test_expectation_is_100_continue() {
 
 #[test]
 fn test_expect_parse_errors() {
-    // 空
-    assert!(matches!(Expect::parse(""), Err(ExpectError::Empty)));
-    assert!(matches!(Expect::parse("   "), Err(ExpectError::Empty)));
+    // RFC 9110 Section 5.6.1.2: 空フィールド値は空リストとして受理する
+    let expect = Expect::parse("").unwrap();
+    assert!(expect.items().is_empty());
+    let expect = Expect::parse("   ").unwrap();
+    assert!(expect.items().is_empty());
 
     // 不正なトークン (スペースを含む)
     assert!(matches!(
@@ -151,11 +153,9 @@ fn test_expect_parse_errors() {
         Err(ExpectError::InvalidValue)
     ));
 
-    // 空のパート
-    assert!(matches!(
-        Expect::parse("token,,other"),
-        Err(ExpectError::InvalidFormat)
-    ));
+    // RFC 9110 Section 5.6.1.2: 空要素は無視する
+    let expect = Expect::parse("token,,other").unwrap();
+    assert_eq!(expect.items().len(), 2);
 }
 
 // ========================================
