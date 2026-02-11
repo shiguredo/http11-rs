@@ -11,12 +11,10 @@ pub struct Response {
     pub headers: Vec<(String, String)>,
     /// ボディ
     pub body: Vec<u8>,
-    /// Content-Length 自動付与を抑止するフラグ (HEAD レスポンス用)
+    /// ボディ送信を抑止するフラグ (HEAD レスポンス用)
     ///
-    /// HEAD レスポンスでは実際のボディを送信しないが、GET と同じ Content-Length を
-    /// 返すべき (RFC 9110 Section 9.3.2)。このフラグを true にすると、
-    /// エンコーダーが Content-Length を自動付与しない。
-    pub omit_content_length: bool,
+    /// HEAD レスポンスではヘッダーのみ送信し、メッセージボディを送信しない。
+    pub omit_body: bool,
 }
 
 impl Response {
@@ -28,7 +26,7 @@ impl Response {
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
             body: Vec::new(),
-            omit_content_length: false,
+            omit_body: false,
         }
     }
 
@@ -40,17 +38,16 @@ impl Response {
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
             body: Vec::new(),
-            omit_content_length: false,
+            omit_body: false,
         }
     }
 
-    /// Content-Length 自動付与を抑止する (ビルダーパターン)
+    /// ボディ送信を抑止する (ビルダーパターン)
     ///
-    /// HEAD レスポンスで使用する。HEAD レスポンスではボディを送信しないが、
-    /// Content-Length は GET と同じ値を返すべき (RFC 9110 Section 9.3.2)。
-    /// このメソッドで true を設定し、明示的に Content-Length ヘッダーを追加する。
-    pub fn omit_content_length(mut self, omit: bool) -> Self {
-        self.omit_content_length = omit;
+    /// HEAD レスポンス (RFC 9110 Section 9.3.2) で使用する。ボディは送信しないが、Content-Length ヘッダーは
+    /// 必要に応じて明示的に設定できる。
+    pub fn omit_body(mut self, omit: bool) -> Self {
+        self.omit_body = omit;
         self
     }
 

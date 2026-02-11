@@ -202,13 +202,13 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_encode_response_omit_content_length(
+    fn prop_encode_response_omit_body_with_content_length(
         status in (200u16..204).prop_union(206..300),
         content_length in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
             .header("Content-Length", &content_length.to_string())
-            .omit_content_length(true);
+            .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -220,11 +220,11 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_encode_response_omit_content_length_no_header(
+    fn prop_encode_response_omit_body_empty_no_header(
         status in 200..204u16
     ) {
         let res = Response::new(status, "OK")
-            .omit_content_length(true);
+            .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 

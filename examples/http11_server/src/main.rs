@@ -419,7 +419,7 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
                         .header("Content-Type", "text/plain; charset=utf-8")
                         .header("Content-Length", "0")
                         .header("Server", "shiguredo_http11/0.1.0")
-                        .omit_content_length(true),
+                        .omit_body(true),
                     should_keep_alive,
                 );
             }
@@ -507,9 +507,7 @@ fn build_compressed_response(
         response = response.header("Content-Encoding", enc);
     }
 
-    response
-        .body(if is_head { Vec::new() } else { final_body })
-        .omit_content_length(true)
+    response.body(final_body).omit_body(is_head)
 }
 
 /// RFC 9112 準拠で Connection ヘッダーを設定する

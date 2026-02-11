@@ -671,7 +671,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             reason_phrase: head.reason_phrase,
             headers: head.headers,
             body,
-            omit_content_length: false,
+            omit_body: false,
         }))
     }
 }

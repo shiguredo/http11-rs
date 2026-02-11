@@ -426,16 +426,24 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         }
     }
 
+    let status_has_body = !((100..200).contains(&response.status_code)
+        || response.status_code == 204
+        || response.status_code == 304);
+    let body_will_be_encoded = status_has_body && !response.omit_body;
+
     // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
-    // omit_content_length: true の場合はスキップ (HEAD レスポンス用: body は空だが
-    // Content-Length は GET と同じ値を返す)
-    if !response.omit_content_length
+    // - 通常レスポンス: 常に一致必須
+    // - omit_body: true の場合は、body が空のときのみ検証をスキップ
+    //   (HEAD レスポンスで Content-Length が表現長を示すケース)
+    // - 1xx/204/304 は message body がないため、ここでは検証しない
+    if status_has_body
         && !response.has_header("Transfer-Encoding")
         && let Some(cl_value) = response.get_header("Content-Length")
         && let Ok(header_value) = cl_value.trim().parse::<u64>()
     {
         let body_length = response.body.len() as u64;
-        if header_value != body_length {
+        let should_validate = body_will_be_encoded || body_length != 0;
+        if should_validate && header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
                 body_length,
@@ -466,12 +474,10 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // 1xx/204/304 はボディがないため Content-Length を追加しない
     // 205 は RFC 9110 Section 15.3.6 でボディ生成禁止だが、受信者のメッセージ長決定規則のため
     // Content-Length: 0 を付与する (close-delimited にならないようにする)
-    // omit_content_length が true の場合は自動付与しない (HEAD レスポンス用)
-    let status_has_body = !((100..200).contains(&response.status_code)
-        || response.status_code == 204
-        || response.status_code == 304);
+    // omit_body: true かつ body が空の場合は自動付与しない
+    // (HEAD レスポンスで表現長が不明なケースに配慮)
     if status_has_body
-        && !response.omit_content_length
+        && (!response.omit_body || !response.body.is_empty())
         && !response.has_header("Content-Length")
         && !response.has_header("Transfer-Encoding")
     {
@@ -485,7 +491,8 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     // Body
     // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
-    if status_has_body {
+    // HEAD レスポンスでは omit_body: true としてボディ送信を抑止する
+    if body_will_be_encoded {
         buf.extend_from_slice(&response.body);
     }
 

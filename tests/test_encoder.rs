@@ -451,13 +451,68 @@ fn test_encode_request_content_length_mismatch() {
 }
 
 #[test]
-fn test_encode_response_omit_content_length_skips_mismatch_check() {
-    // omit_content_length: true の場合はミスマッチチェックをスキップ (HEAD レスポンス用)
+fn test_encode_response_omit_body_without_content_length_does_not_add_header() {
+    // omit_body: true かつ body が空の場合、自動で Content-Length を追加しない
+    let res = Response::new(200, "OK").omit_body(true);
+    let encoded = encode_response(&res).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+    assert!(!encoded_str.contains("Content-Length"));
+}
+
+#[test]
+fn test_encode_response_omit_body_allows_content_length_without_body() {
+    // HEAD レスポンス相当: body を送信しないが Content-Length で表現長を返す
     let res = Response::new(200, "OK")
-        .header("Content-Length", "1000")
-        .omit_content_length(true);
+        .header("Content-Length", "100")
+        .omit_body(true);
+    let encoded = encode_response(&res).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(encoded_str.contains("Content-Length: 100\r\n"));
+    assert!(encoded_str.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn test_encode_response_omit_body_does_not_encode_body() {
+    // omit_body: true の場合、status がボディ許可でも実ボディは送信しない
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "5")
+        .body(b"hello".to_vec())
+        .omit_body(true);
+    let encoded = encode_response(&res).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(encoded_str.contains("Content-Length: 5\r\n"));
+    assert!(encoded_str.ends_with("\r\n\r\n"));
+    assert!(!encoded_str.ends_with("hello"));
+}
+
+#[test]
+fn test_encode_response_omit_body_with_non_empty_body_still_validates_content_length() {
+    // omit_body: true でも body を持っている場合は Content-Length 整合性を検証する
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "10")
+        .body(b"hello".to_vec())
+        .omit_body(true);
     let result = encode_response(&res);
-    assert!(result.is_ok());
+    assert!(matches!(
+        result,
+        Err(EncodeError::ContentLengthMismatch {
+            header_value: 10,
+            body_length: 5,
+        })
+    ));
+}
+
+#[test]
+fn test_encode_response_304_content_length_representation_size_ok() {
+    // RFC 9110 Section 8.6: 304 の Content-Length は表現長を示せる
+    let res = Response::new(304, "Not Modified").header("Content-Length", "100");
+    let encoded = encode_response(&res).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(encoded_str.contains("Content-Length: 100\r\n"));
+    assert!(encoded_str.ends_with("\r\n\r\n"));
 }
 
 #[test]

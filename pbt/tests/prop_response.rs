@@ -71,6 +71,7 @@ proptest! {
         prop_assert_eq!(&response.reason_phrase, &phrase);
         prop_assert!(response.headers.is_empty());
         prop_assert!(response.body.is_empty());
+        prop_assert!(!response.omit_body);
     }
 }
 
@@ -85,6 +86,7 @@ proptest! {
         prop_assert_eq!(&response.reason_phrase, &phrase);
         prop_assert!(response.headers.is_empty());
         prop_assert!(response.body.is_empty());
+        prop_assert!(!response.omit_body);
     }
 }
 
@@ -128,6 +130,15 @@ proptest! {
         let response = Response::new(code, "OK").body(body_data.clone());
 
         prop_assert_eq!(&response.body, &body_data);
+    }
+}
+
+// omit_body() ビルダー
+proptest! {
+    #[test]
+    fn prop_response_omit_body_builder(code in status_code(), omit in any::<bool>()) {
+        let response = Response::new(code, "OK").omit_body(omit);
+        prop_assert_eq!(response.omit_body, omit);
     }
 }
 
