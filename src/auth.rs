@@ -786,8 +786,14 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         while i < bytes.len() && is_ows(bytes[i]) {
             i += 1;
         }
-        if i < bytes.len() && bytes[i] == b',' {
-            i += 1;
+        if i < bytes.len() {
+            // RFC 9110 Section 11.2: auth-param *( OWS "," OWS auth-param )
+            // パラメータ間のカンマは必須
+            if bytes[i] == b',' {
+                i += 1;
+            } else {
+                return Err(AuthError::InvalidParameter);
+            }
         }
     }
 

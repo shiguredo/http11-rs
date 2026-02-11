@@ -184,3 +184,35 @@ fn test_accept_ranges_parse_errors() {
     // カンマのみ
     assert!(matches!(AcceptRanges::parse(",,,"), Err(RangeError::Empty)));
 }
+
+// ========================================
+// Accept-Ranges の none 混在拒否 (RFC 9110 Section 14.3)
+// ========================================
+
+#[test]
+fn test_accept_ranges_none_mixed_with_other_units_error() {
+    // none は他の単位と混在できない
+    assert!(matches!(
+        AcceptRanges::parse("bytes, none"),
+        Err(RangeError::InvalidUnit)
+    ));
+    assert!(matches!(
+        AcceptRanges::parse("none, bytes"),
+        Err(RangeError::InvalidUnit)
+    ));
+}
+
+#[test]
+fn test_accept_ranges_none_alone_ok() {
+    // none 単独は正常
+    let ar = AcceptRanges::parse("none").unwrap();
+    assert!(ar.is_none());
+}
+
+#[test]
+fn test_accept_ranges_multiple_units_without_none_ok() {
+    // none を含まない複数単位は正常
+    let ar = AcceptRanges::parse("bytes, items").unwrap();
+    assert!(!ar.is_none());
+    assert!(ar.accepts_bytes());
+}

@@ -958,3 +958,40 @@ fn test_response_chunked_with_params_error() {
     let result = decoder.decode_headers();
     assert!(result.is_err());
 }
+
+// ========================================
+// http/https URI の :// 必須検証 (RFC 9110 Section 4.2)
+// ========================================
+
+#[test]
+fn test_request_http_without_double_slash_error() {
+    // http:foo は "://" がないので不正
+    let mut decoder = RequestDecoder::new();
+    let request = "GET http:foo HTTP/1.1\r\nHost: \r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_request_https_without_double_slash_error() {
+    // https:path は "://" がないので不正
+    let mut decoder = RequestDecoder::new();
+    let request = "GET https:path HTTP/1.1\r\nHost: \r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_request_http_with_double_slash_ok() {
+    // http://example.com/path は正常
+    let mut decoder = RequestDecoder::new();
+    let request = "GET http://example.com/path HTTP/1.1\r\nHost: example.com\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode_headers();
+    assert!(result.is_ok());
+}

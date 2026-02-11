@@ -741,3 +741,84 @@ fn test_encode_request_authority_form_still_works() {
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
+
+// ========================================
+// http/https URI の :// 必須検証 (RFC 9110 Section 4.2)
+// ========================================
+
+#[test]
+fn test_encode_request_http_without_double_slash_error() {
+    // http:foo は "://" がないので不正
+    let req = Request::new("GET", "http:foo").header("Host", "");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTarget { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_https_without_double_slash_error() {
+    // https:path は "://" がないので不正
+    let req = Request::new("GET", "https:path").header("Host", "");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTarget { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_non_http_scheme_without_double_slash_ok() {
+    // urn:isbn:xxx は http/https ではないので OK
+    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}
+
+// ========================================
+// CONNECT authority-form のホスト検証 (RFC 9112 Section 3.2.3)
+// ========================================
+
+#[test]
+fn test_encode_request_connect_userinfo_error() {
+    // user@example.com:443 は authority-form として不正 (userinfo を含む)
+    let req = Request::new("CONNECT", "user@example.com:443").header("Host", "example.com:443");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidRequestTargetForm { .. })
+            | Err(EncodeError::InvalidRequestTarget { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_connect_empty_host_error() {
+    // :443 は authority-form として不正 (ホストが空)
+    let req = Request::new("CONNECT", ":443").header("Host", "");
+    let result = encode_request(&req);
+    assert!(result.is_err());
+}
+
+// ========================================
+// authority 付き URI で空 Host の拒否 (RFC 9112 Section 3.2)
+// ========================================
+
+#[test]
+fn test_encode_request_empty_host_with_authority_uri_error() {
+    // URI に authority があるのに Host が空は不正
+    let req = Request::new("GET", "http://example.com/path").header("Host", "");
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::HostAuthorityMismatch { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_matching_host_with_authority_uri_ok() {
+    // URI の authority と Host が一致する場合は OK
+    let req = Request::new("GET", "http://example.com/path").header("Host", "example.com");
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}

@@ -437,6 +437,12 @@ impl AcceptRanges {
             }
         }
 
+        // RFC 9110 Section 14.3: "none" は範囲リクエスト非対応を示す予約語であり、
+        // 他の単位と混在させることはできない
+        if units.len() > 1 && units.iter().any(|u| u.eq_ignore_ascii_case("none")) {
+            return Err(RangeError::InvalidUnit);
+        }
+
         Ok(AcceptRanges { units })
     }
 

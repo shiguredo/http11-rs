@@ -166,3 +166,24 @@ fn test_auth_challenge_parse_errors() {
         Err(AuthError::InvalidFormat)
     ));
 }
+
+// ========================================
+// auth-param カンマ区切り必須 (RFC 9110 Section 11.2)
+// ========================================
+
+#[test]
+fn test_digest_challenge_params_without_comma_error() {
+    // カンマなしの複数パラメータは不正
+    // RFC 9110: auth-param *( OWS "," OWS auth-param )
+    assert!(matches!(
+        DigestChallenge::parse("Digest realm=\"test\" nonce=\"abc\""),
+        Err(AuthError::InvalidParameter)
+    ));
+}
+
+#[test]
+fn test_digest_challenge_params_with_comma_ok() {
+    // カンマ区切りの複数パラメータは正常
+    let result = DigestChallenge::parse("Digest realm=\"test\", nonce=\"abc\"");
+    assert!(result.is_ok());
+}

@@ -82,13 +82,22 @@ fn detect_request_target_form(uri: &str) -> Result<RequestTargetForm, EncodeErro
 /// authority-form かどうかの簡易判定
 ///
 /// authority-form = uri-host ":" port (RFC 9112 Section 3.2.3)
-/// 最後の ":" 以降が数値で u16 範囲内であれば authority-form と見なす
+/// uri-host = host (RFC 3986 Section 3.2.2)
+///
+/// ホスト部分に userinfo 区切りの "@" が含まれる場合は authority-form ではない。
+/// RFC 9110 Section 9.3.6: "consisting of only the host and port number"
 fn looks_like_authority_form(uri: &str) -> bool {
+    // userinfo は authority-form に含まれない
+    if uri.contains('@') {
+        return false;
+    }
     if let Some(colon_pos) = uri.rfind(':') {
         let port_str = &uri[colon_pos + 1..];
+        let host = &uri[..colon_pos];
         !port_str.is_empty()
             && port_str.bytes().all(|b| b.is_ascii_digit())
             && port_str.parse::<u16>().is_ok()
+            && !host.is_empty()
     } else {
         false
     }
@@ -176,8 +185,11 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
             }
             Ok(())
         }
-        // absolute-form は OK (authority 部分で "[" "]" が合法)
-        (_, RequestTargetForm::Absolute) => Ok(()),
+        // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2)
+        (_, RequestTargetForm::Absolute) => {
+            reject_http_without_authority_prefix(uri)?;
+            Ok(())
+        }
     }
 }
 
@@ -260,11 +272,11 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
         });
     }
 
-    // absolute-form の場合、Host と authority の一致検証
+    // RFC 9112 Section 3.2: absolute-form の場合、Host は authority と同一でなければならない (MUST)
+    // authority が非空なら Host も非空かつ一致していなければならない
     if request.uri.contains("://")
         && let Some(authority) = extract_authority_from_uri(&request.uri)
         && !authority.is_empty()
-        && !host_value.is_empty()
         && !authority.eq_ignore_ascii_case(host_value)
     {
         return Err(EncodeError::HostAuthorityMismatch {
@@ -336,6 +348,24 @@ fn reject_http_empty_host(uri: &str) -> Result<(), EncodeError> {
         return Err(EncodeError::EmptyHostInHttpUri {
             uri: uri.to_string(),
         });
+    }
+    Ok(())
+}
+
+/// RFC 9110 Section 4.2.1/4.2.2: http/https URI は "://" を含まなければならない
+///
+/// http-URI  = "http"  "://" authority path-abempty [ "?" query ]
+/// https-URI = "https" "://" authority path-abempty [ "?" query ]
+fn reject_http_without_authority_prefix(uri: &str) -> Result<(), EncodeError> {
+    if let Some(colon_pos) = uri.find(':') {
+        let scheme = &uri[..colon_pos];
+        if (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+            && !uri[colon_pos..].starts_with("://")
+        {
+            return Err(EncodeError::InvalidRequestTarget {
+                uri: uri.to_string(),
+            });
+        }
     }
     Ok(())
 }

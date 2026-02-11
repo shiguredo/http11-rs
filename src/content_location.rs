@@ -57,6 +57,14 @@ impl ContentLocation {
 
         let uri = Uri::parse(input).map_err(|_| ContentLocationError::InvalidUri)?;
 
+        // RFC 9110 Section 4.2.1/4.2.2: http/https URI は "://" を含まなければならない
+        if let Some(scheme) = uri.scheme()
+            && (scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https"))
+            && uri.host().is_none()
+        {
+            return Err(ContentLocationError::InvalidUri);
+        }
+
         // RFC 9110 Section 8.7: Content-Location = absolute-URI / partial-URI
         // absolute-URI はフラグメントを含まない (RFC 3986 Section 4.3)
         // partial-URI もフラグメントを含まない (RFC 9110 Section 4)

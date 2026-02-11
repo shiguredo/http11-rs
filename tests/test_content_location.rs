@@ -42,4 +42,28 @@ fn test_content_location_parse_errors() {
         ContentLocation::parse("http://[::1"),
         Err(ContentLocationError::InvalidUri)
     ));
+
+    // http/https URI で "://" がない場合は不正 (RFC 9110 Section 4.2)
+    assert!(matches!(
+        ContentLocation::parse("http:foo"),
+        Err(ContentLocationError::InvalidUri)
+    ));
+    assert!(matches!(
+        ContentLocation::parse("https:bar"),
+        Err(ContentLocationError::InvalidUri)
+    ));
+}
+
+#[test]
+fn test_content_location_http_with_authority_ok() {
+    // http:// 付きは正常
+    let cl = ContentLocation::parse("http://example.com/path").unwrap();
+    assert_eq!(cl.uri().host(), Some("example.com"));
+}
+
+#[test]
+fn test_content_location_non_http_without_authority_ok() {
+    // http/https でないスキームは "://" なしでも OK
+    let cl = ContentLocation::parse("urn:isbn:0451450523").unwrap();
+    assert_eq!(cl.uri().scheme(), Some("urn"));
 }

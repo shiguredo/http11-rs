@@ -605,10 +605,15 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
     validate_absolute_uri_parts(rest)?;
 
     // RFC 9110 Section 4.2.1/4.2.2: http/https URI の検証
+    // http-URI  = "http"  "://" authority path-abempty [ "?" query ]
+    // https-URI = "https" "://" authority path-abempty [ "?" query ]
     let scheme_lower = scheme.to_ascii_lowercase();
-    if (scheme_lower == "http" || scheme_lower == "https")
-        && let Some(after_slashes) = rest.strip_prefix("//")
-    {
+    if scheme_lower == "http" || scheme_lower == "https" {
+        let Some(after_slashes) = rest.strip_prefix("//") else {
+            return Err(Error::InvalidData(
+                "http/https URI must contain \"://\" (RFC 9110 Section 4.2)".to_string(),
+            ));
+        };
         let authority_end = after_slashes
             .find(['/', '?'])
             .unwrap_or(after_slashes.len());
