@@ -256,13 +256,25 @@ impl SetCookie {
                         }
                     }
                     "max-age" => {
-                        // RFC 6265 Section 5.2.2: 不正な Max-Age は無視
-                        if let Ok(age) = attr_value.parse::<i64>() {
+                        // RFC 6265 Section 5.2.2: 先頭が DIGIT または "-" 以外なら無視する。
+                        // 残りの文字がすべて DIGIT でなければ無視する。
+                        let bytes = attr_value.as_bytes();
+                        if let Some(&first) = bytes.first()
+                            && (first.is_ascii_digit() || first == b'-')
+                            && bytes[1..].iter().all(|b| b.is_ascii_digit())
+                            && let Ok(age) = attr_value.parse::<i64>()
+                        {
                             set_cookie.max_age = Some(age);
                         }
                     }
                     "domain" => {
-                        set_cookie.domain = Some(attr_value.to_string());
+                        // RFC 6265 Section 5.2.3: 先頭の "." を除去し、小文字に変換する
+                        let d = attr_value.strip_prefix('.').unwrap_or(attr_value);
+                        if d.is_empty() {
+                            // RFC 6265 Section 5.2.3: 空の場合は無視すべき (SHOULD)
+                        } else {
+                            set_cookie.domain = Some(d.to_ascii_lowercase());
+                        }
                     }
                     "path" => {
                         set_cookie.path = Some(attr_value.to_string());

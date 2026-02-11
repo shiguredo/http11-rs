@@ -46,6 +46,12 @@ pub enum MultipartError {
     /// Content-Disposition が欠落している
     /// RFC 7578 Section 4.2: 各パートは Content-Disposition ヘッダーを含まなければならない
     MissingContentDisposition,
+    /// Content-Disposition の disposition-type が form-data ではない
+    /// RFC 7578 Section 4.2: disposition type は "form-data" でなければならない
+    InvalidContentDisposition,
+    /// Content-Disposition に name パラメータが欠落している
+    /// RFC 7578 Section 4.2: "name" パラメータを含まなければならない
+    MissingName,
 }
 
 impl fmt::Display for MultipartError {
@@ -60,6 +66,18 @@ impl fmt::Display for MultipartError {
                 write!(
                     f,
                     "missing Content-Disposition header (RFC 7578 Section 4.2)"
+                )
+            }
+            MultipartError::InvalidContentDisposition => {
+                write!(
+                    f,
+                    "Content-Disposition type must be form-data (RFC 7578 Section 4.2)"
+                )
+            }
+            MultipartError::MissingName => {
+                write!(
+                    f,
+                    "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)"
                 )
             }
         }
@@ -317,6 +335,16 @@ impl MultipartParser {
                         // 含まなければならない (MUST)
                         let content_disposition =
                             content_disposition.ok_or(MultipartError::MissingContentDisposition)?;
+
+                        // RFC 7578 Section 4.2: disposition type は "form-data" でなければならない (MUST)
+                        if !content_disposition.is_form_data() {
+                            return Err(MultipartError::InvalidContentDisposition);
+                        }
+
+                        // RFC 7578 Section 4.2: "name" パラメータを含まなければならない (MUST)
+                        if content_disposition.name().is_none() {
+                            return Err(MultipartError::MissingName);
+                        }
 
                         // 次の境界を探す
                         let body_buffer = &self.buffer[body_start..];

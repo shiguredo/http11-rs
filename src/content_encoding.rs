@@ -74,24 +74,22 @@ pub struct ContentEncoding {
 
 impl ContentEncoding {
     /// Content-Encoding ヘッダーをパース
+    ///
+    /// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
+    /// 空の値は空リストとして受理する。
     pub fn parse(input: &str) -> Result<Self, ContentEncodingError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(ContentEncodingError::Empty);
-        }
 
         let mut encodings = Vec::new();
-        for part in input.split(',') {
-            let part = part.trim();
-            if part.is_empty() {
-                continue;
+        if !input.is_empty() {
+            for part in input.split(',') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                let coding = parse_coding(part)?;
+                encodings.push(coding);
             }
-            let coding = parse_coding(part)?;
-            encodings.push(coding);
-        }
-
-        if encodings.is_empty() {
-            return Err(ContentEncodingError::Empty);
         }
 
         Ok(ContentEncoding { encodings })
@@ -197,8 +195,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_empty() {
+        // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
+        let ce = ContentEncoding::parse("").unwrap();
+        assert!(ce.encodings().is_empty());
+    }
+
+    #[test]
     fn parse_invalid() {
-        assert!(ContentEncoding::parse("").is_err());
         assert!(ContentEncoding::parse("gzip,").is_ok());
         assert!(ContentEncoding::parse("g zip").is_err());
     }

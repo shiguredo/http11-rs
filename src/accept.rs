@@ -140,23 +140,20 @@ pub struct Accept {
 
 impl Accept {
     /// Accept ヘッダーをパース
+    /// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
+    /// 空の値は空リストとして受理する。
     pub fn parse(input: &str) -> Result<Self, AcceptError> {
         let input = input.trim();
-        if input.is_empty() {
-            return Err(AcceptError::Empty);
-        }
 
         let mut items = Vec::new();
-        for part in split_with_quotes(input, ',') {
-            let part = part.trim();
-            if part.is_empty() {
-                continue;
+        if !input.is_empty() {
+            for part in split_with_quotes(input, ',') {
+                let part = part.trim();
+                if part.is_empty() {
+                    continue;
+                }
+                items.push(parse_media_range_item(part)?);
             }
-            items.push(parse_media_range_item(part)?);
-        }
-
-        if items.is_empty() {
-            return Err(AcceptError::Empty);
         }
 
         Ok(Accept { items })
@@ -470,6 +467,8 @@ fn parse_media_range(input: &str) -> Result<(String, String), AcceptError> {
     ))
 }
 
+/// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
+/// 空の値は空リストとして受理する。
 fn parse_weighted_tokens(
     input: &str,
     validator: fn(&str) -> bool,
@@ -478,7 +477,7 @@ fn parse_weighted_tokens(
 ) -> Result<Vec<(String, QValue)>, AcceptError> {
     let input = input.trim();
     if input.is_empty() {
-        return Err(AcceptError::Empty);
+        return Ok(Vec::new());
     }
 
     let mut items = Vec::new();
@@ -527,10 +526,6 @@ fn parse_weighted_tokens(
         }
 
         items.push((token_value, qvalue));
-    }
-
-    if items.is_empty() {
-        return Err(AcceptError::Empty);
     }
 
     Ok(items)

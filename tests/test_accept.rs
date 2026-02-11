@@ -109,13 +109,19 @@ fn test_qvalue_edge_cases() {
 // Accept のテスト
 // ========================================
 
+// Accept 空値テスト
+#[test]
+fn test_accept_parse_empty() {
+    // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
+    let accept = Accept::parse("").unwrap();
+    assert!(accept.items().is_empty());
+    let accept = Accept::parse("   ").unwrap();
+    assert!(accept.items().is_empty());
+}
+
 // Accept エラーケース
 #[test]
 fn test_accept_parse_errors() {
-    // 空
-    assert!(matches!(Accept::parse(""), Err(AcceptError::Empty)));
-    assert!(matches!(Accept::parse("   "), Err(AcceptError::Empty)));
-
     // 不正なメディアレンジ
     assert!(Accept::parse("text").is_err());
     assert!(Accept::parse("*/html").is_err());
@@ -160,11 +166,17 @@ fn test_accept_quoted_param() {
 // AcceptCharset のテスト
 // ========================================
 
+// AcceptCharset 空値テスト
+#[test]
+fn test_accept_charset_parse_empty() {
+    // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
+    let ac = AcceptCharset::parse("").unwrap();
+    assert!(ac.items().is_empty());
+}
+
 // AcceptCharset エラーケース
 #[test]
 fn test_accept_charset_errors() {
-    assert!(matches!(AcceptCharset::parse(""), Err(AcceptError::Empty)));
-
     // 不正なパラメータ
     assert!(AcceptCharset::parse("utf-8; invalid").is_err());
 }
@@ -173,21 +185,29 @@ fn test_accept_charset_errors() {
 // AcceptEncoding のテスト
 // ========================================
 
-// AcceptEncoding エラーケース
+// AcceptEncoding 空値テスト
 #[test]
-fn test_accept_encoding_errors() {
-    assert!(matches!(AcceptEncoding::parse(""), Err(AcceptError::Empty)));
+fn test_accept_encoding_parse_empty() {
+    // RFC 9110 Section 12.5.3: 空の Accept-Encoding はコンテントコーディング不要を意味する
+    let ae = AcceptEncoding::parse("").unwrap();
+    assert!(ae.items().is_empty());
 }
 
 // ========================================
 // AcceptLanguage のテスト
 // ========================================
 
+// AcceptLanguage 空値テスト
+#[test]
+fn test_accept_language_parse_empty() {
+    // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
+    let al = AcceptLanguage::parse("").unwrap();
+    assert!(al.items().is_empty());
+}
+
 // AcceptLanguage エラーケース
 #[test]
 fn test_accept_language_errors() {
-    assert!(matches!(AcceptLanguage::parse(""), Err(AcceptError::Empty)));
-
     // ワイルドカード単独は許可される
     assert!(AcceptLanguage::parse("*").is_ok());
 }

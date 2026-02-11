@@ -18,6 +18,14 @@ fn test_multipart_error_display() {
             MultipartError::MissingContentDisposition,
             "missing Content-Disposition header (RFC 7578 Section 4.2)",
         ),
+        (
+            MultipartError::InvalidContentDisposition,
+            "Content-Disposition type must be form-data (RFC 7578 Section 4.2)",
+        ),
+        (
+            MultipartError::MissingName,
+            "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)",
+        ),
     ];
 
     for (error, expected) in errors {
@@ -171,5 +179,39 @@ fn test_multipart_empty_headers_missing_content_disposition() {
     assert!(matches!(
         parser.next_part(),
         Err(MultipartError::MissingContentDisposition)
+    ));
+}
+
+// RFC 7578 Section 4.2: disposition type は "form-data" でなければならない
+#[test]
+fn test_multipart_invalid_content_disposition_type() {
+    let body = b"--boundary\r\n\
+        Content-Disposition: attachment; name=\"field\"\r\n\r\n\
+        value\r\n\
+        --boundary--\r\n";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body);
+
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::InvalidContentDisposition)
+    ));
+}
+
+// RFC 7578 Section 4.2: "name" パラメータを含まなければならない
+#[test]
+fn test_multipart_missing_name_parameter() {
+    let body = b"--boundary\r\n\
+        Content-Disposition: form-data\r\n\r\n\
+        value\r\n\
+        --boundary--\r\n";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body);
+
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::MissingName)
     ));
 }

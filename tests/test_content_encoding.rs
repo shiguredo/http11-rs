@@ -42,24 +42,21 @@ fn test_content_coding_as_str() {
 // パースエラーのテスト
 // ========================================
 
+// RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
+#[test]
+fn test_content_encoding_parse_empty() {
+    let ce = ContentEncoding::parse("").unwrap();
+    assert!(ce.encodings().is_empty());
+
+    let ce = ContentEncoding::parse("   ").unwrap();
+    assert!(ce.encodings().is_empty());
+
+    let ce = ContentEncoding::parse(",,,").unwrap();
+    assert!(ce.encodings().is_empty());
+}
+
 #[test]
 fn test_content_encoding_parse_errors() {
-    // 空
-    assert!(matches!(
-        ContentEncoding::parse(""),
-        Err(ContentEncodingError::Empty)
-    ));
-    assert!(matches!(
-        ContentEncoding::parse("   "),
-        Err(ContentEncodingError::Empty)
-    ));
-
-    // カンマのみ
-    assert!(matches!(
-        ContentEncoding::parse(",,,"),
-        Err(ContentEncodingError::Empty)
-    ));
-
     // 不正なトークン（空白を含む）
     assert!(matches!(
         ContentEncoding::parse("g zip"),

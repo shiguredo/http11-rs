@@ -147,6 +147,10 @@ fn test_set_cookie_parse_errors() {
     let cookie = SetCookie::parse("name=value; Max-Age=notanumber").unwrap();
     assert!(cookie.max_age().is_none());
 
+    // RFC 6265 Section 5.2.2: 先頭が "+" は DIGIT でも "-" でもないため無視される
+    let cookie = SetCookie::parse("name=value; Max-Age=+10").unwrap();
+    assert!(cookie.max_age().is_none());
+
     // 不正な SameSite
     assert!(matches!(
         SetCookie::parse("name=value; SameSite=Invalid"),
@@ -156,6 +160,33 @@ fn test_set_cookie_parse_errors() {
     // RFC 6265 Section 5.2.1: 不正な Expires は無視される (エラーにならない)
     let cookie = SetCookie::parse("name=value; Expires=not a date").unwrap();
     assert!(cookie.expires().is_none());
+}
+
+// ========================================
+// Set-Cookie Domain 属性の正規化テスト (RFC 6265 Section 5.2.3)
+// ========================================
+
+#[test]
+fn test_set_cookie_domain_normalization() {
+    // 先頭の "." を除去する
+    let cookie = SetCookie::parse("name=value; Domain=.example.com").unwrap();
+    assert_eq!(cookie.domain(), Some("example.com"));
+
+    // 小文字に変換する
+    let cookie = SetCookie::parse("name=value; Domain=Example.COM").unwrap();
+    assert_eq!(cookie.domain(), Some("example.com"));
+
+    // 先頭の "." 除去と小文字化の両方を適用する
+    let cookie = SetCookie::parse("name=value; Domain=.Example.COM").unwrap();
+    assert_eq!(cookie.domain(), Some("example.com"));
+
+    // "." のみの場合は無視する
+    let cookie = SetCookie::parse("name=value; Domain=.").unwrap();
+    assert!(cookie.domain().is_none());
+
+    // 空の場合は無視する
+    let cookie = SetCookie::parse("name=value; Domain=").unwrap();
+    assert!(cookie.domain().is_none());
 }
 
 // ========================================
