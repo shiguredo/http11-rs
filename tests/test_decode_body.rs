@@ -622,3 +622,179 @@ fn absolute_form_with_valid_ipv6_should_succeed() {
     let result = decoder.decode_headers();
     assert!(result.is_ok(), "expected success for valid IPv6 literal");
 }
+
+// ========================================
+// Transfer-Encoding token 検証テスト (RFC 9110 Section 10.1.4)
+// ========================================
+
+/// 不正な token を含む Transfer-Encoding はエラー
+#[test]
+fn test_transfer_encoding_invalid_token() {
+    // リクエスト: "/" は VCHAR だが tchar ではないため token として不正
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chu/nked\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid token")
+    );
+
+    // レスポンス: スペースを含む coding 名
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chu nked\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("not a valid token")
+    );
+}
+
+// ========================================
+// chunk-ext ABNF 検証テスト (RFC 9112 Section 7.1.1)
+// ========================================
+
+/// chunk-ext-name が非 token の場合はエラー
+#[test]
+fn test_chunk_ext_invalid_name() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    // chunk-ext-name にスペースを含む: "5;bad name\r\n"
+    decoder.feed(b"5;bad name\r\nhello\r\n0\r\n\r\n").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+    assert!(
+        result.unwrap_err().to_string().contains("chunk-ext"),
+        "expected chunk-ext error"
+    );
+}
+
+/// 有効な chunk-ext (name=value) を受理する
+#[test]
+fn test_chunk_ext_valid_with_value() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    // 有効な chunk-ext: "5;name=value\r\nhello\r\n0\r\n\r\n"
+    decoder.feed(b"5;name=value\r\nhello\r\n0\r\n\r\n").unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let mut body = Vec::new();
+    let mut completed = false;
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            match decoder.consume_body(len).unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {}
+            }
+        } else {
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress().unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(completed);
+    assert_eq!(body, b"hello");
+}
+
+/// quoted-string 値の chunk-ext を受理する
+#[test]
+fn test_chunk_ext_valid_quoted_string() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    // 有効な quoted-string: 5;name="quoted value"\r\nhello\r\n0\r\n\r\n
+    decoder
+        .feed(b"5;name=\"quoted value\"\r\nhello\r\n0\r\n\r\n")
+        .unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let mut body = Vec::new();
+    let mut completed = false;
+    loop {
+        if let Some(data) = decoder.peek_body() {
+            body.extend_from_slice(data);
+            let len = data.len();
+            match decoder.consume_body(len).unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {}
+            }
+        } else {
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress().unwrap() {
+                BodyProgress::Complete { .. } => {
+                    completed = true;
+                    break;
+                }
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    assert!(completed);
+    assert_eq!(body, b"hello");
+}
+
+/// 未終端の quoted-string を含む chunk-ext はエラー
+#[test]
+fn test_chunk_ext_unterminated_quoted_string() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    // 未終端の quoted-string: 5;name="unterminated\r\nhello\r\n0\r\n\r\n
+    decoder
+        .feed(b"5;name=\"unterminated\r\nhello\r\n0\r\n\r\n")
+        .unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(body_kind, BodyKind::Chunked));
+
+    let result = decoder.progress();
+    assert!(result.is_err());
+    assert!(
+        result.unwrap_err().to_string().contains("chunk-ext"),
+        "expected chunk-ext error"
+    );
+}

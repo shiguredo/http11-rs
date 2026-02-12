@@ -18,6 +18,16 @@ pub(crate) fn is_valid_header_name(name: &str) -> bool {
     !name.is_empty() && name.bytes().all(is_token_char)
 }
 
+/// token が有効か確認 (RFC 9110 Section 5.6.2)
+///
+/// token = 1*tchar
+///
+/// `is_valid_header_name` と同じロジックだが、Transfer-Encoding の coding 名など
+/// ヘッダー名以外の token 検証に使用する。意味的に区別するため別関数として提供する。
+pub(crate) fn is_valid_token(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(is_token_char)
+}
+
 /// ヘッダー値に許可される文字か確認 (RFC 9110 Section 5.5)
 ///
 /// field-value = *field-content

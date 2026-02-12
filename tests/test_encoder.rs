@@ -822,3 +822,69 @@ fn test_encode_request_matching_host_with_authority_uri_ok() {
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
+
+// ========================================
+// Content-Length ABNF 検証テスト (RFC 9110 Section 8.6)
+// ========================================
+
+#[test]
+fn test_encode_request_non_numeric_content_length() {
+    // 非数値の Content-Length はエラー
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Content-Length", "abc")
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidContentLengthValue { .. })
+    ));
+}
+
+#[test]
+fn test_encode_response_non_numeric_content_length() {
+    // 非数値の Content-Length はエラー
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "abc")
+        .body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::InvalidContentLengthValue { .. })
+    ));
+}
+
+#[test]
+fn test_encode_request_duplicate_content_length_mismatch() {
+    // 重複 Content-Length で値が不一致はエラー
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Content-Length", "5")
+        .header("Content-Length", "10")
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
+}
+
+#[test]
+fn test_encode_response_duplicate_content_length_mismatch() {
+    // 重複 Content-Length で値が不一致はエラー
+    let res = Response::new(200, "OK")
+        .header("Content-Length", "5")
+        .header("Content-Length", "10")
+        .body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
+}
+
+#[test]
+fn test_encode_request_duplicate_content_length_same_value() {
+    // 同一値の重複 Content-Length は通過する
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .header("Content-Length", "5")
+        .header("Content-Length", "5")
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(result.is_ok());
+}

@@ -10,8 +10,8 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
-    is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_unreserved_byte, is_valid_field_value,
-    is_valid_header_name,
+    is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
+    is_valid_field_value, is_valid_header_name, is_valid_token,
 };
 
 use super::phase::DecodePhase;
@@ -357,6 +357,11 @@ impl BodyDecoder {
             let chunk_size = usize::from_str_radix(size_str, 16)
                 .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
 
+            // chunk-ext の ABNF 検証 (RFC 9112 Section 7.1.1)
+            if let Some(sp) = semi_pos {
+                validate_chunk_ext(&line_bytes[sp..])?;
+            }
+
             buf.drain(..pos + 2);
 
             if chunk_size == 0 {
@@ -438,6 +443,157 @@ impl BodyDecoder {
         }
         Ok(())
     }
+}
+
+/// chunk-ext の ABNF を検証する (RFC 9112 Section 7.1.1)
+///
+/// chunk-ext      = *( BWS ";" BWS chunk-ext-name [ BWS "=" BWS chunk-ext-val ] )
+/// chunk-ext-name = token
+/// chunk-ext-val  = token / quoted-string
+/// quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext         = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair    = "\" ( HTAB / SP / VCHAR / obs-text )
+/// obs-text       = %x80-FF
+///
+/// 入力は ";" で始まるバイト列 (セミコロン以降のチャンク行)
+fn validate_chunk_ext(ext: &[u8]) -> Result<(), Error> {
+    let mut i = 0;
+
+    while i < ext.len() {
+        // BWS をスキップ
+        i = skip_bws(ext, i);
+        if i >= ext.len() {
+            break;
+        }
+
+        // ";" を期待
+        if ext[i] != b';' {
+            return Err(Error::InvalidData(
+                "invalid chunk-ext: expected ';'".to_string(),
+            ));
+        }
+        i += 1;
+
+        // BWS をスキップ
+        i = skip_bws(ext, i);
+
+        // chunk-ext-name = token (1*tchar)
+        let name_start = i;
+        while i < ext.len() && is_token_char(ext[i]) {
+            i += 1;
+        }
+        if i == name_start {
+            return Err(Error::InvalidData(
+                "invalid chunk-ext: empty or invalid name".to_string(),
+            ));
+        }
+
+        // BWS をスキップ
+        i = skip_bws(ext, i);
+
+        // "=" があれば chunk-ext-val を解析
+        if i < ext.len() && ext[i] == b'=' {
+            i += 1;
+
+            // BWS をスキップ
+            i = skip_bws(ext, i);
+
+            if i >= ext.len() {
+                return Err(Error::InvalidData(
+                    "invalid chunk-ext: missing value after '='".to_string(),
+                ));
+            }
+
+            if ext[i] == b'"' {
+                // quoted-string
+                i = parse_quoted_string(ext, i)?;
+            } else {
+                // token
+                let val_start = i;
+                while i < ext.len() && is_token_char(ext[i]) {
+                    i += 1;
+                }
+                if i == val_start {
+                    return Err(Error::InvalidData(
+                        "invalid chunk-ext: empty or invalid value".to_string(),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// BWS (Bad WhiteSpace) をスキップ (RFC 9110 Section 5.6.3)
+///
+/// BWS = OWS = *( SP / HTAB )
+fn skip_bws(data: &[u8], mut pos: usize) -> usize {
+    while pos < data.len() && (data[pos] == b' ' || data[pos] == b'\t') {
+        pos += 1;
+    }
+    pos
+}
+
+/// quoted-string をパースして終了位置を返す (RFC 9110 Section 5.6.4)
+///
+/// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )
+fn parse_quoted_string(data: &[u8], start: usize) -> Result<usize, Error> {
+    debug_assert_eq!(data[start], b'"');
+    let mut i = start + 1;
+
+    while i < data.len() {
+        let b = data[i];
+        if b == b'"' {
+            return Ok(i + 1);
+        }
+        if b == b'\\' {
+            // quoted-pair
+            i += 1;
+            if i >= data.len() {
+                return Err(Error::InvalidData(
+                    "invalid chunk-ext: incomplete quoted-pair".to_string(),
+                ));
+            }
+            let escaped = data[i];
+            // HTAB / SP / VCHAR / obs-text
+            if escaped == b'\t'
+                || escaped == b' '
+                || (0x21..=0x7E).contains(&escaped)
+                || escaped >= 0x80
+            {
+                i += 1;
+            } else {
+                return Err(Error::InvalidData(
+                    "invalid chunk-ext: invalid quoted-pair character".to_string(),
+                ));
+            }
+        } else if is_qdtext(b) {
+            i += 1;
+        } else {
+            return Err(Error::InvalidData(
+                "invalid chunk-ext: invalid character in quoted-string".to_string(),
+            ));
+        }
+    }
+
+    Err(Error::InvalidData(
+        "invalid chunk-ext: unterminated quoted-string".to_string(),
+    ))
+}
+
+/// qdtext か確認 (RFC 9110 Section 5.6.4)
+///
+/// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+fn is_qdtext(b: u8) -> bool {
+    b == b'\t'
+        || b == b' '
+        || b == 0x21
+        || (0x23..=0x5B).contains(&b)
+        || (0x5D..=0x7E).contains(&b)
+        || b >= 0x80
 }
 
 /// CRLF で終わる行を探す
@@ -1023,6 +1179,12 @@ pub(crate) fn parse_transfer_encoding_for_request(
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
                 let base_coding = token.split(';').next().unwrap_or(token).trim();
+                // RFC 9110 Section 10.1.4: transfer-coding = token
+                if !is_valid_token(base_coding) {
+                    return Err(Error::InvalidData(
+                        "invalid Transfer-Encoding: not a valid token".to_string(),
+                    ));
+                }
                 if base_coding.eq_ignore_ascii_case("chunked") {
                     if token.contains(';') {
                         return Err(Error::InvalidData(
@@ -1072,6 +1234,12 @@ pub(crate) fn parse_transfer_encoding_for_response(
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
                 let base_coding = token.split(';').next().unwrap_or(token).trim();
+                // RFC 9110 Section 10.1.4: transfer-coding = token
+                if !is_valid_token(base_coding) {
+                    return Err(Error::InvalidData(
+                        "invalid Transfer-Encoding: not a valid token".to_string(),
+                    ));
+                }
                 if base_coding.eq_ignore_ascii_case("chunked") {
                     if token.contains(';') {
                         return Err(Error::InvalidData(

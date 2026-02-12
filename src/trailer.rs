@@ -117,6 +117,25 @@ fn is_token_char(b: u8) -> bool {
 /// - Content-Encoding
 /// - Content-Type
 /// - Content-Range
+///
+/// # RFC 非準拠
+///
+/// RFC 9110 Section 6.5.1 は trailer section に含めてはならないフィールドとして、
+/// 以下のカテゴリを規定している:
+/// - メッセージフレーミングに関するフィールド (Transfer-Encoding, Content-Length)
+/// - ルーティングに関するフィールド (Host)
+/// - リクエスト修飾子 (条件付きリクエストのフィールド等)
+/// - 認証に関するフィールド (Authorization, WWW-Authenticate 等)
+/// - レスポンス制御に関するフィールド (Cache-Control 等)
+/// - コンテンツ形式に関するフィールド (Content-Encoding, Content-Type, Content-Range)
+///
+/// 本実装は最小ブロックリストであり、上記カテゴリの全フィールドを網羅していない。
+/// 特に以下のフィールドは含まれていない:
+/// - Authorization, Proxy-Authorization (認証)
+/// - WWW-Authenticate, Proxy-Authenticate (認証)
+/// - Cache-Control, Vary, Age (レスポンス制御)
+/// - If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since, If-Range (リクエスト修飾子)
+/// - Expect, Range (リクエスト修飾子)
 pub fn is_prohibited_trailer_field(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),

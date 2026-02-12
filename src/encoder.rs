@@ -430,6 +430,47 @@ fn reject_http_without_authority_prefix(uri: &str) -> Result<(), EncodeError> {
     Ok(())
 }
 
+/// Content-Length ヘッダーの ABNF 検証 (RFC 9110 Section 8.6)
+///
+/// 全 Content-Length ヘッダーを走査し:
+/// 1. 各値が 1*DIGIT であることを検証 → 違反なら InvalidContentLengthValue
+/// 2. 複数ヘッダーの値が一致することを検証 → 不一致なら DuplicateContentLength
+/// 3. 検証済みの値を Option<u64> で返す
+fn validate_content_length_headers(
+    headers: &[(String, String)],
+) -> Result<Option<u64>, EncodeError> {
+    let mut result: Option<u64> = None;
+
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("Content-Length") {
+            continue;
+        }
+        let trimmed = value.trim();
+        // RFC 9110 Section 8.6: Content-Length = 1*DIGIT
+        if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(EncodeError::InvalidContentLengthValue {
+                value: value.clone(),
+            });
+        }
+        let parsed =
+            trimmed
+                .parse::<u64>()
+                .map_err(|_| EncodeError::InvalidContentLengthValue {
+                    value: value.clone(),
+                })?;
+
+        match result {
+            None => result = Some(parsed),
+            Some(prev) if prev != parsed => {
+                return Err(EncodeError::DuplicateContentLength);
+            }
+            Some(_) => {} // 同じ値なので OK
+        }
+    }
+
+    Ok(result)
+}
+
 /// URI から authority 部分を抽出 (userinfo を除外)
 ///
 /// scheme "://" authority ["/" path]
@@ -480,10 +521,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         return Err(EncodeError::ConnectRequestWithContent);
     }
 
-    // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
+    // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     if !request.has_header("Transfer-Encoding")
-        && let Some(cl_value) = request.get_header("Content-Length")
-        && let Ok(header_value) = cl_value.trim().parse::<u64>()
+        && let Some(header_value) = validate_content_length_headers(&request.headers)?
     {
         let body_length = request.body.len() as u64;
         if header_value != body_length {
@@ -587,15 +627,14 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         || response.status_code == 304);
     let body_will_be_encoded = status_has_body && !response.omit_body;
 
-    // Content-Length ヘッダーが手動設定されている場合、body.len() との整合性を検証
+    // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // - 通常レスポンス: 常に一致必須
     // - omit_body: true の場合は、body が空のときのみ検証をスキップ
     //   (HEAD レスポンスで Content-Length が表現長を示すケース)
     // - 1xx/204/304 は message body がないため、ここでは検証しない
     if status_has_body
         && !response.has_header("Transfer-Encoding")
-        && let Some(cl_value) = response.get_header("Content-Length")
-        && let Ok(header_value) = cl_value.trim().parse::<u64>()
+        && let Some(header_value) = validate_content_length_headers(&response.headers)?
     {
         let body_length = response.body.len() as u64;
         let should_validate = body_will_be_encoded || body_length != 0;

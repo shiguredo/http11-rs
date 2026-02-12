@@ -110,6 +110,11 @@ pub enum EncodeError {
     /// http/https URI の host が空
     /// RFC 9110 Section 4.2.1/4.2.2: 空 host 識別子を生成してはならない (MUST NOT)
     EmptyHostInHttpUri { uri: String },
+    /// Content-Length の値が RFC 9110 Section 8.6 の ABNF (1*DIGIT) に違反
+    InvalidContentLengthValue { value: String },
+    /// Content-Length ヘッダーが複数存在し、値が不一致
+    /// RFC 9110 Section 8.6 / RFC 9112 Section 6.3
+    DuplicateContentLength,
 }
 
 impl fmt::Display for EncodeError {
@@ -220,6 +225,19 @@ impl fmt::Display for EncodeError {
                     f,
                     "empty host identifier in http/https URI {:?} (RFC 9110 Section 4.2)",
                     uri
+                )
+            }
+            EncodeError::InvalidContentLengthValue { value } => {
+                write!(
+                    f,
+                    "invalid Content-Length value {:?}: must be 1*DIGIT (RFC 9110 Section 8.6)",
+                    value
+                )
+            }
+            EncodeError::DuplicateContentLength => {
+                write!(
+                    f,
+                    "duplicate Content-Length headers with mismatched values (RFC 9110 Section 8.6)"
                 )
             }
         }
