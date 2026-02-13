@@ -15,7 +15,7 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::request::Request;
 
-use crate::validate::{is_valid_http_version, is_valid_method, is_valid_request_target};
+use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, parse_request_target_form,
@@ -260,10 +260,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                         let request_target_form = parse_request_target_form(parts[1])?;
                         validate_request_target_for_method(parts[0], &request_target_form)?;
 
-                        // HTTP バージョンの検証 (RFC 9112 Section 2.3)
-                        if !is_valid_http_version(parts[2]) {
+                        // プロトコルバージョンの検証
+                        if !is_valid_protocol_version(parts[2]) {
                             return Err(Error::InvalidData(
-                                "invalid request line: invalid HTTP version".to_string(),
+                                "invalid request line: invalid protocol version".to_string(),
                             ));
                         }
 

@@ -11,7 +11,7 @@ use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
 
-use crate::validate::{is_valid_http_version, is_valid_reason_phrase, is_valid_status_code};
+use crate::validate::{is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code};
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, parse_header_line,
@@ -353,10 +353,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             )));
                         }
 
-                        // HTTP バージョンの検証 (RFC 9112 Section 2.3)
-                        if !is_valid_http_version(parts[0]) {
+                        // プロトコルバージョンの検証
+                        if !is_valid_protocol_version(parts[0]) {
                             return Err(Error::InvalidData(
-                                "invalid status line: invalid HTTP version".to_string(),
+                                "invalid status line: invalid protocol version".to_string(),
                             ));
                         }
 

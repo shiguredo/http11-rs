@@ -706,15 +706,32 @@ fn test_response_decode_mixed_with_streaming_error() {
 // リクエスト行バリデーションのテスト
 // ========================================
 
-/// 不正な HTTP バージョン
+/// 不正なプロトコルバージョン (token "/" DIGIT+ "." DIGIT+ でない形式)
 #[test]
-fn test_request_invalid_http_version_error() {
+fn test_request_invalid_protocol_version_error() {
+    // "/" がない
     let mut decoder = RequestDecoder::new();
-    let request = "GET / HTTP/2.0\r\nHost: localhost\r\n\r\n";
+    let request = "GET / INVALID\r\nHost: localhost\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
 
-    let result = decoder.decode_headers();
-    assert!(result.is_err());
+    // "/" の後にドットがない
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/11\r\nHost: localhost\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
+
+    // ドットの後に数字がない
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.\r\nHost: localhost\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
+
+    // バージョン部分に 3 つのドット区切り
+    let mut decoder = RequestDecoder::new();
+    let request = "GET / HTTP/1.1.1\r\nHost: localhost\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
 }
 
 /// 不正なメソッド名 (スペースを含む)
@@ -759,15 +776,26 @@ fn test_request_decode_headers_during_body_error() {
 // レスポンス行バリデーションのテスト
 // ========================================
 
-/// 不正な HTTP バージョン (レスポンス)
+/// 不正なプロトコルバージョン (レスポンス)
 #[test]
-fn test_response_invalid_http_version_error() {
+fn test_response_invalid_protocol_version_error() {
+    // "/" がない
     let mut decoder = ResponseDecoder::new();
-    let response = "HTTP/3.0 200 OK\r\n\r\n";
+    let response = "INVALID 200 OK\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
 
-    let result = decoder.decode_headers();
-    assert!(result.is_err());
+    // "/" の後にドットがない
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/11 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
+
+    // ドットの後に数字がない
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1. 200 OK\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    assert!(decoder.decode_headers().is_err());
 }
 
 /// 範囲外ステータスコード (600)

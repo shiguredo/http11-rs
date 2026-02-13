@@ -697,10 +697,10 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// OPTIONS * HTTP/1.1 (asterisk-form)
+    /// OPTIONS * (asterisk-form)
     #[test]
     fn prop_request_asterisk_form(
-        version in prop_oneof![Just("HTTP/1.1"), Just("HTTP/1.0")]
+        version in prop_oneof![Just("HTTP/1.1"), Just("HTTP/1.0"), Just("RTSP/1.0"), Just("RTSP/2.0")]
     ) {
         let data = format!("OPTIONS * {}\r\nHost: localhost\r\n\r\n", version);
         let mut decoder = RequestDecoder::new();

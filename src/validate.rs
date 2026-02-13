@@ -71,14 +71,57 @@ pub(crate) fn is_valid_method(method: &str) -> bool {
     !method.is_empty() && method.bytes().all(is_token_char)
 }
 
-/// HTTP バージョンが有効か確認 (RFC 9112 Section 2.3)
+/// プロトコルバージョンが有効か確認
 ///
-/// HTTP-version = HTTP-name "/" DIGIT "." DIGIT
-/// HTTP-name = %s"HTTP"
+/// HTTP (RFC 9112 Section 2.3):
+///   HTTP-version = HTTP-name "/" DIGIT "." DIGIT
+///   HTTP-name = %s"HTTP"
 ///
-/// HTTP/1.0 または HTTP/1.1 のみ許可
-pub(crate) fn is_valid_http_version(version: &str) -> bool {
-    matches!(version, "HTTP/1.0" | "HTTP/1.1")
+/// RTSP (RFC 7826 Section 20.3):
+///   RTSP-version = "RTSP" "/" 1*DIGIT "." 1*DIGIT
+///
+/// 両方をカバーするため、token "/" DIGIT+ "." DIGIT+ 形式で検証する。
+/// token = 1*tchar (RFC 9110 Section 5.6.2)
+pub(crate) fn is_valid_protocol_version(version: &str) -> bool {
+    let bytes = version.as_bytes();
+
+    // "/" を探す
+    let slash_pos = match bytes.iter().position(|&b| b == b'/') {
+        Some(pos) => pos,
+        None => return false,
+    };
+
+    // token 部分: 1 文字以上の tchar
+    if slash_pos == 0 {
+        return false;
+    }
+    if !bytes[..slash_pos].iter().all(|&b| is_token_char(b)) {
+        return false;
+    }
+
+    // "/" の後: DIGIT+ "." DIGIT+
+    let after_slash = &bytes[slash_pos + 1..];
+
+    // "." を探す
+    let dot_pos = match after_slash.iter().position(|&b| b == b'.') {
+        Some(pos) => pos,
+        None => return false,
+    };
+
+    // "." の前: 1 文字以上の DIGIT
+    if dot_pos == 0 {
+        return false;
+    }
+    if !after_slash[..dot_pos].iter().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+
+    // "." の後: 1 文字以上の DIGIT
+    let after_dot = &after_slash[dot_pos + 1..];
+    if after_dot.is_empty() {
+        return false;
+    }
+    after_dot.iter().all(|b| b.is_ascii_digit())
 }
 
 /// エンコーダー用のバージョン文字列バリデーション

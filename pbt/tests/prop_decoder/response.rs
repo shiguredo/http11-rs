@@ -12,7 +12,7 @@ use super::{body, reason_phrase, status_code};
 proptest! {
     #[test]
     fn prop_status_line_missing_parts_error(
-        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1"), Just("RTSP/1.0"), Just("RTSP/2.0")]
     ) {
         // ステータスコードがないステータス行はエラー
         let data = format!("{}\r\n\r\n", version);
