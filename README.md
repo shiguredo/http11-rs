@@ -430,3 +430,15 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
+
+## 時雨堂の Rust 向け OSS ライブラリ
+
+- [shiguredo/mp4\-rs](https://github.com/shiguredo/mp4-rs)
+- [shiguredo/webrtc\-rs](https://github.com/shiguredo/webrtc-rs)
+- [shiguredo/rtmp\-rs](https://github.com/shiguredo/rtmp-rs)
+- [shiguredo/http11\-rs](https://github.com/shiguredo/http11-rs)
+- [shiguredo/websocket\-rs](https://github.com/shiguredo/websocket-rs)
+- [shiguredo/srt\-rs](https://github.com/shiguredo/srt-rs)
+- [shiguredo/audio\-device\-rs](https://github.com/shiguredo/audio-device-rs)
+- [shiguredo/video\-device\-rs](https://github.com/shiguredo/video-device-rs)
+
