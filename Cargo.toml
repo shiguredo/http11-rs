@@ -9,6 +9,8 @@ description = "HTTP/1.1 Library"
 homepage = "https://github.com/shiguredo/http11-rs"
 repository = "https://github.com/shiguredo/http11-rs"
 readme = "README.md"
+include = ["/src/**", "/LICENSE", "/README.md"]
+
 
 [dependencies]
 
