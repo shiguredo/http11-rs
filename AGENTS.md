@@ -35,19 +35,19 @@
 ## issues について
 
 - 番号は 0001 から順番に振ること
-- 番号が若い @issues から順番に対応すること
-- 仕様的に対応が難しい場合は @issues/pending/ へ移動すること
+- 番号が若い issues から順番に対応すること
+- 仕様的に対応が難しい場合は issues/pending/ へ移動すること
 - 0001-{category}-{short-description}.md という命名規則を守ること
 
 ### タスクをする場合
 
-- @issues/ 以下にタスクを markdown 形式で登録すること
+- issues/ 以下にタスクを markdown 形式で登録すること
 - タスクを終了した場合は、完了内容を markdown 形式で記載すること
-- タスクを終了した場合は、@issues/closed に移動すること (git mv を使うこと)
+- タスクを終了した場合は、issues/closed に移動すること (git mv を使うこと)
 
 ### バグが見つかった場合
 
-- @issues/ 以下にバグを markdown 形式で登録すること
+- issues/ 以下にバグを markdown 形式で登録すること
 - バグは再現手順を明確にすること
 - できる限りの情報を
 
