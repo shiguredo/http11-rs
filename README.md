@@ -17,7 +17,7 @@ Please read <https://github.com/shiguredo/oss> before use.
 
 ## 概要
 
-Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 ライブラリです。
+Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイル テキストプロトコルライブラリです。HTTP/1.1 の他、RTSP/1.0, RTSP/2.0 等のプロトコルでも利用できます。
 
 ## 特徴
 
@@ -172,6 +172,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - chunked 転送エンコーディングのデコード/エンコード
 - チャンクサイズの 16 進数パース
 - トレーラーヘッダーの処理
+- chunk extension の受信処理 (RFC 9112 が specialized service 向けと明記、一般的に使われていない。受信時は内容を破棄)
 - ストリーミング送信用のチャンクエンコード API
 
 ### Content-Length
@@ -251,12 +252,12 @@ let last = encode_chunk(b""); // 終端チャンク
 - Content-Disposition (inline/attachment、filename、filename*)
 - Content-Language
 - Content-Location
-- Date (HTTP-date 形式: IMF-fixdate, RFC 850, asctime)
+- Date (HTTP-date 形式: IMF-fixdate (推奨)、RFC 850 / asctime (obs-date、廃止、受信のみ対応))
 - ETag (Strong/Weak)
 - Cookie / Set-Cookie
 - Host ヘッダーのパース/検証 (IPv4, IPv6 リテラル, IPv-future 対応)
 - Multipart (multipart/form-data)
-- Trailer ヘッダー (RFC 9112 Section 7.1.2 禁止フィールド検証)
+- Trailer ヘッダー (RFC 9112 Section 7.1.2 禁止フィールド検証、一般的に使われていない)
 - Expect ヘッダー
 - Upgrade ヘッダー
 - Content-Digest / Repr-Digest / Want-Content-Digest / Want-Repr-Digest (RFC 9530)
@@ -264,7 +265,7 @@ let last = encode_chunk(b""); // 終端チャンク
 ### コンテントネゴシエーション
 
 - Accept (media-type, q 値)
-- Accept-Charset
+- Accept-Charset (deprecated: RFC 9110 Section 12.5.2)
 - Accept-Encoding
 - Accept-Language
 - Vary
