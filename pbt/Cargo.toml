@@ -1,0 +1,11 @@
+[package]
+name = "pbt"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+proptest = "1.10"
+
+[dev-dependencies]
+shiguredo_http11 = { path = "../" }

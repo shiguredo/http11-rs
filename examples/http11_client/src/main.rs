@@ -1,0 +1,242 @@
+//! HTTP/HTTPS クライアントの例
+//!
+//! 使い方:
+//!   cargo run -p http11_client -- https://example.com/
+//!   cargo run -p http11_client -- http://httpbin.org/get
+//!
+//! 圧縮対応:
+//!   Accept-Encoding ヘッダーで gzip, br, zstd を要求し、
+//!   Content-Encoding ヘッダーに基づいてレスポンスボディを展開します。
+
+mod decompressor;
+
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::sync::Arc;
+
+use decompressor::{decompress_body, supported_encodings};
+use rustls::pki_types::ServerName;
+use rustls::{ClientConfig, ClientConnection, StreamOwned};
+use rustls_platform_verifier::ConfigVerifierExt;
+use shiguredo_http11::{Request, ResponseDecoder};
+use tracing::{error, info};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt::init();
+
+    let mut args = noargs::raw_args();
+    args.metadata_mut().app_name = "http11_client";
+
+    // --help フラグ
+    noargs::HELP_FLAG.take_help(&mut args);
+
+    // --version フラグ
+    let version_flag: bool = noargs::flag("version")
+        .short('V')
+        .doc("Show version")
+        .take(&mut args)
+        .is_present();
+    if version_flag {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
+    // 位置引数: URL
+    let url: String = noargs::arg("<URL>")
+        .doc("URL to fetch (e.g., https://example.com/)")
+        .take(&mut args)
+        .then(|a| Ok::<_, &str>(a.value().to_string()))
+        .map_err(|e| format!("{:?}", e))?;
+
+    // 未知の引数があればエラー、ヘルプが返されたら表示
+    if let Some(help) = args.finish().map_err(|e| format!("{:?}", e))? {
+        print!("{}", help);
+        return Ok(());
+    }
+
+    let (scheme, host, port, path) = parse_url(&url)?;
+
+    info!(host, port, "Connecting");
+
+    let mut request = Request::new("GET", &path)
+        .header("Host", &host)
+        .header("User-Agent", "shiguredo_http11/0.1.0")
+        .header("Accept", "*/*")
+        .header("Connection", "close");
+
+    // 有効な圧縮形式があれば Accept-Encoding を追加
+    let encodings = supported_encodings();
+    if !encodings.is_empty() {
+        request = request.header("Accept-Encoding", encodings);
+    }
+
+    let request_bytes = request.encode();
+
+    if scheme == "https" {
+        // HTTPS
+        let response = https_request(&host, port, &request_bytes)?;
+        print_response(&response);
+    } else {
+        // HTTP
+        let response = http_request(&host, port, &request_bytes)?;
+        print_response(&response);
+    }
+
+    Ok(())
+}
+
+fn parse_url(url: &str) -> Result<(String, String, u16, String), Box<dyn std::error::Error>> {
+    let (scheme, rest) = if let Some(rest) = url.strip_prefix("https://") {
+        ("https".to_string(), rest)
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        ("http".to_string(), rest)
+    } else {
+        return Err("URL must start with http:// or https://".into());
+    };
+
+    let (host_port, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, "/"),
+    };
+
+    let (host, port) = match host_port.find(':') {
+        Some(i) => {
+            let port: u16 = host_port[i + 1..].parse()?;
+            (&host_port[..i], port)
+        }
+        None => {
+            let port = if scheme == "https" { 443 } else { 80 };
+            (host_port, port)
+        }
+    };
+
+    Ok((scheme, host.to_string(), port, path.to_string()))
+}
+
+fn http_request(
+    host: &str,
+    port: u16,
+    request_bytes: &[u8],
+) -> Result<shiguredo_http11::Response, Box<dyn std::error::Error>> {
+    let mut stream = TcpStream::connect((host, port))?;
+    stream.write_all(request_bytes)?;
+
+    let mut decoder = ResponseDecoder::new();
+    let mut buf = [0u8; 8192];
+
+    loop {
+        let n = stream.read(&mut buf)?;
+        if n == 0 {
+            // EOF: close-delimited body の場合は正常終了
+            decoder.mark_eof();
+            if let Some(response) = decoder.decode()? {
+                return Ok(response);
+            }
+            return Err("Connection closed before response complete".into());
+        }
+
+        decoder.feed(&buf[..n])?;
+
+        if let Some(response) = decoder.decode()? {
+            return Ok(response);
+        }
+    }
+}
+
+fn https_request(
+    host: &str,
+    port: u16,
+    request_bytes: &[u8],
+) -> Result<shiguredo_http11::Response, Box<dyn std::error::Error>> {
+    // TLS 設定 (システムのプラットフォーム証明書ストアを使用)
+    let config = ClientConfig::with_platform_verifier()?;
+
+    let server_name = ServerName::try_from(host.to_string())?;
+
+    let conn = ClientConnection::new(Arc::new(config), server_name)?;
+    let sock = TcpStream::connect((host, port))?;
+    let mut tls = StreamOwned::new(conn, sock);
+
+    // リクエスト送信
+    tls.write_all(request_bytes)?;
+
+    // レスポンス受信
+    let mut decoder = ResponseDecoder::new();
+    let mut buf = [0u8; 8192];
+
+    loop {
+        let n = match tls.read(&mut buf) {
+            Ok(0) => {
+                // EOF: close-delimited body の場合は正常終了
+                decoder.mark_eof();
+                if let Some(response) = decoder.decode()? {
+                    return Ok(response);
+                }
+                return Err("Connection closed before response complete".into());
+            }
+            Ok(n) => n,
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+            Err(e) => return Err(e.into()),
+        };
+
+        decoder.feed(&buf[..n])?;
+
+        if let Some(response) = decoder.decode()? {
+            return Ok(response);
+        }
+    }
+}
+
+fn print_response(response: &shiguredo_http11::Response) {
+    info!(
+        version = %response.version,
+        status_code = response.status_code,
+        reason_phrase = %response.reason_phrase,
+        "Response received"
+    );
+
+    for (name, value) in &response.headers {
+        info!(name, value, "Header");
+    }
+
+    // Content-Encoding ヘッダーを取得
+    let content_encoding = response
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("Content-Encoding"))
+        .map(|(_, value)| value.as_str());
+
+    // ボディを展開（必要な場合）
+    let body = match content_encoding {
+        Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
+            match decompress_body(&response.body, encoding) {
+                Ok(decompressed) => {
+                    info!(
+                        encoding,
+                        original_size = response.body.len(),
+                        decompressed_size = decompressed.len(),
+                        "Decompressed"
+                    );
+                    decompressed
+                }
+                Err(e) => {
+                    error!(encoding, error = %e, "Decompression failed");
+                    response.body.clone()
+                }
+            }
+        }
+        _ => response.body.clone(),
+    };
+
+    // ボディを表示 (テキストの場合)
+    if let Ok(text) = std::str::from_utf8(&body) {
+        if text.len() > 1000 {
+            info!(total_bytes = body.len(), "Body truncated");
+            println!("{}...", &text[..1000]);
+        } else {
+            println!("{}", text);
+        }
+    } else {
+        info!(bytes = body.len(), "Binary body");
+    }
+}
