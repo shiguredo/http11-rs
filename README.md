@@ -442,4 +442,6 @@ limitations under the License.
 - [shiguredo/srt\-rs](https://github.com/shiguredo/srt-rs)
 - [shiguredo/audio\-device\-rs](https://github.com/shiguredo/audio-device-rs)
 - [shiguredo/video\-device\-rs](https://github.com/shiguredo/video-device-rs)
+- [shiguredo/rtsp\-rs](https://github.com/shiguredo/rtsp-rs)
+- [shiguredo/toml\-rs](https://github.com/shiguredo/toml-rs)
 
