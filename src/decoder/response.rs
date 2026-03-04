@@ -203,6 +203,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
     }
 
     /// バッファにデータを追加 (制限チェックなし)
+    ///
+    /// # 警告
+    ///
+    /// この関数は `DecoderLimits` による `max_buffer_size` チェックをスキップする。
+    /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
+    /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
         self.buf.extend_from_slice(data);
     }

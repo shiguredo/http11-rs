@@ -53,7 +53,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("test-boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.name(), Some(name.as_str()));
@@ -79,7 +79,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part1.name(), Some(name1.as_str()));
@@ -106,7 +106,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("file-boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.name(), Some(name.as_str()));
@@ -177,7 +177,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         prop_assert!(!parser.is_finished());
 
@@ -246,7 +246,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new(&boundary);
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.name(), Some(name.as_str()));
@@ -270,7 +270,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("mixed-boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part1.name(), Some(text_name.as_str()));
@@ -299,7 +299,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("files-boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part1.filename(), Some(filename1.as_str()));
@@ -318,7 +318,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.name(), Some(name.as_str()));
@@ -335,7 +335,7 @@ proptest! {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         prop_assert_eq!(part.filename(), Some(filename.as_str()));

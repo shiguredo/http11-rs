@@ -17,7 +17,7 @@
 //!     ------WebKitFormBoundary--\r\n";
 //!
 //! let mut parser = MultipartParser::new(boundary);
-//! parser.feed(body);
+//! parser.feed(body).unwrap();
 //!
 //! while let Some(part) = parser.next_part().unwrap() {
 //!     println!("name: {:?}", part.name());
@@ -52,6 +52,13 @@ pub enum MultipartError {
     /// Content-Disposition に name パラメータが欠落している
     /// RFC 7578 Section 4.2: "name" パラメータを含まなければならない
     MissingName,
+    /// バッファサイズが上限を超えた
+    BufferOverflow {
+        /// 超過後のサイズ
+        size: usize,
+        /// 設定された上限
+        limit: usize,
+    },
 }
 
 impl fmt::Display for MultipartError {
@@ -79,6 +86,9 @@ impl fmt::Display for MultipartError {
                     f,
                     "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)"
                 )
+            }
+            MultipartError::BufferOverflow { size, limit } => {
+                write!(f, "buffer overflow: size={size}, limit={limit}")
             }
         }
     }
@@ -192,6 +202,8 @@ pub struct MultipartParser {
     state: ParserState,
     /// 完了フラグ
     finished: bool,
+    /// バッファ最大サイズ (デフォルト: 10MB)
+    max_buffer_size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,13 +242,22 @@ fn is_valid_boundary(boundary: &str) -> bool {
 
 impl MultipartParser {
     /// 新しいパーサーを作成
+    ///
+    /// バッファ上限は 10MB。変更する場合は `with_max_buffer_size()` を使用する。
     pub fn new(boundary: &str) -> Self {
         MultipartParser {
             boundary: boundary.to_string(),
             buffer: Vec::new(),
             state: ParserState::Initial,
             finished: false,
+            max_buffer_size: 10 * 1024 * 1024,
         }
+    }
+
+    /// バッファ最大サイズを設定
+    pub fn with_max_buffer_size(mut self, max_buffer_size: usize) -> Self {
+        self.max_buffer_size = max_buffer_size;
+        self
     }
 
     /// boundary を検証して新しいパーサーを作成
@@ -250,8 +271,18 @@ impl MultipartParser {
     }
 
     /// データを追加
-    pub fn feed(&mut self, data: &[u8]) {
+    ///
+    /// バッファサイズが `max_buffer_size` を超える場合は `MultipartError::BufferOverflow` を返す。
+    pub fn feed(&mut self, data: &[u8]) -> Result<(), MultipartError> {
+        let new_size = self.buffer.len() + data.len();
+        if new_size > self.max_buffer_size {
+            return Err(MultipartError::BufferOverflow {
+                size: new_size,
+                limit: self.max_buffer_size,
+            });
+        }
         self.buffer.extend_from_slice(data);
+        Ok(())
     }
 
     /// パースが完了したかどうか
@@ -556,7 +587,7 @@ mod tests {
             ------WebKitFormBoundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.name(), Some("field1"));
@@ -577,7 +608,7 @@ mod tests {
             --boundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         assert_eq!(part1.name(), Some("field1"));
@@ -600,7 +631,7 @@ mod tests {
             --boundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.name(), Some("file"));
@@ -648,7 +679,7 @@ mod tests {
             .build();
 
         let mut parser = MultipartParser::new("test-boundary");
-        parser.feed(&original_body);
+        parser.feed(&original_body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         assert_eq!(part1.name(), Some("name"));
@@ -713,7 +744,7 @@ mod tests {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.body(), &binary_data);
