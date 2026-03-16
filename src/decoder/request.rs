@@ -320,24 +320,18 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 }
                             }
 
-                            // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
+                            // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
+                            // CONNECT リクエストは content を持たないため、BodyKind::None として扱う。
+                            // Content-Length / Transfer-Encoding が付いていても即エラーにはしないが、
+                            // body として読むこともしない。ヘッダー終端でリクエスト完了とする。
+                            // RFC は CONNECT リクエスト側に TE/CL を MUST NOT とはしていない
+                            // (MUST NOT は 2xx レスポンス側の制約)。
                             let method = start_line_ref.split(' ').next().unwrap_or("");
-                            if method == "CONNECT" {
-                                let has_te = self.headers.iter().any(|(name, _)| {
-                                    name.eq_ignore_ascii_case("Transfer-Encoding")
-                                });
-                                let has_cl = self
-                                    .headers
-                                    .iter()
-                                    .any(|(name, _)| name.eq_ignore_ascii_case("Content-Length"));
-                                if has_te || has_cl {
-                                    return Err(Error::InvalidData(
-                                        "CONNECT request must not contain Transfer-Encoding or Content-Length (RFC 9110 Section 9.3.6)".to_string(),
-                                    ));
-                                }
-                            }
-
-                            let body_kind = self.determine_body_kind(version)?;
+                            let body_kind = if method == "CONNECT" {
+                                BodyKind::None
+                            } else {
+                                self.determine_body_kind(version)?
+                            };
 
                             // ヘッダー完了、ボディフェーズに遷移
                             // RFC 9112: リクエストは close-delimited を使わない

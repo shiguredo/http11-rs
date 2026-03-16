@@ -527,67 +527,72 @@ fn test_encode_request_absolute_form_at_in_userinfo() {
 }
 
 // ========================================
-// CONNECT リクエスト content 禁止テスト (RFC 9110 Section 9.3.6)
+// CONNECT リクエストのヘッダー・ボディ許容テスト (RFC 9110 Section 9.3.6)
+//
+// RFC 9110 Section 9.3.6 の文言:
+//   "A CONNECT request message does not have content."
+//
+// これは事実の記述 ("does not") であり、MUST NOT による禁止ではない。
+// また RFC は CONNECT リクエスト側に対して Content-Length / Transfer-Encoding を
+// MUST NOT とは規定していない。MUST NOT なのは CONNECT の 2xx レスポンス側
+// (RFC 9110 Section 9.3.6):
+//   "A server MUST NOT send any Transfer-Encoding or Content-Length
+//    header fields in a 2xx (Successful) response to CONNECT."
+//
+// Content-Length については RFC 9110 Section 8.6 で:
+//   "A user agent SHOULD NOT send a Content-Length header field when
+//    the request message does not contain content and the method
+//    semantics do not anticipate such data."
+// と SHOULD NOT に留まる。
+//
+// したがってエンコーダーは CONNECT リクエストのヘッダーやボディの有無で reject せず、
+// CONNECT の意味論的制約の判断はアプリケーション層の責務とする。
 // ========================================
 
+/// CONNECT リクエストに Content-Length / Transfer-Encoding / body があっても
+/// エンコーダーは reject しない。
 #[test]
-fn test_encode_request_connect_with_body_error() {
-    // CONNECT リクエストに body があるとエラー
+fn test_encode_request_connect_accepts_body_headers() {
+    // body 付き + Content-Length
     let req = Request::new("CONNECT", "example.com:443")
         .header("Host", "example.com:443")
+        .header("Content-Length", "5")
         .body(b"hello".to_vec());
-    let result = encode_request(&req);
-    assert!(matches!(
-        result,
-        Err(EncodeError::ConnectRequestWithContent)
-    ));
-}
+    assert!(encode_request(&req).is_ok());
 
-#[test]
-fn test_encode_request_connect_with_content_length_error() {
-    // CONNECT リクエストに Content-Length があるとエラー
+    // Content-Length: 0 (content がないことの明示)
     let req = Request::new("CONNECT", "example.com:443")
         .header("Host", "example.com:443")
         .header("Content-Length", "0");
-    let result = encode_request(&req);
-    assert!(matches!(
-        result,
-        Err(EncodeError::ConnectRequestWithContent)
-    ));
-}
+    assert!(encode_request(&req).is_ok());
 
-#[test]
-fn test_encode_request_connect_with_transfer_encoding_error() {
-    // CONNECT リクエストに Transfer-Encoding があるとエラー
+    // Transfer-Encoding: chunked
     let req = Request::new("CONNECT", "example.com:443")
         .header("Host", "example.com:443")
         .header("Transfer-Encoding", "chunked");
-    let result = encode_request(&req);
-    assert!(matches!(
-        result,
-        Err(EncodeError::ConnectRequestWithContent)
-    ));
+    assert!(encode_request(&req).is_ok());
+
+    // body なし (最も一般的なケース)
+    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    assert!(encode_request(&req).is_ok());
 }
 
+/// encode_request_headers でも CONNECT + Content-Length をエンコードできる。
+/// encode_request_headers は body を扱わないヘッダーのみのエンコードだが、
+/// CONNECT 専用の制約は RFC に根拠がないため適用しない。
 #[test]
-fn test_encode_request_headers_connect_with_content_length_error() {
-    // encode_request_headers でも CONNECT + CL は拒否
+fn test_encode_request_headers_connect_accepts_content_length() {
+    // Content-Length: 0
     let req = Request::new("CONNECT", "example.com:443")
         .header("Host", "example.com:443")
         .header("Content-Length", "0");
-    let result = encode_request_headers(&req);
-    assert!(matches!(
-        result,
-        Err(EncodeError::ConnectRequestWithContent)
-    ));
-}
+    assert!(encode_request_headers(&req).is_ok());
 
-#[test]
-fn test_encode_request_connect_no_body_ok() {
-    // CONNECT リクエストで body なしは OK
-    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
-    let result = encode_request(&req);
-    assert!(result.is_ok());
+    // Content-Length: N > 0
+    let req = Request::new("CONNECT", "example.com:443")
+        .header("Host", "example.com:443")
+        .header("Content-Length", "10");
+    assert!(encode_request_headers(&req).is_ok());
 }
 
 // ========================================
