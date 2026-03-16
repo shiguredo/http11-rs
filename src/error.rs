@@ -98,9 +98,6 @@ pub enum EncodeError {
     /// メソッドと request-target 形式が不整合
     /// RFC 9112 Section 3.2: CONNECT は authority-form、OPTIONS * は asterisk-form のみ
     InvalidRequestTargetForm { method: String, uri: String },
-    /// CONNECT リクエストに content が含まれている
-    /// RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
-    ConnectRequestWithContent,
     /// http/https URI に userinfo が含まれている
     /// RFC 9110 Section 4.2.4: 送信者は http/https URI に userinfo を生成してはならない (MUST NOT)
     UserinfoInHttpUri { uri: String },
@@ -198,12 +195,6 @@ impl fmt::Display for EncodeError {
                     f,
                     "request-target form {:?} is invalid for method {:?} (RFC 9112 Section 3.2)",
                     uri, method
-                )
-            }
-            EncodeError::ConnectRequestWithContent => {
-                write!(
-                    f,
-                    "CONNECT request must not have content (RFC 9110 Section 9.3.6)"
                 )
             }
             EncodeError::UserinfoInHttpUri { uri } => {
