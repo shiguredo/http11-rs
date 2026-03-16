@@ -3,16 +3,33 @@
 use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, RequestDecoder, ResponseDecoder};
 
 // ========================================
-// CONNECT トンネルモードのテスト (RFC 9112 Section 6.3)
+// CONNECT トンネルモードのテスト (RFC 9110 Section 9.3.6 / RFC 9112 Section 6.3)
+//
+// RFC 9112 Section 6.3:
+//   "Any 2xx (Successful) response to a CONNECT request implies that
+//    the connection will become a tunnel immediately after the empty
+//    line that concludes the header fields."
+//
+// RFC 9110 Section 9.3.6:
+//   "A server MUST NOT send any Transfer-Encoding or Content-Length
+//    header fields in a 2xx (Successful) response to CONNECT.
+//    A client MUST ignore any Content-Length or Transfer-Encoding
+//    header fields received in a successful response to CONNECT."
+//
+// デコーダーはクライアント側 (受信側) なので、CONNECT 2xx で TE/CL が
+// 存在していてもエラーにせず無視し、BodyKind::Tunnel を返す。
 // ========================================
 
-/// CONNECT + 2xx レスポンスでトンネルモードになることを確認
+/// CONNECT + 2xx レスポンスでトンネルモードになることを確認。
+/// Content-Length が付いていても無視して Tunnel を返す (MUST ignore)。
 #[test]
 fn test_connect_2xx_tunnel_mode() {
     for status in [200, 201, 202, 204, 299] {
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
+        // サーバーが MUST NOT に違反して Content-Length を付けても、
+        // クライアントは MUST ignore に従い無視する
         let response = format!("HTTP/1.1 {} OK\r\nContent-Length: 100\r\n\r\n", status);
         decoder.feed(response.as_bytes()).unwrap();
 
@@ -25,7 +42,6 @@ fn test_connect_2xx_tunnel_mode() {
 
         let (head, body_kind) = result.unwrap();
         assert_eq!(head.status_code, status);
-        // CONNECT 2xx は Transfer-Encoding/Content-Length を無視してトンネルモードになる
         assert_eq!(
             body_kind,
             BodyKind::Tunnel,
@@ -36,7 +52,9 @@ fn test_connect_2xx_tunnel_mode() {
     }
 }
 
-/// CONNECT + 非 2xx レスポンスは通常のボディ判定
+/// CONNECT + 非 2xx レスポンスはトンネルモードにならず、通常のボディ判定に従う。
+/// RFC 9112 Section 6.3: "Any response other than a successful response
+/// indicates that the tunnel has not yet been formed."
 #[test]
 fn test_connect_non_2xx_normal_body() {
     for status in [100, 101, 301, 400, 401, 403, 404, 500, 502, 503] {
@@ -57,7 +75,6 @@ fn test_connect_non_2xx_normal_body() {
         );
 
         let (_head, body_kind) = result.unwrap();
-        // 非 2xx はトンネルモードではない
         assert_ne!(
             body_kind,
             BodyKind::Tunnel,
@@ -68,7 +85,8 @@ fn test_connect_non_2xx_normal_body() {
     }
 }
 
-/// 非 CONNECT + 2xx レスポンスは通常のボディ判定
+/// 非 CONNECT + 2xx レスポンスはトンネルモードにならない。
+/// トンネルモードは CONNECT メソッドへの 2xx レスポンス限定。
 #[test]
 fn test_non_connect_2xx_normal_body() {
     for method in ["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"] {
@@ -82,7 +100,6 @@ fn test_non_connect_2xx_normal_body() {
         assert!(result.is_some(), "expected headers for {} response", method);
 
         let (_head, body_kind) = result.unwrap();
-        // 非 CONNECT はトンネルモードではない
         assert_ne!(
             body_kind,
             BodyKind::Tunnel,
@@ -93,28 +110,42 @@ fn test_non_connect_2xx_normal_body() {
     }
 }
 
-/// CONNECT 2xx で Transfer-Encoding/Content-Length は無視される
+/// CONNECT 2xx で Transfer-Encoding / Content-Length は無視される。
+/// RFC 9110 Section 9.3.6:
+///   "A client MUST ignore any Content-Length or Transfer-Encoding
+///    header fields received in a successful response to CONNECT."
+/// サーバーが MUST NOT に違反して送ってきても、エラーにせず無視する。
 #[test]
 fn test_connect_2xx_ignores_body_headers() {
-    // Transfer-Encoding: chunked があってもトンネルモード
+    // Transfer-Encoding: chunked を無視して Tunnel
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
-
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
+    assert_eq!(
+        decoder.decode_headers().unwrap().unwrap().1,
+        BodyKind::Tunnel
+    );
 
-    let result = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(result.1, BodyKind::Tunnel);
-
-    // Content-Length があってもトンネルモード
+    // Content-Length: 1000 を無視して Tunnel
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
-
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
+    assert_eq!(
+        decoder.decode_headers().unwrap().unwrap().1,
+        BodyKind::Tunnel
+    );
 
-    let result = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(result.1, BodyKind::Tunnel);
+    // Transfer-Encoding + Content-Length の両方があっても無視して Tunnel
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    assert_eq!(
+        decoder.decode_headers().unwrap().unwrap().1,
+        BodyKind::Tunnel
+    );
 }
 
 /// take_remaining() でヘッダー後のデータを取得
@@ -864,46 +895,58 @@ fn test_consume_body_exceeds_buffer_close_delimited_error() {
 }
 
 // ========================================
-// CONNECT リクエスト content 禁止テスト (RFC 9110 Section 9.3.6)
+// CONNECT リクエストのテスト (RFC 9110 Section 9.3.6)
+//
+// RFC 9110 Section 9.3.6:
+//   "A CONNECT request message does not have content."
+//
+// CONNECT リクエストは content を持たないため、Content-Length / Transfer-Encoding が
+// 付いていても body として読まず、BodyKind::None として扱う。
+// ヘッダーの存在自体では reject しない (RFC は MUST NOT としていない)。
+//
+// Content-Length については RFC 9110 Section 8.6 で:
+//   "A user agent SHOULD NOT send a Content-Length header field when
+//    the request message does not contain content and the method
+//    semantics do not anticipate such data."
+// と SHOULD NOT に留まる。
 // ========================================
 
-/// CONNECT リクエストに Content-Length があるとエラー
+/// CONNECT リクエストは Content-Length / Transfer-Encoding が付いていても
+/// body として読まず、常に BodyKind::None を返す。
+/// ヘッダーの存在だけでは reject しない。
 #[test]
-fn test_connect_request_with_content_length_error() {
+fn test_connect_request_no_body() {
+    // Content-Length: N > 0 が付いていても BodyKind::None
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
     decoder.feed(request.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.method, "CONNECT");
+    assert_eq!(body_kind, BodyKind::None);
 
-    let result = decoder.decode_headers();
-    assert!(result.is_err());
-    assert!(
-        result.unwrap_err().to_string().contains("CONNECT"),
-        "error should mention CONNECT"
-    );
-}
+    // Content-Length: 0 でも BodyKind::None
+    let mut decoder = RequestDecoder::new();
+    let request =
+        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.method, "CONNECT");
+    assert_eq!(body_kind, BodyKind::None);
 
-/// CONNECT リクエストに Transfer-Encoding があるとエラー
-#[test]
-fn test_connect_request_with_transfer_encoding_error() {
+    // Transfer-Encoding: chunked でも BodyKind::None
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.method, "CONNECT");
+    assert_eq!(body_kind, BodyKind::None);
 
-    let result = decoder.decode_headers();
-    assert!(result.is_err());
-}
-
-/// CONNECT リクエストで body なしは正常
-#[test]
-fn test_connect_request_no_body_ok() {
+    // ヘッダーなし (最も一般的なケース) → BodyKind::None
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
-
-    let result = decoder.decode_headers();
-    assert!(result.is_ok());
-    let (head, body_kind) = result.unwrap().unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.method, "CONNECT");
     assert_eq!(body_kind, BodyKind::None);
 }

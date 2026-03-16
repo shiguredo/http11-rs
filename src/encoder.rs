@@ -511,15 +511,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
-    // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
-    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
-    if request.method == "CONNECT"
-        && (!request.body.is_empty()
-            || request.has_header("Content-Length")
-            || request.has_header("Transfer-Encoding"))
-    {
-        return Err(EncodeError::ConnectRequestWithContent);
-    }
+    // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
+    // ただし RFC は CONNECT リクエスト側に MUST NOT の制約を課していない。
+    // CONNECT の意味論的制約の判断はアプリケーション層の責務とする。
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     if !request.has_header("Transfer-Encoding")
@@ -794,13 +788,10 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
-    // RFC 9110 Section 9.3.6: CONNECT リクエストは content を持たない
-    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
-    if request.method == "CONNECT"
-        && (request.has_header("Content-Length") || request.has_header("Transfer-Encoding"))
-    {
-        return Err(EncodeError::ConnectRequestWithContent);
-    }
+    // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
+    // RFC は CONNECT リクエスト側に Content-Length / Transfer-Encoding を MUST NOT とはしていない。
+    // encode_request_headers はボディを扱わないため、CONNECT 専用チェックは不要。
+    // ヘッダーの有無による制約はアプリケーション層の責務とする。
 
     let mut buf = Vec::new();
 
