@@ -174,3 +174,62 @@ impl Response {
         (100..200).contains(&self.status_code)
     }
 }
+
+/// RFC 9110 Section 15 に基づく canonical reason phrase を返す
+///
+/// 既知のステータスコードに対しては対応する reason phrase を返し、
+/// 未知のコードに対しては `None` を返す。
+pub fn canonical_reason(status_code: u16) -> Option<&'static str> {
+    match status_code {
+        // 1xx Informational
+        100 => Some("Continue"),
+        101 => Some("Switching Protocols"),
+        // 2xx Successful
+        200 => Some("OK"),
+        201 => Some("Created"),
+        202 => Some("Accepted"),
+        203 => Some("Non-Authoritative Information"),
+        204 => Some("No Content"),
+        205 => Some("Reset Content"),
+        206 => Some("Partial Content"),
+        // 3xx Redirection
+        300 => Some("Multiple Choices"),
+        301 => Some("Moved Permanently"),
+        302 => Some("Found"),
+        303 => Some("See Other"),
+        304 => Some("Not Modified"),
+        305 => Some("Use Proxy"),
+        307 => Some("Temporary Redirect"),
+        308 => Some("Permanent Redirect"),
+        // 4xx Client Error
+        400 => Some("Bad Request"),
+        401 => Some("Unauthorized"),
+        402 => Some("Payment Required"),
+        403 => Some("Forbidden"),
+        404 => Some("Not Found"),
+        405 => Some("Method Not Allowed"),
+        406 => Some("Not Acceptable"),
+        407 => Some("Proxy Authentication Required"),
+        408 => Some("Request Timeout"),
+        409 => Some("Conflict"),
+        410 => Some("Gone"),
+        411 => Some("Length Required"),
+        412 => Some("Precondition Failed"),
+        413 => Some("Content Too Large"),
+        414 => Some("URI Too Long"),
+        415 => Some("Unsupported Media Type"),
+        416 => Some("Range Not Satisfiable"),
+        417 => Some("Expectation Failed"),
+        421 => Some("Misdirected Request"),
+        422 => Some("Unprocessable Content"),
+        426 => Some("Upgrade Required"),
+        // 5xx Server Error
+        500 => Some("Internal Server Error"),
+        501 => Some("Not Implemented"),
+        502 => Some("Bad Gateway"),
+        503 => Some("Service Unavailable"),
+        504 => Some("Gateway Timeout"),
+        505 => Some("HTTP Version Not Supported"),
+        _ => None,
+    }
+}

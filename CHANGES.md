@@ -11,6 +11,8 @@
 
 ## develop
 
+- [ADD] RFC 9110 Section 15 の全ステータスコードに対応する `canonical_reason()` 関数を追加する
+  - @voluntas
 - [CHANGE] `MultipartParser::feed()` の戻り値を `Result<(), MultipartError>` に変更する
   - バッファ上限超過時に `MultipartError::BufferOverflow` を返す
   - @voluntas

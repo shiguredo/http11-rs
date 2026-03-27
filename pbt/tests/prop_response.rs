@@ -1,7 +1,7 @@
 //! Response 構造体のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::Response;
+use shiguredo_http11::{Response, canonical_reason};
 
 // ========================================
 // Strategy 定義
@@ -227,5 +227,77 @@ proptest! {
             .header("Content-Length", &len.to_string());
 
         prop_assert_eq!(response.content_length(), Some(len));
+    }
+}
+
+// ========================================
+// canonical_reason のテスト
+// ========================================
+
+/// RFC 9110 Section 15 で定義された全ステータスコード
+fn rfc9110_status_code() -> impl Strategy<Value = u16> {
+    prop_oneof![
+        Just(100u16),
+        Just(101),
+        Just(200),
+        Just(201),
+        Just(202),
+        Just(203),
+        Just(204),
+        Just(205),
+        Just(206),
+        Just(300),
+        Just(301),
+        Just(302),
+        Just(303),
+        Just(304),
+        Just(305),
+        Just(307),
+        Just(308),
+        Just(400),
+        Just(401),
+        Just(402),
+        Just(403),
+        Just(404),
+        Just(405),
+        Just(406),
+        Just(407),
+        Just(408),
+        Just(409),
+        Just(410),
+        Just(411),
+        Just(412),
+        Just(413),
+        Just(414),
+        Just(415),
+        Just(416),
+        Just(417),
+        Just(421),
+        Just(422),
+        Just(426),
+        Just(500),
+        Just(501),
+        Just(502),
+        Just(503),
+        Just(504),
+        Just(505),
+    ]
+}
+
+// RFC 9110 で定義された全コードに対して Some を返す
+proptest! {
+    #[test]
+    fn prop_canonical_reason_known_codes(code in rfc9110_status_code()) {
+        let reason = canonical_reason(code);
+        prop_assert!(reason.is_some(), "canonical_reason({}) returned None", code);
+        prop_assert!(!reason.unwrap().is_empty(), "canonical_reason({}) returned empty string", code);
+    }
+}
+
+// 未定義のコードに対して None を返す
+proptest! {
+    #[test]
+    fn prop_canonical_reason_unknown_codes(code in prop_oneof![0u16..100, 600u16..=u16::MAX]) {
+        prop_assert_eq!(canonical_reason(code), None);
     }
 }

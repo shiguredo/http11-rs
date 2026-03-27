@@ -89,4 +89,4 @@ pub use encoder::{
 pub use error::{EncodeError, Error};
 pub use limits::DecoderLimits;
 pub use request::Request;
-pub use response::Response;
+pub use response::{Response, canonical_reason};
