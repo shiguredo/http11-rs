@@ -23,6 +23,8 @@
 //! ```
 
 use crate::date::HttpDate;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// キャッシュヘッダーパースエラー
@@ -49,7 +51,7 @@ impl fmt::Display for CacheError {
     }
 }
 
-impl std::error::Error for CacheError {}
+impl core::error::Error for CacheError {}
 
 /// Cache-Control ヘッダー
 ///

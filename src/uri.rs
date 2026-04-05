@@ -27,6 +27,8 @@
 //! assert_eq!(decoded, "hello world");
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// URI パースエラー
@@ -76,7 +78,7 @@ impl fmt::Display for UriError {
     }
 }
 
-impl std::error::Error for UriError {}
+impl core::error::Error for UriError {}
 
 /// パーセントエンコーディング対象外の文字 (unreserved characters)
 /// RFC 3986 Section 2.3
@@ -588,7 +590,7 @@ fn validate_host(host: &str) -> Result<(), UriError> {
         return validate_ip_literal(&host[1..bracket_end]);
     }
     // RFC 3986 Section 3.2.2: "first-match-wins" - IPv4 を先に試す
-    if host.parse::<std::net::Ipv4Addr>().is_ok() {
+    if host.parse::<core::net::Ipv4Addr>().is_ok() {
         return Ok(());
     }
     // それ以外は reg-name として検証
@@ -633,7 +635,7 @@ fn validate_ip_literal(literal: &str) -> Result<(), UriError> {
         return validate_ipv_future(literal);
     }
     // IPv6address
-    if literal.parse::<std::net::Ipv6Addr>().is_err() {
+    if literal.parse::<core::net::Ipv6Addr>().is_err() {
         return Err(UriError::InvalidHost);
     }
     Ok(())

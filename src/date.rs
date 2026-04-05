@@ -19,7 +19,9 @@
 //! assert_eq!(date.to_string(), "Sun, 06 Nov 1994 08:49:37 GMT");
 //! ```
 
+use alloc::vec::Vec;
 use core::fmt;
+use core::sync::atomic::{AtomicU16, Ordering};
 
 /// HTTP-date パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +65,7 @@ impl fmt::Display for DateError {
     }
 }
 
-impl std::error::Error for DateError {}
+impl core::error::Error for DateError {}
 
 /// 曜日
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,13 +137,13 @@ pub struct HttpDate {
 }
 
 impl PartialOrd for HttpDate {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for HttpDate {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (
             self.year,
             self.month,
@@ -409,31 +411,18 @@ fn month_name(month: u8) -> &'static str {
     }
 }
 
-/// 現在の年を取得
-#[cfg(not(test))]
+static HTTP_DATE_REFERENCE_YEAR: AtomicU16 = AtomicU16::new(2026);
+
+/// RFC 850 形式の 2 桁年解釈に用いる参照年を設定する。
+///
+/// no_std ではシステム時刻を取得できない。初期値は 2026 である。
+/// 実装側で RTC 等に合わせて更新すること。
+pub fn set_http_date_reference_year(year: u16) {
+    HTTP_DATE_REFERENCE_YEAR.store(year, Ordering::Relaxed);
+}
+
 fn current_year() -> u16 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    // 1 年 ≈ 31,557,600 秒 (365.25 日)
-    let years_since_1970 = now.as_secs() / 31_557_600;
-    (1970 + years_since_1970) as u16
-}
-
-#[cfg(test)]
-thread_local! {
-    static CURRENT_YEAR_FOR_TEST: std::cell::Cell<u16> = const { std::cell::Cell::new(2026) };
-}
-
-#[cfg(test)]
-fn current_year() -> u16 {
-    CURRENT_YEAR_FOR_TEST.with(|y| y.get())
-}
-
-#[cfg(test)]
-fn set_current_year_for_test(year: u16) {
-    CURRENT_YEAR_FOR_TEST.with(|y| y.set(year));
+    HTTP_DATE_REFERENCE_YEAR.load(Ordering::Relaxed)
 }
 
 /// 2 桁年を RFC 9110 準拠で解釈する
@@ -536,7 +525,7 @@ mod tests {
         // 50 年以上未来に見える場合は 100 年引く
 
         // 現在年を 2026 に設定 (デフォルト)
-        set_current_year_for_test(2026);
+        set_http_date_reference_year(2026);
 
         // 20 → 2020 (2026 + 50 = 2076 > 2020 なので 2020)
         let date = HttpDate::parse("Sunday, 06-Nov-20 08:49:37 GMT").unwrap();
@@ -560,7 +549,7 @@ mod tests {
         // 境界テスト: 異なる基準年での動作確認
 
         // 基準年 2050 の場合
-        set_current_year_for_test(2050);
+        set_http_date_reference_year(2050);
 
         // 00 → 2000 (candidate = 2000, 2000 > 2050 + 50 = 2100? No → 2000)
         let date = HttpDate::parse("Sunday, 06-Nov-00 08:49:37 GMT").unwrap();
@@ -575,7 +564,7 @@ mod tests {
         assert_eq!(date.year(), 2050);
 
         // テスト後にデフォルトに戻す
-        set_current_year_for_test(2026);
+        set_http_date_reference_year(2026);
     }
 
     #[test]

@@ -24,6 +24,8 @@
 //! ```
 
 use crate::date::HttpDate;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Cookie パースエラー
@@ -56,7 +58,7 @@ impl fmt::Display for CookieError {
     }
 }
 
-impl std::error::Error for CookieError {}
+impl core::error::Error for CookieError {}
 
 /// Cookie (name=value ペア)
 #[derive(Debug, Clone, PartialEq, Eq)]

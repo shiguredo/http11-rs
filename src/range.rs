@@ -24,6 +24,8 @@
 //! assert!(ar.accepts_bytes());
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Range パースエラー
@@ -53,7 +55,7 @@ impl fmt::Display for RangeError {
     }
 }
 
-impl std::error::Error for RangeError {}
+impl core::error::Error for RangeError {}
 
 /// 範囲指定
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

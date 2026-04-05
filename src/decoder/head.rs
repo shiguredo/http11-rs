@@ -1,5 +1,8 @@
 //! HTTP ヘッダー型の定義
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// HTTP ヘッダー操作のための共通トレイト
 pub trait HttpHead {
     /// HTTP バージョンを取得

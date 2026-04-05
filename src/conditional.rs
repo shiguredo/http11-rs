@@ -53,7 +53,7 @@ impl fmt::Display for ConditionalError {
     }
 }
 
-impl std::error::Error for ConditionalError {}
+impl core::error::Error for ConditionalError {}
 
 /// If-Match ヘッダー (RFC 9110 Section 13.1.1)
 ///

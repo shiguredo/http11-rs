@@ -13,6 +13,8 @@
 //! assert!(upgrade.has_protocol("websocket"));
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Upgrade パースエラー
@@ -39,7 +41,7 @@ impl fmt::Display for UpgradeError {
     }
 }
 
-impl std::error::Error for UpgradeError {}
+impl core::error::Error for UpgradeError {}
 
 /// Upgrade ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

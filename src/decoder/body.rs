@@ -13,6 +13,8 @@ use crate::validate::{
     is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
     is_valid_field_value, is_valid_header_name, is_valid_token,
 };
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use super::phase::DecodePhase;
 
@@ -168,7 +170,7 @@ impl BodyDecoder {
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
-                        trailers: std::mem::take(&mut self.trailers),
+                        trailers: core::mem::take(&mut self.trailers),
                     }),
                     _ => Ok(BodyProgress::Continue),
                 }
@@ -231,7 +233,7 @@ impl BodyDecoder {
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
-                        trailers: std::mem::take(&mut self.trailers),
+                        trailers: core::mem::take(&mut self.trailers),
                     }),
                     _ => Ok(BodyProgress::Continue),
                 }
@@ -267,7 +269,7 @@ impl BodyDecoder {
                 Ok(BodyProgress::Continue)
             }
             DecodePhase::Complete => Ok(BodyProgress::Complete {
-                trailers: std::mem::take(&mut self.trailers),
+                trailers: core::mem::take(&mut self.trailers),
             }),
             DecodePhase::StartLine | DecodePhase::Headers => Err(Error::InvalidData(
                 "consume_body called before decode_headers".to_string(),
@@ -352,7 +354,7 @@ impl BodyDecoder {
 
             // HEXDIG 部分のみを chunk-size として解釈
             let hex_bytes = &size_bytes[..hex_end];
-            let size_str = std::str::from_utf8(hex_bytes)
+            let size_str = core::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
             let chunk_size = usize::from_str_radix(size_str, 16)
                 .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
