@@ -11,6 +11,9 @@
 
 ## develop
 
+- [CHANGE] `src` を `core` と `alloc` のみの `no_std` に対応する
+  - `#![no_std]` を宣言し、`std` への依存を排除する
+  - @voluntas
 - [CHANGE] `HttpDate` の API を obs-date 対応のために再設計する
   - `HttpDate::parse(&str)` は IMF-fixdate と asctime のみを受理する
   - rfc850-date を検出した場合は `Err(DateError::Rfc850Date)` を返し、`HttpDate::parse_rfc850(&str, reference_year: u16)` でフォールバックする設計とする
