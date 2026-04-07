@@ -24,6 +24,8 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイル テキ
 
 - Sans I/O
   - <https://sans-io.readthedocs.io/index.html>
+- `no_std` 対応
+  - `alloc` クレートは必要
 - 依存ライブラリ 0
 - 圧縮/展開トレイト (`Compressor` / `Decompressor`) の提供
   - ライブラリ本体は圧縮実装を含まず、利用者が任意の実装を組み込める
@@ -433,4 +435,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
-
