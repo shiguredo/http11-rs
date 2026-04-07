@@ -10,6 +10,8 @@ use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::validate::{is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code};
 
@@ -174,7 +176,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// 呼び出し後、バッファは空になる。
     pub fn take_remaining(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.buf)
+        core::mem::take(&mut self.buf)
     }
 
     /// トンネルモードかどうかを判定
@@ -445,7 +447,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 version: parts[0].to_string(),
                                 status_code,
                                 reason_phrase: parts.get(2).unwrap_or(&"").to_string(),
-                                headers: std::mem::take(&mut self.headers),
+                                headers: core::mem::take(&mut self.headers),
                             };
 
                             return Ok(Some((head, body_kind)));
@@ -679,7 +681,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
         // Response を構築
         let head = self.decoded_head.take().unwrap();
-        let body = std::mem::take(&mut self.decoded_body);
+        let body = core::mem::take(&mut self.decoded_body);
 
         // Keep-Alive 対応: 次のレスポンスのために状態をリセット
         self.phase = DecodePhase::StartLine;

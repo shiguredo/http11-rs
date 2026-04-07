@@ -14,6 +14,8 @@
 //! assert!(ce.has_deflate());
 //! ```
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Content-Encoding パースエラー
@@ -41,7 +43,7 @@ impl fmt::Display for ContentEncodingError {
     }
 }
 
-impl std::error::Error for ContentEncodingError {}
+impl core::error::Error for ContentEncodingError {}
 
 /// コンテント コーディング (Content Coding)
 #[derive(Debug, Clone, PartialEq, Eq)]

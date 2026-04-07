@@ -13,6 +13,8 @@
 //! assert_eq!(cl.tags().len(), 2);
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Content-Language パースエラー
@@ -40,7 +42,7 @@ impl fmt::Display for ContentLanguageError {
     }
 }
 
-impl std::error::Error for ContentLanguageError {}
+impl core::error::Error for ContentLanguageError {}
 
 /// Content-Language ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -63,11 +63,11 @@ fn test_if_none_match_wildcard() {
 #[test]
 fn test_if_modified_since_parse_errors() {
     assert!(matches!(
-        IfModifiedSince::parse("invalid date"),
+        IfModifiedSince::parse("invalid date", 2026),
         Err(ConditionalError::DateError)
     ));
     assert!(matches!(
-        IfModifiedSince::parse("2024-01-01"),
+        IfModifiedSince::parse("2024-01-01", 2026),
         Err(ConditionalError::DateError)
     ));
 }
@@ -79,7 +79,7 @@ fn test_if_modified_since_parse_errors() {
 #[test]
 fn test_if_unmodified_since_parse_errors() {
     assert!(matches!(
-        IfUnmodifiedSince::parse("invalid date"),
+        IfUnmodifiedSince::parse("invalid date", 2026),
         Err(ConditionalError::DateError)
     ));
 }
@@ -91,15 +91,18 @@ fn test_if_unmodified_since_parse_errors() {
 #[test]
 fn test_if_range_parse_errors() {
     // 空
-    assert!(matches!(IfRange::parse(""), Err(ConditionalError::Empty)));
     assert!(matches!(
-        IfRange::parse("   "),
+        IfRange::parse("", 2026),
+        Err(ConditionalError::Empty)
+    ));
+    assert!(matches!(
+        IfRange::parse("   ", 2026),
         Err(ConditionalError::Empty)
     ));
 
     // 不正な形式
     assert!(matches!(
-        IfRange::parse("invalid"),
+        IfRange::parse("invalid", 2026),
         Err(ConditionalError::DateError)
     ));
 }

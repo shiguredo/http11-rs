@@ -3,6 +3,7 @@
 //! RFC 9110 Section 8.4 (Content-Encoding) 準拠の圧縮/展開インターフェース。
 //! gzip, deflate, br 等の圧縮アルゴリズムを実装する際のトレイト定義を提供する。
 
+use alloc::string::String;
 use core::fmt;
 
 /// 圧縮/展開エラー
@@ -41,7 +42,7 @@ impl fmt::Display for CompressionError {
     }
 }
 
-impl std::error::Error for CompressionError {}
+impl core::error::Error for CompressionError {}
 
 /// 処理結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

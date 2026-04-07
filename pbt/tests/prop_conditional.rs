@@ -146,9 +146,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_modified_since_roundtrip(date_str in http_date_str()) {
-        let ims = IfModifiedSince::parse(&date_str).unwrap();
+        let ims = IfModifiedSince::parse(&date_str, 2026).unwrap();
         let displayed = ims.to_string();
-        let reparsed = IfModifiedSince::parse(&displayed).unwrap();
+        let reparsed = IfModifiedSince::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(ims.date().day(), reparsed.date().day());
         prop_assert_eq!(ims.date().month(), reparsed.date().month());
@@ -163,7 +163,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_modified_since_is_modified(date_str in http_date_str()) {
-        let ims = IfModifiedSince::parse(&date_str).unwrap();
+        let ims = IfModifiedSince::parse(&date_str, 2026).unwrap();
         let same_date = ims.date();
 
         // 同じ日付なら modified ではない
@@ -179,9 +179,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_unmodified_since_roundtrip(date_str in http_date_str()) {
-        let ius = IfUnmodifiedSince::parse(&date_str).unwrap();
+        let ius = IfUnmodifiedSince::parse(&date_str, 2026).unwrap();
         let displayed = ius.to_string();
-        let reparsed = IfUnmodifiedSince::parse(&displayed).unwrap();
+        let reparsed = IfUnmodifiedSince::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(ius.date().day(), reparsed.date().day());
         prop_assert_eq!(ius.date().month(), reparsed.date().month());
@@ -198,7 +198,7 @@ proptest! {
     #[test]
     fn prop_if_range_strong_etag_roundtrip(tag in etag_value()) {
         let input = format!("\"{}\"", tag);
-        let ir = IfRange::parse(&input).unwrap();
+        let ir = IfRange::parse(&input, 2026).unwrap();
 
         prop_assert!(ir.is_etag());
         prop_assert!(!ir.is_date());
@@ -206,7 +206,7 @@ proptest! {
         prop_assert!(ir.date().is_none());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
         prop_assert!(reparsed.is_etag());
         prop_assert_eq!(ir.etag().unwrap().tag(), reparsed.etag().unwrap().tag());
     }
@@ -217,14 +217,14 @@ proptest! {
     #[test]
     fn prop_if_range_weak_etag_roundtrip(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
-        let ir = IfRange::parse(&input).unwrap();
+        let ir = IfRange::parse(&input, 2026).unwrap();
 
         prop_assert!(ir.is_etag());
         prop_assert!(ir.etag().unwrap().is_weak());
         prop_assert_eq!(ir.etag().unwrap().tag(), tag.as_str());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
         prop_assert!(reparsed.is_etag());
         prop_assert!(reparsed.etag().unwrap().is_weak());
     }
@@ -234,7 +234,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_range_date_roundtrip(date_str in http_date_str()) {
-        let ir = IfRange::parse(&date_str).unwrap();
+        let ir = IfRange::parse(&date_str, 2026).unwrap();
 
         prop_assert!(ir.is_date());
         prop_assert!(!ir.is_etag());
@@ -242,7 +242,7 @@ proptest! {
         prop_assert!(ir.date().is_some());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
         prop_assert!(reparsed.is_date());
         prop_assert_eq!(
             ir.date().unwrap().day(),
@@ -257,6 +257,6 @@ proptest! {
     fn prop_if_range_weak_lowercase_rejected(tag in etag_value()) {
         let input = format!("w/\"{}\"", tag);
         // 小文字 w/ は RFC 非準拠のため拒否される
-        prop_assert!(IfRange::parse(&input).is_err());
+        prop_assert!(IfRange::parse(&input, 2026).is_err());
     }
 }

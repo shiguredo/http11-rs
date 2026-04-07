@@ -28,6 +28,8 @@
 //! assert_eq!(token.token(), "abc.def");
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Basic 認証エラー
@@ -87,7 +89,7 @@ impl fmt::Display for AuthError {
     }
 }
 
-impl std::error::Error for AuthError {}
+impl core::error::Error for AuthError {}
 
 /// Basic 認証
 ///

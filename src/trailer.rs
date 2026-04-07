@@ -16,6 +16,8 @@
 //! assert_eq!(trailer.fields().len(), 2);
 //! ```
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Trailer パースエラー
@@ -44,7 +46,7 @@ impl fmt::Display for TrailerError {
     }
 }
 
-impl std::error::Error for TrailerError {}
+impl core::error::Error for TrailerError {}
 
 /// Trailer ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

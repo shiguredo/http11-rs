@@ -14,8 +14,9 @@
 //! assert_eq!(host.port(), Some(8080));
 //! ```
 
+use alloc::string::{String, ToString};
 use core::fmt;
-use std::net::{Ipv4Addr, Ipv6Addr};
+use core::net::{Ipv4Addr, Ipv6Addr};
 
 /// Host パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +42,7 @@ impl fmt::Display for HostError {
     }
 }
 
-impl std::error::Error for HostError {}
+impl core::error::Error for HostError {}
 
 /// Host ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

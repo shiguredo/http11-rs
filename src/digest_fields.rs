@@ -17,6 +17,8 @@
 //! assert_eq!(want.items().len(), 2);
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Digest Fields パースエラー
@@ -49,7 +51,7 @@ impl fmt::Display for DigestFieldsError {
     }
 }
 
-impl std::error::Error for DigestFieldsError {}
+impl core::error::Error for DigestFieldsError {}
 
 /// Digest 値
 #[derive(Debug, Clone, PartialEq, Eq)]

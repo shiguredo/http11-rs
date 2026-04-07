@@ -27,6 +27,8 @@
 //! assert!(expect.has_100_continue());
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Expect パースエラー
@@ -53,7 +55,7 @@ impl fmt::Display for ExpectError {
     }
 }
 
-impl std::error::Error for ExpectError {}
+impl core::error::Error for ExpectError {}
 
 /// Expect ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -21,13 +21,15 @@
 //!
 //! while let Some(part) = parser.next_part().unwrap() {
 //!     println!("name: {:?}", part.name());
-//!     println!("body: {:?}", std::str::from_utf8(part.body()));
+//!     println!("body: {:?}", core::str::from_utf8(part.body()));
 //! }
 //! ```
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
 use crate::validate::is_token_char;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// multipart パースエラー
@@ -94,7 +96,7 @@ impl fmt::Display for MultipartError {
     }
 }
 
-impl std::error::Error for MultipartError {}
+impl core::error::Error for MultipartError {}
 
 /// multipart パートを表す構造体
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,7 +184,7 @@ impl Part {
 
     /// ボディを文字列として取得
     pub fn body_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.body).ok()
+        core::str::from_utf8(&self.body).ok()
     }
 
     /// ファイルパートかどうか
@@ -337,7 +339,7 @@ impl MultipartParser {
                         let body_start = header_end + 4;
 
                         // ヘッダーをパース
-                        let headers_str = std::str::from_utf8(header_bytes)
+                        let headers_str = core::str::from_utf8(header_bytes)
                             .map_err(|_| MultipartError::InvalidHeader)?;
 
                         let mut content_disposition = None;

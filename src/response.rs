@@ -1,3 +1,6 @@
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 /// HTTP レスポンス
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {

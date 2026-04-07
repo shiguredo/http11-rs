@@ -16,6 +16,8 @@
 //! assert_eq!(encoding.items().len(), 2);
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Accept 系パースエラー
@@ -51,7 +53,7 @@ impl fmt::Display for AcceptError {
     }
 }
 
-impl std::error::Error for AcceptError {}
+impl core::error::Error for AcceptError {}
 
 /// q 値 (0.000 - 1.000)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

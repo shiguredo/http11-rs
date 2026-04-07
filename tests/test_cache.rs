@@ -97,11 +97,11 @@ fn test_age_parse_errors() {
 fn test_expires_parse_errors() {
     // 不正な日付形式
     assert!(matches!(
-        Expires::parse("invalid date"),
+        Expires::parse("invalid date", 2026),
         Err(CacheError::InvalidDate)
     ));
     assert!(matches!(
-        Expires::parse("2024-01-01"),
+        Expires::parse("2024-01-01", 2026),
         Err(CacheError::InvalidDate)
     ));
 }
@@ -109,7 +109,7 @@ fn test_expires_parse_errors() {
 // Expires to_header_value
 #[test]
 fn test_expires_to_header_value() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
     let header = expires.to_header_value();
     assert!(header.contains("1994"));
     assert!(header.contains("Nov"));

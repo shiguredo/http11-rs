@@ -4,7 +4,7 @@
 //!
 //! ## 特徴
 //!
-//! - **依存なし**: 標準ライブラリのみ使用
+//! - **依存なし**: `core` / `alloc` のみ (no_std 対応)
 //! - **Sans I/O**: I/O を完全に分離した設計
 //! - **柔軟性**: HTTP/1.1, RTSP/1.0, RTSP/2.0 等に対応
 //!
@@ -47,6 +47,10 @@
 //! let bytes = response.encode();
 //! // bytes を送信...
 //! ```
+
+#![cfg_attr(not(test), no_std)]
+#[macro_use]
+extern crate alloc;
 
 pub mod accept;
 pub mod auth;

@@ -19,6 +19,8 @@
 //! assert_eq!(cd.disposition_type(), DispositionType::Inline);
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Content-Disposition パースエラー
@@ -57,7 +59,7 @@ impl fmt::Display for ContentDispositionError {
     }
 }
 
-impl std::error::Error for ContentDispositionError {}
+impl core::error::Error for ContentDispositionError {}
 
 /// Disposition タイプ
 ///

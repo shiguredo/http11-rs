@@ -15,7 +15,7 @@
 //! assert_eq!(cookies[0].value(), "abc123");
 //!
 //! // Set-Cookie ヘッダーパース
-//! let set_cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure").unwrap();
+//! let set_cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
 //! assert_eq!(set_cookie.name(), "session");
 //! assert_eq!(set_cookie.value(), "abc123");
 //! assert_eq!(set_cookie.path(), Some("/"));
@@ -23,7 +23,9 @@
 //! assert!(set_cookie.secure());
 //! ```
 
-use crate::date::HttpDate;
+use crate::date::{DateError, HttpDate};
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Cookie パースエラー
@@ -56,7 +58,7 @@ impl fmt::Display for CookieError {
     }
 }
 
-impl std::error::Error for CookieError {}
+impl core::error::Error for CookieError {}
 
 /// Cookie (name=value ペア)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -201,19 +203,22 @@ pub struct SetCookie {
 impl SetCookie {
     /// Set-Cookie ヘッダー文字列をパース
     ///
+    /// `reference_year` は Expires 属性の RFC 850 形式 2 桁年解決に使う
+    /// 現在年 (RFC 9110 §5.6.7)。
+    ///
     /// # 例
     ///
     /// ```rust
     /// use shiguredo_http11::cookie::SetCookie;
     ///
-    /// let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure").unwrap();
+    /// let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
     /// assert_eq!(cookie.name(), "session");
     /// assert_eq!(cookie.value(), "abc123");
     /// assert_eq!(cookie.path(), Some("/"));
     /// assert!(cookie.http_only());
     /// assert!(cookie.secure());
     /// ```
-    pub fn parse(input: &str) -> Result<Self, CookieError> {
+    pub fn parse(input: &str, reference_year: u16) -> Result<Self, CookieError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(CookieError::Empty);
@@ -251,7 +256,13 @@ impl SetCookie {
                 match attr_name.to_ascii_lowercase().as_str() {
                     "expires" => {
                         // RFC 6265 Section 5.2.1: 不正な Expires は無視
-                        if let Ok(date) = HttpDate::parse(attr_value) {
+                        let parsed = HttpDate::parse(attr_value).or_else(|e| match e {
+                            DateError::Rfc850Date => {
+                                HttpDate::parse_rfc850(attr_value, reference_year)
+                            }
+                            other => Err(other),
+                        });
+                        if let Ok(date) = parsed {
                             set_cookie.expires = Some(date);
                         }
                     }
@@ -549,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_set_cookie_parse_simple() {
-        let cookie = SetCookie::parse("session=abc123").unwrap();
+        let cookie = SetCookie::parse("session=abc123", 2026).unwrap();
         assert_eq!(cookie.name(), "session");
         assert_eq!(cookie.value(), "abc123");
         assert!(!cookie.secure());
@@ -558,7 +569,7 @@ mod tests {
 
     #[test]
     fn test_set_cookie_parse_with_attributes() {
-        let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure").unwrap();
+        let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
         assert_eq!(cookie.name(), "session");
         assert_eq!(cookie.value(), "abc123");
         assert_eq!(cookie.path(), Some("/"));
@@ -568,32 +579,35 @@ mod tests {
 
     #[test]
     fn test_set_cookie_parse_with_domain() {
-        let cookie = SetCookie::parse("session=abc123; Domain=example.com").unwrap();
+        let cookie = SetCookie::parse("session=abc123; Domain=example.com", 2026).unwrap();
         assert_eq!(cookie.domain(), Some("example.com"));
     }
 
     #[test]
     fn test_set_cookie_parse_with_max_age() {
-        let cookie = SetCookie::parse("session=abc123; Max-Age=3600").unwrap();
+        let cookie = SetCookie::parse("session=abc123; Max-Age=3600", 2026).unwrap();
         assert_eq!(cookie.max_age(), Some(3600));
     }
 
     #[test]
     fn test_set_cookie_parse_with_expires() {
-        let cookie =
-            SetCookie::parse("session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let cookie = SetCookie::parse(
+            "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT",
+            2026,
+        )
+        .unwrap();
         assert!(cookie.expires().is_some());
     }
 
     #[test]
     fn test_set_cookie_parse_with_samesite() {
-        let cookie = SetCookie::parse("session=abc123; SameSite=Strict").unwrap();
+        let cookie = SetCookie::parse("session=abc123; SameSite=Strict", 2026).unwrap();
         assert_eq!(cookie.same_site(), Some(SameSite::Strict));
 
-        let cookie = SetCookie::parse("session=abc123; SameSite=Lax").unwrap();
+        let cookie = SetCookie::parse("session=abc123; SameSite=Lax", 2026).unwrap();
         assert_eq!(cookie.same_site(), Some(SameSite::Lax));
 
-        let cookie = SetCookie::parse("session=abc123; SameSite=None").unwrap();
+        let cookie = SetCookie::parse("session=abc123; SameSite=None", 2026).unwrap();
         assert_eq!(cookie.same_site(), Some(SameSite::None));
     }
 
@@ -646,7 +660,7 @@ mod tests {
     #[test]
     fn test_set_cookie_invalid_expires_ignored() {
         // RFC 6265 Section 5.2.1: 不正な Expires は無視される
-        let cookie = SetCookie::parse("session=abc123; Expires=invalid-date").unwrap();
+        let cookie = SetCookie::parse("session=abc123; Expires=invalid-date", 2026).unwrap();
         assert_eq!(cookie.name(), "session");
         assert_eq!(cookie.value(), "abc123");
         assert!(cookie.expires().is_none());
@@ -655,7 +669,7 @@ mod tests {
     #[test]
     fn test_set_cookie_invalid_max_age_ignored() {
         // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される
-        let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number").unwrap();
+        let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number", 2026).unwrap();
         assert_eq!(cookie.name(), "session");
         assert_eq!(cookie.value(), "abc123");
         assert!(cookie.max_age().is_none());

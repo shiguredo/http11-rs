@@ -39,7 +39,7 @@ impl fmt::Display for ContentLocationError {
     }
 }
 
-impl std::error::Error for ContentLocationError {}
+impl core::error::Error for ContentLocationError {}
 
 /// Content-Location ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

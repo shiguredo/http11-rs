@@ -14,6 +14,8 @@ use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::request::Request;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
 
@@ -366,7 +368,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 method: parts[0].to_string(),
                                 uri: parts[1].to_string(),
                                 version: parts[2].to_string(),
-                                headers: std::mem::take(&mut self.headers),
+                                headers: core::mem::take(&mut self.headers),
                             };
 
                             return Ok(Some((head, body_kind)));
@@ -557,7 +559,7 @@ impl<D: Decompressor> RequestDecoder<D> {
 
         // Request を構築
         let head = self.decoded_head.take().unwrap();
-        let body = std::mem::take(&mut self.decoded_body);
+        let body = core::mem::take(&mut self.decoded_body);
 
         // Keep-Alive 対応: 次のリクエストのために状態をリセット
         self.phase = DecodePhase::StartLine;

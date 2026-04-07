@@ -21,11 +21,11 @@
 //! assert!(if_none_match.is_any());
 //!
 //! // If-Modified-Since
-//! let if_mod = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+//! let if_mod = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
 //! let _ = if_mod.date();
 //! ```
 
-use crate::date::HttpDate;
+use crate::date::{DateError, HttpDate};
 use crate::etag::{ETagList, EntityTag, parse_etag_list};
 use core::fmt;
 
@@ -53,7 +53,7 @@ impl fmt::Display for ConditionalError {
     }
 }
 
-impl std::error::Error for ConditionalError {}
+impl core::error::Error for ConditionalError {}
 
 /// If-Match ヘッダー (RFC 9110 Section 13.1.1)
 ///
@@ -143,8 +143,15 @@ pub struct IfModifiedSince(HttpDate);
 
 impl IfModifiedSince {
     /// If-Modified-Since ヘッダーをパース
-    pub fn parse(input: &str) -> Result<Self, ConditionalError> {
+    ///
+    /// `reference_year` は RFC 850 形式の 2 桁年解決に使う現在年
+    /// (RFC 9110 §5.6.7)。
+    pub fn parse(input: &str, reference_year: u16) -> Result<Self, ConditionalError> {
         HttpDate::parse(input)
+            .or_else(|e| match e {
+                DateError::Rfc850Date => HttpDate::parse_rfc850(input, reference_year),
+                other => Err(other),
+            })
             .map(IfModifiedSince)
             .map_err(|_| ConditionalError::DateError)
     }
@@ -179,8 +186,15 @@ pub struct IfUnmodifiedSince(HttpDate);
 
 impl IfUnmodifiedSince {
     /// If-Unmodified-Since ヘッダーをパース
-    pub fn parse(input: &str) -> Result<Self, ConditionalError> {
+    ///
+    /// `reference_year` は RFC 850 形式の 2 桁年解決に使う現在年
+    /// (RFC 9110 §5.6.7)。
+    pub fn parse(input: &str, reference_year: u16) -> Result<Self, ConditionalError> {
         HttpDate::parse(input)
+            .or_else(|e| match e {
+                DateError::Rfc850Date => HttpDate::parse_rfc850(input, reference_year),
+                other => Err(other),
+            })
             .map(IfUnmodifiedSince)
             .map_err(|_| ConditionalError::DateError)
     }
@@ -210,7 +224,10 @@ pub enum IfRange {
 
 impl IfRange {
     /// If-Range ヘッダーをパース
-    pub fn parse(input: &str) -> Result<Self, ConditionalError> {
+    ///
+    /// `reference_year` は RFC 850 形式の 2 桁年解決に使う現在年
+    /// (RFC 9110 §5.6.7)。
+    pub fn parse(input: &str, reference_year: u16) -> Result<Self, ConditionalError> {
         let input = input.trim();
         if input.is_empty() {
             return Err(ConditionalError::Empty);
@@ -223,6 +240,10 @@ impl IfRange {
                 .map_err(|_| ConditionalError::ETagError)
         } else {
             HttpDate::parse(input)
+                .or_else(|e| match e {
+                    DateError::Rfc850Date => HttpDate::parse_rfc850(input, reference_year),
+                    other => Err(other),
+                })
                 .map(IfRange::Date)
                 .map_err(|_| ConditionalError::DateError)
         }
@@ -328,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_if_modified_since() {
-        let ims = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let ims = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         assert_eq!(ims.date().day(), 6);
         assert_eq!(ims.date().month(), 11);
         assert_eq!(ims.date().year(), 1994);
@@ -337,7 +358,7 @@ mod tests {
     #[test]
     fn test_if_modified_since_is_modified() {
         // If-Modified-Since: 1994-11-06
-        let ims = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let ims = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
 
         // last-modified が同じ → false (304)
         let same = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
@@ -354,27 +375,27 @@ mod tests {
 
     #[test]
     fn test_if_unmodified_since() {
-        let ius = IfUnmodifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let ius = IfUnmodifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         assert_eq!(ius.date().day(), 6);
     }
 
     #[test]
     fn test_if_range_etag() {
-        let ir = IfRange::parse("\"abc123\"").unwrap();
+        let ir = IfRange::parse("\"abc123\"", 2026).unwrap();
         assert!(ir.is_etag());
         assert_eq!(ir.etag().unwrap().tag(), "abc123");
     }
 
     #[test]
     fn test_if_range_weak_etag() {
-        let ir = IfRange::parse("W/\"abc123\"").unwrap();
+        let ir = IfRange::parse("W/\"abc123\"", 2026).unwrap();
         assert!(ir.is_etag());
         assert!(ir.etag().unwrap().is_weak());
     }
 
     #[test]
     fn test_if_range_date() {
-        let ir = IfRange::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let ir = IfRange::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         assert!(ir.is_date());
         assert_eq!(ir.date().unwrap().day(), 6);
     }
@@ -387,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_if_range_display() {
-        let ir = IfRange::parse("\"abc\"").unwrap();
+        let ir = IfRange::parse("\"abc\"", 2026).unwrap();
         assert_eq!(ir.to_string(), "\"abc\"");
     }
 }

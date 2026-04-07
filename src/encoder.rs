@@ -7,6 +7,8 @@ use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
     is_valid_request_target, is_valid_status_code, is_valid_version_for_encode,
 };
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
