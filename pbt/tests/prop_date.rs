@@ -138,7 +138,7 @@ proptest! {
 // RFC 850 形式のテスト
 // ========================================
 
-// RFC 850 パース
+// RFC 850 パース (2 桁年は基準年付きで解決)
 proptest! {
     #[test]
     fn prop_http_date_parse_rfc850(
@@ -148,13 +148,14 @@ proptest! {
         year in rfc850_year(),
         hour in valid_hour(),
         minute in valid_minute(),
-        second in normal_second()
+        second in normal_second(),
+        reference_year in 1970u16..=2200u16,
     ) {
         let date_str = format!(
             "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
             dow_name, day, month_str, year, hour, minute, second
         );
-        let result = HttpDate::parse(&date_str);
+        let result = HttpDate::parse_rfc850(&date_str, reference_year);
         prop_assert!(result.is_ok());
 
         let date = result.unwrap();
@@ -165,32 +166,46 @@ proptest! {
     }
 }
 
-// RFC 850 2桁年の変換 (RFC 9110 Section 5.6.7)
+// 引数なしの parse は 2 桁年を拒否する
+proptest! {
+    #[test]
+    fn prop_http_date_parse_rfc850_2digit_rejected_without_reference(
+        dow_name in day_name_long(),
+        day in valid_day(),
+        month_str in month_name(),
+        year in rfc850_year(),
+        hour in valid_hour(),
+        minute in valid_minute(),
+        second in normal_second(),
+    ) {
+        let date_str = format!(
+            "{}, {:02}-{}-{:02} {:02}:{:02}:{:02} GMT",
+            dow_name, day, month_str, year, hour, minute, second
+        );
+        let result = HttpDate::parse(&date_str);
+        prop_assert!(matches!(result, Err(DateError::Rfc850Date)));
+    }
+}
+
+// RFC 850 2 桁年の変換 (RFC 9110 Section 5.6.7)
 // 実装と同じロジックで期待値を計算し、パース結果を検証する
 proptest! {
     #[test]
     fn prop_http_date_rfc850_year_conversion(
-        year in rfc850_year()
+        year in rfc850_year(),
+        reference_year in 1970u16..=2200u16,
     ) {
         let date_str = format!(
             "Sunday, 06-Nov-{:02} 08:49:37 GMT",
             year
         );
-        let date = HttpDate::parse(&date_str).unwrap();
+        let date = HttpDate::parse_rfc850(&date_str, reference_year).unwrap();
         let parsed_year = date.year();
 
-        // 実装と同じロジックで期待値を計算する (RFC 9110 Section 5.6.7)
-        // current_year() は SystemTime から取得される
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let years_since_1970 = now.as_secs() / 31_557_600;
-        let current = (1970 + years_since_1970) as u16;
-        let current_century = (current / 100) * 100;
-        let candidate = current_century + year as u16;
-
         // RFC 9110: 50 年以上未来に見える場合は 100 年引く
-        let expected_year = if candidate > current + 50 {
+        let current_century = (reference_year / 100) * 100;
+        let candidate = current_century + year as u16;
+        let expected_year = if candidate > reference_year + 50 {
             candidate - 100
         } else {
             candidate

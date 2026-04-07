@@ -198,8 +198,11 @@ fn test_date_all_days_of_week() {
         let date = HttpDate::parse(&date_str).unwrap();
         assert_eq!(date.day_of_week(), expected_dow);
     }
+}
 
-    // 長い名前も
+#[test]
+fn test_date_rfc850_all_days_of_week() {
+    // rfc850-date 形式は長い曜日名 (Monday, Tuesday, ...) を使う (RFC 9110 §5.6.7 ABNF: day-name-l)
     let long_days = [
         (DayOfWeek::Sunday, "Sunday"),
         (DayOfWeek::Monday, "Monday"),
@@ -211,9 +214,8 @@ fn test_date_all_days_of_week() {
     ];
 
     for (expected_dow, dow_name) in long_days {
-        // RFC 850 形式
         let date_str = format!("{}, 06-Nov-94 08:49:37 GMT", dow_name);
-        let date = HttpDate::parse(&date_str).unwrap();
+        let date = HttpDate::parse_rfc850(&date_str, 2026).unwrap();
         assert_eq!(date.day_of_week(), expected_dow);
     }
 }
@@ -250,13 +252,13 @@ fn test_date_boundary_values() {
 #[test]
 fn test_date_rfc850_format_errors() {
     // 不正な日-月-年 形式
-    assert!(HttpDate::parse("Sunday, 06-Nov 08:49:37 GMT").is_err());
-    assert!(HttpDate::parse("Sunday, 06-Nov-94-extra 08:49:37 GMT").is_err());
+    assert!(HttpDate::parse_rfc850("Sunday, 06-Nov 08:49:37 GMT", 2026).is_err());
+    assert!(HttpDate::parse_rfc850("Sunday, 06-Nov-94-extra 08:49:37 GMT", 2026).is_err());
 }
 
 #[test]
 fn test_date_rfc850_4digit_year() {
-    // RFC 850 形式でも 4 桁年は許可される (そのまま使用)
-    let date = HttpDate::parse("Sunday, 06-Nov-1994 08:49:37 GMT").unwrap();
+    // RFC 9110 §5.6.7 ABNF では 2DIGIT 固定だが、Postel 原則で 4 桁年も受理する。
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026).unwrap();
     assert_eq!(date.year(), 1994);
 }

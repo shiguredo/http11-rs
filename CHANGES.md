@@ -11,6 +11,18 @@
 
 ## develop
 
+- [CHANGE] `HttpDate` の API を obs-date 対応のために再設計する
+  - `HttpDate::parse(&str)` は IMF-fixdate と asctime のみを受理する
+  - rfc850-date を検出した場合は `Err(DateError::Rfc850Date)` を返し、`HttpDate::parse_rfc850(&str, reference_year: u16)` でフォールバックする設計とする
+  - `HttpDate::parse_rfc850` は ABNF 通りの 2 桁年に加え、Postel 原則で 4 桁年も受理する (4 桁年の場合 `reference_year` は使用されない)
+  - 2 桁年は RFC 9110 §5.6.7 の 50 年ルールで `reference_year` を基準に解決する
+  - グローバル可変状態 (`AtomicU16` による暗黙の参照年) と `set_http_date_reference_year` 関数を完全に削除し、no_std でも安全に扱えるようにする
+  - `DateError::Rfc850Date` バリアントを追加する
+  - @voluntas
+- [CHANGE] `SetCookie::parse` / `Expires::parse` / `IfModifiedSince::parse` / `IfUnmodifiedSince::parse` / `IfRange::parse` のシグネチャに `reference_year: u16` 引数を追加する
+  - RFC 9110 §5.6.7 が要求する 3 形式 (IMF-fixdate / rfc850-date / asctime) すべての受理を満たすために必要
+  - 内部で `HttpDate::parse` → `Rfc850Date` エラー時に `HttpDate::parse_rfc850` へフォールバックする
+  - @voluntas
 - [CHANGE] `MultipartParser::feed()` の戻り値を `Result<(), MultipartError>` に変更する
   - バッファ上限超過時に `MultipartError::BufferOverflow` を返す
   - @voluntas

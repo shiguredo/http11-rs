@@ -19,10 +19,10 @@
 //! assert_eq!(age.seconds(), 120);
 //!
 //! // Expires ヘッダー
-//! let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+//! let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
 //! ```
 
-use crate::date::HttpDate;
+use crate::date::{DateError, HttpDate};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -460,16 +460,24 @@ impl Expires {
 
     /// Expires ヘッダーをパース
     ///
+    /// `reference_year` は RFC 850 形式の 2 桁年を解決するために使う
+    /// 現在年 (RFC 9110 §5.6.7)。RTC や NTP などから取得すること。
+    ///
     /// # 例
     ///
     /// ```rust
     /// use shiguredo_http11::cache::Expires;
     ///
-    /// let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    /// let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
     /// assert_eq!(expires.date().year(), 1994);
     /// ```
-    pub fn parse(input: &str) -> Result<Self, CacheError> {
-        let date = HttpDate::parse(input).map_err(|_| CacheError::InvalidDate)?;
+    pub fn parse(input: &str, reference_year: u16) -> Result<Self, CacheError> {
+        let date = HttpDate::parse(input)
+            .or_else(|e| match e {
+                DateError::Rfc850Date => HttpDate::parse_rfc850(input, reference_year),
+                other => Err(other),
+            })
+            .map_err(|_| CacheError::InvalidDate)?;
         Ok(Expires { date })
     }
 
@@ -688,7 +696,7 @@ mod tests {
 
     #[test]
     fn test_expires_parse() {
-        let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         assert_eq!(expires.date().year(), 1994);
         assert_eq!(expires.date().month(), 11);
         assert_eq!(expires.date().day(), 6);
@@ -696,13 +704,13 @@ mod tests {
 
     #[test]
     fn test_expires_parse_invalid() {
-        assert!(Expires::parse("invalid date").is_err());
-        assert!(Expires::parse("").is_err());
+        assert!(Expires::parse("invalid date", 2026).is_err());
+        assert!(Expires::parse("", 2026).is_err());
     }
 
     #[test]
     fn test_expires_display() {
-        let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         let s = expires.to_string();
         assert!(s.contains("1994"));
         assert!(s.contains("Nov"));
@@ -710,9 +718,9 @@ mod tests {
 
     #[test]
     fn test_expires_roundtrip() {
-        let original = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+        let original = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
         let header = original.to_string();
-        let reparsed = Expires::parse(&header).unwrap();
+        let reparsed = Expires::parse(&header, 2026).unwrap();
 
         assert_eq!(original.date().year(), reparsed.date().year());
         assert_eq!(original.date().month(), reparsed.date().month());

@@ -40,19 +40,19 @@ fn test_set_cookie_with_expires() {
     let displayed = cookie.to_string();
     assert!(displayed.contains("Expires="));
 
-    let reparsed = SetCookie::parse(&displayed).unwrap();
+    let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
     assert_eq!(reparsed.expires(), Some(&date));
 }
 
 #[test]
 fn test_set_cookie_expires_roundtrip() {
     let input = "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT";
-    let cookie = SetCookie::parse(input).unwrap();
+    let cookie = SetCookie::parse(input, 2026).unwrap();
 
     assert!(cookie.expires().is_some());
 
     let displayed = cookie.to_string();
-    let reparsed = SetCookie::parse(&displayed).unwrap();
+    let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
 
     assert_eq!(cookie.expires(), reparsed.expires());
 }
@@ -86,7 +86,7 @@ fn test_cookie_quoted_value_with_space_rejected() {
 fn test_set_cookie_quoted_value() {
     // 引用符付きの値 (cookie-octet のみ)
     let input = "name=\"quotedvalue\"; Path=/";
-    let cookie = SetCookie::parse(input).unwrap();
+    let cookie = SetCookie::parse(input, 2026).unwrap();
 
     assert_eq!(cookie.name(), "name");
     assert_eq!(cookie.value(), "quotedvalue");
@@ -98,7 +98,7 @@ fn test_set_cookie_quoted_value_with_space_rejected() {
     // RFC 6265 Section 4.1.1: スペースは cookie-octet ではない
     let input = "name=\"quoted value\"; Path=/";
     assert!(matches!(
-        SetCookie::parse(input),
+        SetCookie::parse(input, 2026),
         Err(CookieError::InvalidValue)
     ));
 }
@@ -135,30 +135,33 @@ fn test_cookie_parse_errors() {
 #[test]
 fn test_set_cookie_parse_errors() {
     // 空
-    assert!(matches!(SetCookie::parse(""), Err(CookieError::Empty)));
+    assert!(matches!(
+        SetCookie::parse("", 2026),
+        Err(CookieError::Empty)
+    ));
 
     // = がない
     assert!(matches!(
-        SetCookie::parse("invalidcookie"),
+        SetCookie::parse("invalidcookie", 2026),
         Err(CookieError::InvalidFormat)
     ));
 
     // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される (エラーにならない)
-    let cookie = SetCookie::parse("name=value; Max-Age=notanumber").unwrap();
+    let cookie = SetCookie::parse("name=value; Max-Age=notanumber", 2026).unwrap();
     assert!(cookie.max_age().is_none());
 
     // RFC 6265 Section 5.2.2: 先頭が "+" は DIGIT でも "-" でもないため無視される
-    let cookie = SetCookie::parse("name=value; Max-Age=+10").unwrap();
+    let cookie = SetCookie::parse("name=value; Max-Age=+10", 2026).unwrap();
     assert!(cookie.max_age().is_none());
 
     // 不正な SameSite
     assert!(matches!(
-        SetCookie::parse("name=value; SameSite=Invalid"),
+        SetCookie::parse("name=value; SameSite=Invalid", 2026),
         Err(CookieError::InvalidSameSite)
     ));
 
     // RFC 6265 Section 5.2.1: 不正な Expires は無視される (エラーにならない)
-    let cookie = SetCookie::parse("name=value; Expires=not a date").unwrap();
+    let cookie = SetCookie::parse("name=value; Expires=not a date", 2026).unwrap();
     assert!(cookie.expires().is_none());
 }
 
@@ -169,23 +172,23 @@ fn test_set_cookie_parse_errors() {
 #[test]
 fn test_set_cookie_domain_normalization() {
     // 先頭の "." を除去する
-    let cookie = SetCookie::parse("name=value; Domain=.example.com").unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.example.com", 2026).unwrap();
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // 小文字に変換する
-    let cookie = SetCookie::parse("name=value; Domain=Example.COM").unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=Example.COM", 2026).unwrap();
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // 先頭の "." 除去と小文字化の両方を適用する
-    let cookie = SetCookie::parse("name=value; Domain=.Example.COM").unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.Example.COM", 2026).unwrap();
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // "." のみの場合は無視する
-    let cookie = SetCookie::parse("name=value; Domain=.").unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.", 2026).unwrap();
     assert!(cookie.domain().is_none());
 
     // 空の場合は無視する
-    let cookie = SetCookie::parse("name=value; Domain=").unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=", 2026).unwrap();
     assert!(cookie.domain().is_none());
 }
 
@@ -207,11 +210,11 @@ fn test_cookie_empty_part() {
 #[test]
 fn test_set_cookie_empty_part() {
     // セミコロンの後に空白のみ
-    let cookie = SetCookie::parse("name=value; ").unwrap();
+    let cookie = SetCookie::parse("name=value; ", 2026).unwrap();
     assert_eq!(cookie.name(), "name");
 
     // 連続するセミコロン (空パートは無視)
-    let cookie = SetCookie::parse("name=value;; Secure").unwrap();
+    let cookie = SetCookie::parse("name=value;; Secure", 2026).unwrap();
     assert!(cookie.secure());
 }
 
@@ -222,12 +225,12 @@ fn test_set_cookie_empty_part() {
 #[test]
 fn test_set_cookie_unknown_attribute() {
     // 未知の属性は無視される
-    let cookie = SetCookie::parse("name=value; UnknownAttr=something; Secure").unwrap();
+    let cookie = SetCookie::parse("name=value; UnknownAttr=something; Secure", 2026).unwrap();
     assert_eq!(cookie.name(), "name");
     assert!(cookie.secure());
 
     // 値なしの未知の属性
-    let cookie = SetCookie::parse("name=value; UnknownFlag; HttpOnly").unwrap();
+    let cookie = SetCookie::parse("name=value; UnknownFlag; HttpOnly", 2026).unwrap();
     assert!(cookie.http_only());
 }
 
