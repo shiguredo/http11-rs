@@ -859,7 +859,7 @@ dependencies = [
 
 [[package]]
 name = "shiguredo_http11"
-version = "2026.1.1"
+version = "2026.2.0-canary.0"
 
 [[package]]
 name = "shlex"
