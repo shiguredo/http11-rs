@@ -518,10 +518,11 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // CONNECT の意味論的制約の判断はアプリケーション層の責務とする。
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
+    // body == None の場合は body 長 0 として扱う
     if !request.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(&request.headers)?
     {
-        let body_length = request.body.len() as u64;
+        let body_length = request.body.as_deref().map(<[u8]>::len).unwrap_or(0) as u64;
         if header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
@@ -548,13 +549,15 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // Content-Length (if body is present, not already set, and not chunked)
-    if !request.body.is_empty()
+    // Content-Length (body == Some の場合、Content-Length / Transfer-Encoding 未指定なら自動付与)
+    // RFC 9110 Section 8.6: メソッド意味論で content が想定されるかは呼び出し側の判断とする。
+    // body == Some(vec![]) なら Content-Length: 0、body == None なら自動付与しない。
+    if let Some(body) = request.body.as_deref()
         && !request.has_header("Content-Length")
         && !request.has_header("Transfer-Encoding")
     {
         buf.extend_from_slice(b"Content-Length: ");
-        buf.extend_from_slice(request.body.len().to_string().as_bytes());
+        buf.extend_from_slice(body.len().to_string().as_bytes());
         buf.extend_from_slice(b"\r\n");
     }
 
@@ -562,7 +565,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     buf.extend_from_slice(b"\r\n");
 
     // Body
-    buf.extend_from_slice(&request.body);
+    if let Some(body) = request.body.as_deref() {
+        buf.extend_from_slice(body);
+    }
 
     Ok(buf)
 }
@@ -603,8 +608,9 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     }
 
     // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
+    // body == Some(non-empty) のときのみ違反。Some(vec![]) と None は許容する。
     if response.status_code == 205 {
-        if !response.body.is_empty() {
+        if response.body.as_deref().is_some_and(|b| !b.is_empty()) {
             return Err(EncodeError::ForbiddenBodyFor205);
         }
         if response.has_header("Transfer-Encoding") {
@@ -625,14 +631,15 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // - 通常レスポンス: 常に一致必須
-    // - omit_body: true の場合は、body が空のときのみ検証をスキップ
+    // - omit_body: true の場合は、body が空 (None または Some(vec![])) のときのみ検証をスキップ
     //   (HEAD レスポンスで Content-Length が表現長を示すケース)
     // - 1xx/204/304 は message body がないため、ここでは検証しない
+    // body == None は body 長 0 として扱う
     if status_has_body
         && !response.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(&response.headers)?
     {
-        let body_length = response.body.len() as u64;
+        let body_length = response.body.as_deref().map(<[u8]>::len).unwrap_or(0) as u64;
         let should_validate = body_will_be_encoded || body_length != 0;
         if should_validate && header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
@@ -660,20 +667,27 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // Content-Length (if not already set and not chunked)
+    // Content-Length 自動付与
     // RFC 9112: keep-alive を維持するために Content-Length または Transfer-Encoding が必要
     // 1xx/204/304 はボディがないため Content-Length を追加しない
     // 205 は RFC 9110 Section 15.3.6 でボディ生成禁止だが、受信者のメッセージ長決定規則のため
-    // Content-Length: 0 を付与する (close-delimited にならないようにする)
-    // omit_body: true かつ body が空の場合は自動付与しない
+    // body が Some(vec![]) なら Content-Length: 0 を付与する (close-delimited にならないようにする)
+    // body == None ならボディ長を表現できないため自動付与しない
+    // omit_body: true かつ body が空 (None または Some(vec![])) の場合も自動付与しない
     // (HEAD レスポンスで表現長が不明なケースに配慮)
-    if status_has_body
-        && (!response.omit_body || !response.body.is_empty())
+    let body_len = response.body.as_deref().map(<[u8]>::len);
+    let auto_emit_content_length = status_has_body
         && !response.has_header("Content-Length")
         && !response.has_header("Transfer-Encoding")
-    {
+        && match (response.omit_body, body_len) {
+            (_, None) => false,
+            (true, Some(0)) => false,
+            (_, Some(_)) => true,
+        };
+    if auto_emit_content_length {
+        let len = body_len.unwrap_or(0);
         buf.extend_from_slice(b"Content-Length: ");
-        buf.extend_from_slice(response.body.len().to_string().as_bytes());
+        buf.extend_from_slice(len.to_string().as_bytes());
         buf.extend_from_slice(b"\r\n");
     }
 
@@ -683,8 +697,8 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // Body
     // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
     // HEAD レスポンスでは omit_body: true としてボディ送信を抑止する
-    if body_will_be_encoded {
-        buf.extend_from_slice(&response.body);
+    if body_will_be_encoded && let Some(body) = response.body.as_deref() {
+        buf.extend_from_slice(body);
     }
 
     Ok(buf)

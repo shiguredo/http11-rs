@@ -207,13 +207,15 @@ fn print_response(response: &shiguredo_http11::Response) {
         .map(|(_, value)| value.as_str());
 
     // ボディを展開（必要な場合）
+    // body == None のケースは空スライスとして扱う
+    let raw_body: &[u8] = response.body.as_deref().unwrap_or(&[]);
     let body = match content_encoding {
         Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
-            match decompress_body(&response.body, encoding) {
+            match decompress_body(raw_body, encoding) {
                 Ok(decompressed) => {
                     info!(
                         encoding,
-                        original_size = response.body.len(),
+                        original_size = raw_body.len(),
                         decompressed_size = decompressed.len(),
                         "Decompressed"
                     );
@@ -221,11 +223,11 @@ fn print_response(response: &shiguredo_http11::Response) {
                 }
                 Err(e) => {
                     error!(encoding, error = %e, "Decompression failed");
-                    response.body.clone()
+                    raw_body.to_vec()
                 }
             }
         }
-        _ => response.body.clone(),
+        _ => raw_body.to_vec(),
     };
 
     // ボディを表示 (テキストの場合)

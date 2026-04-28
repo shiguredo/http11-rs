@@ -2,6 +2,11 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 /// HTTP リクエスト
+///
+/// `body` フィールドは「ボディなし」と「明示的な空ボディ」を区別する。
+/// - `None`: ボディを送る意図がない (`Content-Length` を自動付与しない)
+/// - `Some(vec![])`: 明示的に空ボディ (`Content-Length: 0` を自動付与)
+/// - `Some(data)`: 通常のボディ (`Content-Length: N` を自動付与)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Request {
     /// HTTP メソッド (GET, POST, etc.)
@@ -13,7 +18,7 @@ pub struct Request {
     /// ヘッダー
     pub headers: Vec<(String, String)>,
     /// ボディ
-    pub body: Vec<u8>,
+    pub body: Option<Vec<u8>>,
 }
 
 impl Request {
@@ -24,7 +29,7 @@ impl Request {
             uri: uri.to_string(),
             version: "HTTP/1.1".to_string(),
             headers: Vec::new(),
-            body: Vec::new(),
+            body: None,
         }
     }
 
@@ -35,7 +40,7 @@ impl Request {
             uri: uri.to_string(),
             version: version.to_string(),
             headers: Vec::new(),
-            body: Vec::new(),
+            body: None,
         }
     }
 
@@ -46,8 +51,11 @@ impl Request {
     }
 
     /// ボディを設定 (ビルダーパターン)
+    ///
+    /// 空 `Vec` を渡した場合は「明示的な空ボディ」として扱われ、
+    /// エンコード時に `Content-Length: 0` が自動付与される。
     pub fn body(mut self, body: Vec<u8>) -> Self {
-        self.body = body;
+        self.body = Some(body);
         self
     }
 

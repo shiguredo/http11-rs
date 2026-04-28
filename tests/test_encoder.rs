@@ -93,6 +93,53 @@ fn test_encode_request_with_existing_content_length() {
     assert_eq!(count, 1);
 }
 
+// body == None と body == Some(vec![]) の挙動差分 (issue 0004)
+
+#[test]
+fn test_encode_post_with_explicit_empty_body_emits_content_length_zero() {
+    // POST + body=Some(vec![]) なら Content-Length: 0 を自動付与する
+    let req = Request::new("POST", "/")
+        .header("Host", "example.com")
+        .body(Vec::new());
+    let encoded = encode_request(&req).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(
+        encoded_str.contains("Content-Length: 0\r\n"),
+        "expected Content-Length: 0, got: {encoded_str}"
+    );
+}
+
+#[test]
+fn test_encode_post_without_body_emits_no_content_length() {
+    // POST + body=None なら Content-Length は自動付与しない
+    // (RFC 9110 8.6 はメソッド意味論で content が想定されるかは呼び出し側の判断とする)
+    let mut req = Request::new("POST", "/").header("Host", "example.com");
+    assert!(req.body.is_none());
+    // 念のため明示的に None を確認
+    req.body = None;
+    let encoded = encode_request(&req).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(
+        !encoded_str.contains("Content-Length"),
+        "expected no Content-Length, got: {encoded_str}"
+    );
+}
+
+#[test]
+fn test_encode_get_without_body_emits_no_content_length() {
+    // GET + body=None (デフォルト) は Content-Length を自動付与しない
+    let req = Request::new("GET", "/").header("Host", "example.com");
+    let encoded = encode_request(&req).unwrap();
+    let encoded_str = String::from_utf8_lossy(&encoded);
+
+    assert!(
+        !encoded_str.contains("Content-Length"),
+        "expected no Content-Length, got: {encoded_str}"
+    );
+}
+
 // ========================================
 // encode_response のエッジケーステスト
 // ========================================
