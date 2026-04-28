@@ -132,10 +132,6 @@ cargo llvm-cov --no-report -p pbt --test prop_<module>
 cargo llvm-cov report
 ```
 
-## pre-commit
-
-- make fmt / make clippy / make check / make test を実行すること
-
 ## Rust
 
 - 性能より堅牢性を優先すること
