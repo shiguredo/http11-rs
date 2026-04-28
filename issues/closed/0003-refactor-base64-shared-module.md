@@ -1,6 +1,7 @@
 # 0003: Base64 実装の共通モジュール化
 
 Created: 2026-04-28
+Completed: 2026-04-28
 Model: Opus 4.7 (1M context)
 
 ## 概要
@@ -43,3 +44,12 @@ Model: Opus 4.7 (1M context)
 
 - `make fmt && make clippy && make check && make test` を通す。
 - 既存の `tests/test_auth.rs` / `tests/test_digest_fields.rs` / `pbt/tests/prop_digest_fields.rs` がそのまま緑であることを確認する。
+
+## 解決方法
+
+- `src/base64.rs` を新規作成し、`pub(crate) const BASE64_ALPHABET` / `pub(crate) fn encode` / `pub(crate) fn decode` / `pub(crate) enum Base64Error { InvalidCharacter }` を実装した。
+- `src/lib.rs` に `mod base64;` を追加した (非公開モジュール)。
+- `src/auth.rs` から重複していた `BASE64_ALPHABET` / `base64_encode` / `base64_decode` を削除し、`base64::encode` / `base64::decode(...).map_err(|_| AuthError::Base64DecodeError)` を呼び出す形に変更した。`auth.rs` 内にあった `test_base64_encode` / `test_base64_decode` は `base64.rs` の `#[cfg(test)] mod tests` に移動した。
+- `src/digest_fields.rs` から同じく重複実装を削除し、`base64::encode` / `base64::decode(...).map_err(|_| DigestFieldsError::InvalidBase64)` に置き換えた。シャドウイングを避けるためローカル変数 `base64` は `encoded` にリネームした。
+- 公開 API は不変。`AuthError::Base64DecodeError` / `DigestFieldsError::InvalidBase64` は引き続き返る。
+- 検証: `make fmt`、`make clippy` (-D warnings)、`make check`、`make test` をすべて通過した。

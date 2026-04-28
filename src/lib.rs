@@ -54,6 +54,7 @@ extern crate alloc;
 
 pub mod accept;
 pub mod auth;
+mod base64;
 pub mod cache;
 pub mod compression;
 pub mod conditional;

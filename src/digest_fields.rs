@@ -21,6 +21,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::base64;
+
 /// Digest Fields パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DigestFieldsError {
@@ -68,7 +70,7 @@ impl DigestValue {
 
 impl fmt::Display for DigestValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, ":{}:", base64_encode(&self.bytes))
+        write!(f, ":{}:", base64::encode(&self.bytes))
     }
 }
 
@@ -323,11 +325,11 @@ fn parse_byte_sequence(input: &str) -> Result<DigestValue, DigestFieldsError> {
     let end = rest
         .find(':')
         .ok_or(DigestFieldsError::InvalidByteSequence)?;
-    let base64 = &rest[..end];
+    let encoded = &rest[..end];
     if !rest[end + 1..].trim().is_empty() {
         return Err(DigestFieldsError::InvalidByteSequence);
     }
-    let bytes = base64_decode(base64)?;
+    let bytes = base64::decode(encoded).map_err(|_| DigestFieldsError::InvalidBase64)?;
     Ok(DigestValue { bytes })
 }
 
@@ -358,76 +360,6 @@ fn is_token_char(b: u8) -> bool {
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
         b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
     )
-}
-
-// Base64 エンコード/デコード (依存なし実装)
-
-const BASE64_ALPHABET: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/// Base64 エンコード
-fn base64_encode(input: &[u8]) -> String {
-    let mut result = String::new();
-    let mut i = 0;
-
-    while i < input.len() {
-        let b0 = input[i];
-        let b1 = if i + 1 < input.len() { input[i + 1] } else { 0 };
-        let b2 = if i + 2 < input.len() { input[i + 2] } else { 0 };
-
-        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
-
-        result.push(BASE64_ALPHABET[(n >> 18 & 0x3F) as usize] as char);
-        result.push(BASE64_ALPHABET[(n >> 12 & 0x3F) as usize] as char);
-
-        if i + 1 < input.len() {
-            result.push(BASE64_ALPHABET[(n >> 6 & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-
-        if i + 2 < input.len() {
-            result.push(BASE64_ALPHABET[(n & 0x3F) as usize] as char);
-        } else {
-            result.push('=');
-        }
-
-        i += 3;
-    }
-
-    result
-}
-
-/// Base64 デコード
-fn base64_decode(input: &str) -> Result<Vec<u8>, DigestFieldsError> {
-    let input = input.trim_end_matches('=');
-    let mut result = Vec::new();
-
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-
-    for c in input.chars() {
-        let val = match c {
-            'A'..='Z' => c as u32 - 'A' as u32,
-            'a'..='z' => c as u32 - 'a' as u32 + 26,
-            '0'..='9' => c as u32 - '0' as u32 + 52,
-            '+' => 62,
-            '/' => 63,
-            ' ' | '\t' | '\n' | '\r' => continue, // 空白は無視
-            _ => return Err(DigestFieldsError::InvalidBase64),
-        };
-
-        buf = (buf << 6) | val;
-        bits += 6;
-
-        if bits >= 8 {
-            bits -= 8;
-            result.push((buf >> bits) as u8);
-            buf &= (1 << bits) - 1;
-        }
-    }
-
-    Ok(result)
 }
 
 #[cfg(test)]
