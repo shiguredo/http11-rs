@@ -40,6 +40,11 @@
   - @voluntas
 - [UPDATE] `src/auth.rs` と `src/digest_fields.rs` に重複していた Base64 エンコード/デコード実装を `src/base64.rs` に共通化する
   - @voluntas
+- [UPDATE] `examples/` の gzip 圧縮/展開を `flate2` から `noflate` に切り替える
+  - `http11_client` の `decompress_body` を `noflate::gzip::decompress` に置き換える
+  - `http11_server` / `http11_server_io_uring` の `GzipCompressor` を `noflate::gzip::Encoder` の sans-io API ベースに書き換え、`compress_body` を `noflate::gzip::compress` に置き換える
+  - `noflate` には圧縮レベル概念がないため未使用だった `GzipCompressor::with_level` を削除する
+  - @voluntas
 
 ## 2026.1.1
 

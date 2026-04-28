@@ -3,9 +3,6 @@
 //! shiguredo_http11 の Compressor トレイトを実装する。
 //! 各圧縮形式は feature フラグで有効化される。
 
-#[cfg(feature = "gzip")]
-use std::io::Write;
-
 use shiguredo_http11::compression::CompressionError;
 
 #[cfg(any(feature = "gzip", feature = "br", feature = "zstd"))]
@@ -18,7 +15,7 @@ use shiguredo_http11::compression::{CompressionStatus, Compressor};
 #[cfg(feature = "gzip")]
 #[allow(dead_code)]
 pub struct GzipCompressor {
-    encoder: Option<flate2::write::GzEncoder<Vec<u8>>>,
+    encoder: noflate::gzip::Encoder,
     finished: bool,
 }
 
@@ -36,20 +33,7 @@ impl std::fmt::Debug for GzipCompressor {
 impl GzipCompressor {
     pub fn new() -> Self {
         Self {
-            encoder: Some(flate2::write::GzEncoder::new(
-                Vec::new(),
-                flate2::Compression::default(),
-            )),
-            finished: false,
-        }
-    }
-
-    pub fn with_level(level: u32) -> Self {
-        Self {
-            encoder: Some(flate2::write::GzEncoder::new(
-                Vec::new(),
-                flate2::Compression::new(level),
-            )),
+            encoder: noflate::gzip::Encoder::new(),
             finished: false,
         }
     }
@@ -73,24 +57,17 @@ impl Compressor for GzipCompressor {
             return Err(CompressionError::AlreadyFinished);
         }
 
-        let encoder = self
-            .encoder
-            .as_mut()
-            .ok_or_else(|| CompressionError::Internal("encoder not available".to_string()))?;
-
-        encoder
-            .write_all(input)
+        self.encoder
+            .feed(input)
             .map_err(|e| CompressionError::Internal(e.to_string()))?;
 
-        // 内部バッファから出力にコピー
-        let inner_len = encoder.get_ref().len();
-        let len = inner_len.min(output.len());
-        output[..len].copy_from_slice(&encoder.get_ref()[..len]);
+        let available = self.encoder.output();
+        let len = available.len().min(output.len());
+        output[..len].copy_from_slice(&available[..len]);
+        let total = available.len();
+        self.encoder.advance(len);
 
-        // コピーした分を内部バッファから削除
-        encoder.get_mut().drain(..len);
-
-        if len < inner_len {
+        if len < total {
             Ok(CompressionStatus::OutputFull {
                 consumed: input.len(),
                 produced: len,
@@ -108,25 +85,23 @@ impl Compressor for GzipCompressor {
             return Err(CompressionError::AlreadyFinished);
         }
 
-        let encoder = self
-            .encoder
-            .take()
-            .ok_or_else(|| CompressionError::Internal("encoder not available".to_string()))?;
-
-        let compressed = encoder
+        self.encoder
             .finish()
             .map_err(|e| CompressionError::Internal(e.to_string()))?;
 
-        let len = compressed.len().min(output.len());
-        output[..len].copy_from_slice(&compressed[..len]);
-        self.finished = true;
+        let available = self.encoder.output();
+        let total = available.len();
+        let len = total.min(output.len());
+        output[..len].copy_from_slice(&available[..len]);
+        self.encoder.advance(len);
 
-        if len < compressed.len() {
+        if len < total {
             Ok(CompressionStatus::OutputFull {
                 consumed: 0,
                 produced: len,
             })
         } else {
+            self.finished = true;
             Ok(CompressionStatus::Complete {
                 consumed: 0,
                 produced: len,
@@ -135,10 +110,7 @@ impl Compressor for GzipCompressor {
     }
 
     fn reset(&mut self) {
-        self.encoder = Some(flate2::write::GzEncoder::new(
-            Vec::new(),
-            flate2::Compression::default(),
-        ));
+        self.encoder = noflate::gzip::Encoder::new();
         self.finished = false;
     }
 }
@@ -459,15 +431,7 @@ pub fn compress_body(data: &[u8], encoding: &str) -> Result<Vec<u8>, Compression
     match encoding {
         #[cfg(feature = "gzip")]
         "gzip" => {
-            use std::io::Write;
-            let mut encoder =
-                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-            encoder
-                .write_all(data)
-                .map_err(|e| CompressionError::Internal(e.to_string()))?;
-            encoder
-                .finish()
-                .map_err(|e| CompressionError::Internal(e.to_string()))
+            noflate::gzip::compress(data).map_err(|e| CompressionError::Internal(e.to_string()))
         }
         #[cfg(feature = "br")]
         "br" => {
