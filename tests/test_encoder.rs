@@ -563,6 +563,45 @@ fn test_encode_response_304_content_length_representation_size_ok() {
 }
 
 #[test]
+fn test_encode_response_204_no_auto_content_length_with_no_body() {
+    // 204: status_has_body=false なので Content-Length 自動付与なし (body=None)
+    let res = Response::new(204, "No Content");
+    let encoded = encode_response(&res).unwrap();
+    let s = String::from_utf8_lossy(&encoded);
+    assert!(!s.contains("Content-Length"));
+    assert!(s.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn test_encode_response_204_no_auto_content_length_with_empty_body() {
+    // 204: body=Some(vec![]) でも Content-Length は自動付与しない
+    let res = Response::new(204, "No Content").body(Vec::new());
+    let encoded = encode_response(&res).unwrap();
+    let s = String::from_utf8_lossy(&encoded);
+    assert!(!s.contains("Content-Length"));
+    assert!(s.ends_with("\r\n\r\n"));
+}
+
+#[test]
+fn test_encode_response_205_with_non_empty_body_error() {
+    // RFC 9110 Section 15.3.6: 205 はボディを生成してはならない (MUST NOT)
+    let res = Response::new(205, "Reset Content").body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
+}
+
+#[test]
+fn test_encode_response_omit_body_with_explicit_empty_body_does_not_add_content_length() {
+    // omit_body=true かつ body=Some(vec![]) のケースで Content-Length を自動付与しない
+    // (encoder の (omit_body, body_len) == (true, Some(0)) 分岐を固定)
+    let res = Response::new(200, "OK").body(Vec::new()).omit_body(true);
+    let encoded = encode_response(&res).unwrap();
+    let s = String::from_utf8_lossy(&encoded);
+    assert!(!s.contains("Content-Length"));
+    assert!(s.ends_with("\r\n\r\n"));
+}
+
+#[test]
 fn test_encode_request_absolute_form_at_in_userinfo() {
     // RFC 9110 Section 4.2.4: userinfo の "@" は http URI で禁止
     let req =
