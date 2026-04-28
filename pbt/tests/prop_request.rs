@@ -119,7 +119,7 @@ proptest! {
             }
         }
         if !body_data.is_empty() {
-            request.body = body_data.clone();
+            request.body = Some(body_data.clone());
         }
 
         let encoded = request.encode();
@@ -148,7 +148,7 @@ proptest! {
             BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
         }
 
-        prop_assert_eq!(&decoded_body, &request.body);
+        prop_assert_eq!(decoded_body, request.body.clone().unwrap_or_default());
 
         // ヘッダー数は同じ (Content-Length が自動追加される可能性、Host は +1)
         let expected_header_count = if !body_data.is_empty()
@@ -209,7 +209,7 @@ proptest! {
         let mut request = Request::new(&method, &uri);
         let host_value = host_for_uri(&uri);
         request.add_header("Host", &host_value);
-        request.body = body_data.clone();
+        request.body = Some(body_data.clone());
         let encoded = request.encode();
 
         // チャンクサイズで分割して feed し、デコード完了まで繰り返す
@@ -326,7 +326,7 @@ proptest! {
         prop_assert_eq!(&request.uri, &uri);
         prop_assert_eq!(&request.version, "HTTP/1.1");
         prop_assert!(request.headers.is_empty());
-        prop_assert!(request.body.is_empty());
+        prop_assert!(request.body.is_none());
     }
 }
 
@@ -366,7 +366,7 @@ proptest! {
     ) {
         let request = Request::new(&method, &uri).body(body_data.clone());
 
-        prop_assert_eq!(&request.body, &body_data);
+        prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
     }
 }
 

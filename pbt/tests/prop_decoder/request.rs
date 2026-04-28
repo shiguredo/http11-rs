@@ -467,7 +467,14 @@ proptest! {
 
         prop_assert_eq!(decoded.method, method);
         prop_assert_eq!(decoded.uri, uri);
-        prop_assert_eq!(decoded.body, body_data);
+        // body_data が空のときは .body() を呼んでいないので request.body == None。
+        // エンコード時に Content-Length も付かないため、デコーダーは body == None を返す。
+        let expected = if body_data.is_empty() {
+            None
+        } else {
+            Some(body_data)
+        };
+        prop_assert_eq!(decoded.body, expected);
     }
 }
 
@@ -552,15 +559,17 @@ proptest! {
         for body_data in &bodies {
             let mut request = Request::new("POST", "/");
             request.add_header("Host", "localhost");
-            request.body = body_data.clone();
+            request.body = Some(body_data.clone());
             all_data.extend(request.encode());
         }
         decoder.feed(&all_data).unwrap();
 
         // decode() を連続して呼ぶ（reset() なし）
+        // body == Some(empty) でもエンコード時に Content-Length: 0 が付くため、
+        // デコーダー側も Some(empty) を返す。
         for body_data in &bodies {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&request.body, body_data);
+            prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
         }
     }
 }

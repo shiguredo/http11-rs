@@ -680,12 +680,20 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // Response を構築
+        // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
+        // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
         let head = self.decoded_head.take().unwrap();
-        let body = core::mem::take(&mut self.decoded_body);
+        let body = match body_kind {
+            BodyKind::None | BodyKind::Tunnel => None,
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                Some(core::mem::take(&mut self.decoded_body))
+            }
+        };
 
         // Keep-Alive 対応: 次のレスポンスのために状態をリセット
         self.phase = DecodePhase::StartLine;
         self.decoded_body_kind = None;
+        self.decoded_body.clear();
         self.body_decoder.reset();
         self.expect_no_body = false;
         self.status_code = 0;

@@ -2,6 +2,14 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 /// HTTP レスポンス
+///
+/// `body` フィールドは「ボディなし」と「明示的な空ボディ」を区別する。
+/// - `None`: ボディを送る意図がない (`Content-Length` を自動付与しない)
+/// - `Some(vec![])`: 明示的に空ボディ (`Content-Length: 0` を自動付与)
+/// - `Some(data)`: 通常のボディ (`Content-Length: N` を自動付与)
+///
+/// `omit_body` は body の有無とは直交する。HEAD レスポンスのように
+/// `Content-Length` は表現長として残しつつメッセージボディを送らない場合に使う。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Response {
     /// HTTP バージョン (HTTP/1.1 等)
@@ -13,7 +21,7 @@ pub struct Response {
     /// ヘッダー
     pub headers: Vec<(String, String)>,
     /// ボディ
-    pub body: Vec<u8>,
+    pub body: Option<Vec<u8>>,
     /// ボディ送信を抑止するフラグ (HEAD レスポンス用)
     ///
     /// HEAD レスポンスではヘッダーのみ送信し、メッセージボディを送信しない。
@@ -28,7 +36,7 @@ impl Response {
             status_code,
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
-            body: Vec::new(),
+            body: None,
             omit_body: false,
         }
     }
@@ -40,7 +48,7 @@ impl Response {
             status_code,
             reason_phrase: reason_phrase.to_string(),
             headers: Vec::new(),
-            body: Vec::new(),
+            body: None,
             omit_body: false,
         }
     }
@@ -61,8 +69,11 @@ impl Response {
     }
 
     /// ボディを設定 (ビルダーパターン)
+    ///
+    /// 空 `Vec` を渡した場合は「明示的な空ボディ」として扱われ、
+    /// エンコード時に `Content-Length: 0` が自動付与される。
     pub fn body(mut self, body: Vec<u8>) -> Self {
-        self.body = body;
+        self.body = Some(body);
         self
     }
 

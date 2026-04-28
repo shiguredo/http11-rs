@@ -1,6 +1,7 @@
 # 0004: Request/Response の body を Option<Vec<u8>> に変更
 
 Created: 2026-04-28
+Completed: 2026-04-28
 Model: Opus 4.7 (1M context)
 
 ## 概要
@@ -68,3 +69,15 @@ RFC 9110 Section 8.6:
 - `make fmt && make clippy && make check && make test` をすべて通過させる。
 - 既存の単体テスト/PBT が `Option` 化に追従して緑であることを確認する。
 - 「`POST` + `Some(vec![])` で `Content-Length: 0` が出ること」「`POST` + `None` で `Content-Length` が出ないこと」をエンコーダーの単体テストに追加する。
+
+## 解決方法
+
+- `src/request.rs` / `src/response.rs` の `body` フィールドを `Vec<u8>` から `Option<Vec<u8>>` に変更し、デフォルト値を `None` に変更した。ビルダー `body(Vec<u8>) -> Self` は内部で `Some(...)` をセットするためシグネチャは互換のまま。
+- `src/encoder.rs` の `Content-Length` 自動付与ロジックを `body.as_deref()` ベースに書き換えた。`None` のときは `Content-Length` を付与せず、`Some(b)` のときは `b.len()` を付与する。レスポンス側は `(omit_body, body_len)` の組み合わせで分岐 (`omit_body && Some(0)` は付与しない HEAD ケース、それ以外で `Some(_)` なら付与) する。
+- `src/encoder.rs` のレスポンス 205 / `Content-Length` 整合性検証も `body.as_deref().map(<[u8]>::len).unwrap_or(0)` ベースに調整した。
+- `src/decoder/request.rs` / `src/decoder/response.rs` の出力を `BodyKind` で分岐: `None` / `Tunnel` は `body = None`、それ以外 (`ContentLength` / `Chunked` / `CloseDelimited`) は `Some(...)` を返すようにした。
+- 破壊的変更に追従して `examples/http11_client`、`examples/http11_reverse_proxy`、`examples/http11_server` を `body.as_deref()` 経由に書き換えた。リバースプロキシは元リクエストの `BodyKind::None` を保ったまま upstream に転送する (`upstream_request.body = None`)。
+- `tests/test_decode_body.rs`、`tests/test_encoder.rs`、`pbt/tests/prop_request.rs`、`pbt/tests/prop_response.rs`、`pbt/tests/prop_decoder/{body,request,response}.rs` を `Option` ベースの比較に追従させた。
+- ラウンドトリップ系 PBT (`prop_response_roundtrip` など) は、`Response::new(...).encode()` を `.body()` を呼ばずに使うと status_has_body 系コードで close-delimited になり `decode()` が EOF 待ちになるため、ステータスごとに `Vec::new()` を明示する形に修正した。
+- `tests/test_encoder.rs` に `test_encode_post_with_explicit_empty_body_emits_content_length_zero` / `test_encode_post_without_body_emits_no_content_length` / `test_encode_get_without_body_emits_no_content_length` を追加し、新しい `Some/None` の挙動を単体テストで固定した。
+- 検証: `make fmt`、`make clippy` (-D warnings)、`make check`、`make test` をすべて通過した。

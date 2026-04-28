@@ -70,7 +70,7 @@ proptest! {
         prop_assert_eq!(response.status_code, code);
         prop_assert_eq!(&response.reason_phrase, &phrase);
         prop_assert!(response.headers.is_empty());
-        prop_assert!(response.body.is_empty());
+        prop_assert!(response.body.is_none());
         prop_assert!(!response.omit_body);
     }
 }
@@ -85,7 +85,7 @@ proptest! {
         prop_assert_eq!(response.status_code, code);
         prop_assert_eq!(&response.reason_phrase, &phrase);
         prop_assert!(response.headers.is_empty());
-        prop_assert!(response.body.is_empty());
+        prop_assert!(response.body.is_none());
         prop_assert!(!response.omit_body);
     }
 }
@@ -129,7 +129,7 @@ proptest! {
     fn prop_response_body_builder(code in status_code(), body_data in proptest::collection::vec(any::<u8>(), 0..256)) {
         let response = Response::new(code, "OK").body(body_data.clone());
 
-        prop_assert_eq!(&response.body, &body_data);
+        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
     }
 }
 
