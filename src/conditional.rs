@@ -234,6 +234,9 @@ impl IfRange {
         }
 
         // ETag は引用符で始まる、または W/ で始まる
+        // RFC 9110 Section 8.8.3: weak prefix は %s"W/" (case-sensitive) で "w/" は不正。
+        // ただし "w/" 始まりは ETag を意図した誤入力とみなし、日付パースに回さず
+        // ETag エラーを返して weak prefix のケース誤りを示唆する。
         if input.starts_with('"') || input.starts_with("W/") || input.starts_with("w/") {
             EntityTag::parse(input)
                 .map(IfRange::ETag)
