@@ -69,7 +69,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
 
         // ボディがある場合のみ設定
         if !fuzz_req.body.is_empty() {
-            request.body = fuzz_req.body.clone();
+            request.body = Some(fuzz_req.body.clone());
         }
 
         let encoded = match request.try_encode() {
@@ -99,7 +99,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
             }
-            assert_eq!(decoded_body, request.body);
+            assert_eq!(decoded_body, request.body.unwrap_or_default());
         }
     }
 
@@ -127,7 +127,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             || fuzz_resp.status_code == 304);
 
         if has_body && !fuzz_resp.body.is_empty() {
-            response.body = fuzz_resp.body.clone();
+            response.body = Some(fuzz_resp.body.clone());
         }
 
         let encoded = match response.try_encode() {
@@ -158,7 +158,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                     }
                     BodyKind::None | BodyKind::Tunnel => {}
                 }
-                assert_eq!(decoded_body, response.body);
+                assert_eq!(decoded_body, response.body.unwrap_or_default());
             }
         }
     }

@@ -39,31 +39,31 @@ fuzz_target!(|data: &[u8]| {
         }
 
         // If-Modified-Since パース
-        if let Ok(ims) = IfModifiedSince::parse(s) {
+        if let Ok(ims) = IfModifiedSince::parse(s, 2026) {
             let date = ims.date();
             let _ = date.day();
             let _ = date.month();
             let _ = date.year();
             let displayed = ims.to_string();
-            if let Ok(reparsed) = IfModifiedSince::parse(&displayed) {
+            if let Ok(reparsed) = IfModifiedSince::parse(&displayed, 2026) {
                 assert_eq!(ims.date().day(), reparsed.date().day());
             }
         }
 
         // If-Unmodified-Since パース
-        if let Ok(ius) = IfUnmodifiedSince::parse(s) {
+        if let Ok(ius) = IfUnmodifiedSince::parse(s, 2026) {
             let date = ius.date();
             let _ = date.day();
         }
 
         // If-Range パース
-        if let Ok(ir) = IfRange::parse(s) {
+        if let Ok(ir) = IfRange::parse(s, 2026) {
             let _ = ir.is_etag();
             let _ = ir.is_date();
             let _ = ir.etag();
             let _ = ir.date();
             let displayed = ir.to_string();
-            if let Ok(reparsed) = IfRange::parse(&displayed) {
+            if let Ok(reparsed) = IfRange::parse(&displayed, 2026) {
                 assert_eq!(ir.is_etag(), reparsed.is_etag());
             }
         }

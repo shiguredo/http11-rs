@@ -16,7 +16,7 @@ fuzz_target!(|data: &[u8]| {
 
     for boundary in boundaries {
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(data);
+        let _ = parser.feed(data);
 
         // パニックしなければ OK
         while let Ok(Some(part)) = parser.next_part() {
