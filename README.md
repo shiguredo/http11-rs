@@ -143,6 +143,14 @@ let chunk2 = encode_chunk(b"World!");
 let last = encode_chunk(b""); // 終端チャンク
 ```
 
+メソッド形式 (`request.encode()` / `response.encode_headers()`) と等価な関数形式 API も提供しています。
+
+- `encode_request` / `encode_response` - リクエスト/レスポンス全体をエンコード
+- `encode_request_headers` / `encode_response_headers` - ヘッダーのみをエンコード
+- `encode_chunk` - 単一チャンクをエンコード (終端は `b""`)
+- `encode_chunks` - 複数チャンクをまとめてエンコード
+- `RequestEncoder` / `ResponseEncoder` - 圧縮器 (`Compressor`) を組み込んだエンコーダー
+
 ### ストリーミングデコード
 
 大きなボディを扱う場合や、ボディを受信しながら処理したい場合はストリーミング API を使用します。
@@ -195,6 +203,8 @@ let last = encode_chunk(b""); // 終端チャンク
 - Transfer-Encoding: chunked が最優先
 - Content-Length による固定長ボディ
 - ステータスコード 1xx/204/304 はボディなし
+- 205 Reset Content はエンコード時にボディ禁止 (RFC 9110 Section 15.3.6)
+  - Transfer-Encoding 禁止、Content-Length は 0 のみ許可
 - HEAD リクエストへのレスポンスはボディなし
 - CONNECT 2xx レスポンスはトンネルモードに移行
 
