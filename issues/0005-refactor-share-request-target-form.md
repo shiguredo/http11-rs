@@ -34,10 +34,10 @@ Model: Opus 4.7 (1M context)
 
 - `src/request_target.rs` を新規作成し、`enum RequestTargetForm` を移動する。
   - 派生属性は `Debug, Clone, Copy, PartialEq, Eq` に統一する。
-  - 可視性は `pub` (decoder 側が既に `pub` で公開しているため後方互換のため必須)。
+  - 可視性は `pub` (request-target の形式は外部からも参照する公開 API として扱う)。
 - `src/lib.rs` に `pub mod request_target;` を追加する。
 - `src/encoder.rs` 内の重複 enum を削除し、`use crate::request_target::RequestTargetForm;` で参照する。
-- `src/decoder/body.rs` 内の重複 enum を削除し、再エクスポート (`pub use crate::request_target::RequestTargetForm;`) で公開 API の互換を保つか、もしくは型別名でブリッジする。
+- `src/decoder/body.rs` 内の重複 enum を削除し、`use crate::request_target::RequestTargetForm;` で参照する。`decoder::body::RequestTargetForm` のパスは廃止する。
 - 関数は分離維持する。
   - encoder 側の `detect_request_target_form` (形式判定のみ) はそのまま `src/encoder.rs` に残す。
   - decoder 側の `parse_request_target_form` (バリデーション付き) はそのまま `src/decoder/body.rs` に残す。
@@ -45,7 +45,8 @@ Model: Opus 4.7 (1M context)
 
 ## 後方互換
 
-- `decoder::body::RequestTargetForm` は `pub` で公開 API になっている。`pub use` での再エクスポートで型としての互換性は保たれるが、参照パスが変わる場合は CHANGES に記載する。
+- 後方互換は維持しない。`decoder::body::RequestTargetForm` の参照パスは `request_target::RequestTargetForm` に変更する。再エクスポートでパスを温存するとメンテナンス性が下がるため、保守的な再エクスポートはしない。
+- 利用側は import パスを `use shiguredo_http11::request_target::RequestTargetForm;` に変更する。CHANGES に破壊的変更として記載する。
 - encoder 側の enum は private だったため、外部影響はない。
 
 ## 検証
