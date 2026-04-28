@@ -1,7 +1,7 @@
 # 0008: encode / decode 用の request-target validation を分離する
 
 Created: 2026-04-28
-Model: Kimi 2.6 / GPT 5.5
+Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
 

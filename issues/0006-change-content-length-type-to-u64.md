@@ -1,7 +1,7 @@
 # 0006: Content-Length の型を u64 に変更し overflow を明示的に処理する
 
 Created: 2026-04-28
-Model: Kimi 2.6 / GPT 5.5
+Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
 

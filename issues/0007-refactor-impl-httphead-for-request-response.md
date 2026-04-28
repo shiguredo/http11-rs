@@ -1,7 +1,7 @@
 # 0007: HttpHead トレイトを Request/Response に実装して重複を委譲に置き換える
 
 Created: 2026-04-28
-Model: Kimi 2.6 / GPT 5.5
+Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
 
