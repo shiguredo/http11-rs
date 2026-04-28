@@ -37,6 +37,9 @@
 ### misc
 
 - [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
+  - @voluntas
+- [UPDATE] `src/auth.rs` と `src/digest_fields.rs` に重複していた Base64 エンコード/デコード実装を `src/base64.rs` に共通化する
+  - @voluntas
 
 ## 2026.1.1
 
