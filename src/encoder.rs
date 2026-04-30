@@ -2,6 +2,7 @@ use crate::compression::{CompressionError, CompressionStatus, Compressor, NoComp
 use crate::error::EncodeError;
 use crate::host::Host;
 use crate::request::Request;
+use crate::request_target::RequestTargetForm;
 use crate::response::Response;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
@@ -144,18 +145,6 @@ fn detect_scheme(target: &str) -> Option<usize> {
         return None;
     }
     Some(colon_pos)
-}
-
-/// request-target の形式
-enum RequestTargetForm {
-    /// origin-form: "/" path ["?" query]
-    Origin,
-    /// absolute-form: absolute-URI
-    Absolute,
-    /// authority-form: uri-host ":" port
-    Authority,
-    /// asterisk-form: "*"
-    Asterisk,
 }
 
 /// RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証

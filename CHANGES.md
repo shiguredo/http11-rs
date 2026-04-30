@@ -11,6 +11,10 @@
 
 ## develop
 
+- [ADD] `MultipartParser` にバッファ上限を追加する
+  - `max_buffer_size` フィールドを追加し、デフォルト 10MB の上限を設ける
+  - `with_max_buffer_size()` ビルダーメソッドを追加する
+  - @voluntas
 - [CHANGE] `src` を `core` と `alloc` のみの `no_std` に対応する
   - `#![no_std]` を宣言し、`std` への依存を排除する
   - @voluntas
@@ -29,23 +33,23 @@
 - [CHANGE] `MultipartParser::feed()` の戻り値を `Result<(), MultipartError>` に変更する
   - バッファ上限超過時に `MultipartError::BufferOverflow` を返す
   - @voluntas
-- [ADD] `MultipartParser` にバッファ上限を追加する
-  - `max_buffer_size` フィールドを追加し、デフォルト 10MB の上限を設ける
-  - `with_max_buffer_size()` ビルダーメソッドを追加する
+- [CHANGE] `RequestTargetForm` を `decoder::body` から `request_target` モジュールに移動する
+  - `decoder::body::RequestTargetForm` から `request_target::RequestTargetForm` へインポートパスを変更する
+  - encoder と decoder で重複していた定義を統一する
   - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 
 ### misc
 
-- [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
-  - @voluntas
 - [UPDATE] `src/auth.rs` と `src/digest_fields.rs` に重複していた Base64 エンコード/デコード実装を `src/base64.rs` に共通化する
   - @voluntas
 - [UPDATE] `examples/` の gzip 圧縮/展開を `flate2` から `noflate` に切り替える
   - `http11_client` の `decompress_body` を `noflate::gzip::decompress` に置き換える
   - `http11_server` / `http11_server_io_uring` の `GzipCompressor` を `noflate::gzip::Encoder` の sans-io API ベースに書き換え、`compress_body` を `noflate::gzip::compress` に置き換える
   - `noflate` には圧縮レベル概念がないため未使用だった `GzipCompressor::with_level` を削除する
+  - @voluntas
+- [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
   - @voluntas
 
 ## 2026.1.1

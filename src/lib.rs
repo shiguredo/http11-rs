@@ -76,6 +76,7 @@ mod limits;
 pub mod multipart;
 pub mod range;
 mod request;
+pub mod request_target;
 mod response;
 pub mod trailer;
 pub mod upgrade;
@@ -84,8 +85,7 @@ mod validate;
 pub mod vary;
 
 pub use decoder::{
-    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, RequestTargetForm,
-    ResponseDecoder, ResponseHead,
+    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, ResponseDecoder, ResponseHead,
 };
 pub use encoder::{
     RequestEncoder, ResponseEncoder, encode_chunk, encode_chunks, encode_request,

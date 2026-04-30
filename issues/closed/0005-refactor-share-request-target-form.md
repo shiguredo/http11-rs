@@ -1,6 +1,7 @@
 # 0005: RequestTargetForm の共通モジュール化
 
 Created: 2026-04-28
+Completed: 2026-04-30
 Model: Opus 4.7 (1M context)
 
 ## 概要
@@ -54,3 +55,12 @@ Model: Opus 4.7 (1M context)
 - `make fmt && make clippy && make check && make test` を通す。
 - 既存の encoder / decoder のテストがそのまま緑であることを確認する。
 - ラウンドトリップ系の PBT (`pbt/tests/prop_*`) が壊れていないことを確認する。
+
+## 解決方法
+
+- `src/request_target.rs` を新規作成し、`RequestTargetForm` enum を移動した。
+- `src/encoder.rs` と `src/decoder/body.rs` から重複 enum を削除し、`use crate::request_target::RequestTargetForm;` で参照するようにした。
+- `src/lib.rs` に `pub mod request_target;` を追加し、`decoder` からの `RequestTargetForm` re-export を削除した。
+- `src/decoder/mod.rs` から `RequestTargetForm` の re-export を削除した。
+- `tests/test_request_target.rs` の import パスを `shiguredo_http11::request_target::RequestTargetForm` に変更した。
+- CHANGES.md に破壊的変更として記載した。

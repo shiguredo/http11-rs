@@ -8,6 +8,7 @@
 
 use crate::error::Error;
 use crate::limits::DecoderLimits;
+use crate::request_target::RequestTargetForm;
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
     is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
@@ -674,22 +675,6 @@ pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
     }
 
     Ok((name.to_string(), trimmed_value.to_string()))
-}
-
-/// RFC 9112 Section 3.2 request-target の形式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RequestTargetForm {
-    /// origin-form: absolute-path [ "?" query ]
-    /// 例: /path/to/resource?query=value
-    Origin,
-    /// absolute-form: absolute-URI
-    /// 例: http://example.com/path
-    Absolute,
-    /// authority-form: uri-host ":" port (CONNECT のみ)
-    /// 例: example.com:443
-    Authority,
-    /// asterisk-form: "*" (OPTIONS のみ)
-    Asterisk,
 }
 
 /// request-target の形式を判定
