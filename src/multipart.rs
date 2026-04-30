@@ -276,7 +276,7 @@ impl MultipartParser {
     ///
     /// バッファサイズが `max_buffer_size` を超える場合は `MultipartError::BufferOverflow` を返す。
     pub fn feed(&mut self, data: &[u8]) -> Result<(), MultipartError> {
-        let new_size = self.buffer.len() + data.len();
+        let new_size = self.buffer.len().saturating_add(data.len());
         if new_size > self.max_buffer_size {
             return Err(MultipartError::BufferOverflow {
                 size: new_size,

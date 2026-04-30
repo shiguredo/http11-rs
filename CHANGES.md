@@ -33,6 +33,8 @@
   - `max_buffer_size` フィールドを追加し、デフォルト 10MB の上限を設ける
   - `with_max_buffer_size()` ビルダーメソッドを追加する
   - @voluntas
+- [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
+  - @voluntas
 
 ### misc
 

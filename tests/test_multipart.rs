@@ -26,6 +26,13 @@ fn test_multipart_error_display() {
             MultipartError::MissingName,
             "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)",
         ),
+        (
+            MultipartError::BufferOverflow {
+                size: 11,
+                limit: 10,
+            },
+            "buffer overflow: size=11, limit=10",
+        ),
     ];
 
     for (error, expected) in errors {
