@@ -1,6 +1,7 @@
 # 0007: HttpHead トレイトを Request/Response に実装して重複を委譲に置き換える
 
 Created: 2026-04-28
+Completed: 2026-04-30
 Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
@@ -80,3 +81,11 @@ pub use decoder::{ BodyKind, BodyProgress, HttpHead, ... };
   let req = Request::new("GET", "/");
   assert_eq!(req.get_header("Host"), HttpHead::get_header(&req, "Host"));
   ```
+
+## 解決方法
+
+- `src/request.rs` に `impl HttpHead for Request` を追加し、`version()` と `headers()` のみ実装した。
+- `src/request.rs` の `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` トレイトメソッドに委譲する薄いラッパーに変更した。
+- `src/response.rs` に `impl HttpHead for Response` を追加し、同様にラッパー化した。
+- `Response` の `is_success` / `is_redirect` / `is_client_error` / `is_server_error` / `is_informational` は `HttpHead` に含まれないためそのまま残した。
+- 既存のテスト（lib 283 + integration 283 + PBT 448）がすべて通過することを確認した。

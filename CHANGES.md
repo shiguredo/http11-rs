@@ -43,6 +43,10 @@
   - `DecodePhase::BodyContentLength { remaining: u64 }` に変更する
   - 32bit 環境での integer conversion overflow と precision loss を防ぐ (RFC 9110 Section 8.6)
   - @voluntas
+- [UPDATE] `Request` と `Response` に `HttpHead` トレイトを実装する
+  - `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` デフォルト実装に委譲する
+  - 重複していた 120 行以上の同一ロジックを統一する
+  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 

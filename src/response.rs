@@ -1,3 +1,4 @@
+use crate::decoder::HttpHead;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -26,6 +27,16 @@ pub struct Response {
     ///
     /// HEAD レスポンスではヘッダーのみ送信し、メッセージボディを送信しない。
     pub omit_body: bool,
+}
+
+impl HttpHead for Response {
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
 }
 
 impl Response {
@@ -84,26 +95,17 @@ impl Response {
 
     /// ヘッダーを取得 (大文字小文字を区別しない)
     pub fn get_header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+        HttpHead::get_header(self, name)
     }
 
     /// 指定した名前のヘッダーをすべて取得
     pub fn get_headers(&self, name: &str) -> Vec<&str> {
-        self.headers
-            .iter()
-            .filter(|(n, _)| n.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
-            .collect()
+        HttpHead::get_headers(self, name)
     }
 
     /// ヘッダーが存在するか確認
     pub fn has_header(&self, name: &str) -> bool {
-        self.headers
-            .iter()
-            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        HttpHead::has_header(self, name)
     }
 
     /// ステータスコードが成功 (2xx) か確認
@@ -128,7 +130,7 @@ impl Response {
 
     /// Connection ヘッダーの値を取得
     pub fn connection(&self) -> Option<&str> {
-        self.get_header("Connection")
+        HttpHead::connection(self)
     }
 
     /// キープアライブ接続かどうかを判定
@@ -137,31 +139,12 @@ impl Response {
     /// HTTP/1.0 では Connection: keep-alive が必要
     /// Connection ヘッダーはカンマ区切りのトークンリストとして扱う (RFC 9110)
     pub fn is_keep_alive(&self) -> bool {
-        let mut has_keep_alive = false;
-        for (name, value) in &self.headers {
-            if name.eq_ignore_ascii_case("Connection") {
-                for token in value.split(',') {
-                    let token = token.trim();
-                    if token.eq_ignore_ascii_case("close") {
-                        return false;
-                    }
-                    if token.eq_ignore_ascii_case("keep-alive") {
-                        has_keep_alive = true;
-                    }
-                }
-            }
-        }
-        if has_keep_alive {
-            return true;
-        }
-        // HTTP/1.1 はデフォルトでキープアライブ
-        self.version.ends_with("/1.1")
+        HttpHead::is_keep_alive(self)
     }
 
     /// Content-Length ヘッダーの値を取得
     pub fn content_length(&self) -> Option<u64> {
-        self.get_header("Content-Length")
-            .and_then(|v| v.parse::<u64>().ok())
+        HttpHead::content_length(self)
     }
 
     /// Transfer-Encoding が chunked かどうかを判定
@@ -169,18 +152,7 @@ impl Response {
     /// Transfer-Encoding リストの最後が chunked かどうかを確認する (RFC 9112)
     /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
     pub fn is_chunked(&self) -> bool {
-        let mut last_token: Option<&str> = None;
-        for (name, value) in &self.headers {
-            if name.eq_ignore_ascii_case("Transfer-Encoding") {
-                for token in value.split(',') {
-                    let token = token.trim();
-                    if !token.is_empty() {
-                        last_token = Some(token);
-                    }
-                }
-            }
-        }
-        last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
+        HttpHead::is_chunked(self)
     }
 
     /// ステータスコードが情報レスポンス (1xx) か確認
