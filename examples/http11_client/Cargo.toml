@@ -4,25 +4,41 @@ version = "0.0.0"
 edition = "2024"
 publish = false
 
-[features]
-default = ["gzip", "br", "zstd"]
-gzip = ["dep:noflate"]
-br = ["dep:brotli"]
-zstd = ["dep:zstd"]
-
 [dependencies]
+# 本ライブラリ (相対パスで参照)
 shiguredo_http11 = { path = "../.." }
-rustls = { version = "0.23", default-features = false, features = [
-    "std",
-    "tls12",
-    "aws-lc-rs",
-] }
-rustls-platform-verifier = "0.6"
+
+# コマンドライン引数のパース
 noargs = "0.4"
+# TLS 実装
+rustls = { version = "0.23", default-features = false, features = [
+  # 暗号ライブラリバックエンド
+  "aws-lc-rs",
+  # std 環境での動作に必要
+  "std",
+  # TLS 1.2 を有効化
+  "tls12",
+] }
+# プラットフォーム標準の証明書ストアを利用する
+rustls-platform-verifier = "0.6"
+# ログ出力
 tracing = "0.1"
+# ログのフォーマットとサブスクライバ
 tracing-subscriber = "0.3"
 
-# 展開 (オプション)
-noflate = { version = "0.1", optional = true }
+# Brotli 圧縮展開 (オプション)
 brotli = { version = "8", optional = true }
+# gzip / DEFLATE 圧縮展開 (オプション)
+noflate = { version = "0.1", optional = true }
+# Zstd 圧縮展開 (オプション)
 zstd = { version = "0.13", optional = true }
+
+[features]
+# デフォルトで全圧縮形式を有効化
+default = ["br", "gzip", "zstd"]
+# Brotli 圧縮展開を有効化
+br = ["dep:brotli"]
+# gzip 圧縮展開を有効化
+gzip = ["dep:noflate"]
+# Zstd 圧縮展開を有効化
+zstd = ["dep:zstd"]
