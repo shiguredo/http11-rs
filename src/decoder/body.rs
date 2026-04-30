@@ -328,7 +328,7 @@ impl BodyDecoder {
             // chunk-size は 1 文字以上の HEXDIG で始まらなければならない
             if hex_end == 0 {
                 let display = String::from_utf8_lossy(size_bytes);
-                return Err(Error::InvalidData(format!(
+                return Err(Error::InvalidData(alloc::format!(
                     "invalid chunk size: {}",
                     display
                 )));
@@ -342,7 +342,7 @@ impl BodyDecoder {
                     // RFC 9112 Section 7.1.1: chunk-ext = *( BWS ";" ... )
                     if !trailing.iter().all(|&b| b == b' ' || b == b'\t') {
                         let display = String::from_utf8_lossy(size_bytes);
-                        return Err(Error::InvalidData(format!(
+                        return Err(Error::InvalidData(alloc::format!(
                             "invalid chunk size: {}",
                             display
                         )));
@@ -350,7 +350,7 @@ impl BodyDecoder {
                 } else {
                     // chunk-ext がない場合: chunk-size の後は CRLF のみ (BWS は不可)
                     let display = String::from_utf8_lossy(size_bytes);
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "invalid chunk size: {}",
                         display
                     )));
@@ -361,8 +361,9 @@ impl BodyDecoder {
             let hex_bytes = &size_bytes[..hex_end];
             let size_str = core::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
-            let chunk_size = usize::from_str_radix(size_str, 16)
-                .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
+            let chunk_size = usize::from_str_radix(size_str, 16).map_err(|_| {
+                Error::InvalidData(alloc::format!("invalid chunk size: {}", size_str))
+            })?;
 
             // chunk-ext の ABNF 検証 (RFC 9112 Section 7.1.1)
             if let Some(sp) = semi_pos {
@@ -427,7 +428,7 @@ impl BodyDecoder {
                     }
 
                     let line = String::from_utf8(buf[..pos].to_vec())
-                        .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                     buf.drain(..pos + 2);
 
                     // 不正なトレーラー行はエラーにする
@@ -435,7 +436,7 @@ impl BodyDecoder {
 
                     // RFC 9112 Section 7.1.2: 禁止フィールドチェック
                     if is_prohibited_trailer_field(&name) {
-                        return Err(Error::InvalidData(format!(
+                        return Err(Error::InvalidData(alloc::format!(
                             "prohibited trailer field: {}",
                             name
                         )));
@@ -937,7 +938,7 @@ fn validate_authority_chars(authority: &str) -> Result<(), Error> {
         {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid authority: illegal character 0x{:02X}",
                 b
             )));
@@ -1004,7 +1005,7 @@ fn validate_path_chars(path: &str) -> Result<(), Error> {
         } else if is_pchar_or_slash(b) {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid path: illegal character 0x{:02X}",
                 b
             )));
@@ -1035,7 +1036,7 @@ fn validate_query_chars(query: &str) -> Result<(), Error> {
         } else if is_query_char(b) {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid query: illegal character 0x{:02X}",
                 b
             )));
@@ -1118,13 +1119,13 @@ pub(crate) fn validate_request_target_for_method(
             match form {
                 RequestTargetForm::Origin | RequestTargetForm::Absolute => {}
                 RequestTargetForm::Authority => {
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "{} method does not allow authority-form request-target",
                         method
                     )));
                 }
                 RequestTargetForm::Asterisk => {
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "{} method does not allow asterisk-form request-target",
                         method
                     )));

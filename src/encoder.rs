@@ -740,7 +740,7 @@ pub fn encode_chunk(data: &[u8]) -> Vec<u8> {
         buf.extend_from_slice(b"0\r\n\r\n");
     } else {
         // チャンクサイズ (16進数)
-        buf.extend_from_slice(format!("{:x}\r\n", data.len()).as_bytes());
+        buf.extend_from_slice(alloc::format!("{:x}\r\n", data.len()).as_bytes());
         // チャンクデータ
         buf.extend_from_slice(data);
         // CRLF
@@ -757,7 +757,7 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     for chunk in chunks {
-        buf.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
+        buf.extend_from_slice(alloc::format!("{:x}\r\n", chunk.len()).as_bytes());
         buf.extend_from_slice(chunk);
         buf.extend_from_slice(b"\r\n");
     }

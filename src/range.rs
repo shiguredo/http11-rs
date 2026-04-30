@@ -451,14 +451,14 @@ impl AcceptRanges {
     /// bytes を作成
     pub fn bytes() -> Self {
         AcceptRanges {
-            units: vec!["bytes".to_string()],
+            units: alloc::vec!["bytes".to_string()],
         }
     }
 
     /// none を作成
     pub fn none() -> Self {
         AcceptRanges {
-            units: vec!["none".to_string()],
+            units: alloc::vec!["none".to_string()],
         }
     }
 

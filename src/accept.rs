@@ -126,7 +126,7 @@ impl fmt::Display for QValue {
             return write!(f, "0");
         }
 
-        let mut frac = format!("{:03}", self.0);
+        let mut frac = alloc::format!("{:03}", self.0);
         while frac.ends_with('0') {
             frac.pop();
         }

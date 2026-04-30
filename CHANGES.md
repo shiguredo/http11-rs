@@ -54,6 +54,10 @@
   - `get_headers()` を経由しないことで呼び出し時の不要な `Vec<&str>` allocation を回避する
   - `get_headers()` / `is_keep_alive()` / `is_chunked()` のシグネチャは変更せず、object safe を維持する
   - @voluntas
+- [UPDATE] `src/lib.rs` の `#[macro_use] extern crate alloc` から `#[macro_use]` を削除する
+  - `vec!` / `format!` を使っていた通常コードを `alloc::vec!` / `alloc::format!` に置換する
+  - `no_std` 環境でのマクロの使い方を明示的にする
+  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 

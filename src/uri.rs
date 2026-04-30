@@ -533,7 +533,7 @@ impl Uri {
         let path = if path.is_empty() { "/" } else { path };
 
         if let Some(query) = self.query() {
-            format!("{}?{}", path, query)
+            alloc::format!("{}?{}", path, query)
         } else {
             path.to_string()
         }
@@ -825,12 +825,12 @@ pub fn resolve(base: &Uri, reference: &Uri) -> Result<Uri, UriError> {
 /// パスをマージ
 fn merge_paths(base: &Uri, reference_path: &str) -> String {
     if base.authority().is_some() && base.path().is_empty() {
-        format!("/{}", reference_path)
+        alloc::format!("/{}", reference_path)
     } else {
         // base パスの最後のセグメントを除去して reference パスを追加
         let base_path = base.path();
         if let Some(last_slash) = base_path.rfind('/') {
-            format!("{}{}", &base_path[..=last_slash], reference_path)
+            alloc::format!("{}{}", &base_path[..=last_slash], reference_path)
         } else {
             reference_path.to_string()
         }
@@ -965,7 +965,7 @@ fn normalize_authority(authority: &str) -> String {
         // userinfo あり: userinfo はそのまま、host:port は小文字化
         let userinfo = &authority[..at_pos];
         let host_port = &authority[at_pos + 1..];
-        format!("{}@{}", userinfo, normalize_host_port(host_port))
+        alloc::format!("{}@{}", userinfo, normalize_host_port(host_port))
     } else {
         // userinfo なし: 全体が host:port
         normalize_host_port(authority)
@@ -978,14 +978,14 @@ fn normalize_host_port(host_port: &str) -> String {
     if let Some(bracket_end) = host_port.strip_prefix('[').and_then(|s| s.find(']')) {
         let host = &host_port[..=bracket_end + 1];
         let after = &host_port[bracket_end + 2..];
-        return format!("{}{}", host.to_ascii_lowercase(), after);
+        return alloc::format!("{}{}", host.to_ascii_lowercase(), after);
     }
 
     // 通常の host:port
     if let Some(colon_pos) = host_port.rfind(':') {
         let host = &host_port[..colon_pos];
         let port = &host_port[colon_pos..];
-        format!("{}{}", host.to_ascii_lowercase(), port)
+        alloc::format!("{}{}", host.to_ascii_lowercase(), port)
     } else {
         host_port.to_ascii_lowercase()
     }

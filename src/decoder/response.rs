@@ -341,8 +341,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec())
-                            .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                        })?;
                         self.buf.drain(..pos + 2);
 
                         // CR/LF チェック (埋め込まれた改行を拒否)
@@ -355,7 +356,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                         // Parse: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() < 2 {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid status line: {}",
                                 line
                             )));
@@ -370,13 +371,13 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
                         // ステータスコードの検証 (RFC 9110 Section 15)
                         let status_code: u16 = parts[1].parse().map_err(|_| {
-                            Error::InvalidData(format!(
+                            Error::InvalidData(alloc::format!(
                                 "invalid status line: invalid status code: {}",
                                 parts[1]
                             ))
                         })?;
                         if !is_valid_status_code(status_code) {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid status line: status code out of range: {}",
                                 status_code
                             )));
@@ -409,7 +410,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
                             let status_code: u16 = parts[1].parse().map_err(|_| {
-                                Error::InvalidData(format!("invalid status code: {}", parts[1]))
+                                Error::InvalidData(alloc::format!(
+                                    "invalid status code: {}",
+                                    parts[1]
+                                ))
                             })?;
 
                             self.status_code = status_code;
@@ -468,8 +472,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 });
                             }
 
-                            let line = String::from_utf8(self.buf[..pos].to_vec())
-                                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                            let line =
+                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                                })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;

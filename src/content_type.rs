@@ -133,7 +133,7 @@ impl ContentType {
 
     /// 完全なメディアタイプを取得 (例: "text/html")
     pub fn mime_type(&self) -> String {
-        format!("{}/{}", self.media_type, self.subtype)
+        alloc::format!("{}/{}", self.media_type, self.subtype)
     }
 
     /// パラメータを取得

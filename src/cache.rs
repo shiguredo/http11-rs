@@ -335,26 +335,26 @@ impl fmt::Display for CacheControl {
         let mut parts = Vec::new();
 
         if let Some(max_age) = self.max_age {
-            parts.push(format!("max-age={}", max_age));
+            parts.push(alloc::format!("max-age={}", max_age));
         }
         if let Some(s_maxage) = self.s_maxage {
-            parts.push(format!("s-maxage={}", s_maxage));
+            parts.push(alloc::format!("s-maxage={}", s_maxage));
         }
         if let Some(max_stale) = self.max_stale {
             if max_stale == u64::MAX {
                 parts.push("max-stale".to_string());
             } else {
-                parts.push(format!("max-stale={}", max_stale));
+                parts.push(alloc::format!("max-stale={}", max_stale));
             }
         }
         if let Some(min_fresh) = self.min_fresh {
-            parts.push(format!("min-fresh={}", min_fresh));
+            parts.push(alloc::format!("min-fresh={}", min_fresh));
         }
         if let Some(swr) = self.stale_while_revalidate {
-            parts.push(format!("stale-while-revalidate={}", swr));
+            parts.push(alloc::format!("stale-while-revalidate={}", swr));
         }
         if let Some(sie) = self.stale_if_error {
-            parts.push(format!("stale-if-error={}", sie));
+            parts.push(alloc::format!("stale-if-error={}", sie));
         }
         if self.no_cache {
             parts.push("no-cache".to_string());

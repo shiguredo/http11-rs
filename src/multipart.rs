@@ -298,7 +298,7 @@ impl MultipartParser {
             return Ok(None);
         }
 
-        let delimiter = format!("--{}", self.boundary);
+        let delimiter = alloc::format!("--{}", self.boundary);
 
         loop {
             match self.state {
@@ -381,7 +381,7 @@ impl MultipartParser {
 
                         // 次の境界を探す
                         let body_buffer = &self.buffer[body_start..];
-                        let next_delim = format!("\r\n--{}", self.boundary);
+                        let next_delim = alloc::format!("\r\n--{}", self.boundary);
 
                         if let Some(body_end) = find_bytes(body_buffer, next_delim.as_bytes()) {
                             let body = body_buffer[..body_end].to_vec();
@@ -446,7 +446,7 @@ impl MultipartBuilder {
     /// assert!(builder.boundary().starts_with("----FormBoundary"));
     /// ```
     pub fn new(random_value: u64) -> Self {
-        let boundary = format!("----FormBoundary{}", random_value);
+        let boundary = alloc::format!("----FormBoundary{}", random_value);
         MultipartBuilder {
             boundary,
             parts: Vec::new(),
@@ -481,9 +481,9 @@ impl MultipartBuilder {
     /// RFC 9110 Section 5.6.6: boundary が token に該当しない場合は quoted-string で囲む
     pub fn content_type(&self) -> String {
         if self.boundary.bytes().all(is_token_char) {
-            format!("multipart/form-data; boundary={}", self.boundary)
+            alloc::format!("multipart/form-data; boundary={}", self.boundary)
         } else {
-            format!("multipart/form-data; boundary=\"{}\"", self.boundary)
+            alloc::format!("multipart/form-data; boundary=\"{}\"", self.boundary)
         }
     }
 

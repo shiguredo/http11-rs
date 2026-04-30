@@ -473,7 +473,7 @@ fn encode_ext_value(s: &str) -> String {
             result.push(byte as char);
         } else {
             result.push('%');
-            result.push_str(&format!("{:02X}", byte));
+            result.push_str(&alloc::format!("{:02X}", byte));
         }
     }
     result

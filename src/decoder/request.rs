@@ -232,8 +232,9 @@ impl<D: Decompressor> RequestDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec())
-                            .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                        })?;
                         self.buf.drain(..pos + 2);
                         if line.contains('\r') || line.contains('\n') {
                             return Err(Error::InvalidData(
@@ -244,7 +245,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                         // Parse: METHOD SP URI SP VERSION CRLF
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() != 3 {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid request line: {}",
                                 line
                             )));
@@ -389,8 +390,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 });
                             }
 
-                            let line = String::from_utf8(self.buf[..pos].to_vec())
-                                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                            let line =
+                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                                })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;

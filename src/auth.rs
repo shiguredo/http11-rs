@@ -193,8 +193,8 @@ impl BasicAuth {
     /// assert_eq!(auth.to_header_value(), "Basic dXNlcjpwYXNzd29yZA==");
     /// ```
     pub fn to_header_value(&self) -> String {
-        let credentials = format!("{}:{}", self.username, self.password);
-        format!("Basic {}", base64::encode(credentials.as_bytes()))
+        let credentials = alloc::format!("{}:{}", self.username, self.password);
+        alloc::format!("Basic {}", base64::encode(credentials.as_bytes()))
     }
 }
 
@@ -368,7 +368,7 @@ impl DigestAuth {
 
     /// ヘッダー値を生成
     pub fn to_header_value(&self) -> String {
-        format!("Digest {}", format_auth_params(&self.params))
+        alloc::format!("Digest {}", format_auth_params(&self.params))
     }
 }
 
@@ -426,7 +426,7 @@ impl DigestChallenge {
 
     /// ヘッダー値を生成
     pub fn to_header_value(&self) -> String {
-        format!("Digest {}", format_auth_params(&self.params))
+        alloc::format!("Digest {}", format_auth_params(&self.params))
     }
 }
 
@@ -481,7 +481,7 @@ impl BearerToken {
 
     /// ヘッダー値を生成
     pub fn to_header_value(&self) -> String {
-        format!("Bearer {}", self.token)
+        alloc::format!("Bearer {}", self.token)
     }
 }
 
@@ -525,7 +525,7 @@ impl BearerChallenge {
 
     /// ヘッダー値を生成
     pub fn to_header_value(&self) -> String {
-        format!("Bearer {}", format_auth_params(&self.params))
+        alloc::format!("Bearer {}", format_auth_params(&self.params))
     }
 }
 
@@ -819,9 +819,9 @@ fn format_auth_params(params: &[(String, String)]) -> String {
     let mut parts = Vec::new();
     for (name, value) in params {
         if needs_quoting(value) {
-            parts.push(format!("{}=\"{}\"", name, escape_quotes(value)));
+            parts.push(alloc::format!("{}=\"{}\"", name, escape_quotes(value)));
         } else {
-            parts.push(format!("{}={}", name, value));
+            parts.push(alloc::format!("{}={}", name, value));
         }
     }
     parts.join(", ")
