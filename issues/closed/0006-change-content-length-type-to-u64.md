@@ -1,6 +1,7 @@
 # 0006: Content-Length の型を u64 に変更し overflow を明示的に処理する
 
 Created: 2026-04-28
+Completed: 2026-04-30
 Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
@@ -101,3 +102,13 @@ let available = if *remaining >= self.buf.len() as u64 {
 - `Content-Length` が `u64::MAX` を超えるような入力に対して、適切にエラーが返されることを確認する。
 - `Content-Length: 4294967296`（4GB+1）のような値が 32bit `usize` では overflow せず `u64` で正しく処理されることを確認する。
 - `CHANGES.md` に `[CHANGE]` セクションを追記する。
+
+## 解決方法
+
+- `HttpHead::content_length()` / `Request::content_length()` / `Response::content_length()` の戻り値を `Option<u64>` に変更した。
+- `BodyKind::ContentLength` を `u64` に、`DecodePhase::BodyContentLength { remaining: u64 }` に変更した。
+- `parse_content_length()` / `parse_content_length_value()` / `resolve_body_headers_for_*()` を `u64` に対応させた。
+- `determine_body_kind()` で `max_body_size` との比較を `u64` 対応にし、`BodyTooLarge` 報告時は `usize::try_from(len).unwrap_or(usize::MAX)` でフォールバックした。
+- `BodyDecoder::peek_body()` / `available_body_len()` で `usize` バッファ長と `u64` remaining の比較を安全に行うようにした。
+- `BodyDecoder::consume_body()` で `remaining` の減算を `u64` で行うようにした。
+- PBT テストと fuzz テスト、`skills` のドキュメントも `u64` に対応させた。

@@ -70,9 +70,9 @@ pub trait HttpHead {
     }
 
     /// Content-Length ヘッダーの値を取得
-    fn content_length(&self) -> Option<usize> {
+    fn content_length(&self) -> Option<u64> {
         self.get_header("Content-Length")
-            .and_then(|v| v.parse().ok())
+            .and_then(|v| v.parse::<u64>().ok())
     }
 
     /// Transfer-Encoding の最後が chunked かどうかを判定

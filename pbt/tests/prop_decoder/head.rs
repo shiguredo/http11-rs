@@ -388,7 +388,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(&full_data).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(actual_len));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(actual_len as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {
@@ -433,7 +433,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(length));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(length as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {

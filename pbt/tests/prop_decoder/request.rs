@@ -120,7 +120,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_length));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_length as u64));
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, partial_body.as_bytes());
     }
@@ -428,7 +428,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(head.method, method);
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {
@@ -690,7 +690,7 @@ proptest! {
 
         // ストリーミング API で decode_headers() を呼ぶ
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len()));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len() as u64));
 
         // decode() を呼ぶとエラー (ストリーミング API と混在)
         let result = decoder.decode();

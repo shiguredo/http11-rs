@@ -704,7 +704,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(&full).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len()));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len() as u64));
 
         // 複数回に分けて消費
         let first_len = body_data.len() / split_ratio.max(1);

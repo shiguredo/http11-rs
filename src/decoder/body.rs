@@ -23,7 +23,7 @@ use super::phase::DecodePhase;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BodyKind {
     /// Content-Length で指定された固定長
-    ContentLength(usize),
+    ContentLength(u64),
     /// Transfer-Encoding: chunked
     Chunked,
     /// 接続が閉じるまでがボディ (close-delimited)
@@ -92,7 +92,11 @@ impl BodyDecoder {
                 if buf.is_empty() {
                     return None;
                 }
-                let available = buf.len().min(*remaining);
+                let available = if *remaining >= buf.len() as u64 {
+                    buf.len()
+                } else {
+                    *remaining as usize
+                };
                 if available > 0 {
                     Some(&buf[..available])
                 } else {
@@ -136,7 +140,7 @@ impl BodyDecoder {
     ) -> Result<BodyProgress, Error> {
         match phase {
             DecodePhase::BodyContentLength { remaining } => {
-                if len > *remaining {
+                if (len as u64) > *remaining {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds remaining".to_string(),
                     ));
@@ -148,7 +152,7 @@ impl BodyDecoder {
                 }
 
                 buf.drain(..len);
-                *remaining -= len;
+                *remaining -= len as u64;
                 self.body_consumed =
                     self.body_consumed
                         .checked_add(len)
@@ -1259,8 +1263,8 @@ pub(crate) fn parse_transfer_encoding_for_response(
 }
 
 /// Content-Length ヘッダーを解析
-pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<usize>, Error> {
-    let mut value: Option<usize> = None;
+pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<u64>, Error> {
+    let mut value: Option<u64> = None;
     for (name, raw_value) in headers {
         if name.eq_ignore_ascii_case("Content-Length") {
             let parsed = parse_content_length_value(raw_value)?;
@@ -1282,8 +1286,8 @@ pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Optio
 ///
 /// RFC 9110 Section 8.6: Content-Length はカンマ区切りで複数値を持てる
 /// すべての値が同一でなければならない
-fn parse_content_length_value(input: &str) -> Result<usize, Error> {
-    let mut result: Option<usize> = None;
+fn parse_content_length_value(input: &str) -> Result<u64, Error> {
+    let mut result: Option<u64> = None;
 
     for part in input.split(',') {
         let part = part.trim();
@@ -1298,7 +1302,7 @@ fn parse_content_length_value(input: &str) -> Result<usize, Error> {
             ));
         }
         let value = part
-            .parse::<usize>()
+            .parse::<u64>()
             .map_err(|_| Error::InvalidData("invalid Content-Length: overflow".to_string()))?;
 
         match result {
@@ -1322,7 +1326,7 @@ fn parse_content_length_value(input: &str) -> Result<usize, Error> {
 /// - リクエストでは chunked 以外の Transfer-Encoding は拒否
 pub(crate) fn resolve_body_headers_for_request(
     headers: &[(String, String)],
-) -> Result<(bool, Option<usize>), Error> {
+) -> Result<(bool, Option<u64>), Error> {
     let transfer_encoding_chunked = parse_transfer_encoding_for_request(headers)?;
     let content_length = parse_content_length(headers)?;
 
@@ -1343,7 +1347,7 @@ pub(crate) fn resolve_body_headers_for_request(
 /// - chunked が最後でない場合は close-delimited
 pub(crate) fn resolve_body_headers_for_response(
     headers: &[(String, String)],
-) -> Result<(TransferEncodingResult, Option<usize>), Error> {
+) -> Result<(TransferEncodingResult, Option<u64>), Error> {
     let te_result = parse_transfer_encoding_for_response(headers)?;
     let content_length = parse_content_length(headers)?;
 

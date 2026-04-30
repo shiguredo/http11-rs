@@ -159,9 +159,9 @@ impl Response {
     }
 
     /// Content-Length ヘッダーの値を取得
-    pub fn content_length(&self) -> Option<usize> {
+    pub fn content_length(&self) -> Option<u64> {
         self.get_header("Content-Length")
-            .and_then(|v| v.parse().ok())
+            .and_then(|v| v.parse::<u64>().ok())
     }
 
     /// Transfer-Encoding が chunked かどうかを判定

@@ -37,6 +37,12 @@
   - `decoder::body::RequestTargetForm` から `request_target::RequestTargetForm` へインポートパスを変更する
   - encoder と decoder で重複していた定義を統一する
   - @voluntas
+- [CHANGE] `Content-Length` の型を `usize` から `u64` に変更する
+  - `Request::content_length()` / `Response::content_length()` / `HttpHead::content_length()` の戻り値を `Option<u64>` に変更する
+  - `BodyKind::ContentLength` の型を `u64` に変更する
+  - `DecodePhase::BodyContentLength { remaining: u64 }` に変更する
+  - 32bit 環境での integer conversion overflow と precision loss を防ぐ (RFC 9110 Section 8.6)
+  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 

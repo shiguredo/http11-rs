@@ -226,6 +226,6 @@ proptest! {
         let response = Response::new(code, "OK")
             .header("Content-Length", &len.to_string());
 
-        prop_assert_eq!(response.content_length(), Some(len));
+        prop_assert_eq!(response.content_length(), Some(len as u64));
     }
 }

@@ -70,7 +70,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 |
 |----|------|
-| `BodyKind::ContentLength(usize)` | Content-Length による固定長 |
+| `BodyKind::ContentLength(u64)` | Content-Length による固定長 |
 | `BodyKind::Chunked` | Transfer-Encoding: chunked |
 | `BodyKind::CloseDelimited` | 接続終了まで (レスポンスのみ) |
 | `BodyKind::Tunnel` | CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視) |

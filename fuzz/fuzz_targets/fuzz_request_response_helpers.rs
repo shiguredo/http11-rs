@@ -45,8 +45,8 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
         .count()
 }
 
-fn expected_content_length(headers: &[(String, String)]) -> Option<usize> {
-    header_value(headers, "Content-Length").and_then(|v| v.parse::<usize>().ok())
+fn expected_content_length(headers: &[(String, String)]) -> Option<u64> {
+    header_value(headers, "Content-Length").and_then(|v| v.parse::<u64>().ok())
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {

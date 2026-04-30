@@ -210,9 +210,9 @@ impl<D: Decompressor> RequestDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size {
+            if len > self.limits.max_body_size as u64 {
                 return Err(Error::BodyTooLarge {
-                    size: len,
+                    size: usize::try_from(len).unwrap_or(usize::MAX),
                     limit: self.limits.max_body_size,
                 });
             }
@@ -466,7 +466,13 @@ impl<D: Decompressor> RequestDecoder<D> {
     /// 利用可能なボディデータのバイト数を取得
     fn available_body_len(&self) -> usize {
         match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => self.buf.len().min(*remaining),
+            DecodePhase::BodyContentLength { remaining } => {
+                if *remaining >= self.buf.len() as u64 {
+                    self.buf.len()
+                } else {
+                    *remaining as usize
+                }
+            }
             DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
             _ => 0,
         }

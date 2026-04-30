@@ -612,7 +612,7 @@ proptest! {
         if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
         } else {
-            prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
+            prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len as u64));
         }
     }
 }
@@ -809,7 +809,7 @@ proptest! {
         decoder.feed(response.as_bytes()).unwrap();
 
         let result = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(result.1, BodyKind::ContentLength(len));
+        prop_assert_eq!(result.1, BodyKind::ContentLength(len as u64));
     }
 }
 
