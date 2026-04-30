@@ -5,7 +5,7 @@ edition = "2024"
 publish = false
 
 [dependencies]
-proptest = "1"
+proptest = "1.10"
 
 [dev-dependencies]
 shiguredo_http11 = { path = "../" }

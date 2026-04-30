@@ -22,7 +22,7 @@ rustls = { version = "0.23", default-features = false, features = [
 # プラットフォーム標準の証明書ストアを利用する
 rustls-platform-verifier = "0.6"
 # 非同期ランタイム
-tokio = { version = "1", features = [
+tokio = { version = "1.52", features = [
   # 非同期入出力ユーティリティ
   "io-util",
   # main 関数のマクロ

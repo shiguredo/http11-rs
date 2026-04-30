@@ -44,7 +44,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 # Brotli 圧縮 (オプション)
-brotli = { version = "8", optional = true }
+brotli = { version = "8.0", optional = true }
 # gzip / DEFLATE 圧縮 (オプション)
 noflate = { version = "0.1", optional = true }
 # Zstd 圧縮 (オプション)
