@@ -64,6 +64,11 @@ Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 - `is_valid_version_for_encode` の移動は `pub(crate)` なので crate 外への影響はない。
 - `encoder.rs` の内部構造が少し変わるのみ。
 
+## 解決方法
+
+- `src/validate.rs` から `is_valid_version_for_encode` を削除し、モジュール doc comment を「RFC 9110 / RFC 3986 基本文字集合の共通検証（デコード・エンコード双方で使用）」に更新した。
+- `src/encoder.rs` に `is_valid_version_for_encode` を追加し、`use crate::validate::...` から該当のインポートを削除した。
+
 ## 検証
 
 - `make fmt && make clippy && make check && make test` を通す。

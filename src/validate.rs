@@ -1,4 +1,4 @@
-//! バリデーション関数 (デコーダー/エンコーダー共用)
+//! RFC 9110 / RFC 3986 基本文字集合の共通検証（デコード・エンコード双方で使用）
 
 /// トークン文字か確認 (RFC 9110 Section 5.6.2)
 ///
@@ -122,13 +122,6 @@ pub(crate) fn is_valid_protocol_version(version: &str) -> bool {
         return false;
     }
     after_dot.iter().all(|b| b.is_ascii_digit())
-}
-
-/// エンコーダー用のバージョン文字列バリデーション
-///
-/// VCHAR のみ (SP/CTL 禁止)。RTSP 等の非 HTTP プロトコルにも対応。
-pub(crate) fn is_valid_version_for_encode(version: &str) -> bool {
-    !version.is_empty() && version.bytes().all(|b| matches!(b, 0x21..=0x7E))
 }
 
 /// ステータスコードが有効か確認 (RFC 9110 Section 15)

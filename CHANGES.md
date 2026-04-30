@@ -70,6 +70,9 @@
   - `http11_server` / `http11_server_io_uring` の `GzipCompressor` を `noflate::gzip::Encoder` の sans-io API ベースに書き換え、`compress_body` を `noflate::gzip::compress` に置き換える
   - `noflate` には圧縮レベル概念がないため未使用だった `GzipCompressor::with_level` を削除する
   - @voluntas
+- [UPDATE] `src/validate.rs` のエンコード専用ポリシー `is_valid_version_for_encode` を `src/encoder.rs` に移動する
+  - `src/validate.rs` を RFC 9110 / RFC 3986 基本文字集合の共通検証に特化させ、モジュール責務を明確にする
+  - @voluntas
 - [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
   - @voluntas
 

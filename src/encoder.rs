@@ -6,10 +6,17 @@ use crate::request_target::RequestTargetForm;
 use crate::response::Response;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
-    is_valid_request_target, is_valid_status_code, is_valid_version_for_encode,
+    is_valid_request_target, is_valid_status_code,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
+
+/// エンコード用のバージョン文字列バリデーション
+///
+/// VCHAR のみ (SP/CTL 禁止)。RTSP 等の非 HTTP プロトコルにも対応。
+fn is_valid_version_for_encode(version: &str) -> bool {
+    !version.is_empty() && version.bytes().all(|b| matches!(b, 0x21..=0x7E))
+}
 
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
