@@ -11,9 +11,26 @@
 
 ## develop
 
+- [UPDATE] `Request` と `Response` に `HttpHead` トレイトを実装する
+  - `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` デフォルト実装に委譲する
+  - 重複していた 120 行以上の同一ロジックを統一する
+  - @voluntas
+- [UPDATE] `is_valid_request_target()` と `encoder.rs` のコメントを整備する
+  - obs-text の扱いについて、受信側の寛容さと送信側の拒否という責務を明確にする
+  - @voluntas
+- [UPDATE] `HttpHead::is_keep_alive()` / `is_chunked()` の内部実装を `headers().iter()` で直接走査するように変更する
+  - `get_headers()` を経由しないことで呼び出し時の不要な `Vec<&str>` allocation を回避する
+  - `get_headers()` / `is_keep_alive()` / `is_chunked()` のシグネチャは変更せず、object safe を維持する
+  - @voluntas
+- [UPDATE] `src/lib.rs` の `#[macro_use] extern crate alloc` から `#[macro_use]` を削除する
+  - `vec!` / `format!` を使っていた通常コードを `alloc::vec!` / `alloc::format!` に置換する
+  - `no_std` 環境でのマクロの使い方を明示的にする
+  - @voluntas
 - [ADD] `MultipartParser` にバッファ上限を追加する
   - `max_buffer_size` フィールドを追加し、デフォルト 10MB の上限を設ける
   - `with_max_buffer_size()` ビルダーメソッドを追加する
+  - @voluntas
+- [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
   - @voluntas
 - [CHANGE] `src` を `core` と `alloc` のみの `no_std` に対応する
   - `#![no_std]` を宣言し、`std` への依存を排除する
@@ -43,21 +60,6 @@
   - `DecodePhase::BodyContentLength { remaining: u64 }` に変更する
   - 32bit 環境での integer conversion overflow と precision loss を防ぐ (RFC 9110 Section 8.6)
   - @voluntas
-- [UPDATE] `Request` と `Response` に `HttpHead` トレイトを実装する
-  - `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` デフォルト実装に委譲する
-  - 重複していた 120 行以上の同一ロジックを統一する
-  - @voluntas
-- [UPDATE] `is_valid_request_target()` と `encoder.rs` のコメントを整備する
-  - obs-text の扱いについて、受信側の寛容さと送信側の拒否という責務を明確にする
-  - @voluntas
-- [UPDATE] `HttpHead::is_keep_alive()` / `is_chunked()` の内部実装を `headers().iter()` で直接走査するように変更する
-  - `get_headers()` を経由しないことで呼び出し時の不要な `Vec<&str>` allocation を回避する
-  - `get_headers()` / `is_keep_alive()` / `is_chunked()` のシグネチャは変更せず、object safe を維持する
-  - @voluntas
-- [UPDATE] `src/lib.rs` の `#[macro_use] extern crate alloc` から `#[macro_use]` を削除する
-  - `vec!` / `format!` を使っていた通常コードを `alloc::vec!` / `alloc::format!` に置換する
-  - `no_std` 環境でのマクロの使い方を明示的にする
-  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 
@@ -72,8 +74,6 @@
   - @voluntas
 - [UPDATE] `src/validate.rs` のエンコード専用ポリシー `is_valid_version_for_encode` を `src/encoder.rs` に移動する
   - `src/validate.rs` を RFC 9110 / RFC 3986 基本文字集合の共通検証に特化させ、モジュール責務を明確にする
-  - @voluntas
-- [ADD] `feed_unchecked()` と `DecoderLimits::unlimited()` に未信頼入力での OOM リスクを警告するドキュメントを追加する
   - @voluntas
 
 ## 2026.1.1
