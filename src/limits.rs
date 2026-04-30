@@ -31,6 +31,12 @@ impl Default for DecoderLimits {
 
 impl DecoderLimits {
     /// 制限なしの設定を作成
+    ///
+    /// # 警告
+    ///
+    /// すべての上限を `usize::MAX` に設定する。
+    /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
+    /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn unlimited() -> Self {
         Self {
             max_buffer_size: usize::MAX,

@@ -1,11 +1,14 @@
 # AGENTS
 
 - Premature Optimization is the Root of All Evil
+- 一切妥協をしないこと
 - 一切忖度しないこと
 - 常に日本語を利用すること
 - 全角と半角の間には半角スペースを入れること
 - 絵文字を使わないこと
-- RFC 準拠を最優先すること
+- コメントは全て日本語
+- ログメッセージは全て英語
+- エラーメッセージは全て英語
 
 ## レビューについて
 
@@ -26,46 +29,61 @@
 - コミットメッセージは日本語で書くこと
 - コミットメッセージは命令形で書くこと
 - コミットメッセージは〜するという形で書くこと
+- フックをスキップしないこと
 
 ## サンプルについて
 
 - サンプルは **お手本** なので性能と堅牢性を両立させること
-- サンプルは RFC に準拠していること
 
 ## issues について
 
-- 番号は 0001 から順番に振ること
-- 番号が若い @issues から順番に対応すること
-- 仕様的に対応が難しい場合は @issues/pending/ へ移動すること
-- 0001-{category}-{short-description}.md という命名規則を守ること
+- 番号が小さい issues から順番に対応すること
+- `{seqnum}-{category}-{short-description}.md` という命名規則を守ること
+  - seqnum は `issues/SEQUENCE` ファイルの値を使うこと（9999 を超えたら 5 桁にする）
+  - issue を新規作成したら `issues/SEQUENCE` の値を +1 して更新すること
+  - 例: `0001-bug-fix-parse-error.md`
+  - 例: `0002-fmt-enhance-support-for-joins.md`
+- 仕様的に対応が難しい場合は issues/pending/ へ移動すること
+- issue を作成したらコミットすること
+- issue をコミットするときはコミットメッセージに issue の番号とタイトルを記載すること
+- 1 issue 完了ごとに 1 コミットすること
+- Issue の作成日はファイルのタイトルの後に `Created: YYYY-MM-DD` として記載すること
+- Issue の完了日はファイルのタイトルの後に `Completed: YYYY-MM-DD` として記載すること
+- Issue を作成した LLM の Model と Version をファイルのタイトルの後に `Model: <model-name> <version>` として記載すること
+  - Opus 4.7 や GPT-5.5 など
+  - モデルが複数ある場合は GPT-5.5 / Opus 4.7 のように両方記載すること
+- Issue はなぜこの対応が必要なのかの根拠を明確にすること
 
-### タスクをする場合
+### git ブランチの命名規則
 
-- @issues/ 以下にタスクを markdown 形式で登録すること
-- タスクを終了した場合は、完了内容を markdown 形式で記載すること
-- タスクを終了した場合は、@issues/closed に移動すること (git mv を使うこと)
+- Git Flow を使うこと
+- バグ修正は prefix を `feature/fix-` でブランチを切って対応すること
+- 機能追加は prefix を `feature/add-` でブランチを切って対応すること
+- 後方互換のない変更は prefix を `feature/change-` でブランチを切って対応すること
+- ブランチ名に issue の番号を含めないこと
+
+### issue が実は解決してなかった場合
+
+- reopen の理由を issue に書いて issues/closed から issues/ に移動すること (git mv を使うこと)
+- reopen の理由は、何がどう解決していなかったのかを明確にすること
 
 ### バグが見つかった場合
 
-- @issues/ 以下にバグを markdown 形式で登録すること
+- issues/ 以下にバグを markdown 形式で登録すること
 - バグは再現手順を明確にすること
 - できる限りの情報を
 
-#### バグを修正した場合
+### バグを修正した場合
 
 - issues/ 以下のバグを修正した場合は、修正内容を markdown 形式で記載すること
 - issues/closed に移動すること (git mv を使うこと)
+- issues/closed に移動するときは issue ファイルに「## 解決方法」セクションを追記し、何をどう修正したかを明記すること
 
 ### 設計判断が必要な issue の場合
 
 - 外部依存の追加や設計判断が必要で保留中の issue は `issues/pending/` に置くこと
+- issues/pending に移動するときは issue ファイルに pending にした理由を明記すること
 - pending の issue は修正せずそのまま残す（close しない）
-
-## RFC について
-
-- refs/ 以下を利用すること
-- RFC 7230 は廃止されて RFC 9110 になってる
-- RFC 7231 は廃止されて RFC 9112 になってる
 
 ## テストについて
 
@@ -112,11 +130,57 @@ cargo llvm-cov --no-report -p pbt --test prop_<module>
 cargo llvm-cov report
 ```
 
-## pre-commit
+## 変更履歴について
 
-- make fmt / make clippy / make check / make test を実行すること
+- 変更履歴は `CHANGES.md` に記載すること
+- 変更の種別は以下の 4 つを使うこと
+  - `[UPDATE]`: 後方互換がある変更
+  - `[ADD]`: 後方互換がある追加
+  - `[CHANGE]`: 後方互換のない変更
+  - `[FIX]`: バグ修正
+- エントリは種別の順番を守って記載すること（UPDATE → ADD → CHANGE → FIX の順）
+- 機能に直接影響しない変更（ドキュメント追加、リファクタリング等）は `### misc` サブセクションに記載すること
+- 未リリースの変更は `## develop` セクションに追記すること
+- 各エントリは `- [種別] 変更内容を〜するという形で書く` というフォーマットにすること
+- 各エントリの担当者はエントリの次の行に記載し、変更内容より 2 文字分インデントを下げて `- @ユーザー名` の形式にすること
+- 担当者の行はそのエントリの最後に書くこと
+- 変更内容の説明は日本語で書くこと
+- リリース時は `## develop` を `## バージョン` に変更し、`**リリース日**: YYYY-MM-DD` を記載すること
 
 ## Rust
 
 - 性能より堅牢性を優先すること
-- PBT(Property-Based Testing) や Fuzzing で必ずテストを行うこと
+- 依存は最小限にすること
+- PBT(Property-Based Testing) や Fuzzing でテストを行うこと
+- 資料を由来の機能を実装する場合は、根拠資料名、節番号、将来変更される可能性があることをコードコメントで明記すること
+
+### ライブラリ
+
+- バージョン番号はマイナーバージョンまで指定すること
+  - 例: `spam = "0.3.10"` ではなく `spam = "0.3"` とする
+  - 例: `egg = "1.0.1"` ではなく `egg = "1.0"` とする
+- 依存ライブラリには用途をコメントで明記すること
+- PBT は proptest を使うこと
+- Fuzzing は cargo-fuzz を使うこと
+- TLS は rustls を使う事
+- 非同期処理は tokio を使うこと
+- 暗号ライブラリは aws-lc-rs を使うこと
+- JSON は nojson を使うこと
+- 引数のパースは noargs を使うこと
+- base64 は base64ct を使うこと
+- ログは tracing を使うこと
+  - ログのフィルタリングは tracing-subscriber を使うこと
+
+## http11-rs
+
+本リポジトリ固有の指示。
+
+- **良い設計のためには破壊的変更を積極的に行うこと**
+
+### RFC について
+
+- RFC 準拠を最優先すること
+  - RFC 7230 は廃止されて RFC 9110 になってる
+  - RFC 7231 は廃止されて RFC 9112 になってる
+- RFC を確認する際は refs/ 以下を利用すること
+- サンプルは RFC に準拠していること

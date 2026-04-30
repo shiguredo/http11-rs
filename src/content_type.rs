@@ -23,6 +23,8 @@
 //! assert_eq!(ct.boundary(), Some("----WebKitFormBoundary"));
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Content-Type パースエラー
@@ -49,7 +51,7 @@ impl fmt::Display for ContentTypeError {
     }
 }
 
-impl std::error::Error for ContentTypeError {}
+impl core::error::Error for ContentTypeError {}
 
 /// パース済み Content-Type
 ///
@@ -131,7 +133,7 @@ impl ContentType {
 
     /// 完全なメディアタイプを取得 (例: "text/html")
     pub fn mime_type(&self) -> String {
-        format!("{}/{}", self.media_type, self.subtype)
+        alloc::format!("{}/{}", self.media_type, self.subtype)
     }
 
     /// パラメータを取得

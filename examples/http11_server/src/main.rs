@@ -433,9 +433,11 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
                 body.push_str(&format!("  {}: {}\n", name, value));
             }
 
-            if !request.body.is_empty() {
-                body.push_str(&format!("\nBody ({} bytes):\n", request.body.len()));
-                if let Ok(text) = std::str::from_utf8(&request.body) {
+            if let Some(req_body) = request.body.as_deref()
+                && !req_body.is_empty()
+            {
+                body.push_str(&format!("\nBody ({} bytes):\n", req_body.len()));
+                if let Ok(text) = std::str::from_utf8(req_body) {
                     body.push_str(text);
                 } else {
                     body.push_str("[binary data]");

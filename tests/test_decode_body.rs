@@ -266,7 +266,7 @@ fn close_delimited_decode_with_mark_eof() {
 
     // 再度 decode() を呼ぶと Response が返る
     let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body, b"body data");
+    assert_eq!(response.body.as_deref(), Some(&b"body data"[..]));
 }
 
 /// HTTP/1.0 リクエストで Transfer-Encoding が指定された場合のエラーテスト

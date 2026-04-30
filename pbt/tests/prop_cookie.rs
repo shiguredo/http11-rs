@@ -40,7 +40,7 @@ proptest! {
     fn prop_set_cookie_roundtrip(name in "[a-zA-Z][a-zA-Z0-9_-]{0,15}", value in "[a-zA-Z0-9_-]{0,32}") {
         let cookie = SetCookie::new(&name, &value).unwrap();
         let displayed = cookie.to_string();
-        let reparsed = SetCookie::parse(&displayed).unwrap();
+        let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
         prop_assert_eq!(reparsed.name(), name.as_str());
         prop_assert_eq!(reparsed.value(), value.as_str());
     }
@@ -58,7 +58,7 @@ proptest! {
             .with_http_only(true);
 
         let displayed = cookie.to_string();
-        let reparsed = SetCookie::parse(&displayed).unwrap();
+        let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(reparsed.name(), name.as_str());
         prop_assert_eq!(reparsed.value(), value.as_str());
@@ -78,7 +78,7 @@ proptest! {
             .with_same_site(same_site);
 
         let displayed = cookie.to_string();
-        let reparsed = SetCookie::parse(&displayed).unwrap();
+        let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(reparsed.same_site(), Some(same_site));
     }
@@ -91,7 +91,7 @@ proptest! {
         let cookie = SetCookie::new(&name, &value).unwrap().with_domain(&domain);
 
         let displayed = cookie.to_string();
-        let reparsed = SetCookie::parse(&displayed).unwrap();
+        let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(reparsed.domain(), Some(domain.as_str()));
     }

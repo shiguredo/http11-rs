@@ -1,5 +1,8 @@
 //! HTTP ヘッダー型の定義
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 /// HTTP ヘッダー操作のための共通トレイト
 pub trait HttpHead {
     /// HTTP バージョンを取得
@@ -42,14 +45,15 @@ pub trait HttpHead {
     /// RFC 9110 Section 9.1: 複数の Connection ヘッダーはリストとして結合して処理する。
     /// close トークンがいずれかのヘッダーに存在すれば false を返す。
     fn is_keep_alive(&self) -> bool {
-        // 全ての Connection ヘッダーを取得して検査
-        let connection_headers = self.get_headers("Connection");
         let mut has_keep_alive = false;
-
-        for conn in connection_headers {
+        // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
+        for (name, value) in self.headers() {
+            if !name.eq_ignore_ascii_case("Connection") {
+                continue;
+            }
             // カンマ区切りトークンリストとして解析
             // close トークンがあれば即座に false (close 優先)
-            for token in conn.split(',') {
+            for token in value.split(',') {
                 let token = token.trim();
                 if token.eq_ignore_ascii_case("close") {
                     return false;
@@ -67,9 +71,9 @@ pub trait HttpHead {
     }
 
     /// Content-Length ヘッダーの値を取得
-    fn content_length(&self) -> Option<usize> {
+    fn content_length(&self) -> Option<u64> {
         self.get_header("Content-Length")
-            .and_then(|v| v.parse().ok())
+            .and_then(|v| v.parse::<u64>().ok())
     }
 
     /// Transfer-Encoding の最後が chunked かどうかを判定
@@ -84,8 +88,12 @@ pub trait HttpHead {
     /// RFC 9110 Section 5.3: 複数の同名ヘッダーは結合して単一のリストとして扱う。
     fn is_chunked(&self) -> bool {
         let mut last_token: Option<&str> = None;
-        for te in self.get_headers("Transfer-Encoding") {
-            for token in te.split(',') {
+        // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
+        for (name, value) in self.headers() {
+            if !name.eq_ignore_ascii_case("Transfer-Encoding") {
+                continue;
+            }
+            for token in value.split(',') {
                 let token = token.trim();
                 if !token.is_empty() {
                     last_token = Some(token);

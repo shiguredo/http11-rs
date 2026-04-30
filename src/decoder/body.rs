@@ -8,11 +8,14 @@
 
 use crate::error::Error;
 use crate::limits::DecoderLimits;
+use crate::request_target::RequestTargetForm;
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
     is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
     is_valid_field_value, is_valid_header_name, is_valid_token,
 };
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use super::phase::DecodePhase;
 
@@ -20,7 +23,7 @@ use super::phase::DecodePhase;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BodyKind {
     /// Content-Length で指定された固定長
-    ContentLength(usize),
+    ContentLength(u64),
     /// Transfer-Encoding: chunked
     Chunked,
     /// 接続が閉じるまでがボディ (close-delimited)
@@ -89,7 +92,11 @@ impl BodyDecoder {
                 if buf.is_empty() {
                     return None;
                 }
-                let available = buf.len().min(*remaining);
+                let available = if *remaining >= buf.len() as u64 {
+                    buf.len()
+                } else {
+                    *remaining as usize
+                };
                 if available > 0 {
                     Some(&buf[..available])
                 } else {
@@ -133,7 +140,7 @@ impl BodyDecoder {
     ) -> Result<BodyProgress, Error> {
         match phase {
             DecodePhase::BodyContentLength { remaining } => {
-                if len > *remaining {
+                if (len as u64) > *remaining {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds remaining".to_string(),
                     ));
@@ -145,7 +152,7 @@ impl BodyDecoder {
                 }
 
                 buf.drain(..len);
-                *remaining -= len;
+                *remaining -= len as u64;
                 self.body_consumed =
                     self.body_consumed
                         .checked_add(len)
@@ -168,7 +175,7 @@ impl BodyDecoder {
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
-                        trailers: std::mem::take(&mut self.trailers),
+                        trailers: core::mem::take(&mut self.trailers),
                     }),
                     _ => Ok(BodyProgress::Continue),
                 }
@@ -231,7 +238,7 @@ impl BodyDecoder {
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
-                        trailers: std::mem::take(&mut self.trailers),
+                        trailers: core::mem::take(&mut self.trailers),
                     }),
                     _ => Ok(BodyProgress::Continue),
                 }
@@ -267,7 +274,7 @@ impl BodyDecoder {
                 Ok(BodyProgress::Continue)
             }
             DecodePhase::Complete => Ok(BodyProgress::Complete {
-                trailers: std::mem::take(&mut self.trailers),
+                trailers: core::mem::take(&mut self.trailers),
             }),
             DecodePhase::StartLine | DecodePhase::Headers => Err(Error::InvalidData(
                 "consume_body called before decode_headers".to_string(),
@@ -321,7 +328,7 @@ impl BodyDecoder {
             // chunk-size は 1 文字以上の HEXDIG で始まらなければならない
             if hex_end == 0 {
                 let display = String::from_utf8_lossy(size_bytes);
-                return Err(Error::InvalidData(format!(
+                return Err(Error::InvalidData(alloc::format!(
                     "invalid chunk size: {}",
                     display
                 )));
@@ -335,7 +342,7 @@ impl BodyDecoder {
                     // RFC 9112 Section 7.1.1: chunk-ext = *( BWS ";" ... )
                     if !trailing.iter().all(|&b| b == b' ' || b == b'\t') {
                         let display = String::from_utf8_lossy(size_bytes);
-                        return Err(Error::InvalidData(format!(
+                        return Err(Error::InvalidData(alloc::format!(
                             "invalid chunk size: {}",
                             display
                         )));
@@ -343,7 +350,7 @@ impl BodyDecoder {
                 } else {
                     // chunk-ext がない場合: chunk-size の後は CRLF のみ (BWS は不可)
                     let display = String::from_utf8_lossy(size_bytes);
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "invalid chunk size: {}",
                         display
                     )));
@@ -352,10 +359,11 @@ impl BodyDecoder {
 
             // HEXDIG 部分のみを chunk-size として解釈
             let hex_bytes = &size_bytes[..hex_end];
-            let size_str = std::str::from_utf8(hex_bytes)
+            let size_str = core::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
-            let chunk_size = usize::from_str_radix(size_str, 16)
-                .map_err(|_| Error::InvalidData(format!("invalid chunk size: {}", size_str)))?;
+            let chunk_size = usize::from_str_radix(size_str, 16).map_err(|_| {
+                Error::InvalidData(alloc::format!("invalid chunk size: {}", size_str))
+            })?;
 
             // chunk-ext の ABNF 検証 (RFC 9112 Section 7.1.1)
             if let Some(sp) = semi_pos {
@@ -420,7 +428,7 @@ impl BodyDecoder {
                     }
 
                     let line = String::from_utf8(buf[..pos].to_vec())
-                        .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                     buf.drain(..pos + 2);
 
                     // 不正なトレーラー行はエラーにする
@@ -428,7 +436,7 @@ impl BodyDecoder {
 
                     // RFC 9112 Section 7.1.2: 禁止フィールドチェック
                     if is_prohibited_trailer_field(&name) {
-                        return Err(Error::InvalidData(format!(
+                        return Err(Error::InvalidData(alloc::format!(
                             "prohibited trailer field: {}",
                             name
                         )));
@@ -672,22 +680,6 @@ pub(crate) fn parse_header_line(line: &str) -> Result<(String, String), Error> {
     }
 
     Ok((name.to_string(), trimmed_value.to_string()))
-}
-
-/// RFC 9112 Section 3.2 request-target の形式
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RequestTargetForm {
-    /// origin-form: absolute-path [ "?" query ]
-    /// 例: /path/to/resource?query=value
-    Origin,
-    /// absolute-form: absolute-URI
-    /// 例: http://example.com/path
-    Absolute,
-    /// authority-form: uri-host ":" port (CONNECT のみ)
-    /// 例: example.com:443
-    Authority,
-    /// asterisk-form: "*" (OPTIONS のみ)
-    Asterisk,
 }
 
 /// request-target の形式を判定
@@ -946,7 +938,7 @@ fn validate_authority_chars(authority: &str) -> Result<(), Error> {
         {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid authority: illegal character 0x{:02X}",
                 b
             )));
@@ -1013,7 +1005,7 @@ fn validate_path_chars(path: &str) -> Result<(), Error> {
         } else if is_pchar_or_slash(b) {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid path: illegal character 0x{:02X}",
                 b
             )));
@@ -1044,7 +1036,7 @@ fn validate_query_chars(query: &str) -> Result<(), Error> {
         } else if is_query_char(b) {
             i += 1;
         } else {
-            return Err(Error::InvalidData(format!(
+            return Err(Error::InvalidData(alloc::format!(
                 "invalid query: illegal character 0x{:02X}",
                 b
             )));
@@ -1127,13 +1119,13 @@ pub(crate) fn validate_request_target_for_method(
             match form {
                 RequestTargetForm::Origin | RequestTargetForm::Absolute => {}
                 RequestTargetForm::Authority => {
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "{} method does not allow authority-form request-target",
                         method
                     )));
                 }
                 RequestTargetForm::Asterisk => {
-                    return Err(Error::InvalidData(format!(
+                    return Err(Error::InvalidData(alloc::format!(
                         "{} method does not allow asterisk-form request-target",
                         method
                     )));
@@ -1272,8 +1264,8 @@ pub(crate) fn parse_transfer_encoding_for_response(
 }
 
 /// Content-Length ヘッダーを解析
-pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<usize>, Error> {
-    let mut value: Option<usize> = None;
+pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<u64>, Error> {
+    let mut value: Option<u64> = None;
     for (name, raw_value) in headers {
         if name.eq_ignore_ascii_case("Content-Length") {
             let parsed = parse_content_length_value(raw_value)?;
@@ -1295,8 +1287,8 @@ pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Optio
 ///
 /// RFC 9110 Section 8.6: Content-Length はカンマ区切りで複数値を持てる
 /// すべての値が同一でなければならない
-fn parse_content_length_value(input: &str) -> Result<usize, Error> {
-    let mut result: Option<usize> = None;
+fn parse_content_length_value(input: &str) -> Result<u64, Error> {
+    let mut result: Option<u64> = None;
 
     for part in input.split(',') {
         let part = part.trim();
@@ -1311,7 +1303,7 @@ fn parse_content_length_value(input: &str) -> Result<usize, Error> {
             ));
         }
         let value = part
-            .parse::<usize>()
+            .parse::<u64>()
             .map_err(|_| Error::InvalidData("invalid Content-Length: overflow".to_string()))?;
 
         match result {
@@ -1335,7 +1327,7 @@ fn parse_content_length_value(input: &str) -> Result<usize, Error> {
 /// - リクエストでは chunked 以外の Transfer-Encoding は拒否
 pub(crate) fn resolve_body_headers_for_request(
     headers: &[(String, String)],
-) -> Result<(bool, Option<usize>), Error> {
+) -> Result<(bool, Option<u64>), Error> {
     let transfer_encoding_chunked = parse_transfer_encoding_for_request(headers)?;
     let content_length = parse_content_length(headers)?;
 
@@ -1356,7 +1348,7 @@ pub(crate) fn resolve_body_headers_for_request(
 /// - chunked が最後でない場合は close-delimited
 pub(crate) fn resolve_body_headers_for_response(
     headers: &[(String, String)],
-) -> Result<(TransferEncodingResult, Option<usize>), Error> {
+) -> Result<(TransferEncodingResult, Option<u64>), Error> {
     let te_result = parse_transfer_encoding_for_response(headers)?;
     let content_length = parse_content_length(headers)?;
 

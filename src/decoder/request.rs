@@ -14,6 +14,8 @@ use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::request::Request;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
 
@@ -159,6 +161,12 @@ impl<D: Decompressor> RequestDecoder<D> {
     }
 
     /// バッファにデータを追加 (制限チェックなし)
+    ///
+    /// # 警告
+    ///
+    /// この関数は `DecoderLimits` による `max_buffer_size` チェックをスキップする。
+    /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
+    /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
         self.buf.extend_from_slice(data);
     }
@@ -202,9 +210,9 @@ impl<D: Decompressor> RequestDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size {
+            if len > self.limits.max_body_size as u64 {
                 return Err(Error::BodyTooLarge {
-                    size: len,
+                    size: usize::try_from(len).unwrap_or(usize::MAX),
                     limit: self.limits.max_body_size,
                 });
             }
@@ -224,8 +232,9 @@ impl<D: Decompressor> RequestDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec())
-                            .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                        })?;
                         self.buf.drain(..pos + 2);
                         if line.contains('\r') || line.contains('\n') {
                             return Err(Error::InvalidData(
@@ -236,7 +245,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                         // Parse: METHOD SP URI SP VERSION CRLF
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() != 3 {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid request line: {}",
                                 line
                             )));
@@ -360,7 +369,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 method: parts[0].to_string(),
                                 uri: parts[1].to_string(),
                                 version: parts[2].to_string(),
-                                headers: std::mem::take(&mut self.headers),
+                                headers: core::mem::take(&mut self.headers),
                             };
 
                             return Ok(Some((head, body_kind)));
@@ -381,8 +390,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 });
                             }
 
-                            let line = String::from_utf8(self.buf[..pos].to_vec())
-                                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                            let line =
+                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                                })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
@@ -458,7 +469,13 @@ impl<D: Decompressor> RequestDecoder<D> {
     /// 利用可能なボディデータのバイト数を取得
     fn available_body_len(&self) -> usize {
         match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => self.buf.len().min(*remaining),
+            DecodePhase::BodyContentLength { remaining } => {
+                if *remaining >= self.buf.len() as u64 {
+                    self.buf.len()
+                } else {
+                    *remaining as usize
+                }
+            }
             DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
             _ => 0,
         }
@@ -550,12 +567,20 @@ impl<D: Decompressor> RequestDecoder<D> {
         }
 
         // Request を構築
+        // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
+        // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
         let head = self.decoded_head.take().unwrap();
-        let body = std::mem::take(&mut self.decoded_body);
+        let body = match body_kind {
+            BodyKind::None | BodyKind::Tunnel => None,
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                Some(core::mem::take(&mut self.decoded_body))
+            }
+        };
 
         // Keep-Alive 対応: 次のリクエストのために状態をリセット
         self.phase = DecodePhase::StartLine;
         self.decoded_body_kind = None;
+        self.decoded_body.clear();
         self.body_decoder.reset();
 
         Ok(Some(Request {

@@ -8,7 +8,7 @@ pub(crate) enum DecodePhase {
     /// ヘッダー待ち
     Headers,
     /// ボディ読み取り中 (Content-Length)
-    BodyContentLength { remaining: usize },
+    BodyContentLength { remaining: u64 },
     /// ボディ読み取り中 (Chunked) - チャンクサイズ待ち
     BodyChunkedSize,
     /// ボディ読み取り中 (Chunked) - チャンクデータ待ち

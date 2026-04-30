@@ -17,17 +17,19 @@
 //!     ------WebKitFormBoundary--\r\n";
 //!
 //! let mut parser = MultipartParser::new(boundary);
-//! parser.feed(body);
+//! parser.feed(body).unwrap();
 //!
 //! while let Some(part) = parser.next_part().unwrap() {
 //!     println!("name: {:?}", part.name());
-//!     println!("body: {:?}", std::str::from_utf8(part.body()));
+//!     println!("body: {:?}", core::str::from_utf8(part.body()));
 //! }
 //! ```
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
 use crate::validate::is_token_char;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// multipart パースエラー
@@ -52,6 +54,13 @@ pub enum MultipartError {
     /// Content-Disposition に name パラメータが欠落している
     /// RFC 7578 Section 4.2: "name" パラメータを含まなければならない
     MissingName,
+    /// バッファサイズが上限を超えた
+    BufferOverflow {
+        /// 超過後のサイズ
+        size: usize,
+        /// 設定された上限
+        limit: usize,
+    },
 }
 
 impl fmt::Display for MultipartError {
@@ -80,11 +89,14 @@ impl fmt::Display for MultipartError {
                     "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)"
                 )
             }
+            MultipartError::BufferOverflow { size, limit } => {
+                write!(f, "buffer overflow: size={size}, limit={limit}")
+            }
         }
     }
 }
 
-impl std::error::Error for MultipartError {}
+impl core::error::Error for MultipartError {}
 
 /// multipart パートを表す構造体
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,7 +184,7 @@ impl Part {
 
     /// ボディを文字列として取得
     pub fn body_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.body).ok()
+        core::str::from_utf8(&self.body).ok()
     }
 
     /// ファイルパートかどうか
@@ -192,6 +204,8 @@ pub struct MultipartParser {
     state: ParserState,
     /// 完了フラグ
     finished: bool,
+    /// バッファ最大サイズ (デフォルト: 10MB)
+    max_buffer_size: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -230,13 +244,22 @@ fn is_valid_boundary(boundary: &str) -> bool {
 
 impl MultipartParser {
     /// 新しいパーサーを作成
+    ///
+    /// バッファ上限は 10MB。変更する場合は `with_max_buffer_size()` を使用する。
     pub fn new(boundary: &str) -> Self {
         MultipartParser {
             boundary: boundary.to_string(),
             buffer: Vec::new(),
             state: ParserState::Initial,
             finished: false,
+            max_buffer_size: 10 * 1024 * 1024,
         }
+    }
+
+    /// バッファ最大サイズを設定
+    pub fn with_max_buffer_size(mut self, max_buffer_size: usize) -> Self {
+        self.max_buffer_size = max_buffer_size;
+        self
     }
 
     /// boundary を検証して新しいパーサーを作成
@@ -250,8 +273,18 @@ impl MultipartParser {
     }
 
     /// データを追加
-    pub fn feed(&mut self, data: &[u8]) {
+    ///
+    /// バッファサイズが `max_buffer_size` を超える場合は `MultipartError::BufferOverflow` を返す。
+    pub fn feed(&mut self, data: &[u8]) -> Result<(), MultipartError> {
+        let new_size = self.buffer.len().saturating_add(data.len());
+        if new_size > self.max_buffer_size {
+            return Err(MultipartError::BufferOverflow {
+                size: new_size,
+                limit: self.max_buffer_size,
+            });
+        }
         self.buffer.extend_from_slice(data);
+        Ok(())
     }
 
     /// パースが完了したかどうか
@@ -265,7 +298,7 @@ impl MultipartParser {
             return Ok(None);
         }
 
-        let delimiter = format!("--{}", self.boundary);
+        let delimiter = alloc::format!("--{}", self.boundary);
 
         loop {
             match self.state {
@@ -306,7 +339,7 @@ impl MultipartParser {
                         let body_start = header_end + 4;
 
                         // ヘッダーをパース
-                        let headers_str = std::str::from_utf8(header_bytes)
+                        let headers_str = core::str::from_utf8(header_bytes)
                             .map_err(|_| MultipartError::InvalidHeader)?;
 
                         let mut content_disposition = None;
@@ -348,7 +381,7 @@ impl MultipartParser {
 
                         // 次の境界を探す
                         let body_buffer = &self.buffer[body_start..];
-                        let next_delim = format!("\r\n--{}", self.boundary);
+                        let next_delim = alloc::format!("\r\n--{}", self.boundary);
 
                         if let Some(body_end) = find_bytes(body_buffer, next_delim.as_bytes()) {
                             let body = body_buffer[..body_end].to_vec();
@@ -413,7 +446,7 @@ impl MultipartBuilder {
     /// assert!(builder.boundary().starts_with("----FormBoundary"));
     /// ```
     pub fn new(random_value: u64) -> Self {
-        let boundary = format!("----FormBoundary{}", random_value);
+        let boundary = alloc::format!("----FormBoundary{}", random_value);
         MultipartBuilder {
             boundary,
             parts: Vec::new(),
@@ -448,9 +481,9 @@ impl MultipartBuilder {
     /// RFC 9110 Section 5.6.6: boundary が token に該当しない場合は quoted-string で囲む
     pub fn content_type(&self) -> String {
         if self.boundary.bytes().all(is_token_char) {
-            format!("multipart/form-data; boundary={}", self.boundary)
+            alloc::format!("multipart/form-data; boundary={}", self.boundary)
         } else {
-            format!("multipart/form-data; boundary=\"{}\"", self.boundary)
+            alloc::format!("multipart/form-data; boundary=\"{}\"", self.boundary)
         }
     }
 
@@ -556,7 +589,7 @@ mod tests {
             ------WebKitFormBoundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.name(), Some("field1"));
@@ -577,7 +610,7 @@ mod tests {
             --boundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         assert_eq!(part1.name(), Some("field1"));
@@ -600,7 +633,7 @@ mod tests {
             --boundary--\r\n";
 
         let mut parser = MultipartParser::new(boundary);
-        parser.feed(body);
+        parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.name(), Some("file"));
@@ -648,7 +681,7 @@ mod tests {
             .build();
 
         let mut parser = MultipartParser::new("test-boundary");
-        parser.feed(&original_body);
+        parser.feed(&original_body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
         assert_eq!(part1.name(), Some("name"));
@@ -713,7 +746,7 @@ mod tests {
             .build();
 
         let mut parser = MultipartParser::new("boundary");
-        parser.feed(&body);
+        parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
         assert_eq!(part.body(), &binary_data);

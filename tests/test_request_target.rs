@@ -7,7 +7,8 @@
 //! asterisk-form ("*") は入力が一意であり、不正文字やパーセントエンコーディングの
 //! テストも特定のエッジケースを網羅的に確認する目的で書かれている。
 
-use shiguredo_http11::{RequestDecoder, RequestTargetForm};
+use shiguredo_http11::RequestDecoder;
+use shiguredo_http11::request_target::RequestTargetForm;
 
 // ========================================
 // asterisk-form テスト

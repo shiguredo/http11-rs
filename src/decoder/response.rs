@@ -10,6 +10,8 @@ use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use crate::validate::{is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code};
 
@@ -174,7 +176,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// 呼び出し後、バッファは空になる。
     pub fn take_remaining(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.buf)
+        core::mem::take(&mut self.buf)
     }
 
     /// トンネルモードかどうかを判定
@@ -203,6 +205,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
     }
 
     /// バッファにデータを追加 (制限チェックなし)
+    ///
+    /// # 警告
+    ///
+    /// この関数は `DecoderLimits` による `max_buffer_size` チェックをスキップする。
+    /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
+    /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
         self.buf.extend_from_slice(data);
     }
@@ -309,9 +317,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size {
+            if len > self.limits.max_body_size as u64 {
                 return Err(Error::BodyTooLarge {
-                    size: len,
+                    size: usize::try_from(len).unwrap_or(usize::MAX),
                     limit: self.limits.max_body_size,
                 });
             }
@@ -333,8 +341,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec())
-                            .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                        })?;
                         self.buf.drain(..pos + 2);
 
                         // CR/LF チェック (埋め込まれた改行を拒否)
@@ -347,7 +356,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                         // Parse: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() < 2 {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid status line: {}",
                                 line
                             )));
@@ -362,13 +371,13 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
                         // ステータスコードの検証 (RFC 9110 Section 15)
                         let status_code: u16 = parts[1].parse().map_err(|_| {
-                            Error::InvalidData(format!(
+                            Error::InvalidData(alloc::format!(
                                 "invalid status line: invalid status code: {}",
                                 parts[1]
                             ))
                         })?;
                         if !is_valid_status_code(status_code) {
-                            return Err(Error::InvalidData(format!(
+                            return Err(Error::InvalidData(alloc::format!(
                                 "invalid status line: status code out of range: {}",
                                 status_code
                             )));
@@ -401,7 +410,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
                             let status_code: u16 = parts[1].parse().map_err(|_| {
-                                Error::InvalidData(format!("invalid status code: {}", parts[1]))
+                                Error::InvalidData(alloc::format!(
+                                    "invalid status code: {}",
+                                    parts[1]
+                                ))
                             })?;
 
                             self.status_code = status_code;
@@ -439,7 +451,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 version: parts[0].to_string(),
                                 status_code,
                                 reason_phrase: parts.get(2).unwrap_or(&"").to_string(),
-                                headers: std::mem::take(&mut self.headers),
+                                headers: core::mem::take(&mut self.headers),
                             };
 
                             return Ok(Some((head, body_kind)));
@@ -460,8 +472,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 });
                             }
 
-                            let line = String::from_utf8(self.buf[..pos].to_vec())
-                                .map_err(|e| Error::InvalidData(format!("invalid UTF-8: {e}")))?;
+                            let line =
+                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
+                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                                })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
@@ -544,7 +558,13 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// 利用可能なボディデータのバイト数を取得
     fn available_body_len(&self) -> usize {
         match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => self.buf.len().min(*remaining),
+            DecodePhase::BodyContentLength { remaining } => {
+                if *remaining >= self.buf.len() as u64 {
+                    self.buf.len()
+                } else {
+                    *remaining as usize
+                }
+            }
             DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
             DecodePhase::BodyCloseDelimited => self.buf.len(),
             _ => 0,
@@ -672,12 +692,20 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // Response を構築
+        // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
+        // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
         let head = self.decoded_head.take().unwrap();
-        let body = std::mem::take(&mut self.decoded_body);
+        let body = match body_kind {
+            BodyKind::None | BodyKind::Tunnel => None,
+            BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                Some(core::mem::take(&mut self.decoded_body))
+            }
+        };
 
         // Keep-Alive 対応: 次のレスポンスのために状態をリセット
         self.phase = DecodePhase::StartLine;
         self.decoded_body_kind = None;
+        self.decoded_body.clear();
         self.body_decoder.reset();
         self.expect_no_body = false;
         self.status_code = 0;

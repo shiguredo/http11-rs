@@ -26,6 +26,13 @@ fn test_multipart_error_display() {
             MultipartError::MissingName,
             "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)",
         ),
+        (
+            MultipartError::BufferOverflow {
+                size: 11,
+                limit: 10,
+            },
+            "buffer overflow: size=11, limit=10",
+        ),
     ];
 
     for (error, expected) in errors {
@@ -48,7 +55,7 @@ fn test_multipart_part_headers() {
         --boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     let part = parser.next_part().unwrap().unwrap();
     assert_eq!(part.name(), Some("field"));
@@ -66,7 +73,7 @@ fn test_multipart_part_body_str_non_utf8() {
         --boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     let part = parser.next_part().unwrap().unwrap();
     assert!(part.body_str().is_none());
@@ -85,7 +92,7 @@ fn test_multipart_parser_finished_returns_none() {
         .build();
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(&body);
+    parser.feed(&body).unwrap();
 
     let _ = parser.next_part().unwrap(); // part を取得
     let _ = parser.next_part().unwrap(); // None で完了
@@ -113,7 +120,7 @@ fn test_multipart_parser_invalid_header() {
     let body = b"--boundary\r\n\xff\xfe: value\r\n\r\ntest\r\n--boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(matches!(
         parser.next_part(),
@@ -127,7 +134,7 @@ fn test_multipart_parser_end_boundary_only() {
     let body = b"--boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(parser.next_part().unwrap().is_none());
     assert!(parser.is_finished());
@@ -137,9 +144,11 @@ fn test_multipart_parser_end_boundary_only() {
 #[test]
 fn test_multipart_parser_clone() {
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(
-        b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--\r\n",
-    );
+    parser
+        .feed(
+            b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--\r\n",
+        )
+        .unwrap();
 
     let cloned = parser.clone();
     assert!(!cloned.is_finished());
@@ -158,7 +167,7 @@ fn test_multipart_missing_content_disposition() {
         --boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(matches!(
         parser.next_part(),
@@ -174,7 +183,7 @@ fn test_multipart_empty_headers_missing_content_disposition() {
     let body = b"--boundary\r\n\r\n\r\nvalue\r\n--boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(matches!(
         parser.next_part(),
@@ -191,12 +200,34 @@ fn test_multipart_invalid_content_disposition_type() {
         --boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(matches!(
         parser.next_part(),
         Err(MultipartError::InvalidContentDisposition)
     ));
+}
+
+// バッファ上限超過で BufferOverflow を返す
+#[test]
+fn test_multipart_parser_buffer_overflow() {
+    let mut parser = MultipartParser::new("boundary").with_max_buffer_size(10);
+
+    let result = parser.feed(b"12345678901"); // 11 バイト > 10 バイト上限
+    assert!(matches!(
+        result,
+        Err(MultipartError::BufferOverflow {
+            size: 11,
+            limit: 10
+        })
+    ));
+}
+
+// バッファ上限以下では feed が成功する
+#[test]
+fn test_multipart_parser_buffer_within_limit() {
+    let mut parser = MultipartParser::new("boundary").with_max_buffer_size(100);
+    assert!(parser.feed(b"hello").is_ok());
 }
 
 // RFC 7578 Section 4.2: "name" パラメータを含まなければならない
@@ -208,7 +239,7 @@ fn test_multipart_missing_name_parameter() {
         --boundary--\r\n";
 
     let mut parser = MultipartParser::new("boundary");
-    parser.feed(body);
+    parser.feed(body).unwrap();
 
     assert!(matches!(
         parser.next_part(),

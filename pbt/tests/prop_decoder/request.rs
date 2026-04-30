@@ -120,7 +120,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_length));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_length as u64));
         let peeked = decoder.peek_body().unwrap();
         prop_assert_eq!(peeked, partial_body.as_bytes());
     }
@@ -428,7 +428,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(head.method, method);
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {
@@ -467,7 +467,14 @@ proptest! {
 
         prop_assert_eq!(decoded.method, method);
         prop_assert_eq!(decoded.uri, uri);
-        prop_assert_eq!(decoded.body, body_data);
+        // body_data が空のときは .body() を呼んでいないので request.body == None。
+        // エンコード時に Content-Length も付かないため、デコーダーは body == None を返す。
+        let expected = if body_data.is_empty() {
+            None
+        } else {
+            Some(body_data)
+        };
+        prop_assert_eq!(decoded.body, expected);
     }
 }
 
@@ -552,15 +559,17 @@ proptest! {
         for body_data in &bodies {
             let mut request = Request::new("POST", "/");
             request.add_header("Host", "localhost");
-            request.body = body_data.clone();
+            request.body = Some(body_data.clone());
             all_data.extend(request.encode());
         }
         decoder.feed(&all_data).unwrap();
 
         // decode() を連続して呼ぶ（reset() なし）
+        // body == Some(empty) でもエンコード時に Content-Length: 0 が付くため、
+        // デコーダー側も Some(empty) を返す。
         for body_data in &bodies {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&request.body, body_data);
+            prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
         }
     }
 }
@@ -681,7 +690,7 @@ proptest! {
 
         // ストリーミング API で decode_headers() を呼ぶ
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len()));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len() as u64));
 
         // decode() を呼ぶとエラー (ストリーミング API と混在)
         let result = decoder.decode();

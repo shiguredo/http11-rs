@@ -1,33 +1,51 @@
 [package]
+# パッケージ名
 name = "http11_server_io_uring"
 version = "0.0.0"
 edition = "2024"
 publish = false
 
-[features]
-default = ["gzip", "br", "zstd"]
-gzip = ["dep:flate2"]
-br = ["dep:brotli"]
-zstd = ["dep:zstd"]
-
 [dependencies]
+# 本ライブラリ (相対パスで参照)
 shiguredo_http11 = { path = "../.." }
-# io-uring 0.7.5+ for setsockopt support
-io-uring = "0.7"
-rustls = { version = "0.23", default-features = false, features = [
-    "std",
-    "tls12",
-    "aws-lc-rs",
-] }
-# ktls 6.0.2+ for CryptoInfo::from_rustls() and as_ptr()
-ktls = "6"
-noargs = "0.4"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-libc = "0.2"
-slab = "0.4"
 
-# 圧縮 (オプション)
-flate2 = { version = "1", optional = true }
-brotli = { version = "8", optional = true }
+# Linux io-uring API ラッパー (setsockopt 対応の 0.7.5 以降が必要)
+io-uring = "0.7"
+# Linux Kernel TLS ラッパー (rustls 連携に必要な 6.0.2 以降が必要)
+ktls = "6.0"
+# POSIX API ラッパー
+libc = "0.2"
+# コマンドライン引数のパース
+noargs = "0.4"
+# TLS 実装
+rustls = { version = "0.23", default-features = false, features = [
+  # 暗号ライブラリバックエンド
+  "aws_lc_rs",
+  # std 環境での動作に必要
+  "std",
+  # TLS 1.2 を有効化
+  "tls12",
+] }
+# スラブアロケータ (コネクション管理用)
+slab = "0.4"
+# ログ出力
+tracing = "0.1"
+# ログのフォーマットとサブスクライバ
+tracing-subscriber = "0.3"
+
+# Brotli 圧縮 (オプション)
+brotli = { version = "8.0", optional = true }
+# gzip / DEFLATE 圧縮 (オプション)
+noflate = { version = "0.1", optional = true }
+# Zstd 圧縮 (オプション)
 zstd = { version = "0.13", optional = true }
+
+[features]
+# デフォルトで全圧縮形式を有効化
+default = ["br", "gzip", "zstd"]
+# Brotli 圧縮を有効化
+br = ["dep:brotli"]
+# gzip 圧縮を有効化
+gzip = ["dep:noflate"]
+# Zstd 圧縮を有効化
+zstd = ["dep:zstd"]

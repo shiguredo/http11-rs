@@ -574,7 +574,12 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
 
         for code in &status_codes {
-            let response = Response::new(*code, "OK");
+            // body == None だと status_has_body 系コード (200/300/...) で
+            // close-delimited になり decode() が EOF 待ちになるため、
+            // 明示的に空ボディを指定して Content-Length: 0 を確保する。
+            // 1xx/204/304 では status_has_body=false により Content-Length は付かないが、
+            // body=Some(vec![]) でもエンコーダーは body バイトを出力しないため問題ない。
+            let response = Response::new(*code, "OK").body(Vec::new());
             let encoded = response.encode();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
@@ -607,7 +612,7 @@ proptest! {
         if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
         } else {
-            prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len));
+            prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len as u64));
         }
     }
 }
@@ -633,7 +638,16 @@ proptest! {
             || status == 205
             || status == 304;
 
-        if !body_data.is_empty() && !status_forbids_body {
+        if status_forbids_body {
+            // 205 は status_has_body=true かつボディ禁止のため、
+            // close-delimited を避けるには Content-Length: 0 を明示する必要がある。
+            // 1xx/204/304 は status_has_body=false なので body 設定不要。
+            if status == 205 {
+                response = response.body(Vec::new());
+            }
+        } else {
+            // body=None のままだと close-delimited になるため、空でも明示的に
+            // body() を呼んで Content-Length: 0 を付与する。
             response = response.body(body_data.clone());
         }
 
@@ -644,7 +658,8 @@ proptest! {
 
         prop_assert_eq!(decoded.status_code, status);
         if !status_forbids_body {
-            prop_assert_eq!(decoded.body, body_data);
+            // 空ボディも .body(vec![]) で明示しているため、デコーダーは Some(vec![]) を返す。
+            prop_assert_eq!(decoded.body.as_deref(), Some(body_data.as_slice()));
         }
     }
 }
@@ -696,9 +711,11 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
 
         // 全レスポンスを一度にバッファに入れる
+        // body == None だと status_has_body 系コードで close-delimited になるため、
+        // 明示的に空ボディを指定する。
         let mut all_data = Vec::new();
         for code in &status_codes {
-            let response = Response::new(*code, "OK");
+            let response = Response::new(*code, "OK").body(Vec::new());
             all_data.extend(response.encode());
         }
         decoder.feed(&all_data).unwrap();
@@ -792,7 +809,7 @@ proptest! {
         decoder.feed(response.as_bytes()).unwrap();
 
         let result = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(result.1, BodyKind::ContentLength(len));
+        prop_assert_eq!(result.1, BodyKind::ContentLength(len as u64));
     }
 }
 
@@ -838,7 +855,7 @@ proptest! {
         decoder.mark_eof();
         let response = decoder.decode().unwrap().unwrap();
         prop_assert_eq!(response.status_code, 200);
-        prop_assert_eq!(&response.body, &body_data);
+        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
     }
 }
 
@@ -980,7 +997,7 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(&response.body, &expected_body);
+        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
     }
 }
 
@@ -1005,6 +1022,6 @@ proptest! {
         prop_assert!(!decoder.is_close_delimited());
 
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(&response.body, &body_data);
+        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
     }
 }

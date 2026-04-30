@@ -45,8 +45,8 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
         .count()
 }
 
-fn expected_content_length(headers: &[(String, String)]) -> Option<usize> {
-    header_value(headers, "Content-Length").and_then(|v| v.parse::<usize>().ok())
+fn expected_content_length(headers: &[(String, String)]) -> Option<u64> {
+    header_value(headers, "Content-Length").and_then(|v| v.parse::<u64>().ok())
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {
@@ -97,7 +97,7 @@ fn exercise_request(input: FuzzRequest) {
     for (name, value) in &headers {
         request.add_header(name, value);
     }
-    request.body = body;
+    request.body = Some(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(request.get_header(name), header_value(&headers, name));
@@ -129,7 +129,7 @@ fn exercise_response(input: FuzzResponse) {
     for (name, value) in &headers {
         response.add_header(name, value);
     }
-    response.body = body;
+    response.body = Some(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(response.get_header(name), header_value(&headers, name));

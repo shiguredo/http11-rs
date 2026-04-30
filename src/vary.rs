@@ -13,6 +13,8 @@
 //! assert_eq!(vary.fields().len(), 2);
 //! ```
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Vary パースエラー
@@ -36,7 +38,7 @@ impl fmt::Display for VaryError {
     }
 }
 
-impl std::error::Error for VaryError {}
+impl core::error::Error for VaryError {}
 
 /// Vary ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]

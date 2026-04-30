@@ -19,6 +19,7 @@
 //! assert_eq!(date.to_string(), "Sun, 06 Nov 1994 08:49:37 GMT");
 //! ```
 
+use alloc::vec::Vec;
 use core::fmt;
 
 /// HTTP-date パースエラー
@@ -36,6 +37,12 @@ pub enum DateError {
     InvalidMonth,
     /// 不正な年
     InvalidYear,
+    /// rfc850-date (obs-date) 形式である
+    ///
+    /// `HttpDate::parse` は IMF-fixdate と asctime のみ受理する。
+    /// rfc850-date は 2 桁年の解決に基準年が必要なため、
+    /// [`HttpDate::parse_rfc850`] でフォールバックすること。
+    Rfc850Date,
     /// 不正な時
     InvalidHour,
     /// 不正な分
@@ -55,6 +62,7 @@ impl fmt::Display for DateError {
             DateError::InvalidDay => write!(f, "invalid day"),
             DateError::InvalidMonth => write!(f, "invalid month"),
             DateError::InvalidYear => write!(f, "invalid year"),
+            DateError::Rfc850Date => write!(f, "rfc850-date format requires reference year"),
             DateError::InvalidHour => write!(f, "invalid hour"),
             DateError::InvalidMinute => write!(f, "invalid minute"),
             DateError::InvalidSecond => write!(f, "invalid second"),
@@ -63,7 +71,7 @@ impl fmt::Display for DateError {
     }
 }
 
-impl std::error::Error for DateError {}
+impl core::error::Error for DateError {}
 
 /// 曜日
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,13 +143,13 @@ pub struct HttpDate {
 }
 
 impl PartialOrd for HttpDate {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for HttpDate {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (
             self.year,
             self.month,
@@ -162,12 +170,21 @@ impl Ord for HttpDate {
 }
 
 impl HttpDate {
-    /// HTTP-date 文字列をパース
+    /// HTTP-date 文字列をパース (IMF-fixdate / asctime)
     ///
-    /// 3つの形式をサポート:
+    /// 4 桁年を持つ 2 形式のみを受理する:
     /// - IMF-fixdate: `Sun, 06 Nov 1994 08:49:37 GMT`
-    /// - RFC 850: `Sunday, 06-Nov-94 08:49:37 GMT`
-    /// - ANSI C: `Sun Nov  6 08:49:37 1994`
+    /// - ANSI C asctime: `Sun Nov  6 08:49:37 1994`
+    ///
+    /// rfc850-date (`Sunday, 06-Nov-94 ...`) を検出した場合は
+    /// `Err(DateError::Rfc850Date)` を返す。RFC 9110 §5.6.7 は受信者に
+    /// 3 形式すべての受理を MUST しているため、完全適合が必要な箇所は
+    /// このエラーを検知して [`HttpDate::parse_rfc850`] にフォールバック
+    /// すること。
+    ///
+    /// rfc850-date の 2 桁年解決には基準年が必要だが、no_std ではシステム
+    /// 時刻を取得できないため、ライブラリ側で基準年を持たず呼び出し側に
+    /// 委ねる設計としている。
     pub fn parse(input: &str) -> Result<Self, DateError> {
         let input = input.trim();
         if input.is_empty() {
@@ -180,9 +197,9 @@ impl HttpDate {
             let rest = input[comma_pos + 1..].trim_start();
 
             // IMF-fixdate: Sun, 06 Nov 1994 08:49:37 GMT
-            // RFC 850: Sunday, 06-Nov-94 08:49:37 GMT
+            // rfc850-date: Sunday, 06-Nov-94 08:49:37 GMT
             if rest.contains('-') {
-                parse_rfc850(day_name, rest)
+                Err(DateError::Rfc850Date)
             } else {
                 parse_imf_fixdate(day_name, rest)
             }
@@ -190,6 +207,35 @@ impl HttpDate {
             // ANSI C asctime: Sun Nov  6 08:49:37 1994
             parse_asctime(input)
         }
+    }
+
+    /// rfc850-date 形式 (obs-date) をパース (RFC 9110 §5.6.7)
+    ///
+    /// 例: `Sunday, 06-Nov-94 08:49:37 GMT`
+    ///
+    /// 2 桁年は RFC 9110 §5.6.7 の規則で 4 桁年に解決する:
+    /// 「`reference_year + 50` より未来に見える 2 桁年は最も近い過去の
+    /// 同末尾年と解釈する」。`reference_year` には呼び出し側が把握して
+    /// いる現在年 (RTC / NTP / ビルド時の埋め込み年など) を渡すこと。
+    ///
+    /// IMF-fixdate / asctime はこの関数では受理しない。3 形式すべてを
+    /// 受理したい場合は [`HttpDate::parse`] を先に試し、`Rfc850Date`
+    /// エラーで本関数にフォールバックする。
+    pub fn parse_rfc850(input: &str, reference_year: u16) -> Result<Self, DateError> {
+        let input = input.trim();
+        if input.is_empty() {
+            return Err(DateError::Empty);
+        }
+
+        let comma_pos = input.find(',').ok_or(DateError::InvalidFormat)?;
+        let day_name = &input[..comma_pos];
+        let rest = input[comma_pos + 1..].trim_start();
+
+        if !rest.contains('-') {
+            return Err(DateError::InvalidFormat);
+        }
+
+        parse_rfc850_inner(day_name, rest, reference_year)
     }
 
     /// 新しい HttpDate を作成
@@ -310,9 +356,13 @@ fn parse_imf_fixdate(day_name: &str, rest: &str) -> Result<HttpDate, DateError> 
     HttpDate::new(day_of_week, day, month, year, hour, minute, second)
 }
 
-/// RFC 850 形式をパース
+/// rfc850-date 形式をパース (内部実装)
 /// 例: 06-Nov-94 08:49:37 GMT
-fn parse_rfc850(day_name: &str, rest: &str) -> Result<HttpDate, DateError> {
+fn parse_rfc850_inner(
+    day_name: &str,
+    rest: &str,
+    reference_year: u16,
+) -> Result<HttpDate, DateError> {
     let day_of_week = DayOfWeek::from_name(day_name).ok_or(DateError::InvalidDayName)?;
 
     // "06-Nov-94 08:49:37 GMT" をパース
@@ -331,14 +381,15 @@ fn parse_rfc850(day_name: &str, rest: &str) -> Result<HttpDate, DateError> {
         .parse::<u8>()
         .map_err(|_| DateError::InvalidDay)?;
     let month = parse_month(date_parts[1])?;
-    let raw_year = date_parts[2]
+    // RFC 9110 §5.6.7 ABNF では date2 = day "-" month "-" 2DIGIT で
+    // 年は 2 桁固定だが、Postel 原則に従い 4 桁年も受理する。
+    // 4 桁年は曖昧さがないのでそのまま使い、reference_year は無視する。
+    let raw_year_str = date_parts[2];
+    let raw_year = raw_year_str
         .parse::<u16>()
         .map_err(|_| DateError::InvalidYear)?;
-
-    // 2 桁年の補正 (RFC 9110 Section 5.6.7)
-    // 50 年以上未来に見える場合は 100 年引く
-    let year = if raw_year < 100 {
-        interpret_two_digit_year(raw_year)
+    let year = if raw_year_str.len() == 2 {
+        interpret_two_digit_year(raw_year, reference_year)
     } else {
         raw_year
     };
@@ -409,33 +460,6 @@ fn month_name(month: u8) -> &'static str {
     }
 }
 
-/// 現在の年を取得
-#[cfg(not(test))]
-fn current_year() -> u16 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
-    // 1 年 ≈ 31,557,600 秒 (365.25 日)
-    let years_since_1970 = now.as_secs() / 31_557_600;
-    (1970 + years_since_1970) as u16
-}
-
-#[cfg(test)]
-thread_local! {
-    static CURRENT_YEAR_FOR_TEST: std::cell::Cell<u16> = const { std::cell::Cell::new(2026) };
-}
-
-#[cfg(test)]
-fn current_year() -> u16 {
-    CURRENT_YEAR_FOR_TEST.with(|y| y.get())
-}
-
-#[cfg(test)]
-fn set_current_year_for_test(year: u16) {
-    CURRENT_YEAR_FOR_TEST.with(|y| y.set(year));
-}
-
 /// 2 桁年を RFC 9110 準拠で解釈する
 ///
 /// RFC 9110 Section 5.6.7:
@@ -443,13 +467,12 @@ fn set_current_year_for_test(year: u16) {
 /// two-digit year, MUST interpret a timestamp that appears to be more than
 /// 50 years in the future as representing the most recent year in the past
 /// that had the same last two digits.」
-fn interpret_two_digit_year(two_digit: u16) -> u16 {
-    let current = current_year();
-    let current_century = (current / 100) * 100;
+fn interpret_two_digit_year(two_digit: u16, reference_year: u16) -> u16 {
+    let current_century = (reference_year / 100) * 100;
     let candidate = current_century + two_digit;
 
     // 50 年以上未来なら 100 年引く
-    if candidate > current + 50 {
+    if candidate > reference_year + 50 {
         candidate - 100
     } else {
         candidate
@@ -501,8 +524,17 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_rejects_rfc850() {
+        // rfc850-date は parse では受理されない (Rfc850Date を返す)
+        assert!(matches!(
+            HttpDate::parse("Sunday, 06-Nov-94 08:49:37 GMT"),
+            Err(DateError::Rfc850Date)
+        ));
+    }
+
+    #[test]
     fn test_parse_rfc850() {
-        let date = HttpDate::parse("Sunday, 06-Nov-94 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-94 08:49:37 GMT", 2026).unwrap();
         assert_eq!(date.day_of_week(), DayOfWeek::Sunday);
         assert_eq!(date.day(), 6);
         assert_eq!(date.month(), 11);
@@ -510,6 +542,14 @@ mod tests {
         assert_eq!(date.hour(), 8);
         assert_eq!(date.minute(), 49);
         assert_eq!(date.second(), 37);
+    }
+
+    #[test]
+    fn test_parse_rfc850_4digit_year_accepted() {
+        // RFC 9110 §5.6.7 ABNF では 2DIGIT 固定だが Postel 原則で 4 桁も受理する。
+        // 曖昧さがないので reference_year は使われない。
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026).unwrap();
+        assert_eq!(date.year(), 1994);
     }
 
     #[test]
@@ -535,47 +575,40 @@ mod tests {
         // RFC 9110 Section 5.6.7:
         // 50 年以上未来に見える場合は 100 年引く
 
-        // 現在年を 2026 に設定 (デフォルト)
-        set_current_year_for_test(2026);
+        // 基準年 2026
 
         // 20 → 2020 (2026 + 50 = 2076 > 2020 なので 2020)
-        let date = HttpDate::parse("Sunday, 06-Nov-20 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-20 08:49:37 GMT", 2026).unwrap();
         assert_eq!(date.year(), 2020);
 
         // 76 → 2076 (2026 + 50 = 2076 >= 2076 なので 2076)
-        let date = HttpDate::parse("Sunday, 06-Nov-76 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-76 08:49:37 GMT", 2026).unwrap();
         assert_eq!(date.year(), 2076);
 
         // 77 → 1977 (2026 + 50 = 2076 < 2077 なので 100 年引いて 1977)
-        let date = HttpDate::parse("Sunday, 06-Nov-77 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-77 08:49:37 GMT", 2026).unwrap();
         assert_eq!(date.year(), 1977);
 
         // 99 → 1999 (2026 + 50 = 2076 < 2099 なので 100 年引いて 1999)
-        let date = HttpDate::parse("Sunday, 06-Nov-99 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-99 08:49:37 GMT", 2026).unwrap();
         assert_eq!(date.year(), 1999);
     }
 
     #[test]
     fn test_parse_rfc850_2digit_year_boundary() {
-        // 境界テスト: 異なる基準年での動作確認
-
-        // 基準年 2050 の場合
-        set_current_year_for_test(2050);
+        // 境界テスト: 基準年 2050
 
         // 00 → 2000 (candidate = 2000, 2000 > 2050 + 50 = 2100? No → 2000)
-        let date = HttpDate::parse("Sunday, 06-Nov-00 08:49:37 GMT").unwrap();
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-00 08:49:37 GMT", 2050).unwrap();
         assert_eq!(date.year(), 2000);
 
-        // 01 → 2001 (candidate = 2001, 2001 > 2100? No → 2001)
-        let date = HttpDate::parse("Sunday, 06-Nov-01 08:49:37 GMT").unwrap();
+        // 01 → 2001
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-01 08:49:37 GMT", 2050).unwrap();
         assert_eq!(date.year(), 2001);
 
-        // 50 → 2050 (candidate = 2050, 2050 > 2100? No → 2050)
-        let date = HttpDate::parse("Sunday, 06-Nov-50 08:49:37 GMT").unwrap();
+        // 50 → 2050
+        let date = HttpDate::parse_rfc850("Sunday, 06-Nov-50 08:49:37 GMT", 2050).unwrap();
         assert_eq!(date.year(), 2050);
-
-        // テスト後にデフォルトに戻す
-        set_current_year_for_test(2026);
     }
 
     #[test]

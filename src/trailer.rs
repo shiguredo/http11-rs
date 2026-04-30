@@ -16,6 +16,8 @@
 //! assert_eq!(trailer.fields().len(), 2);
 //! ```
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Trailer パースエラー
@@ -44,7 +46,7 @@ impl fmt::Display for TrailerError {
     }
 }
 
-impl std::error::Error for TrailerError {}
+impl core::error::Error for TrailerError {}
 
 /// Trailer ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -137,16 +139,13 @@ fn is_token_char(b: u8) -> bool {
 /// - If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since, If-Range (リクエスト修飾子)
 /// - Expect, Range (リクエスト修飾子)
 pub fn is_prohibited_trailer_field(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "transfer-encoding"
-            | "content-length"
-            | "host"
-            | "trailer"
-            | "content-encoding"
-            | "content-type"
-            | "content-range"
-    )
+    name.eq_ignore_ascii_case("transfer-encoding")
+        || name.eq_ignore_ascii_case("content-length")
+        || name.eq_ignore_ascii_case("host")
+        || name.eq_ignore_ascii_case("trailer")
+        || name.eq_ignore_ascii_case("content-encoding")
+        || name.eq_ignore_ascii_case("content-type")
+        || name.eq_ignore_ascii_case("content-range")
 }
 
 #[cfg(test)]

@@ -341,11 +341,11 @@ proptest! {
 
         // 1 回目のデコード
         let response1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response1.body.len(), body1_len);
+        prop_assert_eq!(response1.body.as_deref().map(<[u8]>::len), Some(body1_len));
 
         // 2 回目のデコード
         let response2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response2.body.len(), body2_len);
+        prop_assert_eq!(response2.body.as_deref().map(<[u8]>::len), Some(body2_len));
     }
 }
 
@@ -376,10 +376,10 @@ proptest! {
         decoder.feed(req2.as_bytes()).unwrap();
 
         let request1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request1.body.len(), body1_len);
+        prop_assert_eq!(request1.body.as_deref().map(<[u8]>::len), Some(body1_len));
 
         let request2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request2.body.len(), body2_len);
+        prop_assert_eq!(request2.body.as_deref().map(<[u8]>::len), Some(body2_len));
     }
 }
 
@@ -412,7 +412,7 @@ proptest! {
         // decode() を連続して呼ぶ
         for body_data in &bodies {
             let response = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&response.body, body_data);
+            prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
         }
     }
 }
@@ -447,7 +447,7 @@ proptest! {
         // decode() を連続して呼ぶ
         for body_data in &bodies {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&request.body, body_data);
+            prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
         }
     }
 }
@@ -606,7 +606,7 @@ proptest! {
         let request = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(&request.body, &expected_body);
+        prop_assert_eq!(request.body.as_deref(), Some(expected_body.as_slice()));
         prop_assert_eq!(&request.method, "POST");
     }
 }
@@ -632,7 +632,7 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(&response.body, &expected_body);
+        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
         prop_assert_eq!(response.status_code, 200);
     }
 }
@@ -657,7 +657,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(&full).unwrap();
         let request = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(&request.body, &body_data);
+        prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
         prop_assert_eq!(&request.method, "POST");
     }
 }
@@ -678,7 +678,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&full).unwrap();
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(&response.body, &body_data);
+        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
         prop_assert_eq!(response.status_code, 200);
     }
 }
@@ -704,7 +704,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(&full).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len()));
+        prop_assert_eq!(body_kind, BodyKind::ContentLength(body_data.len() as u64));
 
         // 複数回に分けて消費
         let first_len = body_data.len() / split_ratio.max(1);

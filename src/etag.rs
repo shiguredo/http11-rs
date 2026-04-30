@@ -20,6 +20,8 @@
 //! assert_eq!(etag.tag(), "abc123");
 //! ```
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// ETag パースエラー
@@ -46,7 +48,7 @@ impl fmt::Display for ETagError {
     }
 }
 
-impl std::error::Error for ETagError {}
+impl core::error::Error for ETagError {}
 
 /// Entity Tag (ETag)
 ///

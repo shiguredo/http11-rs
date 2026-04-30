@@ -196,9 +196,9 @@ proptest! {
             dow, day, mon, year, hour, minute, second
         );
 
-        let expires = Expires::parse(&date_str).unwrap();
+        let expires = Expires::parse(&date_str, 2026).unwrap();
         let displayed = expires.to_string();
-        let reparsed = Expires::parse(&displayed).unwrap();
+        let reparsed = Expires::parse(&displayed, 2026).unwrap();
 
         prop_assert_eq!(expires.date().day(), reparsed.date().day());
         prop_assert_eq!(expires.date().month(), reparsed.date().month());

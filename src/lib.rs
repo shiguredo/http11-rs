@@ -4,7 +4,7 @@
 //!
 //! ## 特徴
 //!
-//! - **依存なし**: 標準ライブラリのみ使用
+//! - **依存なし**: `core` / `alloc` のみ (no_std 対応)
 //! - **Sans I/O**: I/O を完全に分離した設計
 //! - **柔軟性**: HTTP/1.1, RTSP/1.0, RTSP/2.0 等に対応
 //!
@@ -48,8 +48,12 @@
 //! // bytes を送信...
 //! ```
 
+#![cfg_attr(not(test), no_std)]
+extern crate alloc;
+
 pub mod accept;
 pub mod auth;
+mod base64;
 pub mod cache;
 pub mod compression;
 pub mod conditional;
@@ -71,6 +75,7 @@ mod limits;
 pub mod multipart;
 pub mod range;
 mod request;
+pub mod request_target;
 mod response;
 pub mod trailer;
 pub mod upgrade;
@@ -79,8 +84,7 @@ mod validate;
 pub mod vary;
 
 pub use decoder::{
-    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, RequestTargetForm,
-    ResponseDecoder, ResponseHead,
+    BodyKind, BodyProgress, HttpHead, RequestDecoder, RequestHead, ResponseDecoder, ResponseHead,
 };
 pub use encoder::{
     RequestEncoder, ResponseEncoder, encode_chunk, encode_chunks, encode_request,

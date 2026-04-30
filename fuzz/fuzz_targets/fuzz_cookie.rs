@@ -43,7 +43,7 @@ fuzz_target!(|data: &[u8]| {
         }
 
         // SetCookie パース
-        if let Ok(set_cookie) = SetCookie::parse(s) {
+        if let Ok(set_cookie) = SetCookie::parse(s, 2026) {
             let _ = set_cookie.name();
             let _ = set_cookie.value();
             let _ = set_cookie.expires();
@@ -58,7 +58,7 @@ fuzz_target!(|data: &[u8]| {
             let displayed = set_cookie.to_string();
 
             // ラウンドトリップ (単純な name=value のみ確実に一致)
-            if let Ok(reparsed) = SetCookie::parse(&displayed) {
+            if let Ok(reparsed) = SetCookie::parse(&displayed, 2026) {
                 assert_eq!(set_cookie.name(), reparsed.name());
                 assert_eq!(
                     cookie_fuzz_normalize_value(set_cookie.value()),

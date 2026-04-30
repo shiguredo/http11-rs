@@ -55,13 +55,13 @@ fuzz_target!(|data: &[u8]| {
         }
 
         // Expires パース
-        if let Ok(expires) = Expires::parse(s) {
+        if let Ok(expires) = Expires::parse(s, 2026) {
             let _ = expires.date();
             let _ = expires.to_header_value();
 
             // Display ラウンドトリップ
             let displayed = expires.to_string();
-            if let Ok(reparsed) = Expires::parse(&displayed) {
+            if let Ok(reparsed) = Expires::parse(&displayed, 2026) {
                 assert_eq!(expires.date().year(), reparsed.date().year());
             }
         }

@@ -205,15 +205,8 @@ impl Decompressor for ZstdDecompressor {
 pub fn decompress_body(data: &[u8], encoding: &str) -> Result<Vec<u8>, CompressionError> {
     match encoding.to_lowercase().as_str() {
         #[cfg(feature = "gzip")]
-        "gzip" | "x-gzip" => {
-            use std::io::Read;
-            let mut decoder = flate2::read::GzDecoder::new(data);
-            let mut decompressed = Vec::new();
-            decoder
-                .read_to_end(&mut decompressed)
-                .map_err(|e| CompressionError::InvalidData(e.to_string()))?;
-            Ok(decompressed)
-        }
+        "gzip" | "x-gzip" => noflate::gzip::decompress(data)
+            .map_err(|e| CompressionError::InvalidData(e.to_string())),
         #[cfg(feature = "br")]
         "br" => {
             let mut decompressed = Vec::new();

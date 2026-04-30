@@ -371,10 +371,20 @@ async fn handle_client(
     upstream_request.add_header("Host", upstream_host);
     // Keep-Alive を使用して接続を再利用
     upstream_request.add_header("Connection", "keep-alive");
-    upstream_request.body = request_body;
+    // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
+    // BodyKind::None なら upstream にもボディなしで送る (Content-Length 自動付与もしない)。
+    upstream_request.body = if matches!(req_body_kind, BodyKind::None) {
+        None
+    } else {
+        Some(request_body)
+    };
 
     debug!(
-        body_size = upstream_request.body.len(),
+        body_size = upstream_request
+            .body
+            .as_deref()
+            .map(<[u8]>::len)
+            .unwrap_or(0),
         "Upstream request body"
     );
 

@@ -1,9 +1,10 @@
 # http11-rs
 
-[![shiguredo_http11](https://img.shields.io/crates/v/shiguredo_http11.svg)](https://crates.io/crates/shiguredo_http11)
-[![Documentation](https://docs.rs/shiguredo_http11/badge.svg)](https://docs.rs/shiguredo_http11)
-[![GitHub Actions](https://github.com/shiguredo/http11-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/shiguredo/http11-rs/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/shiguredo_http11.svg)](https://crates.io/crates/shiguredo_http11)
+[![docs.rs](https://docs.rs/shiguredo_http11/badge.svg)](https://docs.rs/shiguredo_http11)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![GitHub Actions](https://github.com/shiguredo/http11-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/shiguredo/http11-rs/actions/workflows/ci.yml)
+[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?logo=discord&logoColor=white)](https://discord.gg/shiguredo)
 
 ## About Shiguredo's open source software
 
@@ -23,6 +24,8 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイル テキ
 
 - Sans I/O
   - <https://sans-io.readthedocs.io/index.html>
+- `no_std` 対応
+  - `alloc` クレートは必要
 - 依存ライブラリ 0
 - 圧縮/展開トレイト (`Compressor` / `Decompressor`) の提供
   - ライブラリ本体は圧縮実装を含まず、利用者が任意の実装を組み込める
@@ -140,6 +143,14 @@ let chunk2 = encode_chunk(b"World!");
 let last = encode_chunk(b""); // 終端チャンク
 ```
 
+メソッド形式 (`request.encode()` / `response.encode_headers()`) と等価な関数形式 API も提供しています。
+
+- `encode_request` / `encode_response` - リクエスト/レスポンス全体をエンコード
+- `encode_request_headers` / `encode_response_headers` - ヘッダーのみをエンコード
+- `encode_chunk` - 単一チャンクをエンコード (終端は `b""`)
+- `encode_chunks` - 複数チャンクをまとめてエンコード
+- `RequestEncoder` / `ResponseEncoder` - 圧縮器 (`Compressor`) を組み込んだエンコーダー
+
 ### ストリーミングデコード
 
 大きなボディを扱う場合や、ボディを受信しながら処理したい場合はストリーミング API を使用します。
@@ -152,7 +163,7 @@ let last = encode_chunk(b""); // 終端チャンク
 
 `BodyKind` はボディの種類を表します:
 
-- `ContentLength(usize)` - Content-Length による固定長
+- `ContentLength(u64)` - Content-Length による固定長
 - `Chunked` - Transfer-Encoding: chunked
 - `CloseDelimited` - 接続終了までがボディ (レスポンスのみ、RFC 9112)
 - `Tunnel` - CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視)
@@ -192,6 +203,8 @@ let last = encode_chunk(b""); // 終端チャンク
 - Transfer-Encoding: chunked が最優先
 - Content-Length による固定長ボディ
 - ステータスコード 1xx/204/304 はボディなし
+- 205 Reset Content はエンコード時にボディ禁止 (RFC 9110 Section 15.3.6)
+  - Transfer-Encoding 禁止、Content-Length は 0 のみ許可
 - HEAD リクエストへのレスポンスはボディなし
 - CONNECT 2xx レスポンスはトンネルモードに移行
 
@@ -384,6 +397,16 @@ cargo run -p http11_server_io_uring -- --port 8443 --cert cert.pem --key key.pem
 - Keep-Alive 対応 (最大リクエスト数 1000)
 - Accept-Encoding に基づく圧縮 (gzip, br, zstd)
 
+## Agent Skills
+
+[Agent Skills](https://agentskills.io/) 形式のスキルを同梱しています。`gh skill install` コマンドで対応する AI エージェント (Claude Code, Cursor, GitHub Copilot, Gemini CLI 等) にインストールでき、エージェントがこのライブラリの API や RFC 準拠仕様を理解した上で支援できるようになります。
+
+```bash
+gh skill install shiguredo/http11-rs shiguredo-http11
+```
+
+スキルの内容は [`skills/shiguredo-http11/SKILL.md`](skills/shiguredo-http11/SKILL.md) を参照してください。
+
 ## 規格書
 
 このライブラリが準拠している RFC 一覧です。
@@ -432,18 +455,3 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ```
-
-## 時雨堂の Rust 向け OSS ライブラリ
-
-- [shiguredo/mp4\-rs](https://github.com/shiguredo/mp4-rs)
-- [shiguredo/webrtc\-rs](https://github.com/shiguredo/webrtc-rs)
-- [shiguredo/rtmp\-rs](https://github.com/shiguredo/rtmp-rs)
-- [shiguredo/http11\-rs](https://github.com/shiguredo/http11-rs)
-- [shiguredo/websocket\-rs](https://github.com/shiguredo/websocket-rs)
-- [shiguredo/srt\-rs](https://github.com/shiguredo/srt-rs)
-- [shiguredo/audio\-device\-rs](https://github.com/shiguredo/audio-device-rs)
-- [shiguredo/video\-device\-rs](https://github.com/shiguredo/video-device-rs)
-- [shiguredo/cargo\-sysroot](https://github.com/shiguredo/cargo-sysroot)
-- [shiguredo/rtsp\-rs](https://github.com/shiguredo/rtsp-rs)
-- [shiguredo/toml\-rs](https://github.com/shiguredo/toml-rs)
-
