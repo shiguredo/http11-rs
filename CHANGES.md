@@ -50,6 +50,10 @@
 - [UPDATE] `is_valid_request_target()` と `encoder.rs` のコメントを整備する
   - obs-text の扱いについて、受信側の寛容さと送信側の拒否という責務を明確にする
   - @voluntas
+- [UPDATE] `HttpHead::is_keep_alive()` / `is_chunked()` の内部実装を `headers().iter()` で直接走査するように変更する
+  - `get_headers()` を経由しないことで呼び出し時の不要な `Vec<&str>` allocation を回避する
+  - `get_headers()` / `is_keep_alive()` / `is_chunked()` のシグネチャは変更せず、object safe を維持する
+  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 
