@@ -11,6 +11,12 @@
 
 ## develop
 
+### misc
+
+## 2026.2.0
+
+**リリース日**: 2026-04-30
+
 - [UPDATE] `Request` と `Response` に `HttpHead` トレイトを実装する
   - `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` デフォルト実装に委譲する
   - 重複していた 120 行以上の同一ロジックを統一する

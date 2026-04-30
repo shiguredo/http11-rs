@@ -10,7 +10,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## 特徴
 
 - **依存なし**: 外部依存ゼロ (`core` / `alloc` のみ)
-- **`no_std` 対応**: `alloc` クレートは必要
+- **`no_std` 完全対応**: `std` 非依存 (`alloc` クレートは必要)
 - **Sans I/O**: I/O を完全に分離した設計 (Tokio, async-std, 同期 I/O など任意の環境で使用可能)
 - **柔軟性**: HTTP/1.1 のほか RTSP/1.0, RTSP/2.0 等のテキストプロトコルにも応用可能
 - **ストリーミング対応**: 大容量ボディをメモリ効率的に処理
@@ -21,7 +21,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## バージョン情報
 
 - crate 名: `shiguredo_http11`
-- バージョン: 2026.1.1
+- バージョン: 2026.2.0
 - Rust Edition: 2024
 - 最小 Rust バージョン: 1.88
 - ライセンス: Apache-2.0
@@ -47,12 +47,12 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `set_expect_no_body()`, `set_request_method()` |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
 | `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`) |
-| `HttpHead` | ヘッダー操作トレイト | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
-| `RequestTargetForm` | request-target 形式 | `Origin`, `Absolute`, `Authority`, `Asterisk` |
+| `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
+| `request_target::RequestTargetForm` | request-target 形式 (encoder/decoder で共通) | `Origin`, `Absolute`, `Authority`, `Asterisk` |
 
 ### HttpHead トレイト
 
-`RequestHead` と `ResponseHead` が実装する共通トレイト。
+`Request` / `Response` / `RequestHead` / `ResponseHead` が実装する共通トレイト。エンコーダー側とデコーダー側でヘッダー操作の一貫性を保証する。
 
 | メソッド | 説明 |
 |----------|------|
@@ -63,7 +63,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `has_header(name)` | ヘッダーの存在確認 |
 | `connection()` | Connection ヘッダーを取得 |
 | `is_keep_alive()` | キープアライブ接続か判定 |
-| `content_length()` | Content-Length を取得 |
+| `content_length()` | Content-Length を取得 (`Option<u64>`) |
 | `is_chunked()` | Transfer-Encoding の最後が chunked か判定 |
 
 ### ボディ処理
@@ -117,12 +117,12 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `content_location` | `ContentLocation` | RFC 9110 |
 | `content_type` | `ContentType` | RFC 9110 |
 | `cookie` | `Cookie`, `SetCookie`, `SameSite` | RFC 6265 |
-| `date` | `HttpDate` (IMF-fixdate / RFC 850 / asctime) | RFC 9110 |
+| `date` | `HttpDate` (IMF-fixdate / asctime は `parse`、rfc850-date は `parse_rfc850(input, reference_year)`), `DateError` | RFC 9110 |
 | `digest_fields` | `ContentDigest`, `ReprDigest`, `WantContentDigest`, `WantReprDigest` | RFC 9530 |
 | `etag` | `EntityTag`, `ETagList` | RFC 9110 |
 | `expect` | `Expect` | RFC 9110 |
 | `host` | `Host` (IPv4, IPv6, IPv-future 対応) | RFC 9110 |
-| `multipart` | `MultipartParser`, `Part` (バッファ上限あり) | RFC 7578 |
+| `multipart` | `MultipartParser` (`with_max_buffer_size`, `feed -> Result<(), MultipartError>`), `MultipartBuilder`, `Part`, `MultipartError` | RFC 7578 |
 | `range` | `Range`, `RangeSpec`, `ContentRange`, `AcceptRanges` | RFC 9110 |
 | `trailer` | `Trailer` (禁止フィールド検証) | RFC 9110, 9112 |
 | `upgrade` | `Upgrade` | RFC 9110 |
@@ -273,6 +273,23 @@ match request.try_encode() {
 }
 ```
 
+### rfc850-date のパース
+
+`HttpDate::parse` は IMF-fixdate と asctime のみ受理し、rfc850-date を検出した場合は `DateError::Rfc850Date` を返す。rfc850-date の 2 桁年を解決するには `parse_rfc850(input, reference_year)` を使う (RFC 9110 §5.6.7 の 50 年ルール)。
+
+```rust
+use shiguredo_http11::date::{HttpDate, DateError};
+
+let input = "Sunday, 06-Nov-94 08:49:37 GMT";
+let date = match HttpDate::parse(input) {
+    Ok(d) => d,
+    Err(DateError::Rfc850Date) => HttpDate::parse_rfc850(input, 2026)?,
+    Err(e) => return Err(e),
+};
+```
+
+`SetCookie::parse` / `Expires::parse` / `IfModifiedSince::parse` / `IfUnmodifiedSince::parse` / `IfRange::parse` は内部でこのフォールバックを行うため、シグネチャに `reference_year: u16` 引数を取る。
+
 ### 圧縮トレイトの実装
 
 ```rust
@@ -388,3 +405,4 @@ let decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
 
 - **UTF-8 強制**: RFC 9112 §2.2 ではメッセージをオクテット列として解析すべき (SHOULD) としているが、本実装はチャンクサイズ行・トレーラー・ヘッダー値などを Rust の `String` として扱うため、非 UTF-8 バイト列 (obs-text 0x80-0xFF を含む) を拒否する。
 - **request-line 前の空行**: RFC 9112 §2.2 では先頭の空行を少なくとも 1 行は無視すべき (SHOULD) としているが、本実装は厳格にパースする。アプリケーション層で除去すること。
+- **rfc850-date の reference_year**: グローバル可変状態を持たないため、rfc850-date を含む可能性があるヘッダーをパースする API (`SetCookie::parse` 等) は `reference_year: u16` 引数を要求する。アプリケーション側で現在年を渡す責務を負う。
