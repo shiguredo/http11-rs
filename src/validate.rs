@@ -163,20 +163,21 @@ pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
 /// したがって request-target では "#" (フラグメント区切り) は許可されない
 pub(crate) const RFC3986_EXCLUDED: &[u8] = b"\"#<>\\^`{|}";
 
-/// リクエストターゲット (URI) が有効か確認
+/// リクエストターゲット (URI) が有効か確認（受信側用）
 ///
 /// RFC 9112 Section 3: request-target には制御文字を含めない
 /// RFC 3986 Section 2: URI で許可されない文字を拒否
+///
+/// 本関数は受信側の寛容な検証として実装している。
+/// obs-text (0x80-0xFF) は構文上含まれないが、歴史的互換性のため許容する。
+/// 受信側は 0x80-0xFF を勝手に UTF-8/Latin-1 と断定してはならない。
+/// 送信側で obs-text を拒否する必要がある場合は呼び出し側で別途チェックすること。
 ///
 /// 拒否する文字:
 /// - 制御文字 (0x00-0x20, 0x7F)
 /// - RFC 3986 で除外されている文字: " < > \ ^ ` { | }
 /// - 不正なパーセントエンコーディング (% の後に 2 桁の 16 進数がない)
 /// - パーセントエンコーディングされた NUL バイト (%00)
-///
-/// 許可する文字:
-/// - VCHAR (0x21-0x7E) のうち RFC 3986 除外文字以外
-/// - obs-text (0x80-0xFF) - RFC 9112 準拠
 pub(crate) fn is_valid_request_target(target: &str) -> bool {
     if target.is_empty() {
         return false;

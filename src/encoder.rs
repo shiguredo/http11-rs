@@ -27,8 +27,8 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
         });
     }
 
-    // RFC 3986: URI は ASCII のみで構成される
-    // obs-text (0x80-0xFF) は受信側では許容するが、送信側では拒否する
+    // is_valid_request_target() は受信側の寛容な検証で obs-text を許容する。
+    // 送信側では新規に obs-text を生成してはならないため、ここで拒否する。
     if request.uri.bytes().any(|b| b > 0x7E) {
         return Err(EncodeError::InvalidRequestTarget {
             uri: request.uri.clone(),

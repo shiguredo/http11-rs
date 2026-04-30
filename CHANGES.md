@@ -47,6 +47,9 @@
   - `get_header` / `get_headers` / `has_header` / `connection` / `is_keep_alive` / `content_length` / `is_chunked` を `HttpHead` デフォルト実装に委譲する
   - 重複していた 120 行以上の同一ロジックを統一する
   - @voluntas
+- [UPDATE] `is_valid_request_target()` と `encoder.rs` のコメントを整備する
+  - obs-text の扱いについて、受信側の寛容さと送信側の拒否という責務を明確にする
+  - @voluntas
 - [FIX] `MultipartParser::feed()` のバッファサイズ計算で整数オーバーフローによる panic を回避する
   - @voluntas
 

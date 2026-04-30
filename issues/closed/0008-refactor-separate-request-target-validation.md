@@ -1,6 +1,7 @@
 # 0008: encode / decode 用の request-target validation を分離する
 
 Created: 2026-04-28
+Completed: 2026-04-30
 Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 
 ## 概要
@@ -81,3 +82,21 @@ if request.uri.bytes().any(|b| b > 0x7E) {
   - 現状の `RequestDecoder` は request-line を `String::from_utf8` でパースしているため、UTF-8 として無効な obs-text バイト列は validation に到達する前に拒否される。
   - UTF-8 として有効な非 ASCII（例: マルチバイト文字）が request-target に含まれる場合、`is_valid_request_target_for_decode` が許容することを確認する。
 - 既存の request-target validation テストがそのまま緑であることを確認する。
+
+## 解決方法
+
+obs-text の扱いについて再検討した結果、以下のプロジェクト方針を確立した:
+
+- ヘッダ名: obs-text は不可
+- ヘッダ値: obs-text は構文上許容されうる
+- 新規送信: できるだけ使わない
+- 受信側: 0x80-0xFF を勝手に UTF-8/Latin-1 と断定しない
+
+この方針に基づき、request-target において obs-text を「受信側は寛容に許容し解釈はしない、送信側は生成しない」とする。
+
+コードの変更は最小限に留め、コメントで責務と歴史的経緯を明確にすることにした:
+
+- `src/validate.rs`: `is_valid_request_target()` の doc comment を修正し、「受信側の寛容な検証」「obs-text は歴史的互換性のため許容」「受信側は勝手に文字コードを断定してはならない」と明記した。
+- `src/encoder.rs`: obs-text チェックのコメントを「送信側では新規に obs-text を生成してはならないため拒否する」と明記した。
+
+関数のリネームや分離は行わず、既存の関数名と動作を維持しながら意図を文書化した。
