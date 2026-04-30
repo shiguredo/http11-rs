@@ -163,7 +163,7 @@ let last = encode_chunk(b""); // 終端チャンク
 
 `BodyKind` はボディの種類を表します:
 
-- `ContentLength(usize)` - Content-Length による固定長
+- `ContentLength(u64)` - Content-Length による固定長
 - `Chunked` - Transfer-Encoding: chunked
 - `CloseDelimited` - 接続終了までがボディ (レスポンスのみ、RFC 9112)
 - `Tunnel` - CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視)
@@ -396,6 +396,16 @@ cargo run -p http11_server_io_uring -- --port 8443 --cert cert.pem --key key.pem
 - HEAD リクエスト対応 (RFC 9110 Section 9.3.2)
 - Keep-Alive 対応 (最大リクエスト数 1000)
 - Accept-Encoding に基づく圧縮 (gzip, br, zstd)
+
+## Agent Skills
+
+[Agent Skills](https://agentskills.io/) 形式のスキルを同梱しています。`gh skill install` コマンドで対応する AI エージェント (Claude Code, Cursor, GitHub Copilot, Gemini CLI 等) にインストールでき、エージェントがこのライブラリの API や RFC 準拠仕様を理解した上で支援できるようになります。
+
+```bash
+gh skill install shiguredo/http11-rs shiguredo-http11
+```
+
+スキルの内容は [`skills/shiguredo-http11/SKILL.md`](skills/shiguredo-http11/SKILL.md) を参照してください。
 
 ## 規格書
 

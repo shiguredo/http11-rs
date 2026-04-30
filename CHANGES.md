@@ -71,6 +71,12 @@
 
 ### misc
 
+- [UPDATE] README に Agent Skills のインストール方法を追記する
+  - `gh skill install shiguredo/http11-rs shiguredo-http11` でインストールできる旨を記載する
+  - @voluntas
+- [UPDATE] README の `BodyKind::ContentLength` の型表記を `usize` から `u64` に修正する
+  - 2026.2.0 で型を `u64` に変更したことに合わせる
+  - @voluntas
 - [UPDATE] `src/auth.rs` と `src/digest_fields.rs` に重複していた Base64 エンコード/デコード実装を `src/base64.rs` に共通化する
   - @voluntas
 - [UPDATE] `examples/` の gzip 圧縮/展開を `flate2` から `noflate` に切り替える

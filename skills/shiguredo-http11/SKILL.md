@@ -1,6 +1,6 @@
 ---
-name: shiguredo_http11
-description: Shiguredo 社の Sans I/O HTTP/1.1 ライブラリ shiguredo_http11 の機能・API リファレンス。リクエスト/レスポンスのエンコード・デコード、ストリーミング処理、ヘッダーパース、圧縮トレイト、RFC 準拠に関する質問時に使用。
+name: shiguredo-http11
+description: 時雨堂の Sans I/O HTTP/1.1 ライブラリ shiguredo_http11 の機能・API リファレンス。リクエスト/レスポンスのエンコード・デコード、ストリーミング処理、ヘッダーパース、圧縮トレイト、RFC 準拠に関する質問時に使用。
 ---
 
 # shiguredo_http11
