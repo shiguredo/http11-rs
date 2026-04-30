@@ -13,7 +13,7 @@ noargs = "0.4"
 # TLS 実装
 rustls = { version = "0.23", default-features = false, features = [
   # 暗号ライブラリバックエンド
-  "aws-lc-rs",
+  "aws_lc_rs",
   # std 環境での動作に必要
   "std",
   # TLS 1.2 を有効化
@@ -39,7 +39,7 @@ tokio = { version = "1", features = [
 # tokio 上で rustls を動作させるアダプタ
 tokio-rustls = { version = "0.26", default-features = false, features = [
   # 暗号ライブラリバックエンド
-  "aws-lc-rs",
+  "aws_lc_rs",
 ] }
 # ログ出力
 tracing = "0.1"
