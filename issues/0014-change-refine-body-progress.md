@@ -310,6 +310,25 @@ match phase {
 `consume_body` を呼ぶ) では、これらのフェーズで `peek_body()` は `None` を返すため、
 `consume_body(len > 0)` が呼ばれることはない。
 
+実装では、この不変条件を `debug_assert_eq!(len, 0)` で検出可能にする:
+
+```rust
+DecodePhase::BodyChunkedSize => {
+    debug_assert_eq!(len, 0, "BodyChunkedSize では consume_body ではなく progress を使うこと");
+    // ...
+}
+DecodePhase::BodyChunkedDataCrlf => {
+    debug_assert_eq!(len, 0, "BodyChunkedDataCrlf では consume_body ではなく progress を使うこと");
+    // ...
+}
+DecodePhase::ChunkedTrailer => {
+    debug_assert_eq!(len, 0, "ChunkedTrailer では consume_body ではなく progress を使うこと");
+    // ...
+}
+```
+
+release ビルドでは除去されるため実行時コストはゼロ。
+
 **Content-Length: 0 のエッジケース**:
 
 `BodyContentLength { remaining: 0 }` で `progress()` (内部 `consume_body(0)`)
@@ -750,6 +769,8 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
    - `process_chunked_size()` 内の `process_trailers()` 呼び出しを `let _ = ...?;`
      に修正
    - `consume_body()` の各分岐を決定表・実装指針に従って書き換え
+   - `BodyChunkedSize` / `BodyChunkedDataCrlf` / `ChunkedTrailer` に
+     `debug_assert_eq!(len, 0)` を追加 (len 無視フェーズの規約違反検出)
 
 2. この時点でコンパイルは通らない (`Continue` を参照している全箇所がエラーになる)
    が、それが意図した動作。ステップ 2 完了後に `cargo check --lib` が通過する。
