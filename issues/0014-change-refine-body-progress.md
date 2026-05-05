@@ -470,6 +470,11 @@ CloseDelimited のサンプルが `ResponseDecoder` 用である理由: `mark_eo
        `Advanced` / `NeedData` パターンマッチに置換
     2. `consume_body()` の `Continue => continue` を
        `Advanced | NeedData => continue` に置換
+  - **注**: `consume_body()` が `NeedData` を返すのは chunked の最終バイト
+    消費後 CRLF 不在時のみ。直後の `peek_body()` は `None` (Crlf フェーズ) を
+    返すため、内側ループは `progress()` 分岐に fall through して正しく処理される。
+    `Advanced | NeedData` を束ねて `continue` するのは意図的な最適化であり、
+    NeedData を個別に扱う必要はない。
   - 変更後パターン:
 
 ```rust
@@ -487,8 +492,11 @@ match decoder.progress()? {
 ```
 
 - `examples/http11_server/src/main.rs`:
-  - 同上 (リクエストボディ受信の `stream_body()` 内 1 箇所)。
-  - 変更後パターンは http11_reverse_proxy と同一。
+  - 同上。`consume_body()` の `Continue => continue` を
+    `Advanced | NeedData => continue` に、`progress()` の `remaining_before`
+    ハックを `Advanced`/`NeedData` パターンマッチに置換
+    (リクエストボディ受信の `stream_body()` 内 1 箇所)。
+  - 変更後パターン・NeedData 到達時の動作は http11_client と同一。
 
 - `examples/http11_reverse_proxy/src/main.rs`:
   - リクエスト方向・レスポンス方向の各 1 箇所、計 2 箇所。
@@ -498,6 +506,8 @@ match decoder.progress()? {
     2. `consume_body()` の `Continue => {}` (リクエスト方向) /
        `Continue` アーム (レスポンス方向) を
        `Advanced | NeedData` に置換
+  - consume_body の `NeedData` 到達時の動作は http11_client と同一
+    (内側ループ継続 → peek_body が None → progress 分岐に fall through)。
   - 変更後パターン:
 
 ```rust
@@ -523,6 +533,15 @@ match decoder.progress()? {
 
 - `tests/test_decode_body.rs` (6 箇所): 各ループから `remaining_before` 比較を
   削除し、`BodyProgress::NeedData` で break する形に書き換える。
+  加えて、以下の代表ケースでは戻り値を厳密にアサートする:
+  - `incomplete_content_length_body`: `consume_body(50)` は `Advanced`、
+    後続の `progress()` は `NeedData` を返すこと
+  - `complete_content_length_body`: `consume_body(5)` は `Complete { .. }`
+    を返すこと
+  - `incomplete_chunked_body`: `consume_body(5)` は
+    `Advanced` (CRLF がバッファ内にあるため Crlf→ChunkedSize に遷移)、
+    後続の `progress()` は `NeedData` (次のチャンクサイズ行がバッファにない)
+    を返すこと
 
   変更前:
   ```rust
@@ -816,9 +835,13 @@ while let Some(body_data) = decoder.peek_body() {
 4. ステップ 6 完了時点で `cargo test --workspace` および
    `cargo clippy --workspace -- -D warnings` を通過させる。
 
-### ステップ 7: CHANGES.md の更新
+### ステップ 7: CHANGES.md と関連ドキュメントの更新
 
-`## develop` セクションに CHANGES.md 記載のエントリを追記。
+1. `CHANGES.md`: `## develop` セクションに CHANGES.md 記載のエントリを追記。
+
+2. `README.md`: `BodyProgress` に関する記述を新 enum に追従させる。
+
+3. `skills/shiguredo-http11/SKILL.md`: `BodyProgress` に関する記述を新 enum に追従させる。
 
 ### ステップ 8: 統合検証
 
