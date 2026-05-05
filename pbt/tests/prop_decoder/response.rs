@@ -1025,3 +1025,129 @@ proptest! {
         prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
     }
 }
+
+// ========================================
+// 直接書き込み API (mut_buf / advance_buf / available_buf) のプロパティ
+// ========================================
+
+/// HTTP メッセージのバイト列を任意のチャンク境界で分割する Strategy
+fn message_with_chunks() -> impl Strategy<Value = (Vec<u8>, Vec<usize>)> {
+    body().prop_flat_map(|body_data| {
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n",
+            body_data.len()
+        );
+        let mut full = headers.into_bytes();
+        full.extend_from_slice(&body_data);
+        let len = full.len();
+        let chunks = if len == 0 {
+            Just(Vec::<usize>::new()).boxed()
+        } else {
+            proptest::collection::vec(1usize..=len.max(1), 0..=8).boxed()
+        };
+        (Just(full), chunks)
+    })
+}
+
+proptest! {
+    /// `feed` と `mut_buf` + `advance_buf` で同じ結果になることを確認
+    #[test]
+    fn prop_feed_mut_buf_equivalence(
+        (full, chunk_sizes) in message_with_chunks(),
+    ) {
+        let by_feed = {
+            let mut decoder = ResponseDecoder::new();
+            let mut offset = 0usize;
+            for &size in &chunk_sizes {
+                if offset >= full.len() { break; }
+                let end = (offset + size).min(full.len());
+                decoder.feed(&full[offset..end]).unwrap();
+                offset = end;
+            }
+            if offset < full.len() {
+                decoder.feed(&full[offset..]).unwrap();
+            }
+            decoder.decode().unwrap()
+        };
+
+        let by_mut_buf = {
+            let mut decoder = ResponseDecoder::new();
+            let mut offset = 0usize;
+            for &size in &chunk_sizes {
+                if offset >= full.len() { break; }
+                let end = (offset + size).min(full.len());
+                let len = end - offset;
+                let dst = decoder.mut_buf(len).unwrap();
+                dst.copy_from_slice(&full[offset..end]);
+                decoder.advance_buf(len);
+                offset = end;
+            }
+            if offset < full.len() {
+                let len = full.len() - offset;
+                let dst = decoder.mut_buf(len).unwrap();
+                dst.copy_from_slice(&full[offset..]);
+                decoder.advance_buf(len);
+            }
+            decoder.decode().unwrap()
+        };
+
+        let by_feed = by_feed.expect("feed path produced response");
+        let by_mut_buf = by_mut_buf.expect("mut_buf path produced response");
+        prop_assert_eq!(by_feed.status_code, by_mut_buf.status_code);
+        prop_assert_eq!(&by_feed.reason_phrase, &by_mut_buf.reason_phrase);
+        prop_assert_eq!(&by_feed.headers, &by_mut_buf.headers);
+        prop_assert_eq!(&by_feed.body, &by_mut_buf.body);
+    }
+}
+
+proptest! {
+    /// `mut_buf(len)` の戻りスライス長は常に `len`
+    #[test]
+    fn prop_mut_buf_returns_exact_length(len in 0usize..4096) {
+        let mut decoder = ResponseDecoder::new();
+        let buf = decoder.mut_buf(len).unwrap();
+        prop_assert_eq!(buf.len(), len);
+        decoder.advance_buf(0);
+    }
+}
+
+proptest! {
+    /// `advance_buf(n)` 後の `remaining().len()` は (前回の remaining) + n になる
+    #[test]
+    fn prop_advance_buf_grows_remaining(
+        prefix in proptest::collection::vec(any::<u8>(), 0..64),
+        write_len in 0usize..256,
+        advance in 0usize..256,
+    ) {
+        let advance = advance.min(write_len);
+        let mut decoder = ResponseDecoder::new();
+        if !prefix.is_empty() {
+            decoder.feed(&prefix).unwrap();
+        }
+        let before = decoder.remaining().len();
+        let buf = decoder.mut_buf(write_len).unwrap();
+        for (i, slot) in buf.iter_mut().enumerate() {
+            *slot = (i & 0xff) as u8;
+        }
+        decoder.advance_buf(advance);
+        prop_assert_eq!(decoder.remaining().len(), before + advance);
+    }
+}
+
+proptest! {
+    /// `mut_buf` 後 `advance_buf(0)` で `remaining()` が `mut_buf` 前と同じになる
+    #[test]
+    fn prop_advance_zero_is_identity(
+        prefix in proptest::collection::vec(any::<u8>(), 0..64),
+        write_len in 0usize..256,
+    ) {
+        let mut decoder = ResponseDecoder::new();
+        if !prefix.is_empty() {
+            decoder.feed(&prefix).unwrap();
+        }
+        let before = decoder.remaining().to_vec();
+        let _ = decoder.mut_buf(write_len).unwrap();
+        decoder.advance_buf(0);
+        prop_assert_eq!(decoder.remaining(), before.as_slice());
+    }
+}

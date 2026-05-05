@@ -122,20 +122,26 @@ fn http_request(
     stream.write_all(request_bytes)?;
 
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
 
     loop {
-        let n = stream.read(&mut buf)?;
+        // 残容量に応じてチャンクサイズを適応させる
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            return Err("decoder buffer full".into());
+        }
+        let buf = decoder.mut_buf(want)?;
+        let n = stream.read(buf)?;
         if n == 0 {
             // EOF: close-delimited body の場合は正常終了
+            decoder.advance_buf(0);
             decoder.mark_eof();
             if let Some(response) = decoder.decode()? {
                 return Ok(response);
             }
             return Err("Connection closed before response complete".into());
         }
-
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
         if let Some(response) = decoder.decode()? {
             return Ok(response);
@@ -162,12 +168,19 @@ fn https_request(
 
     // レスポンス受信
     let mut decoder = ResponseDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
 
     loop {
-        let n = match tls.read(&mut buf) {
+        // 残容量に応じてチャンクサイズを適応させる
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            return Err("decoder buffer full".into());
+        }
+        let buf = decoder.mut_buf(want)?;
+        let n = match tls.read(buf) {
             Ok(0) => {
                 // EOF: close-delimited body の場合は正常終了
+                decoder.advance_buf(0);
                 decoder.mark_eof();
                 if let Some(response) = decoder.decode()? {
                     return Ok(response);
@@ -175,11 +188,17 @@ fn https_request(
                 return Err("Connection closed before response complete".into());
             }
             Ok(n) => n,
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
-            Err(e) => return Err(e.into()),
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                decoder.advance_buf(0);
+                continue;
+            }
+            Err(e) => {
+                decoder.advance_buf(0);
+                return Err(e.into());
+            }
         };
 
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
         if let Some(response) = decoder.decode()? {
             return Ok(response);

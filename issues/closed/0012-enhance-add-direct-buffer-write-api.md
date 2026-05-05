@@ -1,6 +1,7 @@
 # 0012: ResponseDecoder / RequestDecoder に直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`) を追加する
 
 Created: 2026-05-05
+Completed: 2026-05-05
 Model: Opus 4.7
 
 ## 概要
@@ -216,3 +217,18 @@ pub fn available_buf(&self) -> usize {
 - 純粋追加のため後方互換あり (`[ADD]`)
 - `pending: usize` フィールドが追加されることで `Debug` 出力が変化するが軽微
 - 既存サンプルは新 API ベースに書き換えるため、サンプルコード自体は変わる
+
+## 解決方法
+
+`ResponseDecoder` / `RequestDecoder` に `pending: usize` フィールドと `mut_buf(len) -> Result<&mut [u8], Error>` / `advance_buf(len)` / `available_buf() -> usize` を追加した。
+
+- 内部バッファ末尾を `Vec::resize(.., 0)` でゼロ初期化して可変スライスとして返し、`advance_buf` で実書き込み長を確定 (枠の余りは `truncate`)。`unsafe` 不使用。
+- `mut_buf` 後 `advance_buf` を呼ばずに既存メソッド (`feed` / `feed_unchecked` / `decode_headers` / `peek_body` / `consume_body` / `progress` / `decode` / `take_remaining` / `mark_eof` / `remaining`) を呼ぶと `debug_assert!(self.pending == 0)` で誤用検出。release では `mut_buf` の先頭で前回の未確定領域を `truncate` して回復する。
+- `reset()` で `pending = 0` を初期化。
+- `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループ (合計 7 箇所) を新 API に書き換え。`http11_server_io_uring` は完了通知でメモリ上のバイト列を受け取る構造のため `feed` のままとした。
+- `tests/test_decoder.rs` に `direct_buffer_write` モジュールで境界値・エラーパス 26 ケースを追加。
+- `pbt/tests/prop_decoder/{response,request}.rs` に `feed` と `mut_buf` + `advance_buf` の等価性、`mut_buf` 戻りスライス長、`advance_buf` 後の `remaining` 増分、`advance_buf(0)` の冪等性プロパティを追加。
+- `fuzz/fuzz_targets/fuzz_decoder_{request,response}.rs` に `mut_buf` / `advance_buf` 経由のチャンク投入シナリオを追加。
+- `CHANGES.md`, `README.md`, `skills/shiguredo-http11/SKILL.md` に新 API のエントリ・利用例・主要メソッド表を追記。
+
+`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace` がいずれも成功 (PBT 179 件、単体テストは追加分 26 件含めて全件パス)。

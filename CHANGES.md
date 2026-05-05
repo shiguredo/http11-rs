@@ -11,6 +11,12 @@
 
 ## develop
 
+- [ADD] `ResponseDecoder` / `RequestDecoder` に直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`) を追加する
+  - OS の `recv()` 等がデコーダー内部バッファに直接書き込めるようにし、`feed(&[u8])` 経由の中間コピーを排除する
+  - `available_buf()` で残容量を問い合わせてチャンクサイズを適応させる
+  - `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループを新 API に書き換える
+  - @voluntas
+
 ### misc
 
 ## 2026.2.0

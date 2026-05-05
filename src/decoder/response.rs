@@ -69,6 +69,8 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     decompressor: D,
     /// リクエストメソッド (CONNECT トンネル判定用)
     request_method: Option<String>,
+    /// `mut_buf` で確保した未確定領域のバイト数
+    pending: usize,
 }
 
 impl Default for ResponseDecoder<NoCompression> {
@@ -94,6 +96,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -113,6 +116,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            pending: 0,
         }
     }
 }
@@ -134,6 +138,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -153,6 +158,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -176,6 +182,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// 呼び出し後、バッファは空になる。
     pub fn take_remaining(&mut self) -> Vec<u8> {
+        debug_assert!(
+            self.pending == 0,
+            "take_remaining called with pending mut_buf"
+        );
         core::mem::take(&mut self.buf)
     }
 
@@ -191,8 +201,26 @@ impl<D: Decompressor> ResponseDecoder<D> {
         &self.limits
     }
 
-    /// バッファにデータを追加
+    /// 既にメモリ上にあるバイト列を内部バッファに投入する
+    ///
+    /// `data` を `extend_from_slice` でコピーする (1 回の memcpy)。
+    ///
+    /// # 使い分け
+    ///
+    /// `feed` と [`mut_buf`](Self::mut_buf) / [`advance_buf`](Self::advance_buf)
+    /// は入力経路の違う別の最適解として共存しており、用途で使い分ける:
+    ///
+    /// - **これから書き込む先のバッファが必要なケース** (OS の `read` でソケット
+    ///   から受信する等): `mut_buf` / `advance_buf` を使う。OS が内部バッファに
+    ///   直接書き込めるので、スタックバッファ → 内部 `Vec<u8>` のコピーが発生
+    ///   しない。
+    /// - **既にバイト列が `&[u8]` として手元にあるケース** (io_uring 等の完了通知
+    ///   型 I/O で渡されるバイト列、テスト用バイトリテラル、別経路から受け取った
+    ///   バイト列の中継等): `feed` を使う。`mut_buf(len) + copy_from_slice +
+    ///   advance_buf(len)` だと「ゼロ初期化 + memcpy」の二段になるが、`feed`
+    ///   は素直に 1 memcpy で済む。
     pub fn feed(&mut self, data: &[u8]) -> Result<(), Error> {
+        debug_assert!(self.pending == 0, "feed called with pending mut_buf");
         let new_size = self.buf.len() + data.len();
         if new_size > self.limits.max_buffer_size {
             return Err(Error::BufferOverflow {
@@ -206,17 +234,85 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
     /// バッファにデータを追加 (制限チェックなし)
     ///
+    /// 用途は [`feed`](Self::feed) と同じ「既にメモリ上にあるバイト列を投入する」
+    /// で、`max_buffer_size` チェックをスキップする点だけが異なる。
+    ///
     /// # 警告
     ///
     /// この関数は `DecoderLimits` による `max_buffer_size` チェックをスキップする。
     /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
     /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
+        debug_assert!(
+            self.pending == 0,
+            "feed_unchecked called with pending mut_buf"
+        );
         self.buf.extend_from_slice(data);
+    }
+
+    /// 内部バッファ末尾に `len` バイトの書き込み枠を確保し、その可変スライスを返す
+    ///
+    /// 返るスライスはゼロ初期化済みなので `std::io::Read::read` 等にそのまま渡せる。
+    /// 書き込み後は必ず [`advance_buf`](Self::advance_buf) で実書き込みバイト数を
+    /// 通知すること。
+    ///
+    /// `remaining().len() + len` が `max_buffer_size` を超える場合は
+    /// `Err(Error::BufferOverflow)` を返し、バッファ状態は変更しない。
+    ///
+    /// 直前の `mut_buf` で確保された未確定領域は、新しい `mut_buf` 呼び出しの
+    /// 先頭で破棄される (`advance_buf` 呼び忘れの回復)。
+    pub fn mut_buf(&mut self, len: usize) -> Result<&mut [u8], Error> {
+        if self.pending > 0 {
+            let new_len = self.buf.len() - self.pending;
+            self.buf.truncate(new_len);
+            self.pending = 0;
+        }
+
+        let new_size = self.buf.len() + len;
+        if new_size > self.limits.max_buffer_size {
+            return Err(Error::BufferOverflow {
+                size: new_size,
+                limit: self.limits.max_buffer_size,
+            });
+        }
+
+        let old = self.buf.len();
+        self.buf.resize(new_size, 0);
+        self.pending = len;
+        Ok(&mut self.buf[old..])
+    }
+
+    /// 直前の [`mut_buf`](Self::mut_buf) で確保した枠のうち、
+    /// 実際に書き込まれた `len` バイトを確定する
+    ///
+    /// 残り (`mut_buf` で確保した長さ - `len`) は破棄される。
+    /// `len = 0` で呼ぶと枠全体を破棄 (EOF や read 失敗時のリセット用)。
+    ///
+    /// `len > pending` の場合、debug ビルドでは panic、release ビルドでは
+    /// `pending` で飽和する。
+    pub fn advance_buf(&mut self, len: usize) {
+        debug_assert!(len <= self.pending, "advance_buf len exceeds pending");
+        let len = len.min(self.pending);
+        let drop = self.pending - len;
+        if drop > 0 {
+            let new_len = self.buf.len() - drop;
+            self.buf.truncate(new_len);
+        }
+        self.pending = 0;
+    }
+
+    /// 書き込み可能な残り容量を返す
+    ///
+    /// `max_buffer_size` から現在のバッファ長 (確定済みデータ + 未確定 `pending`)
+    /// を引いた値。`mut_buf(decoder.available_buf().min(N))` のようにチャンクサイズ
+    /// を残容量に適応させる用途で使う。
+    pub fn available_buf(&self) -> usize {
+        self.limits.max_buffer_size.saturating_sub(self.buf.len())
     }
 
     /// バッファの残りデータを取得
     pub fn remaining(&self) -> &[u8] {
+        debug_assert!(self.pending == 0, "remaining called with pending mut_buf");
         &self.buf
     }
 
@@ -234,6 +330,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body.clear();
         self.decompressor.reset();
         self.request_method = None;
+        self.pending = 0;
     }
 
     /// 接続終了を通知 (close-delimited ボディ用)
@@ -243,6 +340,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// close-delimited 以外の状態で呼び出した場合は何もしない。
     pub fn mark_eof(&mut self) {
+        debug_assert!(self.pending == 0, "mark_eof called with pending mut_buf");
         if matches!(self.phase, DecodePhase::BodyCloseDelimited) {
             self.phase = DecodePhase::Complete;
         }
@@ -337,6 +435,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// データ不足の場合は `None` を返す
     /// 既にヘッダーデコード済みの場合はエラー
     pub fn decode_headers(&mut self) -> Result<Option<(ResponseHead, BodyKind)>, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "decode_headers called with pending mut_buf"
+        );
         loop {
             match &self.phase {
                 DecodePhase::StartLine => {
@@ -515,6 +617,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// データがある場合はスライスを返す
     /// ボディがない場合や完了済みの場合は `None` を返す
     pub fn peek_body(&self) -> Option<&[u8]> {
+        debug_assert!(self.pending == 0, "peek_body called with pending mut_buf");
         self.body_decoder.peek_body(&self.buf, &self.phase)
     }
 
@@ -576,6 +679,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
     /// `len` は消費するバイト数 (1 以上)
     pub fn consume_body(&mut self, len: usize) -> Result<BodyProgress, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "consume_body called with pending mut_buf"
+        );
         if len == 0 {
             return Err(Error::InvalidData(
                 "consume_body(0) is not allowed, use progress() instead".to_string(),
@@ -590,6 +697,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// Chunked エンコーディングの場合、チャンクサイズ行のパースや
     /// 終端チャンクの処理を行う。
     pub fn progress(&mut self) -> Result<BodyProgress, Error> {
+        debug_assert!(self.pending == 0, "progress called with pending mut_buf");
         self.body_decoder
             .consume_body(&mut self.buf, &mut self.phase, 0, &self.limits)
     }
@@ -608,6 +716,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// `decode()` を使う場合は、接続終了後に `mark_eof()` を呼んでから
     /// 再度 `decode()` を呼ぶ必要がある。
     pub fn decode(&mut self) -> Result<Option<Response>, Error> {
+        debug_assert!(self.pending == 0, "decode called with pending mut_buf");
         // ヘッダーがまだデコードされていない場合はデコード
         if self.decoded_head.is_none() {
             match self.phase {

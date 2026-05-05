@@ -269,18 +269,22 @@ async fn handle_client(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // クライアントからリクエストヘッダーを受信
     let mut decoder = RequestDecoder::new();
+    const READ_CHUNK: usize = 4096;
     let (req_head, req_body_kind) = loop {
-        let mut buffer = vec![0u8; 4096];
-        let n = socket.read(&mut buffer).await?;
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            return Err("decoder buffer full".into());
+        }
+        let buf = decoder.mut_buf(want)?;
+        let n = socket.read(buf).await?;
         if n == 0 {
+            decoder.advance_buf(0);
             debug!("client input is empty");
             return Ok(());
         }
-
-        buffer.truncate(n);
+        decoder.advance_buf(n);
         debug!(bytes = n, "Received bytes from client");
 
-        decoder.feed(&buffer)?;
         if let Some(result) = decoder.decode_headers()? {
             break result;
         }
@@ -324,14 +328,18 @@ async fn handle_client(
                 }
             }
 
-            let mut buffer = vec![0u8; 4096];
-            let n = socket.read(&mut buffer).await?;
+            let want = decoder.available_buf().min(READ_CHUNK);
+            if want == 0 {
+                return Err("decoder buffer full".into());
+            }
+            let buf = decoder.mut_buf(want)?;
+            let n = socket.read(buf).await?;
             if n == 0 {
+                decoder.advance_buf(0);
                 // クライアントが切断した - 不完全なボディを upstream に送信してはいけない
                 return Err("client disconnected during request body".into());
             }
-            buffer.truncate(n);
-            decoder.feed(&buffer)?;
+            decoder.advance_buf(n);
         }
     }
 
@@ -487,16 +495,22 @@ async fn stream_response_on_connection(
         debug!("HEAD request: expecting no body in response");
     }
 
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
 
     let (resp_head, body_kind) = loop {
-        let n = upstream.read(&mut buf).await?;
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            return Err("decoder buffer full".into());
+        }
+        let dst = decoder.mut_buf(want)?;
+        let n = upstream.read(dst).await?;
         if n == 0 {
+            decoder.advance_buf(0);
             return Err("接続が閉じられました".into());
         }
+        decoder.advance_buf(n);
 
         debug!(bytes = n, "Upstream received bytes");
-        decoder.feed(&buf[..n])?;
 
         if let Some(result) = decoder.decode_headers()? {
             break result;
@@ -583,6 +597,9 @@ async fn stream_response_on_connection(
     // - 大容量レスポンスでもメモリ効率が良い
     if is_close_delimited {
         debug!("Streaming close-delimited body until connection closes");
+        // close-delimited body はデコーダーを介さず、upstream から downstream へ
+        // そのまま転送するためスタックバッファを使う
+        let mut buf = [0u8; READ_CHUNK];
         let mut close_delimited_bytes = 0usize;
         loop {
             let n = upstream.read(&mut buf).await?;
@@ -665,16 +682,22 @@ async fn stream_response_on_connection(
                 }
             }
 
-            let n = upstream.read(&mut buf).await?;
+            let want = decoder.available_buf().min(READ_CHUNK);
+            if want == 0 {
+                return Err("decoder buffer full".into());
+            }
+            let dst = decoder.mut_buf(want)?;
+            let n = upstream.read(dst).await?;
             if n == 0 {
+                decoder.advance_buf(0);
                 // upstream が予期せず切断 - 終端チャンクを送らずにエラーを返す
                 // 不完全なレスポンスを完了扱いにしてはいけない
                 debug!("upstream disconnected during response body");
                 return Err("upstream disconnected during response body".into());
             }
+            decoder.advance_buf(n);
 
             debug!(bytes = n, "Upstream body bytes");
-            decoder.feed(&buf[..n])?;
         }
     }
 
