@@ -308,14 +308,17 @@ match phase {
 
 **len 引数が無視されるフェーズについて**:
 
-`BodyChunkedSize`、`BodyChunkedDataCrlf`、`ChunkedTrailer` では、`consume_body()` の
-`len` 引数は参照されず、状態遷移だけが行われる。これはこれらのフェーズが
-「メタデータ (チャンクサイズ行、CRLF、トレーラ行) の処理中」であり、
-ボディデータの消費とは別の処理であるため。
-呼び出し側が `consume_body(len > 0)` を呼んでも、実際には `progress()` と等価の
-動作をする。ただし正しいループパターン (`peek_body()` が `Some` のときだけ
-`consume_body` を呼ぶ) では、これらのフェーズで `peek_body()` は `None` を返すため、
-`consume_body(len > 0)` が呼ばれることはない。
+`BodyChunkedSize`、`BodyChunkedDataCrlf`、`ChunkedTrailer` では、内部
+`BodyDecoder::consume_body()` の `len` 引数は参照されず、状態遷移だけが行われる。
+これはこれらのフェーズが「メタデータ (チャンクサイズ行、CRLF、トレーラ行) の処理中」
+であり、ボディデータの消費とは別の処理であるため。
+
+公開 API では `consume_body(len > 0)` は `len == 0` を拒否するため
+(`tests/test_decoder.rs:421-431, :434-443`)、これらのフェーズに到達するのは
+常に `progress()` → `BodyDecoder::consume_body(0)` の経路のみである。
+正しいループパターン (`peek_body()` が `Some` のときだけ `consume_body` を呼ぶ)
+では、これらのフェーズで `peek_body()` は `None` を返すため、
+公開 API の `consume_body` が呼ばれることはない。
 
 実装では、この不変条件を `debug_assert_eq!(len, 0)` で検出可能にする:
 
@@ -713,8 +716,8 @@ while let Some(body_data) = decoder.peek_body() {
 
 - fuzz の目的は「任意入力で panic しないこと」なので、`NeedData` / `Advanced` の
   挙動に厳密な期待は持たず、全バリアントをハンドルして panic を防ぐ
-- `#![no_main]` の fuzz_target では `match` の網羅性チェックが働かないため、
-  手作業で全バリアントを列挙する
+- 全バリアントを列挙するのはコンパイラの網羅性チェックに頼るためではなく、
+  各バリアントの意図をコードで明示するためである
 - `consume_body` の戻り値は `Advanced | NeedData => {}` とまとめることで、
   消費後の継続か中断かの区別を不要にする (fuzz は単に全データを消費するだけ)
 
