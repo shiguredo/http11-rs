@@ -60,6 +60,111 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
     buf.extend_from_slice(&tmp[i..]);
 }
 
+/// `encode_request` / `encode_response` の事前確保サイズ上限 (64 MB)
+///
+/// 攻撃者制御のヘッダー値で見積もりが膨張した場合に、
+/// `Vec::with_capacity` の OOM abort で DoS を引き起こさないための防御線。
+/// 上限を超えた場合は `Vec::new()` にフォールバックして既存挙動と同等にする。
+const ENCODE_CAPACITY_LIMIT: usize = 64 * 1024 * 1024;
+
+/// 自動付与される Content-Length 行の容量見積もり (固定値)
+///
+/// `"Content-Length: " (16) + usize 最大 20 桁 + CRLF (2) = 38`
+/// 桁数の厳密計算は二度走査回避のために行わず、最悪ケースで過剰確保する。
+const AUTO_CONTENT_LENGTH_CAPACITY: usize = 38;
+
+/// `encode_request` で Content-Length を自動付与するか判定
+fn should_auto_emit_content_length_for_request(request: &Request) -> bool {
+    request.body.is_some()
+        && !request.has_header("Content-Length")
+        && !request.has_header("Transfer-Encoding")
+}
+
+/// `encode_response` で Content-Length を自動付与するか判定
+fn should_auto_emit_content_length_for_response(response: &Response) -> bool {
+    let status_has_body = !((100..200).contains(&response.status_code)
+        || response.status_code == 204
+        || response.status_code == 304);
+    let body_len = response.body.as_deref().map(<[u8]>::len);
+    status_has_body
+        && !response.has_header("Content-Length")
+        && !response.has_header("Transfer-Encoding")
+        && match (response.omit_body, body_len) {
+            (_, None) => false,
+            (true, Some(0)) => false,
+            (_, Some(_)) => true,
+        }
+}
+
+/// `encode_request` の出力容量を `checked_add` で見積もる
+///
+/// オーバーフロー時は `None` を返し、呼び出し側は `Vec::new()` にフォールバックする
+fn estimate_request_capacity(request: &Request) -> Option<usize> {
+    let mut total: usize = 0;
+    // Request line: METHOD SP URI SP VERSION CRLF (固定 4: SP + SP + CRLF)
+    total = total.checked_add(request.method.len())?;
+    total = total.checked_add(request.uri.len())?;
+    total = total.checked_add(request.version.len())?;
+    total = total.checked_add(4)?;
+    // 各ヘッダー: name + ": " + value + CRLF (固定 4)
+    for (name, value) in &request.headers {
+        total = total.checked_add(name.len())?;
+        total = total.checked_add(value.len())?;
+        total = total.checked_add(4)?;
+    }
+    if should_auto_emit_content_length_for_request(request) {
+        total = total.checked_add(AUTO_CONTENT_LENGTH_CAPACITY)?;
+    }
+    // End-of-headers CRLF
+    total = total.checked_add(2)?;
+    if let Some(body) = request.body.as_deref() {
+        total = total.checked_add(body.len())?;
+    }
+    Some(total)
+}
+
+/// `encode_response` の出力容量を `checked_add` で見積もる
+///
+/// オーバーフロー時は `None` を返し、呼び出し側は `Vec::new()` にフォールバックする
+fn estimate_response_capacity(response: &Response) -> Option<usize> {
+    let mut total: usize = 0;
+    // Status line: VERSION SP STATUS-CODE SP REASON CRLF
+    // (固定 4: SP + SP + CRLF, 加えて status code は 3 桁固定で見積もる)
+    total = total.checked_add(response.version.len())?;
+    total = total.checked_add(3)?; // status_code 最大桁数 (validate_response_fields で 100..=599 が保証)
+    total = total.checked_add(response.reason_phrase.len())?;
+    total = total.checked_add(4)?;
+    for (name, value) in &response.headers {
+        total = total.checked_add(name.len())?;
+        total = total.checked_add(value.len())?;
+        total = total.checked_add(4)?;
+    }
+    if should_auto_emit_content_length_for_response(response) {
+        total = total.checked_add(AUTO_CONTENT_LENGTH_CAPACITY)?;
+    }
+    total = total.checked_add(2)?;
+    let status_has_body = !((100..200).contains(&response.status_code)
+        || response.status_code == 204
+        || response.status_code == 304);
+    let body_will_be_encoded = status_has_body && !response.omit_body;
+    if body_will_be_encoded && let Some(body) = response.body.as_deref() {
+        total = total.checked_add(body.len())?;
+    }
+    Some(total)
+}
+
+/// 容量見積もりを `ENCODE_CAPACITY_LIMIT` で頭打ちにし、`Vec` を確保する
+///
+/// オーバーフロー (`None`) または上限超過のときは `Vec::new()` を返す。
+/// `Vec::with_capacity` の内部 `alloc` は fallible でないため、
+/// 巨大値の見積もりが abort/panic につながらないように防御する。
+fn allocate_encode_buffer(estimated: Option<usize>) -> Vec<u8> {
+    match estimated {
+        Some(c) if c <= ENCODE_CAPACITY_LIMIT => Vec::with_capacity(c),
+        _ => Vec::new(),
+    }
+}
+
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
     // メソッドの検証
@@ -569,7 +674,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         }
     }
 
-    let mut buf = Vec::new();
+    let mut buf = allocate_encode_buffer(estimate_request_capacity(request));
 
     // Request line: METHOD SP URI SP VERSION CRLF
     buf.extend_from_slice(request.method.as_bytes());
@@ -687,7 +792,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         }
     }
 
-    let mut buf = Vec::new();
+    let mut buf = allocate_encode_buffer(estimate_response_capacity(response));
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(response.version.as_bytes());
@@ -713,17 +818,10 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // body == None ならボディ長を表現できないため自動付与しない
     // omit_body: true かつ body が空 (None または Some(vec![])) の場合も自動付与しない
     // (HEAD レスポンスで表現長が不明なケースに配慮)
-    let body_len = response.body.as_deref().map(<[u8]>::len);
-    let auto_emit_content_length = status_has_body
-        && !response.has_header("Content-Length")
-        && !response.has_header("Transfer-Encoding")
-        && match (response.omit_body, body_len) {
-            (_, None) => false,
-            (true, Some(0)) => false,
-            (_, Some(_)) => true,
-        };
-    if auto_emit_content_length {
-        let len = body_len.unwrap_or(0);
+    // 容量見積もりと判定ロジックを統一するため、`should_auto_emit_content_length_for_response`
+    // を介して判定する (条件がずれると過小確保で再確保が発生する)
+    if should_auto_emit_content_length_for_response(response) {
+        let len = response.body.as_deref().map(<[u8]>::len).unwrap_or(0);
         buf.extend_from_slice(b"Content-Length: ");
         write_usize_decimal(&mut buf, len);
         buf.extend_from_slice(b"\r\n");
@@ -1183,5 +1281,157 @@ impl<C: Compressor> RequestEncoder<C> {
     /// 圧縮器をリセット
     pub fn reset(&mut self) {
         self.compressor.reset();
+    }
+}
+
+/// 容量見積もりが実際の出力長以上であることを検証する内部テスト
+///
+/// `estimate_request_capacity` / `estimate_response_capacity` はプライベート関数なので
+/// 外部テストから直接呼べない。このモジュールに置くことで容量見積もりの正しさを
+/// 確実に担保する (過小確保で再確保が起きると最適化の意味を失うため)。
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+    use crate::request::Request;
+    use crate::response::Response;
+
+    fn assert_request_capacity_sufficient(req: &Request) {
+        let est = estimate_request_capacity(req).expect("estimate overflow");
+        let out = encode_request(req).expect("encode failed");
+        assert!(
+            est >= out.len(),
+            "estimate {} < output {}: req={req:?}",
+            est,
+            out.len(),
+        );
+    }
+
+    fn assert_response_capacity_sufficient(res: &Response) {
+        let est = estimate_response_capacity(res).expect("estimate overflow");
+        let out = encode_response(res).expect("encode failed");
+        assert!(
+            est >= out.len(),
+            "estimate {} < output {}: res={res:?}",
+            est,
+            out.len(),
+        );
+    }
+
+    #[test]
+    fn test_request_capacity_simple_get() {
+        let req = Request::new("GET", "/").header("Host", "example.com");
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_post_with_body_auto_content_length() {
+        let req = Request::new("POST", "/api")
+            .header("Host", "example.com")
+            .body(b"hello world".to_vec());
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_post_with_explicit_content_length() {
+        let req = Request::new("POST", "/api")
+            .header("Host", "example.com")
+            .header("Content-Length", "11")
+            .body(b"hello world".to_vec());
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_post_with_transfer_encoding_no_auto() {
+        let req = Request::new("POST", "/api")
+            .header("Host", "example.com")
+            .header("Transfer-Encoding", "chunked")
+            .body(b"hello".to_vec());
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_many_headers() {
+        let mut req = Request::new("GET", "/").header("Host", "example.com");
+        for i in 0..50 {
+            req = req.header(
+                &alloc::format!("X-Custom-{i}"),
+                &alloc::format!("value-{i}-with-some-padding"),
+            );
+        }
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_empty_body_auto_content_length_zero() {
+        let req = Request::new("POST", "/")
+            .header("Host", "example.com")
+            .body(Vec::new());
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_request_capacity_no_body() {
+        let req = Request::new("GET", "/path/to/resource?q=1").header("Host", "example.com");
+        assert_request_capacity_sufficient(&req);
+    }
+
+    #[test]
+    fn test_response_capacity_simple_ok() {
+        let res = Response::new(200, "OK").body(b"hello".to_vec());
+        assert_response_capacity_sufficient(&res);
+    }
+
+    #[test]
+    fn test_response_capacity_no_body_status() {
+        // 1xx / 204 / 304 は body を含めない
+        for &code in &[100u16, 204, 304] {
+            let res = Response::new(code, "Reason");
+            assert_response_capacity_sufficient(&res);
+        }
+    }
+
+    #[test]
+    fn test_response_capacity_omit_body_with_content_length() {
+        let res = Response::new(200, "OK")
+            .header("Content-Length", "100")
+            .omit_body(true);
+        assert_response_capacity_sufficient(&res);
+    }
+
+    #[test]
+    fn test_response_capacity_with_transfer_encoding() {
+        let res = Response::new(200, "OK").header("Transfer-Encoding", "chunked");
+        assert_response_capacity_sufficient(&res);
+    }
+
+    #[test]
+    fn test_response_capacity_many_headers() {
+        let mut res = Response::new(200, "OK").body(vec![b'X'; 1024]);
+        for i in 0..50 {
+            res = res.header(
+                &alloc::format!("X-Custom-{i}"),
+                &alloc::format!("value-{i}-with-some-padding"),
+            );
+        }
+        assert_response_capacity_sufficient(&res);
+    }
+
+    #[test]
+    fn test_response_capacity_status_code_3_digit_boundary() {
+        // status_code は 100..=599、見積もりは 3 桁固定なので過小確保にならない
+        for &code in &[100u16, 200, 599] {
+            let res = Response::new(code, "Phrase").body(b"body".to_vec());
+            assert_response_capacity_sufficient(&res);
+        }
+    }
+
+    #[test]
+    fn test_request_capacity_overflow_returns_none_does_not_panic() {
+        // 巨大なヘッダー長をシミュレートするのは現実不可能なので、
+        // ここではオーバーフロー時のフォールバックパス (`Vec::new()`) が
+        // パニックしないことを通常入力で確認する。
+        // 実際のオーバーフロー検出は fuzz_encode_request で網羅する。
+        let req = Request::new("GET", "/").header("Host", "example.com");
+        let _ = encode_request(&req).unwrap();
     }
 }

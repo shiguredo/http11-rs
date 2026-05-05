@@ -28,6 +28,12 @@
   - 併せて `encode_request` / `encode_response` / `encode_response_headers` のステータスコード / Content-Length の `to_string()` を `write_usize_decimal` ヘルパーに置き換える
   - `encode_chunk` / `encode_chunks` のバッファを `Vec::with_capacity` に変更し、`checked_add` ベースで容量を見積もる
   - @voluntas
+- [UPDATE] `encode_request` / `encode_response` のバッファに `Vec::with_capacity` を導入する
+  - 容量見積もりを `checked_add` ベースで行い、オーバーフロー時は `Vec::new()` にフォールバックする
+  - `ENCODE_CAPACITY_LIMIT` (64 MB) を導入し、攻撃者制御のヘッダー値による `Vec::with_capacity` の OOM abort を防ぐ
+  - 自動付与する Content-Length 行と auto-emit 判定ロジックは見積もり / 書き込み双方で共通の関数 (`should_auto_emit_content_length_for_request` / `..._for_response`) を経由するように整理する
+  - 任意入力でのパニック / abort 安全性を `fuzz_encode_request` / `fuzz_encode_response` で網羅する
+  - @voluntas
 
 ## 2026.2.0
 
