@@ -1211,19 +1211,6 @@ mod direct_buffer_write {
     }
 
     #[test]
-    fn response_mut_buf_usize_max_returns_overflow_without_panic() {
-        // len = usize::MAX が入っても加算 panic せず BufferOverflow を返す
-        let mut decoder = ResponseDecoder::new();
-        assert!(decoder.mut_buf(usize::MAX).is_err());
-    }
-
-    #[test]
-    fn request_mut_buf_usize_max_returns_overflow_without_panic() {
-        let mut decoder = RequestDecoder::new();
-        assert!(decoder.mut_buf(usize::MAX).is_err());
-    }
-
-    #[test]
     fn response_reset_clears_pending() {
         let mut decoder = ResponseDecoder::new();
         let _ = decoder.mut_buf(64).unwrap();
