@@ -294,8 +294,12 @@ impl MultipartParser {
     /// データを追加
     ///
     /// バッファサイズが `max_buffer_size` を超える場合は `MultipartError::BufferOverflow` を返す。
+    /// 上限判定は未消費データ長 (`buffer.len() - pos`) に対して行う。
+    /// `pos` 分は次回の `drain` で物理的に解放されるため、上限のセマンティクスは
+    /// 「未消費の有効データ量」とする (オフセット方式に変更する前のセマンティクスを維持する)。
     pub fn feed(&mut self, data: &[u8]) -> Result<(), MultipartError> {
-        let new_size = self.buffer.len().saturating_add(data.len());
+        let effective = self.buffer.len() - self.pos;
+        let new_size = effective.saturating_add(data.len());
         if new_size > self.max_buffer_size {
             return Err(MultipartError::BufferOverflow {
                 size: new_size,
@@ -852,6 +856,31 @@ mod tests {
             min_buffer_len_after_drain <= total_len * 3 / 4,
             "drain shrink too small: min={min_buffer_len_after_drain}, total_len={total_len}",
         );
+    }
+
+    /// `feed()` の上限判定は物理バッファ長 (`buffer.len()`) ではなく
+    /// 未消費データ長 (`buffer.len() - pos`) で行う
+    /// (オフセット方式に変更する前のセマンティクスを維持する)
+    #[test]
+    fn test_feed_buffer_limit_uses_unconsumed_length() {
+        let mut parser = MultipartParser::new("b").with_max_buffer_size(40);
+        // 30 バイト feed して pos を進める
+        parser.feed(&[b'X'; 30]).unwrap();
+        // 内部状態を直接いじって「20 バイト消費済み、10 バイト未消費」をシミュレートする
+        // (drain 発動を待たずに pos > 0 の状態を作る)
+        parser.pos = 20;
+        assert_eq!(parser.buffer.len(), 30);
+        // 未消費長は 10。max_buffer_size = 40 なので 30 バイト追加 feed は可能
+        // 物理バッファ長 (30) で判定すると 30 + 30 = 60 > 40 で false positive になる
+        assert!(parser.feed(&[b'Y'; 30]).is_ok());
+        // 未消費長は 40 ぴったり。これ以上は弾く
+        assert!(matches!(
+            parser.feed(b"Z"),
+            Err(MultipartError::BufferOverflow {
+                size: 41,
+                limit: 40
+            })
+        ));
     }
 
     /// 部分 feed をまたいだ pos / buffer の整合性を検証する
