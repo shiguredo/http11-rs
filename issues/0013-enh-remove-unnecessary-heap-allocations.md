@@ -72,7 +72,14 @@ fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
 
 **整数オーバーフロー対策**: 上記式の `+ 20` / `.sum()` / `+ 5` はいずれも `usize` 加算でオーバーフロー可能（攻撃者制御の `data` / `chunks` で `usize::MAX` 近傍を狙われると wraparound して過小確保になる）。実装では `checked_add` ベースで計算し、オーバーフロー時は `Vec::new()` にフォールバックするか、`saturating_add` で `usize::MAX` まで詰める。後者なら `Vec::with_capacity(usize::MAX)` の OOM panic に頼る形になるため、**前者（checked_add + フォールバック）を推奨**。
 
-**テスト方針**: `pbt/tests/prop_encoder.rs` に PBT を追加し、任意 `usize` で `write_hex_usize` の出力が `alloc::format!("{:x}", n).as_bytes()` と完全一致することを検証する（既存実装との等価性）。併せて、出力文字列を `usize::from_str_radix(s, 16)` で復元すると元の値に戻るラウンドトリップ性も検証する（絶対的正しさの担保）。境界値 `0`, `1`, `15`, `16`, `255`, `256`, `usize::MAX` は単体テストで個別検証。
+**テスト方針**: `write_hex_usize` は `encoder.rs` のプライベート関数として配置するため、別クレートである `pbt` から直接呼べない。ヘルパー単体ではなく **`encode_chunk` / `encode_chunks` の公開 API 出力に対する PBT** を `pbt/tests/prop_encoder.rs` に追加し、間接的に等価性を担保する:
+
+- 任意の `data: Vec<u8>` で `encode_chunk(&data)` の出力が「`alloc::format!("{:x}\r\n", data.len())` + data + `\r\n`」（終端時は `b"0\r\n\r\n"`）とバイト単位で一致すること。
+- `encode_chunks` でも同様に `format!` ベースの参照実装と完全一致すること。
+
+これによりヘルパー単体の等価性検証は省略するが、ヘルパーは `encode_chunk` / `encode_chunks` 経由でしか使われないため担保範囲は同等。ヘルパーを `pub` / `#[doc(hidden)] pub` で公開するアプローチは API 表面を汚すため採らない。
+
+境界値 `data.len() == 0`, `1`, `15`, `16`, `255`, `256` の単体テストは `tests/test_encoder.rs` に追加。`usize::MAX` 長のデータは現実的に確保不能なため、ヘルパー直接の境界検証は行わない（公開 API 経由では入力長で律速されるため不要）。
 
 ### 2. `MultipartParser::next_part()` — バッファ先頭除去で残り全体を毎回コピー
 
@@ -101,7 +108,7 @@ self.buffer = self.buffer[after_delim + 2..].to_vec();
 
 - 既存の `pbt/tests/prop_multipart.rs` および単体テストが全通過することを確認（公開 API 不変）。
 - 単体テスト追加: `feed(部分データ) → next_part() = Incomplete → feed(残データ) → next_part() = Some(Part)` のシーケンス。境界をまたいだ feed で `pos` と `buffer` の整合性が保たれることを保証する。
-- drain 発動の検証: 同一 boundary のパートを 10 個以上含むボディを feed し、`next_part()` を順に呼んで全パート取得。途中で drain が発動して `pos` がリセットされること、得られる全パートが期待値と一致することを検証する。`pos` は非公開フィールドのため、テストから観察するには **`#[cfg(test)] fn test_pos(&self) -> usize` のような内部アクセサを `multipart.rs` 内に追加**して経由する（`pub` にはしない）。アクセサ追加を避けたい場合は、`buffer.len()` の減少を観察する間接検証で代替する。
+- drain 発動の検証: 同一 boundary のパートを 10 個以上含むボディを feed し、`next_part()` を順に呼んで全パート取得。途中で drain が発動した結果として `buffer` のサイズが累積入力サイズより十分小さくなっていること、得られる全パートが期待値と一致することを検証する。`pos` は非公開フィールドで `tests/test_multipart.rs`（統合テスト）からは観察できない（`#[cfg(test)]` ゲートのアクセサは統合テストのコンパイル時には剥がれるため不可）。**`buffer.len()` の減少を観察する間接検証**を採用する。`pos` の値そのものを直接検証したい場合は例外的に `src/multipart.rs` 内の `#[cfg(test)] mod tests` に当該テストだけを置く運用を許容する（AGENTS.md の `tests/test_<module>.rs` 規約からの限定的逸脱）。
 
 ### 3. `MultipartParser::next_part()` — デリミタ文字列を毎回 `alloc::format!` で生成
 
@@ -132,12 +139,15 @@ inner_delimiter.extend_from_slice(boundary.as_bytes());
 
 ### 6. `Content-Length` / ステータスコードの `to_string()` — 少数値で毎回ヒープ確保
 
-`encoder.rs:556`, `653`, `686`:
+`encoder.rs:556`, `653`, `686`, `888`:
 
 ```rust
-buf.extend_from_slice(body.len().to_string().as_bytes());
-buf.extend_from_slice(response.status_code.to_string().as_bytes());
+buf.extend_from_slice(body.len().to_string().as_bytes());                  // L556, L686 (Content-Length 自動付与)
+buf.extend_from_slice(response.status_code.to_string().as_bytes());        // L653 (encode_response のステータスライン)
+buf.extend_from_slice(response.status_code.to_string().as_bytes());        // L888 (encode_response_headers のステータスライン)
 ```
+
+`encode_response_headers` は chunked transfer encoding 用の公開 API で、ストリーミング送信時にはこちらが呼ばれる。L888 を取りこぼすと項目 6 の効果が `encode_response` 経路にしか及ばず半減するため、**4 箇所すべてを同じヘルパーで置換する**。
 
 **修正方針**: 項目 1 と同じスタイルで `write_usize_decimal` を**別関数**として `encoder.rs` のプライベート関数で用意する。
 
@@ -161,7 +171,11 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
 
 ステータスコードは `u16`（最大 3 桁）だが、ヘルパーは `usize` に統一して使い回す（呼び出し側で `code as usize`）。本リポジトリは `usize >= 32bit` を前提とする標準的な Rust ターゲットのみをサポートするため、このキャストは無損失で安全。
 
-**テスト方針**: 項目 1 と同様、PBT で `alloc::format!("{}", n).as_bytes()` との等価性を検証。併せて出力を `s.parse::<usize>()` で復元すると元の値に戻るラウンドトリップ性も検証する。境界値 `0`, `9`, `10`, `99`, `100`, `usize::MAX` は単体テスト。
+**テスト方針**: 項目 1 と同じく `write_usize_decimal` も `encoder.rs` のプライベート関数のため、`pbt` クレートから直接呼べない。**`encode_request` / `encode_response` / `encode_response_headers` の公開 API 出力に対する PBT** で間接的に等価性を担保する:
+
+- 任意の `Request` / `Response`（`status_code: u16`, `body: Vec<u8>` を含む）で公開 API の出力に含まれるステータスコード / Content-Length 部分が `alloc::format!("{}", n).as_bytes()` と一致することを `pbt/tests/prop_encoder.rs` で検証する。
+
+境界値 `status_code = 100, 200, 999` および `body.len() = 0, 9, 10, 99, 100` は `tests/test_encoder.rs` に単体テスト追加。`usize::MAX` 長のボディは現実的に確保不能なため境界検証対象外。
 
 **位置付け**: 1 メッセージあたりの効果は数バイト × 数アロケーション程度で極めて小さい。これ単独では着手せず、**項目 1 完了後に同パターンで適用**する。項目 6 と項目 4 はスコープが異なる（項目 6 は `to_string()` のみ、項目 4 は `Vec::new()` の置換）。項目 6 完了後も項目 4 を見送れば `Vec::new()` は残るが、混在状態は許容する。
 
@@ -263,11 +277,11 @@ fuzz ターゲットなしで容量計算を入れるのは堅牢性観点でリ
 - Fuzzing 短時間実行（30 秒以上、対象 fuzz ターゲットが存在する場合のみ）:
   - 項目 2, 3（multipart）: `cargo fuzz run fuzz_multipart`
   - 項目 1（chunk 系）: `cargo fuzz run fuzz_decoder_chunked`
-  - 項目 6（status code / Content-Length）: `write_usize_decimal` の使用箇所（`encode_request` / `encode_response`）に対する fuzz ターゲットは存在しない。**ヘルパー単体は PBT で `format!` との等価性 + ラウンドトリップ検証**で担保し、fuzzing は不要とする
+  - 項目 6（status code / Content-Length）: `write_usize_decimal` の使用箇所（`encode_request` / `encode_response` / `encode_response_headers`）に対する fuzz ターゲットは存在しない。**ヘルパーはプライベートのまま、公開 API 経由の PBT で `format!` との等価性を担保**し、fuzzing は不要とする
   - 項目 4（`encode_request` / `encode_response`）: **項目 4 を実装する場合は `fuzz_encode_request` / `fuzz_encode_response` を新設して実行**（必須。詳細は項目 4 を参照）
 - llvm-cov でカバレッジ取得・後退がないことを確認: `cargo llvm-cov`
 - ビルド警告ゼロを確認: `cargo build` および `cargo clippy -- -D warnings`（項目 6 完了後は `encoder.rs` の `use alloc::string::{String, ToString};` から `ToString` が未使用になる可能性がある。`unused_imports` は rustc 標準 lint なので `cargo build` で検出される。`ToString` のみが未使用になる場合は `use alloc::string::String;` に縮める。**`String` は引き続き使われていることを確認**してから縮めること（両方削除するとコンパイルエラー）。）
-- 変更箇所の追加テストを書く（ヘルパーは PBT で `format!` との等価性 + ラウンドトリップを検証）
+- 変更箇所の追加テストを書く（ヘルパーはプライベートのまま、公開 API 経由の PBT で `format!` ベース参照実装との等価性を検証）
 
 ### CHANGES.md エントリ
 
