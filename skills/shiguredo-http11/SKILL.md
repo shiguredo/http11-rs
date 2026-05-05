@@ -75,7 +75,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `BodyKind::CloseDelimited` | 接続終了まで (レスポンスのみ) |
 | `BodyKind::Tunnel` | CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視) |
 | `BodyKind::None` | ボディなし |
-| `BodyProgress::Continue` | デコード継続中 |
+| `BodyProgress::Advanced` | 状態機械が前進し、続けて呼び出すことで処理を進められる |
+| `BodyProgress::NeedData` | 追加データが必要。呼び出し側はループを抜けて I/O に戻る |
 | `BodyProgress::Complete { trailers }` | 完了 (トレーラーヘッダー含む) |
 
 ### エンコーダー関数
@@ -315,19 +316,19 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
             if let Some(data) = decoder.peek_body() {
                 body.extend_from_slice(data);
                 let len = data.len();
-                if let BodyProgress::Complete { .. } = decoder.consume_body(len)? {
-                    break 'outer;
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { .. } => break 'outer,
+                    // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                    // 直後の peek_body() は None を返すため progress 分岐に進む。
+                    BodyProgress::Advanced | BodyProgress::NeedData => continue,
                 }
-            } else {
-                // peek_body() が None でも progress() で状態遷移を試みる
-                // Chunked の場合、チャンクサイズ行や終端チャンクのパースが進む
-                let before = decoder.remaining().len();
-                if let BodyProgress::Complete { .. } = decoder.progress()? {
-                    break 'outer;
-                }
-                if decoder.remaining().len() == before {
-                    break; // 追加データが必要
-                }
+            }
+            // peek_body() が None → 状態機械を進める
+            match decoder.progress()? {
+                BodyProgress::Complete { .. } => break 'outer,
+                BodyProgress::Advanced => continue,
+                // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
+                BodyProgress::NeedData => break,
             }
         }
 

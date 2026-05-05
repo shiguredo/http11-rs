@@ -309,20 +309,18 @@ async fn handle_client(
                         let len = data.len();
                         match decoder.consume_body(len)? {
                             BodyProgress::Complete { .. } => break 'outer,
-                            BodyProgress::Continue => {}
+                            // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                            // 直後の peek_body() は None を返すため progress 分岐に進む。
+                            BodyProgress::Advanced | BodyProgress::NeedData => {}
                         }
                     }
                     None => {
                         // peek_body() が None でも progress() で状態遷移を試みる
-                        let remaining_before = decoder.remaining().len();
                         match decoder.progress()? {
                             BodyProgress::Complete { .. } => break 'outer,
-                            BodyProgress::Continue => {
-                                if decoder.remaining().len() == remaining_before {
-                                    break; // 内側ループを抜けてデータ読み取り
-                                }
-                                // remaining が変化した場合は内側ループを継続
-                            }
+                            BodyProgress::Advanced => continue,
+                            // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
+                            BodyProgress::NeedData => break,
                         }
                     }
                 }
@@ -652,11 +650,12 @@ async fn stream_response_on_connection(
                                 debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
                             }
-                            BodyProgress::Continue => {}
+                            // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                            // 直後の peek_body() は None を返すため progress 分岐に進む。
+                            BodyProgress::Advanced | BodyProgress::NeedData => {}
                         }
                     }
                     None => {
-                        let remaining_before = decoder.remaining().len();
                         match decoder.progress()? {
                             BodyProgress::Complete { trailers } => {
                                 if use_chunked {
@@ -672,11 +671,9 @@ async fn stream_response_on_connection(
                                 debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
                             }
-                            BodyProgress::Continue => {
-                                if decoder.remaining().len() == remaining_before {
-                                    break;
-                                }
-                            }
+                            BodyProgress::Advanced => continue,
+                            // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
+                            BodyProgress::NeedData => break,
                         }
                     }
                 }

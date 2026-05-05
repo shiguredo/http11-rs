@@ -220,7 +220,8 @@ loop {
 
 `BodyProgress` はデコードの進捗を表します:
 
-- `Continue` - 継続中
+- `Advanced` - 状態機械が前進した。バッファに処理可能なデータが残っているため、続けて `peek_body()` / `progress()` / `consume_body()` を呼ぶこと
+- `NeedData` - バッファに処理可能なデータがなく、追加の `feed()` が必要。呼び出し側はループを抜けて I/O 読み取りに戻る
 - `Complete { trailers }` - 完了 (トレーラーヘッダーがある場合は含む)
 
 ## HTTP/1.1

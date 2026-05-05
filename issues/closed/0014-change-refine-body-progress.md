@@ -1,6 +1,7 @@
 # 0014: BodyProgress を細分化してストリーミング API のループ判定を戻り値で完結させる
 
 Created: 2026-05-05
+Completed: 2026-05-05
 Model: Opus 4.7
 
 ## 概要

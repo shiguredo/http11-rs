@@ -241,20 +241,20 @@ fn stream_body(
                             *buf = Some(acc);
                             return Ok(true);
                         }
-                        BodyProgress::Continue => continue,
+                        // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                        // 直後の peek_body() は None を返すため progress 分岐に fall through する。
+                        BodyProgress::Advanced | BodyProgress::NeedData => continue,
                     }
                 }
-                let remaining_before = decoder.remaining().len();
                 match decoder.progress()? {
                     BodyProgress::Complete { .. } => {
                         *buf = Some(acc);
                         return Ok(true);
                     }
-                    BodyProgress::Continue => {
-                        if decoder.remaining().len() == remaining_before {
-                            *buf = Some(acc);
-                            return Ok(false);
-                        }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => {
+                        *buf = Some(acc);
+                        return Ok(false);
                     }
                 }
             }

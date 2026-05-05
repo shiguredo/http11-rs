@@ -139,7 +139,7 @@ proptest! {
                     let len = data.len();
                     match decoder.consume_body(len).unwrap() {
                         BodyProgress::Complete { .. } => break,
-                        BodyProgress::Continue => {}
+                        BodyProgress::Advanced | BodyProgress::NeedData => {}
                     }
                 }
             }
@@ -238,7 +238,7 @@ proptest! {
                             let len = data.len();
                             match decoder.consume_body(len).unwrap() {
                                 BodyProgress::Complete { .. } => break,
-                                BodyProgress::Continue => {}
+                                BodyProgress::Advanced | BodyProgress::NeedData => {}
                             }
                         }
                     }

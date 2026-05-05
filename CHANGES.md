@@ -31,6 +31,10 @@
   - `available_buf()` で残容量を問い合わせてチャンクサイズを適応させる
   - `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループを新 API に書き換える
   - @voluntas
+- [CHANGE] `BodyProgress` を `Advanced` / `NeedData` / `Complete` の 3 値に細分化し、追加データが必要な状態を戻り値だけで判定できるようにする
+  - 内部で利用していた非公開 `available_body_len()` を撤去し、`decode()` を `peek_body()` ベースに統一する
+  - `src/decoder/mod.rs` のストリーミング API doc サンプルと `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の `remaining_before` 比較ハックを 3 値パターンマッチに書き換える
+  - @voluntas
 
 ### misc
 

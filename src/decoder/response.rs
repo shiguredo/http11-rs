@@ -641,22 +641,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
         Ok(Some(status))
     }
 
-    /// 利用可能なボディデータのバイト数を取得
-    fn available_body_len(&self) -> usize {
-        match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => {
-                if *remaining >= self.buf.len() as u64 {
-                    self.buf.len()
-                } else {
-                    *remaining as usize
-                }
-            }
-            DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
-            DecodePhase::BodyCloseDelimited => self.buf.len(),
-            _ => 0,
-        }
-    }
-
     /// ボディデータを消費
     ///
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
@@ -728,50 +712,51 @@ impl<D: Decompressor> ResponseDecoder<D> {
                 ));
             }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
-                // 直接バッファから利用可能なデータ長を取得（コピーなし）
-                let available = self.available_body_len();
-                if available > 0 {
-                    // バッファから直接コピー
-                    self.decoded_body.extend_from_slice(&self.buf[..available]);
-                    match self.consume_body(available)? {
-                        BodyProgress::Complete { .. } => break,
-                        BodyProgress::Continue => continue,
+                // バッファからボディデータを直接消費。
+                // body_decoder.peek_body() を直接呼ぶことで、返り値の lifetime が
+                // &self.buf に紐付き、self.decoded_body の可変借用と並立できる。
+                if let Some(data) = self.body_decoder.peek_body(&self.buf, &self.phase) {
+                    let len = data.len();
+                    self.decoded_body.extend_from_slice(data);
+                    self.consume_body(len)?;
+                    // consume_body の戻り値ではなく phase で完了判定する。
+                    // BodyChunkedData → BodyChunkedDataCrlf → BodyChunkedSize の
+                    // 多段遷移時は Advanced を返すため、phase を直接見るのが確実。
+                    if matches!(self.phase, DecodePhase::Complete) {
+                        break;
                     }
+                    continue;
                 }
 
-                // データがない場合、状態機械を進める
+                // ボディデータがない → 状態機械を進める
                 match self.progress()? {
                     BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => {
-                        // 状態遷移後にデータが利用可能になったか確認
-                        if self.available_body_len() > 0 {
-                            continue;
-                        }
-                        // データ不足
-                        return Ok(None);
-                    }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => return Ok(None),
                 }
             },
             BodyKind::CloseDelimited => {
-                // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ
-                let available = self.available_body_len();
-                if available > 0 {
-                    // max_body_size チェック (コピー前に行う)
-                    // checked_add でオーバーフローを検出し、オーバーフロー時も BodyTooLarge を返す
-                    let new_size = self.decoded_body.len().checked_add(available).ok_or(
-                        Error::BodyTooLarge {
-                            size: usize::MAX,
-                            limit: self.limits.max_body_size,
-                        },
-                    )?;
+                // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ。
+                // max_body_size チェックは consume_body 内でも行うが、ここでは
+                // decoded_body に書き込む前にも事前チェックする (既存コードと同様)。
+                if let Some(data) = self.body_decoder.peek_body(&self.buf, &self.phase) {
+                    let len = data.len();
+                    let new_size =
+                        self.decoded_body
+                            .len()
+                            .checked_add(len)
+                            .ok_or(Error::BodyTooLarge {
+                                size: usize::MAX,
+                                limit: self.limits.max_body_size,
+                            })?;
                     if new_size > self.limits.max_body_size {
                         return Err(Error::BodyTooLarge {
                             size: new_size,
                             limit: self.limits.max_body_size,
                         });
                     }
-                    self.decoded_body.extend_from_slice(&self.buf[..available]);
-                    self.consume_body(available)?;
+                    self.decoded_body.extend_from_slice(data);
+                    self.consume_body(len)?;
                 }
 
                 // mark_eof() が呼ばれて Complete になったか確認

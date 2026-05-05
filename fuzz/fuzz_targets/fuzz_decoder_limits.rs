@@ -42,7 +42,7 @@ fuzz_target!(|input: FuzzLimits| {
                     let len = body_data.len();
                     match request_decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => break,
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => break,
                     }
                 }
@@ -60,7 +60,7 @@ fuzz_target!(|input: FuzzLimits| {
                     let len = body_data.len();
                     match response_decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => break,
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => break,
                     }
                 }

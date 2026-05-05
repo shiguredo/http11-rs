@@ -65,14 +65,15 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     let len = body_data.len();
                     match decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => return None,
                     }
                 } else {
                     // peek_body() が None でも progress() で状態遷移を試みる
                     match decoder.progress() {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                        Ok(BodyProgress::Continue) => break, // 追加データが必要
+                        Ok(BodyProgress::Advanced) => {}
+                        Ok(BodyProgress::NeedData) => break, // 追加データが必要
                         Err(_) => return None,
                     }
                 }
@@ -99,13 +100,14 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 let len = body_data.len();
                 match decoder.consume_body(len) {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                    Ok(BodyProgress::Continue) => {}
+                    Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                     Err(_) => return None,
                 }
             } else {
                 match decoder.progress() {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                    Ok(BodyProgress::Continue) => return None, // データ不足で不完全
+                    Ok(BodyProgress::Advanced) => {}
+                    Ok(BodyProgress::NeedData) => return None, // データ不足で不完全
                     Err(_) => return None,
                 }
             }
@@ -143,14 +145,15 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                     let len = body_data.len();
                     match decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => return None,
                     }
                 } else {
                     // peek_body() が None でも progress() で状態遷移を試みる
                     match decoder.progress() {
                         Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                        Ok(BodyProgress::Continue) => break, // 追加データが必要
+                        Ok(BodyProgress::Advanced) => {}
+                        Ok(BodyProgress::NeedData) => break, // 追加データが必要
                         Err(_) => return None,
                     }
                 }
@@ -177,13 +180,14 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 let len = body_data.len();
                 match decoder.consume_body(len) {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                    Ok(BodyProgress::Continue) => {}
+                    Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                     Err(_) => return None,
                 }
             } else {
                 match decoder.progress() {
                     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
-                    Ok(BodyProgress::Continue) => return None, // データ不足で不完全
+                    Ok(BodyProgress::Advanced) => {}
+                    Ok(BodyProgress::NeedData) => return None, // データ不足で不完全
                     Err(_) => return None,
                 }
             }
