@@ -16,9 +16,13 @@ Model: Opus 4.7
   ベースに統一する
 - `src/decoder/mod.rs` のストリーミング API doc サンプルを正しいループに
   書き直す
-- `examples/http11_client` をストリーミング API + first-body タイムスタンプ
-  記録のお手本に書き換える
-- `examples/http11_reverse_proxy` の `remaining_before` 比較ハックを除去
+- `examples/http11_client` の `remaining_before` 比較ハックを除去し、
+  新 `BodyProgress` 3 値のパターンマッチに切り替える
+  (ストリーミング API + first-body タイムスタンプ記録は既存)
+- `examples/http11_server` の `remaining_before` 比較ハックを除去し、
+  新 `BodyProgress` 3 値のパターンマッチに切り替える
+- `examples/http11_reverse_proxy` の `remaining_before` 比較ハックを除去し、
+  新 `BodyProgress` 3 値のパターンマッチに切り替える
 
 破壊的変更。`BodyProgress` を pattern match している全箇所 (テスト・PBT・
 fuzz・examples) に追従が必要。
@@ -64,17 +68,16 @@ fuzz・examples) に追従が必要。
 `decode()` は内部で `available_body_len()` を呼んでいるが、これは
 `peek_body()` で完全に代替できる (戻り値の slice をその場でコピーすればよい)。
 
-### 課題 3: ストリーミング API のサンプルがお手本になっていない
+### 課題 3: ストリーミング API のサンプルと examples がお手本になっていない
 
-CLAUDE.md は「サンプルはお手本なので性能と堅牢性を両立させること」を要求
+AGENTS.md は「サンプルはお手本なので性能と堅牢性を両立させること」を要求
 しているが、
 
 - `src/decoder/mod.rs:23-41` のストリーミング API サンプルは課題 1 のとおり
   途中で壊れる
-- `examples/http11_client/src/main.rs` は `decode()` 一括 API しか使って
-  おらず、ストリーミング API のお手本が不在
-- 「最初に body バイトが取れた時刻を記録する」というよくあるユースケースの
-  実装例がリポジトリ内に存在しない
+- `examples/http11_client` / `examples/http11_server` /
+  `examples/http11_reverse_proxy` のすべてが課題 1 の `remaining_before`
+  比較ハックに依存しており、新 `BodyProgress` 3 値で除去できる状態にある
 
 ### 課題 4: ループ判定ハックを呼び出し側に強いている
 
@@ -437,105 +440,16 @@ match body_kind {
 ```
 
 - `examples/http11_client/src/main.rs`:
-  - `decode()` 一括 API を捨て、ストリーミング API (`decode_headers()` +
-    `peek_body()` / `consume_body()` / `progress()`) に切り替える
-  - I/O ループとボディデコードループを分離せず、両者を一体で書く (お手本)
-  - `decode_headers()` 完了時刻 = TTFB、`peek_body()` が初めて `Some(...)`
-    を返した時刻 = first-body-byte として `Instant` で記録し、`tracing::info!`
-    で出力
-  - `BodyKind::Chunked` / `BodyKind::ContentLength(_)` / `BodyKind::CloseDelimited`
-    すべてで動作するループにする
-  - 疑似コード:
+  - 既にストリーミング API + first-body タイムスタンプ記録を実装済み。
+    変更内容は `remaining_before` 比較ハックを新 `BodyProgress` 3 値の
+    パターンマッチに置き換えることのみ (HTTP 受信・HTTPS 受信の各 1 箇所)。
+  - 変更後パターンは http11_reverse_proxy と同一。
 
-```rust
-let t_start = Instant::now();
-let mut response_head: Option<ResponseHead> = None;
-let mut response_body_kind: Option<BodyKind> = None;
-let mut response_body = Vec::new();
-let mut first_body_at: Option<Instant> = None;
-
-'read: loop {
-    // I/O: データ読み取り
-    let want = decoder.available_buf().min(READ_CHUNK);
-    let buf = decoder.mut_buf(want)?;
-    let n = stream.read(buf)?;
-    if n == 0 {
-        decoder.advance_buf(0);
-        decoder.mark_eof();  // close-delimited 用
-    } else {
-        decoder.advance_buf(n);
-    }
-
-    // ヘッダー未完了 → decode_headers 試行
-    if response_head.is_none() {
-        if let Some((head, kind)) = decoder.decode_headers()? {
-            info!(ttfb_ms = t_start.elapsed().as_millis(), "TTFB");
-            response_head = Some(head);
-            response_body_kind = Some(kind);
-        }
-    }
-
-    // ボディデコード
-    if let Some(kind) = response_body_kind {
-        match kind {
-            BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
-                if let Some(data) = decoder.peek_body() {
-                    if first_body_at.is_none() {
-                        first_body_at = Some(Instant::now());
-                    }
-                    response_body.extend_from_slice(data);
-                    let len = data.len();
-                    if matches!(decoder.consume_body(len)?, BodyProgress::Complete { .. }) {
-                        break 'read;
-                    }
-                } else {
-                    match decoder.progress()? {
-                        BodyProgress::Complete { .. } => break 'read,
-                        BodyProgress::Advanced => continue,
-                        BodyProgress::NeedData => continue 'read,  // 追加データ必要 → I/O
-                    }
-                }
-            },
-            BodyKind::CloseDelimited => {
-                // バッファ内の全ボディデータを一括消費 (while let で効率的に)
-                while let Some(data) = decoder.peek_body() {
-                    if first_body_at.is_none() {
-                        first_body_at = Some(Instant::now());
-                    }
-                    response_body.extend_from_slice(data);
-                    decoder.consume_body(data.len())?;
-                }
-                if !decoder.is_close_delimited() {
-                    break 'read;  // mark_eof で Complete になった
-                }
-                continue 'read;
-            },
-            _ => break 'read,  // None / Tunnel
-        }
-    }
-}
-
-if let Some(t) = first_body_at {
-    info!(first_body_at_ms = t.duration_since(t_start).as_millis(), "First body byte received");
-}
-```
-
-**close-delimited ループの前提**: `mark_eof()` が `DecodePhase::Complete` に
-遷移させると `peek_body()` は `None` を返す。そのため、`mark_eof()` を呼ぶ前に
-バッファ内の全ボディデータを消費しきる必要がある。上記サンプルでは、
-`advance_buf(n)` の直後に `peek_body()` + `consume_body()` でバッファを空にし、
-その後に `is_close_delimited()` で完了判定を行っている。
-この順序を守れば、`mark_eof()` 後に未消費データが残ることはない。
-
-注: `matches!(decoder.consume_body(len)?, BodyProgress::Complete { .. })`
-の完了判定は、`Content-Length` の最終バイト消費時のみ `Complete` にマッチする。
-`Chunked` では `consume_body` が `Complete` を返すことはなく、
-完了判定は後続の `progress()` 分岐 (`BodyProgress::Complete`) に委ねられる。
-これは `BodyChunkedData` の多段遷移が `BodyChunkedSize` で止まり、
-`process_chunked_size` を自動呼出ししないため。
-両方の完了経路を透過的に扱うには `decode()` 内部のように `self.phase` を
-確認するか、上記サンプルのように `consume_body` + `progress()` の両方で
-`Complete` をチェックする。
+- `examples/http11_server/src/main.rs`:
+  - 既にストリーミング API を使用している。変更内容は `remaining_before`
+    比較ハックを新 `BodyProgress` 3 値のパターンマッチに置き換えることのみ
+    (リクエストボディ受信の `stream_body()` 内 1 箇所)。
+  - 変更後パターンは http11_reverse_proxy と同一。
 
 - `examples/http11_reverse_proxy/src/main.rs`:
   - 2 箇所のループ (リクエスト方向 / レスポンス方向) から `remaining_before`
@@ -794,13 +708,16 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
 1. `src/decoder/mod.rs`: クレートレベル doc のストリーミング API サンプルを 3 値
    ループに書き換え
 
-2. `examples/http11_client/src/main.rs`: ストリーミング API + first-body
-   タイムスタンプ記録に書き換え
+2. `examples/http11_client/src/main.rs`: `remaining_before` 比較ハックを
+   3 値パターンマッチに置き換え (HTTP/HTTPS 各 1 箇所)
 
-3. `examples/http11_reverse_proxy/src/main.rs`: `remaining_before` ハックを
-   3 値パターンマッチに置き換え
+3. `examples/http11_server/src/main.rs`: `remaining_before` 比較ハックを
+   3 値パターンマッチに置き換え (1 箇所)
 
-4. `cargo check --examples` で examples のコンパイルを確認する。
+4. `examples/http11_reverse_proxy/src/main.rs`: `remaining_before` ハックを
+   3 値パターンマッチに置き換え (リクエスト方向・レスポンス方向各 1 箇所、計 2 箇所)
+
+5. `cargo check --examples` で examples のコンパイルを確認する。
 
 ### ステップ 4: テストの追従
 
@@ -858,14 +775,15 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
 5. PBT 全件 (`cargo test -p pbt --test prop_decoder`)
 6. fuzz 各 target を短時間 (10〜30 秒) 走らせて緑のままであること
 7. `examples/http11_client` を実機で起動し、ログで以下を確認:
-   - `cargo run -p http11_client -- https://www.google.com/` (chunked):
-     TTFB と first_body_at が記録され、本文が完成形まで取れる
-   - `cargo run -p http11_client -- https://example.com/` (Content-Length):
-     同上
-   - `cargo run -p http11_client -- http://httpbin.org/get` (close-delimited
-     になり得る): 同上で破綻しない
-8. `examples/http11_reverse_proxy` を起動して同じレスポンスを返せること
-   (smoke test)
+    - `cargo run -p http11_client -- https://www.google.com/` (chunked):
+      TTFB と first_body_at が記録され、本文が完成形まで取れる
+    - `cargo run -p http11_client -- https://example.com/` (Content-Length):
+      同上
+    - `cargo run -p http11_client -- http://httpbin.org/get` (close-delimited
+      になり得る): 同上で破綻しない
+8. `examples/http11_server` で `cargo check -p http11_server` が通過すること
+9. `examples/http11_reverse_proxy` を起動して同じレスポンスを返せること
+    (smoke test)
 
 ## 留意点
 
