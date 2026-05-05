@@ -187,6 +187,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
             self.pending == 0,
             "take_remaining called with pending mut_buf"
         );
+        // 不変条件 "buf 空 ↔ pending == 0" を維持する。
+        // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
+        // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
+        self.pending = 0;
         core::mem::take(&mut self.buf)
     }
 
