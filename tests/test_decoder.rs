@@ -1193,6 +1193,7 @@ mod direct_buffer_write {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic(expected = "feed called with pending mut_buf")]
     fn response_feed_with_pending_panics_in_debug() {
         let mut decoder = ResponseDecoder::new();
@@ -1201,11 +1202,25 @@ mod direct_buffer_write {
     }
 
     #[test]
+    #[cfg(debug_assertions)]
     #[should_panic(expected = "feed called with pending mut_buf")]
     fn request_feed_with_pending_panics_in_debug() {
         let mut decoder = RequestDecoder::new();
         let _ = decoder.mut_buf(8).unwrap();
         let _ = decoder.feed(b"x");
+    }
+
+    #[test]
+    fn response_mut_buf_usize_max_returns_overflow_without_panic() {
+        // len = usize::MAX が入っても加算 panic せず BufferOverflow を返す
+        let mut decoder = ResponseDecoder::new();
+        assert!(decoder.mut_buf(usize::MAX).is_err());
+    }
+
+    #[test]
+    fn request_mut_buf_usize_max_returns_overflow_without_panic() {
+        let mut decoder = RequestDecoder::new();
+        assert!(decoder.mut_buf(usize::MAX).is_err());
     }
 
     #[test]

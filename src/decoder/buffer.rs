@@ -29,7 +29,16 @@ pub(super) fn feed(
     data: &[u8],
 ) -> Result<(), Error> {
     debug_assert!(pending == 0, "feed called with pending mut_buf");
-    let new_size = buf.len() + data.len();
+    // checked_add: data.len() == usize::MAX 等の極端な入力でも debug ビルドで
+    // 加算 panic しないようにする。オーバーフロー時は max を上限とする
+    // BufferOverflow エラーで安全に拒否する。
+    let new_size = buf
+        .len()
+        .checked_add(data.len())
+        .ok_or(Error::BufferOverflow {
+            size: usize::MAX,
+            limit: max,
+        })?;
     if new_size > max {
         return Err(Error::BufferOverflow {
             size: new_size,
@@ -84,7 +93,13 @@ pub(super) fn mut_buf<'a>(
         *pending = 0;
     }
 
-    let new_size = buf.len() + len;
+    // checked_add: len == usize::MAX 等の極端な入力でも debug ビルドで
+    // 加算 panic しないようにする。オーバーフロー時は max を上限とする
+    // BufferOverflow エラーで安全に拒否する。
+    let new_size = buf.len().checked_add(len).ok_or(Error::BufferOverflow {
+        size: usize::MAX,
+        limit: max,
+    })?;
     if new_size > max {
         return Err(Error::BufferOverflow {
             size: new_size,

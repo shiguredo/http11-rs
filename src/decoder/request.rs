@@ -530,6 +530,10 @@ impl<D: Decompressor> RequestDecoder<D> {
         &mut self,
         output: &mut [u8],
     ) -> Result<Option<CompressionStatus>, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "peek_body_decompressed called with pending mut_buf"
+        );
         let input = match self.body_decoder.peek_body(&self.buf, &self.phase) {
             Some(data) if !data.is_empty() => data,
             _ => return Ok(None),
