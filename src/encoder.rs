@@ -18,6 +18,48 @@ fn is_valid_version_for_encode(version: &str) -> bool {
     !version.is_empty() && version.bytes().all(|b| matches!(b, 0x21..=0x7E))
 }
 
+/// `usize` を 16 進数 ASCII (小文字) としてバッファに書き込む
+///
+/// `n == 0` を早期分岐で扱うのは、`leading_zeros` で桁数を計算する変種が
+/// `n == 0` で誤桁数を返すのを避けるため。CRLF はヘルパー外で結合する。
+fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
+    let mut tmp = [0u8; 16]; // 64bit usize の 16 進表記は最大 16 桁
+    let mut i = tmp.len();
+    let mut remaining = n;
+    while remaining > 0 {
+        i -= 1;
+        let nibble = (remaining & 0xF) as u8;
+        tmp[i] = if nibble < 10 {
+            b'0' + nibble
+        } else {
+            b'a' + nibble - 10
+        };
+        remaining >>= 4;
+    }
+    buf.extend_from_slice(&tmp[i..]);
+}
+
+/// `usize` を 10 進数 ASCII としてバッファに書き込む
+fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
+    if n == 0 {
+        buf.push(b'0');
+        return;
+    }
+    let mut tmp = [0u8; 20]; // 64bit usize の 10 進表記は最大 20 桁
+    let mut i = tmp.len();
+    let mut remaining = n;
+    while remaining > 0 {
+        i -= 1;
+        tmp[i] = b'0' + (remaining % 10) as u8;
+        remaining /= 10;
+    }
+    buf.extend_from_slice(&tmp[i..]);
+}
+
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
     // メソッドの検証
@@ -553,7 +595,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         && !request.has_header("Transfer-Encoding")
     {
         buf.extend_from_slice(b"Content-Length: ");
-        buf.extend_from_slice(body.len().to_string().as_bytes());
+        write_usize_decimal(&mut buf, body.len());
         buf.extend_from_slice(b"\r\n");
     }
 
@@ -650,7 +692,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(response.version.as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(response.status_code.to_string().as_bytes());
+    write_usize_decimal(&mut buf, response.status_code as usize);
     buf.push(b' ');
     buf.extend_from_slice(response.reason_phrase.as_bytes());
     buf.extend_from_slice(b"\r\n");
@@ -683,7 +725,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     if auto_emit_content_length {
         let len = body_len.unwrap_or(0);
         buf.extend_from_slice(b"Content-Length: ");
-        buf.extend_from_slice(len.to_string().as_bytes());
+        write_usize_decimal(&mut buf, len);
         buf.extend_from_slice(b"\r\n");
     }
 
@@ -740,19 +782,28 @@ impl Response {
 /// データを HTTP chunked 形式にエンコードします。
 /// 空のデータを渡すと終端チャンク (0\r\n\r\n) を生成します。
 pub fn encode_chunk(data: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::new();
-
     if data.is_empty() {
         // 終端チャンク
+        let mut buf = Vec::with_capacity(5);
         buf.extend_from_slice(b"0\r\n\r\n");
-    } else {
-        // チャンクサイズ (16進数)
-        buf.extend_from_slice(alloc::format!("{:x}\r\n", data.len()).as_bytes());
-        // チャンクデータ
-        buf.extend_from_slice(data);
-        // CRLF
-        buf.extend_from_slice(b"\r\n");
+        return buf;
     }
+
+    // 1 チャンクは `hex(最大 16) + CRLF(2) + data + CRLF(2) = data.len() + 20` バイト
+    // 攻撃者制御の `data.len()` で wraparound を起こさないよう checked_add でフォールバック
+    let cap = data.len().checked_add(20);
+    let mut buf = match cap {
+        Some(c) => Vec::with_capacity(c),
+        None => Vec::new(),
+    };
+
+    // チャンクサイズ (16進数)
+    write_hex_usize(&mut buf, data.len());
+    buf.extend_from_slice(b"\r\n");
+    // チャンクデータ
+    buf.extend_from_slice(data);
+    // CRLF
+    buf.extend_from_slice(b"\r\n");
 
     buf
 }
@@ -761,10 +812,17 @@ pub fn encode_chunk(data: &[u8]) -> Vec<u8> {
 ///
 /// すべてのチャンクを結合し、終端チャンクも追加します。
 pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
-    let mut buf = Vec::new();
+    // 容量見積もり: 各チャンク `data.len() + 20` の総和 + 終端チャンク 5 バイト
+    // 攻撃者制御のサイズで wraparound しないよう checked_add でフォールバックする
+    let cap = encode_chunks_capacity(chunks);
+    let mut buf = match cap {
+        Some(c) => Vec::with_capacity(c),
+        None => Vec::new(),
+    };
 
     for chunk in chunks {
-        buf.extend_from_slice(alloc::format!("{:x}\r\n", chunk.len()).as_bytes());
+        write_hex_usize(&mut buf, chunk.len());
+        buf.extend_from_slice(b"\r\n");
         buf.extend_from_slice(chunk);
         buf.extend_from_slice(b"\r\n");
     }
@@ -773,6 +831,17 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
     buf.extend_from_slice(b"0\r\n\r\n");
 
     buf
+}
+
+/// `encode_chunks` の出力容量を `checked_add` で見積もる
+/// オーバーフロー時は `None` を返し、呼び出し側は `Vec::new()` にフォールバックする
+fn encode_chunks_capacity(chunks: &[&[u8]]) -> Option<usize> {
+    let mut total: usize = 0;
+    for chunk in chunks {
+        let per = chunk.len().checked_add(20)?;
+        total = total.checked_add(per)?;
+    }
+    total.checked_add(5)
 }
 
 /// リクエストヘッダーのみをエンコード (ボディなし)
@@ -885,7 +954,7 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(response.version.as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(response.status_code.to_string().as_bytes());
+    write_usize_decimal(&mut buf, response.status_code as usize);
     buf.push(b' ');
     buf.extend_from_slice(response.reason_phrase.as_bytes());
     buf.extend_from_slice(b"\r\n");

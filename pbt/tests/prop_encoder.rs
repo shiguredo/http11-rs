@@ -268,6 +268,52 @@ proptest! {
     }
 }
 
+// `write_hex_usize` ヘルパーは encoder.rs のプライベート関数のため、
+// 公開 API `encode_chunk` / `encode_chunks` の出力が
+// `alloc::format!("{:x}\r\n", n)` ベースの参照実装とバイト単位で完全一致することで
+// ヘルパーの正しさを間接検証する
+
+proptest! {
+    #[test]
+    fn prop_encode_chunk_equals_format_reference(
+        data in proptest::collection::vec(prop::num::u8::ANY, 0..256)
+    ) {
+        let encoded = encode_chunk(&data);
+
+        let mut expected: Vec<u8> = Vec::new();
+        if data.is_empty() {
+            expected.extend_from_slice(b"0\r\n\r\n");
+        } else {
+            expected.extend_from_slice(format!("{:x}\r\n", data.len()).as_bytes());
+            expected.extend_from_slice(&data);
+            expected.extend_from_slice(b"\r\n");
+        }
+        prop_assert_eq!(encoded, expected);
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_encode_chunks_equals_format_reference(
+        chunks in proptest::collection::vec(
+            proptest::collection::vec(prop::num::u8::ANY, 0..32),
+            0..6,
+        )
+    ) {
+        let chunk_refs: Vec<&[u8]> = chunks.iter().map(|c| c.as_slice()).collect();
+        let encoded = encode_chunks(&chunk_refs);
+
+        let mut expected: Vec<u8> = Vec::new();
+        for chunk in &chunks {
+            expected.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
+            expected.extend_from_slice(chunk);
+            expected.extend_from_slice(b"\r\n");
+        }
+        expected.extend_from_slice(b"0\r\n\r\n");
+        prop_assert_eq!(encoded, expected);
+    }
+}
+
 // ========================================
 // encode_request_headers のテスト
 // ========================================
