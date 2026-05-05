@@ -4,6 +4,7 @@
 //!   ヘッダーデコード → ボディ消費の全パスでパニックしないことを確認する
 //! - ストリーミング feed: 同じデータを 17 バイト単位に分割して投入し、
 //!   段階的なデコードでもパニックしないことを確認する
+//! - 直接書き込み API: mut_buf / advance_buf 経由でも同じ全パスがパニックしないことを確認する
 
 #![no_main]
 
@@ -38,6 +39,33 @@ fuzz_target!(|data: &[u8]| {
         if decoder.feed(chunk).is_err() {
             return;
         }
+        if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
+            match body_kind {
+                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                    while let Some(body_data) = decoder.peek_body() {
+                        let len = body_data.len();
+                        match decoder.consume_body(len) {
+                            Ok(BodyProgress::Complete { .. }) => break,
+                            Ok(BodyProgress::Continue) => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
+                BodyKind::None | BodyKind::Tunnel => {}
+            }
+            break;
+        }
+    }
+
+    // mut_buf / advance_buf 経由で投入するシナリオ
+    decoder.reset();
+    for chunk in data.chunks(19) {
+        let dst = match decoder.mut_buf(chunk.len()) {
+            Ok(dst) => dst,
+            Err(_) => return,
+        };
+        dst.copy_from_slice(chunk);
+        decoder.advance_buf(chunk.len());
         if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
             match body_kind {
                 BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {

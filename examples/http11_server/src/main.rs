@@ -197,7 +197,7 @@ async fn handle_client(
     let mut writer = BufWriter::with_capacity(65536, writer);
 
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
     let mut conn_state = ConnectionState {
         request_count: 0,
         max_requests: DEFAULT_MAX_REQUESTS,
@@ -205,27 +205,36 @@ async fn handle_client(
     };
 
     loop {
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            error!(peer_addr = %peer_addr, "Decoder buffer full");
+            break;
+        }
+        let buf = decoder.mut_buf(want)?;
         let read_result =
-            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(buf)).await;
 
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
+                decoder.advance_buf(0);
                 error!(peer_addr = %peer_addr, error = %e, "Read error");
                 break;
             }
             Err(_) => {
+                decoder.advance_buf(0);
                 info!(peer_addr = %peer_addr, "Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
+            decoder.advance_buf(0);
             info!(peer_addr = %peer_addr, "Connection closed by client");
             break;
         }
 
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
         while let Some(request) = decoder.decode()? {
             conn_state.request_count += 1;
@@ -277,7 +286,7 @@ async fn handle_tls_client(
     let mut writer = BufWriter::with_capacity(65536, writer);
 
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
     let mut conn_state = ConnectionState {
         request_count: 0,
         max_requests: DEFAULT_MAX_REQUESTS,
@@ -285,27 +294,36 @@ async fn handle_tls_client(
     };
 
     loop {
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            error!(peer_addr = %peer_addr, "TLS decoder buffer full");
+            break;
+        }
+        let buf = decoder.mut_buf(want)?;
         let read_result =
-            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(buf)).await;
 
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
+                decoder.advance_buf(0);
                 error!(peer_addr = %peer_addr, error = %e, "TLS read error");
                 break;
             }
             Err(_) => {
+                decoder.advance_buf(0);
                 info!(peer_addr = %peer_addr, "TLS Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
+            decoder.advance_buf(0);
             info!(peer_addr = %peer_addr, "TLS connection closed by client");
             break;
         }
 
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
         while let Some(request) = decoder.decode()? {
             conn_state.request_count += 1;

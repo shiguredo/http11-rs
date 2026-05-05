@@ -46,8 +46,10 @@ let bytes = request.encode();
 
 // レスポンスをデコード
 let mut decoder = ResponseDecoder::new();
-// 受信データを feed...
-// decoder.feed(&received_data)?;
+// 受信データを mut_buf 経由でデコーダーバッファに直接書き込む
+// let buf = decoder.mut_buf(8192)?;
+// let n = stream.read(buf)?;
+// decoder.advance_buf(n);
 // if let Some(response) = decoder.decode()? { ... }
 ```
 
@@ -58,8 +60,10 @@ use shiguredo_http11::{RequestDecoder, Response};
 
 // リクエストをデコード
 let mut decoder = RequestDecoder::new();
-// 受信データを feed...
-// decoder.feed(&received_data)?;
+// 受信データを mut_buf 経由でデコーダーバッファに直接書き込む
+// let buf = decoder.mut_buf(8192)?;
+// let n = stream.read(buf)?;
+// decoder.advance_buf(n);
 // if let Some(request) = decoder.decode()? { ... }
 
 // レスポンスを作成してエンコード
@@ -121,7 +125,10 @@ let bytes = request.encode();
 
 let mut decoder = ResponseDecoder::new();
 decoder.set_expect_no_body(true); // HEAD レスポンスではボディなし
-// decoder.feed(&received_data)?;
+// 受信データを mut_buf 経由で直接書き込む
+// let buf = decoder.mut_buf(8192)?;
+// let n = stream.read(buf)?;
+// decoder.advance_buf(n);
 // if let Some(response) = decoder.decode()? { ... }
 ```
 
@@ -160,6 +167,48 @@ let last = encode_chunk(b""); // 終端チャンク
 - `consume_body(len)` - ボディデータを消費して `BodyProgress` を返す
 - `progress()` - 状態機械を進める (Chunked のチャンクサイズ行パース等)
 - `mark_eof()` - 接続終了を通知 (close-delimited ボディ用、ResponseDecoder のみ)
+
+#### 直接書き込み API
+
+OS の `read` 等にデコーダーの内部バッファを直接渡せる API です。
+
+- `mut_buf(len)` - 内部バッファ末尾に `len` バイトの書き込み枠を確保し、`&mut [u8]` を返す
+- `advance_buf(n)` - 直前の `mut_buf` で確保した枠のうち、実際に書き込まれた `n` バイトを確定する (`n = 0` で枠全体を破棄)
+- `available_buf()` - 書き込み可能な残り容量を返す (`max_buffer_size - 現在のバッファ長`)
+
+`feed` / `feed_unchecked` と直接書き込み API は入力経路の違う別の最適解として共存します。用途で使い分けます:
+
+- **これから書き込む先のバッファが必要なケース** (OS の `read` でソケットから受信する等) は `mut_buf` / `advance_buf`。OS が内部バッファに直接書き込めるので、スタックバッファ → 内部 `Vec<u8>` のコピーが発生しません。
+- **既にバイト列が `&[u8]` として手元にあるケース** (io_uring 等の完了通知型 I/O、テスト用バイトリテラル、別経路から受け取ったバイト列の中継等) は `feed` / `feed_unchecked`。`mut_buf` 経由だと「ゼロ初期化 + memcpy」の二段になりますが、`feed` は素直に 1 memcpy で済みます。
+
+```rust
+use shiguredo_http11::ResponseDecoder;
+
+let mut decoder = ResponseDecoder::new();
+const READ_CHUNK: usize = 8192;
+
+loop {
+    // 残容量に応じてチャンクサイズを適応させる
+    let want = decoder.available_buf().min(READ_CHUNK);
+    if want == 0 {
+        // バッファ満杯
+        break;
+    }
+    let buf = decoder.mut_buf(want)?;
+    let n = stream.read(buf)?;
+    if n == 0 {
+        decoder.advance_buf(0);
+        decoder.mark_eof();
+        break;
+    }
+    decoder.advance_buf(n);
+
+    if let Some(response) = decoder.decode()? {
+        return Ok(response);
+    }
+}
+```
+
 
 `BodyKind` はボディの種類を表します:
 

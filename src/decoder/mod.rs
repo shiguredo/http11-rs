@@ -54,6 +54,7 @@
 //! ```
 
 mod body;
+mod buffer;
 mod head;
 mod phase;
 mod request;
