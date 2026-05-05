@@ -196,10 +196,18 @@ impl Part {
 /// multipart パーサー
 #[derive(Debug, Clone)]
 pub struct MultipartParser {
-    /// 境界文字列
-    boundary: String,
+    /// 先頭 boundary delimiter (`--<boundary>`)
+    /// 構築時に事前計算しておき、`next_part()` ごとの再生成を避ける
+    first_delimiter: Vec<u8>,
+    /// パート間 boundary delimiter (`\r\n--<boundary>`)
+    /// 構築時に事前計算しておき、`next_part()` ごとの再生成を避ける
+    inner_delimiter: Vec<u8>,
     /// バッファ
     buffer: Vec<u8>,
+    /// バッファ内の読み取り位置オフセット
+    /// `buffer[pos..]` がまだ消費されていない有効領域
+    /// 前詰めは `next_part()` がパートを返す直前に閾値判定して `drain` する
+    pos: usize,
     /// パース状態
     state: ParserState,
     /// 完了フラグ
@@ -247,9 +255,20 @@ impl MultipartParser {
     ///
     /// バッファ上限は 10MB。変更する場合は `with_max_buffer_size()` を使用する。
     pub fn new(boundary: &str) -> Self {
+        let boundary_bytes = boundary.as_bytes();
+        let mut first_delimiter = Vec::with_capacity(2 + boundary_bytes.len());
+        first_delimiter.extend_from_slice(b"--");
+        first_delimiter.extend_from_slice(boundary_bytes);
+
+        let mut inner_delimiter = Vec::with_capacity(4 + boundary_bytes.len());
+        inner_delimiter.extend_from_slice(b"\r\n--");
+        inner_delimiter.extend_from_slice(boundary_bytes);
+
         MultipartParser {
-            boundary: boundary.to_string(),
+            first_delimiter,
+            inner_delimiter,
             buffer: Vec::new(),
+            pos: 0,
             state: ParserState::Initial,
             finished: false,
             max_buffer_size: 10 * 1024 * 1024,
@@ -298,18 +317,17 @@ impl MultipartParser {
             return Ok(None);
         }
 
-        let delimiter = alloc::format!("--{}", self.boundary);
-
         loop {
             match self.state {
                 ParserState::Initial => {
-                    // 最初の境界を探す
-                    if let Some(pos) = find_bytes(&self.buffer, delimiter.as_bytes()) {
-                        let after_delim = pos + delimiter.len();
+                    // 最初の境界を探す (`buffer[pos..]` を相対位置で検索)
+                    let view = &self.buffer[self.pos..];
+                    if let Some(rel_pos) = find_bytes(view, &self.first_delimiter) {
+                        let after_delim = self.pos + rel_pos + self.first_delimiter.len();
                         // CRLF をスキップ
                         if self.buffer.len() > after_delim + 2 {
                             if &self.buffer[after_delim..after_delim + 2] == b"\r\n" {
-                                self.buffer = self.buffer[after_delim + 2..].to_vec();
+                                self.pos = after_delim + 2;
                                 self.state = ParserState::InPart;
                             } else if &self.buffer[after_delim..after_delim + 2] == b"--" {
                                 // 終了境界
@@ -318,10 +336,10 @@ impl MultipartParser {
                                 return Ok(None);
                             } else {
                                 // CRLF 以外の場合もパートに進む
-                                self.buffer = self.buffer[after_delim..].to_vec();
+                                self.pos = after_delim;
                                 // 先頭の CRLF があればスキップ
-                                if self.buffer.starts_with(b"\r\n") {
-                                    self.buffer = self.buffer[2..].to_vec();
+                                if self.buffer[self.pos..].starts_with(b"\r\n") {
+                                    self.pos += 2;
                                 }
                                 self.state = ParserState::InPart;
                             }
@@ -333,9 +351,11 @@ impl MultipartParser {
                     }
                 }
                 ParserState::InPart => {
-                    // ヘッダーとボディの区切りを探す
-                    if let Some(header_end) = find_bytes(&self.buffer, b"\r\n\r\n") {
-                        let header_bytes = &self.buffer[..header_end];
+                    // ヘッダーとボディの区切りを `buffer[pos..]` から相対位置で探す
+                    let view = &self.buffer[self.pos..];
+                    if let Some(header_end_rel) = find_bytes(view, b"\r\n\r\n") {
+                        let header_end = self.pos + header_end_rel;
+                        let header_bytes = &self.buffer[self.pos..header_end];
                         let body_start = header_end + 4;
 
                         // ヘッダーをパース
@@ -379,26 +399,33 @@ impl MultipartParser {
                             return Err(MultipartError::MissingName);
                         }
 
-                        // 次の境界を探す
-                        let body_buffer = &self.buffer[body_start..];
-                        let next_delim = alloc::format!("\r\n--{}", self.boundary);
-
-                        if let Some(body_end) = find_bytes(body_buffer, next_delim.as_bytes()) {
-                            let body = body_buffer[..body_end].to_vec();
+                        // 次の境界を探す (body_start は絶対オフセット、相対位置で検索)
+                        let body_view = &self.buffer[body_start..];
+                        if let Some(body_end_rel) = find_bytes(body_view, &self.inner_delimiter) {
+                            let body_end = body_start + body_end_rel;
+                            // パートのボディは所有権移転で 1 回だけコピーする
+                            let body = self.buffer[body_start..body_end].to_vec();
 
                             // 終了境界かどうか確認
-                            let after_next = body_start + body_end + next_delim.len();
+                            let after_next = body_end + self.inner_delimiter.len();
                             if self.buffer.len() >= after_next + 2 {
                                 if &self.buffer[after_next..after_next + 2] == b"--" {
                                     self.finished = true;
                                     self.state = ParserState::Finished;
                                 } else if &self.buffer[after_next..after_next + 2] == b"\r\n" {
-                                    self.buffer = self.buffer[after_next + 2..].to_vec();
+                                    self.pos = after_next + 2;
                                 } else {
-                                    self.buffer = self.buffer[after_next..].to_vec();
+                                    self.pos = after_next;
                                 }
                             } else {
-                                self.buffer = self.buffer[after_next..].to_vec();
+                                self.pos = after_next;
+                            }
+
+                            // 累積コピー量を amortized O(N) に抑える前詰め
+                            // 発動条件は `pos` が物理バッファの過半を超えたときのみ
+                            if self.pos > self.buffer.len() / 2 {
+                                self.buffer.drain(..self.pos);
+                                self.pos = 0;
                             }
 
                             return Ok(Some(Part {
@@ -779,5 +806,88 @@ mod tests {
     fn test_builder_try_with_boundary() {
         assert!(MultipartBuilder::try_with_boundary("valid-boundary").is_ok());
         assert!(MultipartBuilder::try_with_boundary("").is_err());
+    }
+
+    /// 多数パートを順次パースしたときに `buffer.drain` が発動して
+    /// 物理バッファ長が累積入力長より十分小さくなることを検証する
+    /// `buffer` / `pos` は非公開のためこのテストはモジュール内に置く
+    #[test]
+    fn test_parser_drain_keeps_buffer_small() {
+        let boundary = "drain-boundary";
+        let parts_count = 32;
+        let part_body = vec![b'X'; 4096];
+        let mut builder = MultipartBuilder::with_boundary(boundary);
+        for i in 0..parts_count {
+            let name = alloc::format!("field{i}");
+            builder = builder.text_field(&name, core::str::from_utf8(&part_body).unwrap());
+        }
+        let body = builder.build();
+        let total_len = body.len();
+
+        let mut parser = MultipartParser::new(boundary).with_max_buffer_size(total_len);
+        parser.feed(&body).unwrap();
+        // 初期状態は累積入力長そのもの
+        assert_eq!(parser.buffer.len(), total_len);
+
+        let mut collected = 0usize;
+        let mut min_buffer_len_after_drain = usize::MAX;
+        while let Some(part) = parser.next_part().unwrap() {
+            assert_eq!(part.body(), part_body.as_slice());
+            collected += 1;
+            // drain 発動済みなら `buffer.len()` は `total_len` より小さくなる
+            if parser.buffer.len() < total_len {
+                min_buffer_len_after_drain = min_buffer_len_after_drain.min(parser.buffer.len());
+            }
+        }
+        assert_eq!(collected, parts_count);
+        // drain が一度も発動しないと旧 O(N²) コピー相当のままなので、
+        // 少なくとも 1 回は累積入力長を下回る縮小を観測することを要件にする
+        assert!(
+            min_buffer_len_after_drain < total_len,
+            "drain never fired: total_len={total_len}",
+        );
+        // drain 発動時は残りデータ分まで縮む。緩めに `total_len * 3 / 4` を上限にして
+        // 少なくとも一度は 1/4 以上の縮小が起きていることを確認する
+        assert!(
+            min_buffer_len_after_drain <= total_len * 3 / 4,
+            "drain shrink too small: min={min_buffer_len_after_drain}, total_len={total_len}",
+        );
+    }
+
+    /// 部分 feed をまたいだ pos / buffer の整合性を検証する
+    #[test]
+    fn test_parser_partial_feed_sequence() {
+        let boundary = "split-boundary";
+        let body = MultipartBuilder::with_boundary(boundary)
+            .text_field("field1", "value1")
+            .text_field("field2", "value2")
+            .build();
+
+        let mut parser = MultipartParser::new(boundary);
+        // 1 バイトずつ feed しながら部分パースする
+        let mut feed_pos = 0usize;
+        let mut collected: Vec<Part> = Vec::new();
+        while feed_pos < body.len() {
+            // 数バイトずつ送り込む
+            let chunk_end = (feed_pos + 7).min(body.len());
+            parser.feed(&body[feed_pos..chunk_end]).unwrap();
+            feed_pos = chunk_end;
+
+            loop {
+                match parser.next_part() {
+                    Ok(Some(part)) => collected.push(part),
+                    Ok(None) => break,
+                    Err(MultipartError::Incomplete) => break,
+                    Err(e) => panic!("unexpected error: {e:?}"),
+                }
+            }
+        }
+
+        assert_eq!(collected.len(), 2);
+        assert_eq!(collected[0].name(), Some("field1"));
+        assert_eq!(collected[0].body_str(), Some("value1"));
+        assert_eq!(collected[1].name(), Some("field2"));
+        assert_eq!(collected[1].body_str(), Some("value2"));
+        assert!(parser.is_finished());
     }
 }
