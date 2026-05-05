@@ -19,6 +19,7 @@ use super::body::{
     BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, parse_header_line,
     resolve_body_headers_for_response,
 };
+use super::buffer;
 use super::head::ResponseHead;
 use super::phase::DecodePhase;
 
@@ -220,16 +221,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///   advance_buf(len)` だと「ゼロ初期化 + memcpy」の二段になるが、`feed`
     ///   は素直に 1 memcpy で済む。
     pub fn feed(&mut self, data: &[u8]) -> Result<(), Error> {
-        debug_assert!(self.pending == 0, "feed called with pending mut_buf");
-        let new_size = self.buf.len() + data.len();
-        if new_size > self.limits.max_buffer_size {
-            return Err(Error::BufferOverflow {
-                size: new_size,
-                limit: self.limits.max_buffer_size,
-            });
-        }
-        self.buf.extend_from_slice(data);
-        Ok(())
+        buffer::feed(
+            &mut self.buf,
+            self.pending,
+            self.limits.max_buffer_size,
+            data,
+        )
     }
 
     /// バッファにデータを追加 (制限チェックなし)
@@ -243,43 +240,29 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
     /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
-        debug_assert!(
-            self.pending == 0,
-            "feed_unchecked called with pending mut_buf"
-        );
-        self.buf.extend_from_slice(data);
+        buffer::feed_unchecked(&mut self.buf, self.pending, data);
     }
 
     /// 内部バッファ末尾に `len` バイトの書き込み枠を確保し、その可変スライスを返す
     ///
-    /// 返るスライスはゼロ初期化済みなので `std::io::Read::read` 等にそのまま渡せる。
-    /// 書き込み後は必ず [`advance_buf`](Self::advance_buf) で実書き込みバイト数を
-    /// 通知すること。
+    /// 返るスライスは `Vec::resize(_, 0)` によりゼロ初期化済みなので、
+    /// `std::io::Read::read` 等にそのまま渡せる。書き込み後は必ず
+    /// [`advance_buf`](Self::advance_buf) で実書き込みバイト数を通知すること。
     ///
-    /// `remaining().len() + len` が `max_buffer_size` を超える場合は
-    /// `Err(Error::BufferOverflow)` を返し、バッファ状態は変更しない。
+    /// 直前の `mut_buf` で確保された未確定領域は、関数の先頭で必ず破棄される
+    /// (`advance_buf` 呼び忘れの回復)。よってエラー時 (`BufferOverflow`) も
+    /// 「呼び出し前の状態に巻き戻る」のではなく、「pending 領域が破棄された
+    /// 上で新規枠が確保されない」状態になる。
     ///
-    /// 直前の `mut_buf` で確保された未確定領域は、新しい `mut_buf` 呼び出しの
-    /// 先頭で破棄される (`advance_buf` 呼び忘れの回復)。
+    /// pending 破棄後の `remaining().len() + len` が `max_buffer_size` を
+    /// 超える場合は `Err(Error::BufferOverflow)` を返す。
     pub fn mut_buf(&mut self, len: usize) -> Result<&mut [u8], Error> {
-        if self.pending > 0 {
-            let new_len = self.buf.len() - self.pending;
-            self.buf.truncate(new_len);
-            self.pending = 0;
-        }
-
-        let new_size = self.buf.len() + len;
-        if new_size > self.limits.max_buffer_size {
-            return Err(Error::BufferOverflow {
-                size: new_size,
-                limit: self.limits.max_buffer_size,
-            });
-        }
-
-        let old = self.buf.len();
-        self.buf.resize(new_size, 0);
-        self.pending = len;
-        Ok(&mut self.buf[old..])
+        buffer::mut_buf(
+            &mut self.buf,
+            &mut self.pending,
+            self.limits.max_buffer_size,
+            len,
+        )
     }
 
     /// 直前の [`mut_buf`](Self::mut_buf) で確保した枠のうち、
@@ -291,14 +274,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// `len > pending` の場合、debug ビルドでは panic、release ビルドでは
     /// `pending` で飽和する。
     pub fn advance_buf(&mut self, len: usize) {
-        debug_assert!(len <= self.pending, "advance_buf len exceeds pending");
-        let len = len.min(self.pending);
-        let drop = self.pending - len;
-        if drop > 0 {
-            let new_len = self.buf.len() - drop;
-            self.buf.truncate(new_len);
-        }
-        self.pending = 0;
+        buffer::advance_buf(&mut self.buf, &mut self.pending, len);
     }
 
     /// 書き込み可能な残り容量を返す
@@ -307,13 +283,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// を引いた値。`mut_buf(decoder.available_buf().min(N))` のようにチャンクサイズ
     /// を残容量に適応させる用途で使う。
     pub fn available_buf(&self) -> usize {
-        self.limits.max_buffer_size.saturating_sub(self.buf.len())
+        buffer::available_buf(&self.buf, self.limits.max_buffer_size)
     }
 
     /// バッファの残りデータを取得
     pub fn remaining(&self) -> &[u8] {
-        debug_assert!(self.pending == 0, "remaining called with pending mut_buf");
-        &self.buf
+        buffer::remaining(&self.buf, self.pending)
     }
 
     /// デコーダーをリセット
