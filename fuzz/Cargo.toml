@@ -216,3 +216,17 @@ path = "fuzz_targets/fuzz_expect.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_encode_request"
+path = "fuzz_targets/fuzz_encode_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_encode_response"
+path = "fuzz_targets/fuzz_encode_response.rs"
+test = false
+doc = false
+bench = false
