@@ -478,7 +478,8 @@ let mut first_body_at: Option<Instant> = None;
                 }
             },
             BodyKind::CloseDelimited => {
-                if let Some(data) = decoder.peek_body() {
+                // バッファ内の全ボディデータを一括消費 (while let で効率的に)
+                while let Some(data) = decoder.peek_body() {
                     if first_body_at.is_none() {
                         first_body_at = Some(Instant::now());
                     }
@@ -735,8 +736,10 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
 
 ## 実装の順序
 
-変更の依存関係に基づき、以下の順序で実装する。各ステップ完了後に
-`cargo test --workspace` と `cargo clippy --workspace -- -D warnings` を通過させる。
+変更の依存関係に基づき、以下の順序で実装する。
+ステップ 1-3 ではコンパイル (`cargo check --lib`) の通過を、
+ステップ 4 以降では `cargo test --workspace` と
+`cargo clippy --workspace -- -D warnings` の通過を確認する。
 
 ### ステップ 1: コア enum と `BodyDecoder::consume_body()` の書き換え
 
@@ -749,7 +752,7 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
    - `consume_body()` の各分岐を決定表・実装指針に従って書き換え
 
 2. この時点でコンパイルは通らない (`Continue` を参照している全箇所がエラーになる)
-   が、それが意図した動作。
+   が、それが意図した動作。ステップ 2 完了後に `cargo check --lib` が通過する。
 
 ### ステップ 2: デコーダーの公開 API と内部実装
 
@@ -763,6 +766,8 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
    - `decode()` のループを `peek_body()` + `phase` チェック方式に書き換え
    - `CloseDelimited` 分岐も `peek_body()` に切り替え
 
+3. ステップ 1-2 完了時点で `cargo check --lib` が通過することを確認する。
+
 ### ステップ 3: doc / サンプルの書き換え
 
 1. `src/decoder/mod.rs`: クレートレベル doc のストリーミング API サンプルを 3 値
@@ -774,6 +779,8 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
 3. `examples/http11_reverse_proxy/src/main.rs`: `remaining_before` ハックを
    3 値パターンマッチに置き換え
 
+4. `cargo check --examples` で examples のコンパイルを確認する。
+
 ### ステップ 4: テストの追従
 
 1. `tests/test_decode_body.rs`: `remaining_before` ハックを削除し、
@@ -781,6 +788,8 @@ doc / サンプル修正は `### misc` には入れず、上記 CHANGE エント
 
 2. `tests/test_decoder.rs`: `assert_eq!(result, BodyProgress::Continue)` を
    新しい期待値 (`Advanced` / `NeedData` / `Complete`) に更新。
+
+3. ステップ 4 完了時点で `cargo test --workspace` (doc test 含む) を通過させる。
 
 ### ステップ 5: PBT の追従
 
