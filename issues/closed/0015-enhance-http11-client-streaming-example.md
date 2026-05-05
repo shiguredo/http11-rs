@@ -1,7 +1,8 @@
 # 0015: examples/http11_client をストリーミング API のお手本に書き換える
 
 Created: 2026-05-05
-Model: Opus 4.7
+Completed: 2026-05-06
+Model: Opus 4.7 / deepseek-v4-pro
 
 ## 概要
 
@@ -211,3 +212,34 @@ CLAUDE.md は「ドキュメントは別に書いている」とあるが、`exa
   `progress()` が `Complete` を返すパターンに揃える
 - `decoder.available_buf() == 0` (バッファ満杯) のケースは `max_buffer_size`
   超過なのでエラー返却
+
+## 解決方法
+
+### `examples/http11_client/src/main.rs`
+
+`http_request()` / `https_request()` の本体ループを `decode()` 一括 API から
+ストリーミング API に書き換えた。
+
+- `decode_headers()` でヘッダーをデコードし、`ResponseHead` と `BodyKind` を取得
+- ボディは `peek_body()` / `consume_body()` / `progress()` のループで受信
+- `progress()` の戻り値が `Continue` でもデータ不足なのか状態遷移したのか区別
+  できないため、`remaining().len()` の前後比較で判定している
+  (この点は issue 0014 の判断材料)
+- `Instant` で connect, TTFB, first-body-byte, total の各時刻を記録し
+  `tracing::info!` で出力
+- 全 `BodyKind` (Chunked / ContentLength / CloseDelimited / None / Tunnel) に対応
+- HTTPS の TLS `WouldBlock` は既存のハンドリングを維持
+
+### `examples/http11_server/src/main.rs`
+
+合わせてサーバー側もストリーミング API に書き換えた。
+
+- `while let Some(request) = decoder.decode()?` を `decode_headers()` +
+  ストリーミングボディ受信に置き換え
+- `StreamingState` 構造体で Keep-Alive 間のデコード状態を管理
+- `stream_body()` ヘルパー関数でボディ受信処理を共通化
+- `serve_request()` ヘルパー関数でリクエスト処理・レスポンス送信・
+  Keep-Alive 判定を共通化
+- リクエストでは close-delimited は `BodyKind::None` として扱われるため
+  (RFC 9112: リクエストは close-delimited を使わない)、
+  `mark_eof()` 不要 (`RequestDecoder` に存在しない)

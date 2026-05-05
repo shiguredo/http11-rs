@@ -34,6 +34,16 @@
 
 ### misc
 
+- [UPDATE] `examples/http11_client` をストリーミング API の実装例に書き換える
+  - `decode()` 一括 API から `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` に変更する
+  - `Instant` で TTFB / first-body-byte / total の各タイミングを計測して `tracing::info!` で出力する
+  - 全 `BodyKind` (Chunked / ContentLength / CloseDelimited / None / Tunnel) に対応する
+  - @voluntas
+- [UPDATE] `examples/http11_server` をストリーミング API の実装例に書き換える
+  - `while let Some(request) = decoder.decode()?` を `decode_headers()` + ストリーミングボディ受信に変更する
+  - `StreamingState` / `stream_body()` / `serve_request()` で Keep-Alive 対応を維持しつつコードを整理する
+  - @voluntas
+
 ## 2026.2.0
 
 **リリース日**: 2026-04-30

@@ -7,18 +7,25 @@
 //! 圧縮対応:
 //!   Accept-Encoding ヘッダーで gzip, br, zstd を要求し、
 //!   Content-Encoding ヘッダーに基づいてレスポンスボディを展開します。
+//!
+//! ストリーミング API:
+//!   このサンプルは decode() 一括 API ではなく、
+//!   decode_headers() + peek_body() / consume_body() / progress() を
+//!   使用したストリーミング API の実装例です。
+//!   詳細は本ソースコードを参照してください。
 
 mod decompressor;
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
+use std::time::Instant;
 
 use decompressor::{decompress_body, supported_encodings};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
-use shiguredo_http11::{Request, ResponseDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, Request, Response, ResponseDecoder, ResponseHead};
 use tracing::{error, info};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -117,15 +124,21 @@ fn http_request(
     host: &str,
     port: u16,
     request_bytes: &[u8],
-) -> Result<shiguredo_http11::Response, Box<dyn std::error::Error>> {
+) -> Result<Response, Box<dyn std::error::Error>> {
+    let connect_at = Instant::now();
     let mut stream = TcpStream::connect((host, port))?;
     stream.write_all(request_bytes)?;
+    let request_sent_at = Instant::now();
 
     let mut decoder = ResponseDecoder::new();
+    let mut head: Option<ResponseHead> = None;
+    let mut body_kind: Option<BodyKind> = None;
+    let mut body = Vec::new();
+    let mut headers_at: Option<Instant> = None;
+    let mut first_body_at: Option<Instant> = None;
     const READ_CHUNK: usize = 8192;
 
-    loop {
-        // 残容量に応じてチャンクサイズを適応させる
+    'outer: loop {
         let want = decoder.available_buf().min(READ_CHUNK);
         if want == 0 {
             return Err("decoder buffer full".into());
@@ -133,45 +146,111 @@ fn http_request(
         let buf = decoder.mut_buf(want)?;
         let n = stream.read(buf)?;
         if n == 0 {
-            // EOF: close-delimited body の場合は正常終了
             decoder.advance_buf(0);
             decoder.mark_eof();
-            if let Some(response) = decoder.decode()? {
-                return Ok(response);
+        } else {
+            decoder.advance_buf(n);
+        }
+
+        if head.is_none() {
+            if let Some((h, k)) = decoder.decode_headers()? {
+                headers_at = Some(Instant::now());
+                head = Some(h);
+                body_kind = Some(k);
+            } else if n == 0 {
+                return Err("Connection closed before headers complete".into());
+            } else {
+                continue;
+            }
+        }
+
+        match body_kind.as_ref().unwrap() {
+            BodyKind::None | BodyKind::Tunnel => break 'outer,
+            _ => {}
+        }
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                if first_body_at.is_none() {
+                    first_body_at = Some(Instant::now());
+                }
+                body.extend_from_slice(data);
+                let len = data.len();
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { .. } => break 'outer,
+                    BodyProgress::Continue => continue,
+                }
+            }
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress()? {
+                BodyProgress::Complete { .. } => break 'outer,
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if n == 0 {
+            if matches!(body_kind, Some(BodyKind::CloseDelimited)) {
+                continue;
             }
             return Err("Connection closed before response complete".into());
         }
-        decoder.advance_buf(n);
-
-        if let Some(response) = decoder.decode()? {
-            return Ok(response);
-        }
     }
+
+    let complete_at = Instant::now();
+    let h = head.unwrap();
+    let k = body_kind.unwrap();
+
+    info!(
+        connect_ms = request_sent_at.duration_since(connect_at).as_millis() as u64,
+        ttfb_ms = headers_at
+            .unwrap()
+            .duration_since(request_sent_at)
+            .as_millis() as u64,
+        first_body_ms = first_body_at.map(|t| t.duration_since(request_sent_at).as_millis() as u64),
+        total_ms = complete_at.duration_since(request_sent_at).as_millis() as u64,
+        "Timing"
+    );
+
+    Ok(Response {
+        version: h.version,
+        status_code: h.status_code,
+        reason_phrase: h.reason_phrase,
+        headers: h.headers,
+        body: match k {
+            BodyKind::None | BodyKind::Tunnel => None,
+            _ => Some(body),
+        },
+        omit_body: false,
+    })
 }
 
 fn https_request(
     host: &str,
     port: u16,
     request_bytes: &[u8],
-) -> Result<shiguredo_http11::Response, Box<dyn std::error::Error>> {
-    // TLS 設定 (システムのプラットフォーム証明書ストアを使用)
+) -> Result<Response, Box<dyn std::error::Error>> {
+    let connect_at = Instant::now();
     let config = ClientConfig::with_platform_verifier()?;
-
     let server_name = ServerName::try_from(host.to_string())?;
-
     let conn = ClientConnection::new(Arc::new(config), server_name)?;
     let sock = TcpStream::connect((host, port))?;
     let mut tls = StreamOwned::new(conn, sock);
 
-    // リクエスト送信
     tls.write_all(request_bytes)?;
+    let request_sent_at = Instant::now();
 
-    // レスポンス受信
     let mut decoder = ResponseDecoder::new();
+    let mut head: Option<ResponseHead> = None;
+    let mut body_kind: Option<BodyKind> = None;
+    let mut body = Vec::new();
+    let mut headers_at: Option<Instant> = None;
+    let mut first_body_at: Option<Instant> = None;
     const READ_CHUNK: usize = 8192;
 
-    loop {
-        // 残容量に応じてチャンクサイズを適応させる
+    'outer: loop {
         let want = decoder.available_buf().min(READ_CHUNK);
         if want == 0 {
             return Err("decoder buffer full".into());
@@ -179,15 +258,14 @@ fn https_request(
         let buf = decoder.mut_buf(want)?;
         let n = match tls.read(buf) {
             Ok(0) => {
-                // EOF: close-delimited body の場合は正常終了
                 decoder.advance_buf(0);
                 decoder.mark_eof();
-                if let Some(response) = decoder.decode()? {
-                    return Ok(response);
-                }
-                return Err("Connection closed before response complete".into());
+                0
             }
-            Ok(n) => n,
+            Ok(n) => {
+                decoder.advance_buf(n);
+                n
+            }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 decoder.advance_buf(0);
                 continue;
@@ -198,15 +276,82 @@ fn https_request(
             }
         };
 
-        decoder.advance_buf(n);
+        if head.is_none() {
+            if let Some((h, k)) = decoder.decode_headers()? {
+                headers_at = Some(Instant::now());
+                head = Some(h);
+                body_kind = Some(k);
+            } else if n == 0 {
+                return Err("Connection closed before headers complete".into());
+            } else {
+                continue;
+            }
+        }
 
-        if let Some(response) = decoder.decode()? {
-            return Ok(response);
+        match body_kind.as_ref().unwrap() {
+            BodyKind::None | BodyKind::Tunnel => break 'outer,
+            _ => {}
+        }
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                if first_body_at.is_none() {
+                    first_body_at = Some(Instant::now());
+                }
+                body.extend_from_slice(data);
+                let len = data.len();
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { .. } => break 'outer,
+                    BodyProgress::Continue => continue,
+                }
+            }
+            let remaining_before = decoder.remaining().len();
+            match decoder.progress()? {
+                BodyProgress::Complete { .. } => break 'outer,
+                BodyProgress::Continue => {
+                    if decoder.remaining().len() == remaining_before {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if n == 0 {
+            if matches!(body_kind, Some(BodyKind::CloseDelimited)) {
+                continue;
+            }
+            return Err("Connection closed before response complete".into());
         }
     }
+
+    let complete_at = Instant::now();
+    let h = head.unwrap();
+    let k = body_kind.unwrap();
+
+    info!(
+        connect_ms = request_sent_at.duration_since(connect_at).as_millis() as u64,
+        ttfb_ms = headers_at
+            .unwrap()
+            .duration_since(request_sent_at)
+            .as_millis() as u64,
+        first_body_ms = first_body_at.map(|t| t.duration_since(request_sent_at).as_millis() as u64),
+        total_ms = complete_at.duration_since(request_sent_at).as_millis() as u64,
+        "Timing"
+    );
+
+    Ok(Response {
+        version: h.version,
+        status_code: h.status_code,
+        reason_phrase: h.reason_phrase,
+        headers: h.headers,
+        body: match k {
+            BodyKind::None | BodyKind::Tunnel => None,
+            _ => Some(body),
+        },
+        omit_body: false,
+    })
 }
 
-fn print_response(response: &shiguredo_http11::Response) {
+fn print_response(response: &Response) {
     info!(
         version = %response.version,
         status_code = response.status_code,
