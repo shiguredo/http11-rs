@@ -1,6 +1,7 @@
 # 0013: 各所の不要なヒープ確保と計算量悪化を除去する
 
 Created: 2026-05-05
+Completed: 2026-05-05
 Model: Opus 4.7
 
 ## 概要
@@ -307,3 +308,56 @@ fuzz ターゲットなしで容量計算を入れるのは堅牢性観点でリ
   - 再確保時の一時的なメモリ重複を抑える
   - @voluntas
 ```
+
+## 解決方法
+
+PR [#10](https://github.com/shiguredo/http11-rs/pull/10) (commit `7859597`) で着手項目 5 件すべてを実装した。
+
+### 項目 2 + 3: `MultipartParser` のオフセット化とデリミタ事前計算
+
+`src/multipart.rs`:
+
+- `MultipartParser` に `pos: usize` フィールドを追加し、バッファ消費を `self.buffer = self.buffer[X..].to_vec()` から読み取り位置オフセット方式に変更
+- 前詰めを `next_part()` がパートを返す直前に集約し、`pos > self.buffer.len() / 2` のときだけ `self.buffer.drain(..self.pos)` を発動 (累積コピー量を amortized O(N) に抑える)
+- `--<boundary>` (`first_delimiter: Vec<u8>`) と `\r\n--<boundary>` (`inner_delimiter: Vec<u8>`) を `MultipartParser::new()` で事前計算してフィールドに保持。冗長になった `boundary: String` フィールドを削除
+- `feed()` の上限判定はレビュー指摘を受けて、未消費データ長 (`self.buffer.len() - self.pos`) 基準に修正 (オフセット方式に変更する前のセマンティクスを維持)
+
+### 項目 1 + 6: encoder.rs のスタックバッファヘルパー
+
+`src/encoder.rs`:
+
+- プライベートヘルパー `write_hex_usize` (`[u8; 16]` スタックバッファで 16 進構築) と `write_usize_decimal` (`[u8; 20]` スタックバッファで 10 進構築) を追加
+- `encode_chunk` / `encode_chunks` の `alloc::format!("{:x}\r\n", ...)` を `write_hex_usize` + `b"\r\n"` に置換
+- `encode_request` / `encode_response` / `encode_response_headers` のステータスコード / Content-Length の `to_string()` を `write_usize_decimal` に置換 (4 箇所)
+- `encode_chunk` / `encode_chunks` のバッファを `Vec::with_capacity` 化、`encode_chunks_capacity` を `checked_add` ベースで実装しオーバーフロー時は `Vec::new()` フォールバック
+
+### 項目 4: `encode_request` / `encode_response` の `Vec::with_capacity` 化
+
+`src/encoder.rs`:
+
+- 容量見積もりを `estimate_request_capacity` / `estimate_response_capacity` に括り出し、`checked_add` ベースで実装 (オーバーフロー時 `Vec::new()` フォールバック)
+- `ENCODE_CAPACITY_LIMIT` (64 MB) を導入し、攻撃者制御のヘッダー値で見積もりが膨張した場合の `Vec::with_capacity` の OOM abort を防止
+- Content-Length 自動付与の判定ロジックを `should_auto_emit_content_length_for_request` / `..._for_response` に集約し、見積もりと書き込みで条件がずれて過小確保が起きないようにする
+- `fuzz/fuzz_targets/fuzz_encode_request.rs` / `fuzz_encode_response.rs` を新設し、任意入力でのパニック / abort 安全性と決定性を担保
+- 容量見積もりが実際の出力長以上であることを `src/encoder.rs#[cfg(test)] mod capacity_tests` で検証
+
+### 効果 (ベンチ計測)
+
+custom counting allocator で計測 (release ビルド、warmup 100 回、5 万〜10 万回ループ):
+
+| ベンチ | develop | 本 PR | 削減 |
+|---|---|---|---|
+| `encode_request` (small ~270B) | 11.0 alloc / 716B | 5.0 / 482B | -55% / -33% |
+| `encode_request` (large ~10.5KB) | 13.0 / 11.9KB | 5.0 / 10.9KB | -62% / -8% |
+| `encode_response` (small ~270B) | 8.0 / 601B | 1.0 / 364B | -88% / -39% |
+| `encode_response` (large ~10.5KB) | 11.0 / 12.8KB | 1.0 / 10.8KB | -91% / -16% |
+| `encode_chunks` (100×1KB) | 109.0 / 263KB | 1.0 / 104KB | -99% / -60% |
+| multipart parse (256×1KB parts) — 累積バイト | 36.6MB / iter | 0.61MB / iter | -98% |
+| multipart parse — 経過時間 | 1802 µs | 552 µs | -69% |
+
+### 非着手項目
+
+- 項目 5 (デコーダー中間 String): バイト列パスでバリデーションを再実装する方がバグ混入リスクが高いため見送り
+- 項目 7 (CacheControl ビットフラグ): 大量保持シナリオが存在しないため見送り
+- 項目 8 (headers 初期容量): 「典型値」の根拠なく実測前提の別 issue が必要なため見送り
+- `encode_request_headers` / `encode_response_headers` の `Vec::with_capacity` 化: issue plan で項目 4 の対象外とされており、必要なら別 issue 化
