@@ -422,7 +422,8 @@ match body_kind {
             let len = data.len();
             match decoder.consume_body(len).unwrap() {
                 BodyProgress::Complete { .. } => break,
-                // 消費後もバッファに処理可能データがあれば loop 継続
+                // NeedData (chunked CRLF 不足) でも loop 先頭に戻って peek_body 再試行。
+                // peek_body が None なら progress() に fall through する。
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
         }
@@ -727,17 +728,17 @@ while let Some(body_data) = decoder.peek_body() {
 
 ### misc
 
-- `decode()` 内部で使われていた非公開 `available_body_len()` を撤去し、
+- [UPDATE] `decode()` 内部で使われていた非公開 `available_body_len()` を撤去し、
   `peek_body()` ベースに統一する
   - @voluntas
-- `src/decoder/mod.rs` のストリーミング API doc サンプルを新 `BodyProgress`
+- [UPDATE] `src/decoder/mod.rs` のストリーミング API doc サンプルを新 `BodyProgress`
   3 値に追従させる
   - @voluntas
-- `examples/http11_client` / `examples/http11_server` /
+- [UPDATE] `examples/http11_client` / `examples/http11_server` /
   `examples/http11_reverse_proxy` の `remaining_before` 比較ハックを
   `BodyProgress` 3 値のパターンマッチに置き換える
   - @voluntas
-- `README.md` と `skills/shiguredo-http11/SKILL.md` の `BodyProgress` に
+- [UPDATE] `README.md` と `skills/shiguredo-http11/SKILL.md` の `BodyProgress` に
   関する記述を新 enum に追従させる
   - @voluntas
 
@@ -819,16 +820,16 @@ while let Some(body_data) = decoder.peek_body() {
 
 ### ステップ 6: fuzz の追従
 
-1. `fuzz_targets/fuzz_decoder_chunked.rs`:
+1. `fuzz/fuzz_targets/fuzz_decoder_chunked.rs`:
    - `consume_body` の `Continue => {}` → `Advanced | NeedData => {}`
    - `progress` の `Continue => break` → `NeedData => break`, `Advanced => {}`
    - 最終チェックの `Continue => return None` → `NeedData => return None`
 
-2. `fuzz_targets/fuzz_decoder_request.rs`, `fuzz_decoder_response.rs`:
+2. `fuzz/fuzz_targets/fuzz_decoder_request.rs`, `fuzz/fuzz_targets/fuzz_decoder_response.rs`:
    - `consume_body` の `Continue => {}` → `Advanced | NeedData => {}`
    - (これらの fuzz は `progress()` を使用していない)
 
-3. `fuzz_targets/fuzz_decoder_roundtrip.rs`, `fuzz_targets/fuzz_decoder_limits.rs`:
+3. `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`, `fuzz/fuzz_targets/fuzz_decoder_limits.rs`:
    - `consume_body` の `Continue => {}` → `Advanced | NeedData => {}`
    - (これらの fuzz も `progress()` を使用していない)
 
