@@ -11,14 +11,6 @@
 
 ## develop
 
-- [ADD] `ResponseDecoder` / `RequestDecoder` に直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`) を追加する
-  - OS の `recv()` 等がデコーダー内部バッファに直接書き込めるようにし、`feed(&[u8])` 経由の中間コピーを排除する
-  - `available_buf()` で残容量を問い合わせてチャンクサイズを適応させる
-  - `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループを新 API に書き換える
-  - @voluntas
-
-### misc
-
 - [UPDATE] `MultipartParser` のバッファ管理を読み取り位置オフセット方式に変更する
   - 多数パートの multipart ボディに対するコピー量を `O(N²)` から amortized `O(N)` に改善する
   - boundary 文字列のデリミタを `MultipartParser::new()` で事前計算してフィールドに持ち、`next_part()` ごとの `format!` を除去する
@@ -34,6 +26,13 @@
   - 自動付与する Content-Length 行と auto-emit 判定ロジックは見積もり / 書き込み双方で共通の関数 (`should_auto_emit_content_length_for_request` / `..._for_response`) を経由するように整理する
   - 任意入力でのパニック / abort 安全性を `fuzz_encode_request` / `fuzz_encode_response` で網羅する
   - @voluntas
+- [ADD] `ResponseDecoder` / `RequestDecoder` に直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`) を追加する
+  - OS の `recv()` 等がデコーダー内部バッファに直接書き込めるようにし、`feed(&[u8])` 経由の中間コピーを排除する
+  - `available_buf()` で残容量を問い合わせてチャンクサイズを適応させる
+  - `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループを新 API に書き換える
+  - @voluntas
+
+### misc
 
 ## 2026.2.0
 
