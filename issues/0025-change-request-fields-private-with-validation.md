@@ -14,10 +14,26 @@ Model: Opus 4.7
 ブランチ名は CLAUDE.md「git ブランチの命名規則」に従い `feature/change-request-fields-private-with-validation` を使用する。
 
 依存関係:
-- 本 issue は `0017` (Response フィールド非公開化) と `0024` (StatusCode 型導入) の完了後に着手する
+- 本 issue は `0017` (Response フィールド非公開化) と `0020` (StatusClass enum) と `0024` (StatusCode 型導入) の完了後に着手する
 - `0017` で確立した「フィールド非公開化 + バリデーション + `from_raw_parts` + `#[non_exhaustive]`」のパターンを Request にそのまま適用する
 - 本 issue 完了後、別 issue で `Method` 型 + `Request::with_method` を追加予定 (`0024` の Request 版)
 - 本 issue 完了後、別 issue で Request 側の builder/mutator API 一貫化を追加予定 (`0021` の Request 版)
+
+## 実装前提 — 既存実装の確認
+
+本 issue の対応を正しく行うため、以下の既存実装を把握する必要がある:
+
+| 項目 | ファイル | 状態 |
+|---|---|---|
+| `is_valid_method` | `src/validate.rs:70-72` | **既存** — `!method.is_empty() && method.bytes().all(is_token_char)` |
+| `is_valid_request_target` | `src/validate.rs:179-225` | **既存** — 制御文字拒否・RFC 3986 除外文字拒否・パーセントエンコーディング検証・%00 拒否。obs-text (0x80-0xFF) は受信側互換性のため許容。**本 issue ではこの既存実装を流用し、簡易版への置き換えは行わない** |
+| `is_valid_protocol_version` | `src/validate.rs:85-125` | **既存** — `token "/" DIGIT+ "." DIGIT+` 形式。RTSP 互換のため DIGIT+ (RFC 9112 §2.3 の `DIGIT "." DIGIT` より広い) と token (RFC 9112 §2.3 の `%s"HTTP"` case-sensitive を強制しない) を許容 |
+| `EncodeError::InvalidMethod` | `src/error.rs:71` | **既存** — `{ method: String }`。Display 実装も完備。**新設不要** |
+| `EncodeError::InvalidRequestTarget` | `src/error.rs:73` | **既存** — `{ uri: String }`。Display 実装も完備。**新設不要** |
+| `validate_request_fields` | `src/encoder.rs:173-210` | **既存** — method / URI / version / headers の全検証を実装済み。`encode_request` (line 649) と `encode_request_headers` (line 962) から呼び出されている。**新設不要。修正対象** |
+| `RequestHead` フィールド | `src/decoder/head.rs:110-119` | `pub method` / `pub uri` / `pub version` / `pub headers` — `from_raw_parts` に所有値で渡すための前提 |
+
+本 issue の主な作業は、上記の既存実装を **構築時にも適用する** こと、および **フィールド非公開化に伴う全アクセス箇所の修正** である。新規のバリデーション関数やエラーバリアントの追加は不要。
 
 ## 根拠
 
@@ -33,7 +49,7 @@ Model: Opus 4.7
 - `request.version = "garbage".to_string()` (不正バージョン)
 - `request.body = Some(vec![b'x'])` (body を勝手に差し替えられる)
 
-CRLF / NUL 注入は **HTTP Request Smuggling (CWE-444)** の温床で、特に reverse proxy 経路では致命的な脆弱性を生む。`Response` 側 (CWE-113 Response Splitting) よりも影響範囲が広い:
+CRLF / NUL 注入は **HTTP Request Smuggling (CWE-444)** の温床で、特に reverse proxy 経路では致命的な脆弱性を生む。RFC 9112 Section 3（Request Line、第 3 段落）も lenient parsing が security vulnerabilities を引き起こすと警告している (Section 11.2 参照)。`Response` 側 (CWE-113 Response Splitting) よりも影響範囲が広い:
 
 - Response Splitting (CWE-113): クライアントを騙す
 - Request Smuggling (CWE-444): **バックエンドサーバーを騙す**、認証・認可をバイパスできる
@@ -56,7 +72,7 @@ HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_he
 
 ### 問題 4: フィールド追加が破壊的変更になる
 
-`pub struct Request { pub ... }` で全フィールド公開のため、将来 `trailers` 等を追加すると、構造体リテラル `Request { ... }` を使う全利用者がコンパイル不能になる。全フィールド非公開化により将来のフィールド追加は非破壊的になる。`#[non_exhaustive]` は同一 major バージョン内のフィールド追加が downstream のコンパイルを破壊しないことを型レベルで宣言する。
+`pub struct Request { pub ... }` で全フィールド公開のため、将来 `trailers` 等を追加すると、構造体リテラル `Request { ... }` を使う全利用者がコンパイル不能になる。全フィールド非公開化により将来のフィールド追加は非破壊的になる。`#[non_exhaustive]` は同一 major バージョン内のフィールド追加が downstream のコンパイルを破壊しないことを型レベルで宣言する。注: フィールド非公開化後は外部クレートが構造体パターンマッチを行うことはそもそも不可能であり、`#[non_exhaustive]` の効能は「将来フィールドが追加されても外部クレートからの構造体リテラル構築が破壊されないこと」に限定される。
 
 ## 対応方針
 
@@ -68,34 +84,57 @@ HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_he
 |---|---|
 | `Response::new(code, reason)?` | `Request::new(method, uri)?` |
 | `Response::with_version(v, c, r)?` | `Request::with_version(method, uri, version)?` |
+| `Response::with_status(StatusCode::OK)` (infallible) | 本 issue のスコープ外 (将来 `Method` 型追加 issue で対応) |
 | `pub(crate) fn Response::from_raw_parts(...)` | `pub(crate) fn Request::from_raw_parts(...)` |
-| status_code バリデーション (`is_valid_status_code`) | method バリデーション (`is_valid_method`) |
-| reason_phrase バリデーション (`is_valid_reason_phrase`) | uri バリデーション (`is_valid_request_target` 等) |
+| status_code バリデーション (`is_valid_status_code`) | method バリデーション (`is_valid_method` — **既存**) |
+| reason_phrase バリデーション (`is_valid_reason_phrase`) | uri バリデーション (`is_valid_request_target` — **既存**) |
+| `body_bytes()` getter | `body_bytes()` getter (0017 の命名に揃える) |
+| `is_body_omitted()` getter | 該当なし (Request には omit_body がない) |
 | 共通: version / header / non_exhaustive | 共通: version / header / non_exhaustive |
 
 ### 影響範囲一覧
 
 | ファイル | 種別 | 内容 |
 |---|---|---|
-| `src/request.rs` | 主要変更 | フィールド非公開化、コンストラクタ `Result` 化、`pub(crate) from_raw_parts` 新設、アクセサ・setter 追加 |
-| `src/validate.rs` | 修正 | method バリデーション (`is_valid_method`) を追加 (token 検証、既存の `is_valid_header_name` と同等)、URI バリデーション関数の整理 (`is_valid_request_target` を decoder 経路から共有可能にする) |
-| `src/encoder.rs` | 修正 | Request 関連の全フィールド直接アクセスをアクセサ経由に書き換え、`encode()` doc 更新、二重バリデーション維持、`validate_request_fields` の追加 (Response 側と並行) |
-| `src/decoder/request.rs` | 修正 | 構造体リテラル → `from_raw_parts` に書き換え |
-| `src/error.rs` | 修正 | `EncodeError::InvalidMethod { method: String }` バリアントを追加 (既存の `InvalidUri` / `InvalidHeaderName` / `InvalidHeaderValue` / `InvalidVersion` は流用) |
+| `src/request.rs` | 主要変更 | フィールド非公開化、コンストラクタ `Result` 化、`pub(crate) from_raw_parts` 新設 (`debug_assert!` 付き)、アクセサ・setter 追加 |
+| `src/validate.rs` | **変更不要** | `is_valid_method`, `is_valid_request_target`, `is_valid_header_name`, `is_valid_field_value`, `is_valid_protocol_version` は全て既存。**新規追加不要**。ただし構築時バリデーション経由で未カバー分岐が発生する可能性があるため、カバレッジ取得対象に含める |
+| `src/encoder.rs` | 修正 | Request 関連の全フィールド直接アクセスをアクセサ経由に書き換え (後述の全関数リスト参照)。`validate_request_fields` の二重バリデーション維持。`impl Request` の `encode()` / `try_encode()` の doc comment と expect メッセージを構築時バリデーション導入後の panic 条件に合わせて更新 (0017 の `Response::encode()` doc 更新と同水準)。内部 `#[cfg(test)] mod capacity_tests` の `Request::new()` / `.header()` に `.unwrap()` 追加 |
+| `src/decoder/request.rs` | 修正 | 構造体リテラル (line 653-659) → `from_raw_parts` に書き換え。加えて decoder 側の URI 検証に obs-text 拒否を追加 (`from_raw_parts` の不変条件を decoder 側で満たすため)。具体的には `is_valid_request_target` 通過後に `uri.bytes().any(\|b\| b > 0x7E)` チェックを追加し、不正な場合は `Error::InvalidData` を返す |
+| `src/decoder/mod.rs` | 修正 | doctest の `request.method` → `request.method()` に書き換え (line 84) |
+| `src/error.rs` | **変更不要** | `InvalidMethod`, `InvalidRequestTarget`, `InvalidHeaderName`, `InvalidHeaderValue`, `InvalidVersion` は全て既存。**新規追加不要** |
 | `examples/http11_client/src/main.rs` | 修正 | `Request::new(...)` / `add_header(...)` / `body = ...` を新 API に書き換え、関数シグネチャを `Result<Request, EncodeError>` 化 |
-| `examples/http11_reverse_proxy/src/main.rs` | 修正 | upstream のヘッダーをループで `add_header` する箇所を `add_header(name, value)?` に変更し、関数シグネチャを `Result<Request, EncodeError>` 化する。`.unwrap()` は使わない (smuggling 防御の観点でサンプルが「お手本」となる必要があるため) |
-| `examples/http11_server/src/main.rs` | 確認 | サーバー側は Request を主にデコードする側だが、テスト用に構築する箇所があれば書き換え |
-| `examples/http11_server_io_uring/src/main.rs` | 確認 | 同上 |
-| `tests/test_request.rs` | **新設** | バリデーションエラー再現テスト |
+| `examples/http11_reverse_proxy/src/main.rs` | 修正 | upstream のヘッダーをループで `add_header` する箇所を `add_header(name, value)?` に変更。`body = None` 代入 → 条件分岐で `body(data)` 呼び出しの有無を制御する方式に変更。line 389-394 の debug ログ内 `upstream_request.body.as_deref()` → `upstream_request.body_bytes()` に書き換え。関数シグネチャを `Result<Request, EncodeError>` 化。`.unwrap()` は使わない |
+| `examples/http11_server/src/main.rs` | 修正 | line 280-286 の `Request { ... }` 構造体リテラル構築を `Request::with_version(...)?` + `add_header` ループ + 条件付き `body(data)` に書き換え。加えてファイル全体の全フィールド直接アクセスをアクセサ経由に書き換え: line 291-296 の `info!` マクロ内の `request.method` / `request.uri` / `request.version`、line 501 の `request.method`、line 504-508 / line 570-574 の `&request.headers` loop および `request.body.as_deref()`、line 567 の `request.method` / `request.uri` / `request.version`。`examples` は外部 crate のため `from_raw_parts` 使用不可 |
+| `examples/http11_server_io_uring/src/main.rs` | 修正 | `decode()` API から取得した Request の全フィールド直接アクセスをアクセサ経由に書き換え: line 651-653 の `info!` マクロ内の `request.method` / `request.uri` / `request.version`、line 825 の `request.method.eq_ignore_ascii_case(...)` → `request.method().eq_ignore_ascii_case(...)`、line 828-832 の `request.headers.iter().find(...)` → `HttpHead::headers(&request).iter().find(...)`、line 836 の `request.uri.as_str()` → `request.uri()`、line 888-890 の `format!` 内の各アクセス、line 893 の `&request.headers` loop → `HttpHead::headers(&request)` loop、line 897-899 の `request.body` アクセス → `if let Some(req_body) = request.body_bytes()` 形式に書き換え (`request.body` は `Option<Vec<u8>>` のため `.is_empty()` / `.len()` / `&request.body` の直接操作は現在もコンパイル不能。http11_server 側と同様のパターンを使用する) |
+| `tests/test_request.rs` | **新設** | バリデーションエラー再現テスト、smuggling ペイロード拒否テスト |
 | `tests/test_encoder.rs` | 修正 | Request 構築の `.unwrap()` 追加、不正値テストの構築時エラー検証への書き換え |
+| `tests/test_decoder.rs` | 修正 | line 1371-1372 の `request.method` → `request.method()`、`request.body.as_deref()` → `request.body_bytes()` に書き換え |
 | `pbt/tests/prop_request.rs` | 修正 | 全テストのフィールド直接アクセス → accessor に書き換え + バリデーション PBT 追加 |
 | `pbt/tests/prop_encoder.rs` | 修正 | `Request::new()` / `.header()` に `.unwrap()` 追加 |
 | `pbt/tests/prop_decoder/request.rs` | 修正 | フィールド直接アクセスをアクセサ経由に書き換え |
-| `fuzz/fuzz_targets/fuzz_encode_request.rs` | 修正 | フィールド代入 → setter API に書き換え |
+| `pbt/tests/prop_decoder/body.rs` | 修正 | `request.body.as_deref()`, `request.method`, `request.uri` の直接アクセスをアクセサ経由に書き換え |
+| `fuzz/fuzz_targets/fuzz_encode_request.rs` | 修正 | フィールド代入 → setter API に書き換え。`body = None` 復帰は条件分岐で制御 |
 | `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs` | 修正 | 同上 (Request 側の構築箇所) |
-| `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` | 修正 | 同上 |
+| `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` | 修正 | `add_header` の戻り値チェック追加、`body = Some(body)` → `body(body)` に書き換え |
 | `src/lib.rs` | 修正 | doctest の `Request::new()` / `.header()` に `.unwrap()` 追加 |
-| `skills/shiguredo-http11/SKILL.md` | 修正 | Request の主要メソッド一覧を新 API に追従させ、サンプルコードに `.unwrap()` を追加 (smuggling 防御の観点でサンプルが「お手本」となる構造を強調) |
+| `skills/shiguredo-http11/SKILL.md` | 修正 | Request の主要メソッド一覧を新 API に追従させ、サンプルコードに `.unwrap()` を追加 |
+
+### encoder.rs 内の直接フィールドアクセス書き換え対象関数
+
+以下の関数内で `request.method`, `request.uri`, `request.version`, `request.headers`, `request.body` に直接アクセスしている。全箇所をアクセサ経由に書き換える:
+
+| 関数 | 行番号 (付近) | 直接アクセス内容 |
+|---|---|---|
+| `should_auto_emit_content_length_for_request` | 79 | `request.body.is_some()`, `request.has_header(...)` |
+| `estimate_request_capacity` | 108-130 | `request.method.len()`, `request.uri.len()`, `request.version.len()`, `&request.headers` loop, `request.body.as_deref()` |
+| `validate_request_fields` | 173-210 | `&request.method`, `request.method.clone()`, `&request.uri`, `request.uri.clone()`, `request.uri.bytes()`, `&request.version`, `request.version.clone()`, `&request.headers` |
+| `validate_host_header` | 418-514 | `request.version`, `request.headers` loop, `request.uri`, `request.uri.contains(...)`, `request.uri.rfind(...)`, `request.method` |
+| `encode_request` | 645-724 | `&request.uri`, `request.uri.as_bytes()`, `request.method.as_bytes()`, `request.version.as_bytes()`, `&request.headers` loop, `validate_content_length_headers(&request.headers)?` (line 673 — 関数引数としての直接アクセス)、`request.body.as_deref()`, `request.has_header(...)` |
+| `encode_request_headers` | 962+ | `&request.uri`, `request.method.as_bytes()`, `request.uri.as_bytes()`, `request.version.as_bytes()`, `&request.headers` loop |
+| `impl Request` (encode + try_encode) | 850-865 | フィールドアクセスなし (委譲のみ)。doc comment と expect メッセージの更新あり: encode() の doc を「構築時バリデーションで弾かれる構文上の不正値を含まない Request ならば、意味論的な RFC 違反がある場合にパニックする」に更新。expect メッセージは `Response::encode()` と文体を揃え `"invalid request fields or headers"` に変更 |
+| `#[cfg(test)] mod capacity_tests` | 1332-1387 | `Request::new(...).header("Host", ...)` → `.unwrap()` 追加のみ |
+
+`HttpHead` トレイト経由でアクセス可能なメソッド (`has_header`, `get_header`, `get_headers`, `connection`, `content_length`, `is_chunked`, `is_keep_alive`) は既に `HttpHead` のデフォルト実装経由で動作しており、ヘッダー名 (`name`) 経由のアクセスはすべてトレイトの `headers()` メソッドを経由するため、直接フィールドアクセスは `request.headers` の走査ではなく `self.headers()` 経由で行うよう修正する。
 
 ### src/request.rs
 
@@ -112,6 +151,9 @@ HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_he
 /// 全フィールドは非公開で、構築時バリデーション付きの `new` / `with_version` /
 /// `header` / `add_header` / `set_header` 経由でのみ操作できる。`#[non_exhaustive]`
 /// により、将来のフィールド追加 (例: `trailers`) は破壊的変更にならない。
+/// 注: フィールド非公開化後は外部クレートが構造体パターンマッチを行うことは
+/// そもそも不可能であり、`#[non_exhaustive]` の効能は「将来フィールドが追加されても
+/// 外部クレートからの構造体リテラル構築が破壊されないこと」に限定される。
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Request {
@@ -121,6 +163,89 @@ pub struct Request {
     headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
 }
+```
+
+#### デコーダー用 `pub(crate)` コンストラクタ (新設)
+
+```rust
+/// 検証済みの生フィールドから Request を構築 (デコーダー内部用)
+///
+/// デコーダー側で既にバリデーション済みのフィールドを直接受け取る。
+/// コンストラクタのバリデーションはスキップする。
+/// 外部クレートからはアクセス不可 (`pub(crate)`)。
+///
+/// # 不変条件 (呼び出し側の責務)
+///
+/// 呼び出し側 (decoder) は以下の不変条件をすべて満たすフィールドのみを渡すこと:
+/// - `method`: `is_valid_method` を通過済み (RFC 9110 Section 9.1: method = token)
+/// - `uri`: `is_valid_request_target` を通過済み。加えて encoder 側の
+///   obs-text 拒否 (0x80-0xFF 非含有) を満たすこと
+/// - `version`: `is_valid_protocol_version` を通過済み
+/// - `headers`: 各エントリが `is_valid_header_name` / `is_valid_field_value` を通過済み
+///
+/// 引数は所有値 (`String` / `Vec`) を受け取る。decoder 側 (`RequestHead`) が
+/// 所有値を保持しているため、move による zero-copy 構築が可能 (Rust API
+/// ガイドライン C-OWNED-PARAMETERS に沿う)。
+///
+/// 注: 命名は標準ライブラリの unsafe 慣習 (`Vec::from_raw_parts` 等) と表面的に
+/// 衝突するが、本関数は unsafe ではない。`pub(crate)` のため外部公開 API には
+/// 影響しない。crate 内で命名衝突が問題になった場合は、別 issue で
+/// `from_decoded_parts` 等への改名を検討する。
+pub(crate) fn from_raw_parts(
+    method: String,
+    uri: String,
+    version: String,
+    headers: Vec<(String, String)>,
+    body: Option<Vec<u8>>,
+) -> Self {
+    // debug ビルドのみで契約を検査する。release では検証スキップ (decoder 経路の最適化)。
+    // 契約違反は decoder のバグであり、release で発覚した場合は encoder 側の
+    // 二重バリデーション (`validate_request_fields`) が最後の防御線となる。
+    debug_assert!(
+        crate::validate::is_valid_method(&method),
+        "from_raw_parts: invalid method: {method:?}"
+    );
+    debug_assert!(
+        crate::validate::is_valid_request_target(&uri),
+        "from_raw_parts: invalid request-target: {uri:?}"
+    );
+    // 送信側では obs-text を拒否する (validate.rs の is_valid_request_target は
+    // 受信側互換性のため obs-text を許容しているが、encoder は追加チェックを行う)
+    debug_assert!(
+        !uri.bytes().any(|b| b > 0x7E),
+        "from_raw_parts: request-target contains non-ASCII: {uri:?}"
+    );
+    debug_assert!(
+        crate::validate::is_valid_protocol_version(&version),
+        "from_raw_parts: invalid version: {version:?}"
+    );
+    debug_assert!(
+        headers.iter().all(|(n, v)| {
+            crate::validate::is_valid_header_name(n)
+                && crate::validate::is_valid_field_value(v)
+        }),
+        "from_raw_parts: invalid header(s)"
+    );
+    Self { method, uri, version, headers, body }
+}
+```
+
+`src/decoder/request.rs:653-659` の構造体リテラルはこのコンストラクタに書き換える:
+
+```rust
+// 変更前
+Ok(Some(Request {
+    method: head.method,
+    uri: head.uri,
+    version: head.version,
+    headers: head.headers,
+    body,
+}))
+
+// 変更後
+Ok(Some(Request::from_raw_parts(
+    head.method, head.uri, head.version, head.headers, body,
+)))
 ```
 
 #### コンストラクタの `Result` 化
@@ -133,25 +258,25 @@ impl Request {
     /// 失敗時は最初に検出されたエラーを返す。
     ///
     /// `method` は RFC 9110 Section 9.1 の `method = token` (RFC 9110 Section 5.6.2) を要求する。
-    /// `uri` は RFC 9112 Section 3.2 の request-target (origin-form / absolute-form /
-    /// authority-form / asterisk-form) のいずれかであることを要求する。
+    /// 検証には既存の `is_valid_method` (validate.rs:70) を流用する。
+    /// `uri` は request-target として、CRLF（RFC 9112 §3.2: whitespace 禁止）および
+    /// NUL（RFC 9110 §5.5: CR/LF/NUL are invalid and dangerous）を含まないことを要求する (構文レベルのバリデーション)。
+    /// request-target 形式 (origin/absolute/authority/asterisk) の判定は
+    /// encode 時の `validate_request_target_form` に委ねる。
+    /// 検証には既存の `is_valid_request_target` (validate.rs:179) を流用する。
+    /// 加えて送信側のポリシーとして obs-text (0x80-0xFF) の非含有も確認する
+    /// (既存の encoder.rs 側のチェックと同等の水準)。
     pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError>
 
     /// カスタムバージョンでリクエストを作成
     ///
     /// バリデーション順序: method → uri → version。
+    /// version は `is_valid_protocol_version` (token "/" DIGIT+ "." DIGIT+) で検証する。
+    /// RTSP バージョン (RTSP/1.0 等) も受理する。
+    /// 注: RFC 9112 §2.3 の `HTTP-name = %s"HTTP"` (case-sensitive) および
+    /// `DIGIT "." DIGIT` (各 1 桁) は強制しない。
+    /// HTTP として送信する場合は呼び出し側が `"HTTP/1.1"` を渡す責務がある。
     pub fn with_version(method: &str, uri: &str, version: &str) -> Result<Self, EncodeError>
-
-    /// 検証済みの生フィールドから Request を構築 (デコーダー内部用)
-    ///
-    /// 0017 の Response::from_raw_parts と同じ設計。
-    pub(crate) fn from_raw_parts(
-        method: String,
-        uri: String,
-        version: String,
-        headers: Vec<(String, String)>,
-        body: Option<Vec<u8>>,
-    ) -> Self
 }
 ```
 
@@ -159,34 +284,27 @@ impl Request {
 
 | コンストラクタ | 検証内容 | 使用関数 |
 |---|---|---|
-| `new` | method: token | `is_valid_method` (validate.rs に追加) |
-| `new` | uri: request-target | `is_valid_request_target` (validate.rs から共有) |
+| `new` | method: token | `is_valid_method` (validate.rs:70 — **既存**) |
+| `new` | uri: CRLF/NUL/制御文字/RFC3986 除外文字 non-existence + obs-text 非含有 | `is_valid_request_target` (validate.rs:179 — **既存**) + 追加で `uri.bytes().any(\|b\| b > 0x7E)` を拒否 |
 | `with_version` | method: 同上 | 同上 |
 | `with_version` | uri: 同上 | 同上 |
-| `with_version` | version: token `/` DIGIT+ `.` DIGIT+ | `is_valid_protocol_version` |
+| `with_version` | version: token `/` DIGIT+ `.` DIGIT+ | `is_valid_protocol_version` (validate.rs:85 — **既存**) |
+
+注: 構築時には `is_valid_protocol_version` (token "/" DIGIT+ "." DIGIT+ 形式) を使用する。これは `is_valid_version_for_encode` (VCHAR のみ) よりも**厳しい**検証であり (tchar ⊂ VCHAR のため、`is_valid_protocol_version` を通過する値は必ず `is_valid_version_for_encode` も通過する)、二重チェックの実益は `from_raw_parts` の release ビルドスキップ後の防御線として機能する。
 
 ### URI バリデーションのスコープ
 
-本 issue では URI のバリデーションを **構文レベル (CRLF/NUL/SP の混入禁止 + ASCII 範囲チェック)** に留める。完全な RFC 3986 ABNF 準拠は別 issue で対応。
+本 issue では URI のバリデーションに **既存の `is_valid_request_target` (validate.rs:179-225)** をそのまま流用する。既存実装は以下を検証済み:
 
-理由:
-- 完全な RFC 3986 準拠は実装量が大きく、本 issue のスコープを超える
-- 本 issue の主目的は smuggling 防御であり、CRLF/NUL の拒否で達成できる
-- request-target form (origin / absolute / authority / asterisk) の判別は decoder 側で既に実装済み (`src/decoder/body.rs`)。encoder 側では構文レベルのバリデーションで十分
+- 制御文字 (0x00-0x20, 0x7F) の拒否 → CRLF 注入の防御 (RFC 9112 §3.2: whitespace 禁止)、NUL 注入の防御 (RFC 9110 §5.5: CR/LF/NUL are invalid and dangerous)
+- RFC 3986 除外文字 (`"#<>\\^`{|}`) の拒否 → `#` はフラグメント区切りのため RFC 9112 §3.2 で request-target に含められない
+- 不正なパーセントエンコーディング (不完全・非 hex 文字) の拒否
+- `%00` (パーセントエンコーディングされた NUL) の拒否
+- obs-text (0x80-0xFF) は受信側互換性のため許容 (送信側では encoder 側で別途拒否)
 
-実装方針:
-```rust
-/// request-target が有効か確認 (構文レベル)
-///
-/// RFC 9112 Section 3.2 の request-target は CRLF/NUL/SP を含んではならない。
-/// 完全な RFC 3986 ABNF 準拠は別 issue で対応する。
-///
-/// 本関数は smuggling 防御 (CWE-444) を目的とした最小限のバリデーション。
-pub(crate) fn is_valid_request_target(target: &str) -> bool {
-    !target.is_empty()
-        && target.bytes().all(|b| matches!(b, 0x21..=0x7E))  // VCHAR のみ (SP/CTL/non-ASCII 拒否)
-}
-```
+構築時には本関数の全チェックに加え、**obs-text 非含有の追加チェック**を行う (encoder.rs の既存の obs-text 拒否チェックと同等の水準を構築時にも適用)。
+
+request-target 形式 (origin/absolute/authority/asterisk) の判定は encode 時の `validate_request_target_form` に委ねる。構築時には `is_valid_request_target` による構文レベル (CRLF/NUL 禁止) で十分であり、形式判定までは行わない。
 
 ### ヘッダー追加 / 上書き / 取得 API
 
@@ -196,10 +314,23 @@ pub(crate) fn is_valid_request_target(target: &str) -> bool {
 pub fn header(self, name: &str, value: &str) -> Result<Self, EncodeError>  // builder
 pub fn add_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError>  // mutator
 pub fn set_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError>  // 同名上書き
-pub fn body(mut self, body: Vec<u8>) -> Self  // builder
+pub fn body(mut self, body: Vec<u8>) -> Self  // builder (infallible)
 ```
 
-バリデーションは `is_valid_header_name` / `is_valid_field_value` を使用 (`0017` で確立した validate.rs の関数を流用)。
+バリデーションは既存の `is_valid_header_name` / `is_valid_field_value` を使用する (`0017` と同一)。
+
+`set_header` の実装は 0017 の Response 側 (`src/response.rs:279-287`) と同じアトミック性保証パターンを使用する:
+1. `is_valid_header_name(name) && is_valid_field_value(value)` を **先に** 検証し、失敗時は早期 `Err` で `self` を変更しない
+2. バリデーション通過後に `self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name))` で同名全削除
+3. `self.headers.push((name.to_string(), value.to_string()))` で末尾追加
+4. `Ok(())` を返す
+
+#### ヘッダー重複に関する方針
+
+- `add_header` / `header` は同名複数値を許す (Set-Cookie 等の用途で必須)
+- `set_header` は同名全削除後に追加 (上書き)。値を空にした場合の削除機能は本 issue では提供しない (RFC 9110 では空値ヘッダーとヘッダー非存在は意味が異なるため)
+- 保存は raw (case-preserving)、検索は case-insensitive (現状維持)
+- 正規化 (lowercase 強制等) は別 issue で対応
 
 ### 読み取り専用アクセサ
 
@@ -207,17 +338,31 @@ pub fn body(mut self, body: Vec<u8>) -> Self  // builder
 pub fn method(&self) -> &str
 pub fn uri(&self) -> &str
 pub fn version(&self) -> &str
-pub fn body(&self) -> Option<&[u8]>
+pub fn body_bytes(&self) -> Option<&[u8]>
 ```
 
-`HttpHead` トレイト経由のメソッド (`headers`, `get_header`, `get_headers`, `has_header`, `connection`, `is_keep_alive`, `content_length`, `is_chunked`) は既存通り提供。
+`version()` は Response 側 (src/response.rs:291) と同様に `Request` の固有メソッドとして提供する。`HttpHead::version(&self)` の実装はそのまま残す（トレイト実装の義務）。
+
+`body_bytes()` は 0017 完了後の Response 側 (`src/response.rs:309`) と命名を揃える。builder メソッド `body(data)` との同名衝突を避けるため `body_bytes` としている。
+
+以下は既存の `HttpHead` トレイト実装経由で提供済みのため追加不要:
+- `headers()` → `HttpHead::headers` → `&[(String, String)]`
+- `get_header()` → `HttpHead::get_header` → `Option<&str>`
+- `get_headers()` → `HttpHead::get_headers` → `Vec<&str>`
+- `has_header()` → `HttpHead::has_header` → `bool`
+- `connection()` → `HttpHead::connection` → `Option<&str>`
+- `content_length()` → `HttpHead::content_length` → `Option<u64>`
+
+注: 現在の `src/request.rs:79-118` の `get_header`, `get_headers`, `has_header`, `connection`, `is_keep_alive`, `content_length`, `is_chunked` の重複メソッド群は、0017 完了後の Response 側 (`src/response.rs:319-368`) と同様に **そのまま残す** (HttpHead トレイトへの委譲メソッドとして存続させる)。
 
 ### encoder 側の `validate_request_fields`
 
-`src/encoder.rs` に Response の `validate_response_fields` と並行する `validate_request_fields` を追加 (既存の Request encoder ロジックに散らばっている検証を集約)。`0017` の方針に従い:
+`src/encoder.rs:173-210` の既存 `validate_request_fields` は、本 issue で追加する構築時バリデーションと合わせて**二重チェックを維持**する。`0017` の方針に従い:
 
 - 構築時バリデーション (本 issue で追加) と encode 時バリデーション (`validate_request_fields`) の二重チェックを維持
-- 構築時バリデーションを通過した Request は `validate_request_fields` の各検証分岐を必ず通過するため、`from_raw_parts` 経由のテストでカバレッジ補填する
+- `validate_request_fields` は既存の検証ロジックをそのまま維持する (method → URI → obs-text → request-target form → version → headers)
+
+`validate_request_fields` の各検証分岐は、構築時バリデーションを通過した Request でも必ず通過するよう設計されている。これにより `from_raw_parts` 経由で構築された (release ビルドでは検証をスキップした) Request に対する最終防御線となる。
 
 ### 書き換え対応一覧
 
@@ -230,14 +375,86 @@ pub fn body(&self) -> Option<&[u8]>
 | `request.add_header(n, v)` | `request.add_header(n, v)?` |
 | `.header(n, v)` | `.header(n, v)?` |
 | `request.body = Some(data)` | `request = request.body(data)` |
-| `request.body = None` | body None 復帰は別 issue (Request 版 0021) で対応 |
+| `request.body = None` | `body = None` 復帰は別 issue (Request 版 0021) で対応。本 issue では body 設定を末尾 builder 呼び出しとして行い、既存コードは条件分岐で `body(data)` 呼び出しの有無を制御する (後述の fuzz / examples 改修パターン参照) |
 | `request.method` (参照) | `request.method()` |
 | `request.uri` (参照) | `request.uri()` |
 | `request.version` (参照) | `request.version()` |
 | `request.headers.len()` (参照) | `HttpHead::headers(&request).len()` |
-| `request.body.as_deref()` | `request.body()` |
+| `request.body.as_deref()` | `request.body_bytes()` |
+| `request.body.is_some()` | `request.body_bytes().is_some()` |
+| `request.body.clone().unwrap_or_default()` | `request.body_bytes().map(\|b\| b.to_vec()).unwrap_or_default()` |
+| `request.body.unwrap_or_default()` | `request.body_bytes().unwrap_or(&[])` (参照) / `request.body_bytes().map(\|b\| b.to_vec()).unwrap_or_default()` (所有値) |
+| `request.headers[0].0` (インデックスアクセス) | `HttpHead::headers(&request)[0].0` |
+| `request.headers.iter().find(...)` | `HttpHead::headers(&request).iter().find(...)` |
+| `&request.headers` loop | `HttpHead::headers(&request)` loop (for 文は `for (n, v) in HttpHead::headers(&request)` に) |
 
 `Request { ... }` 構造体リテラルの直接構築は全箇所で禁止される。crate 内は `from_raw_parts` を使用する。
+
+### body = None 復帰の対処 (本 issue スコープ内)
+
+`body = None` への復帰は別 issue (0021 の Request 版) で `without_body` 等として対応予定。本 issue のスコープ内では以下の方法で対処する:
+
+#### fuzz ターゲットの改修パターン
+
+```rust
+// 変更前
+request.body = if body_present { Some(body) } else { None };
+
+// 変更後: 条件分岐で body(data) 呼び出しの有無を制御
+let request = if body_present {
+    request.body(body)
+} else {
+    request  // body = None のまま
+};
+```
+
+- `fuzz_encode_request.rs`: 上記パターンで改修
+- `fuzz_decoder_roundtrip.rs`: `has_body && !body.is_empty()` 条件に合わせて条件付きで `body()` を呼び出す
+- `fuzz_request_response_helpers.rs`: `request.body = Some(body)` → `request = request.body(body)` に書き換え
+
+#### examples の改修パターン
+
+`examples/http11_reverse_proxy/src/main.rs`:
+```rust
+// 変更前
+upstream_request.body = if matches!(req_body_kind, BodyKind::None) {
+    None
+} else {
+    Some(request_body)
+};
+
+// 変更後
+let upstream_request = if matches!(req_body_kind, BodyKind::None) {
+    upstream_request
+} else {
+    upstream_request.body(request_body)
+};
+```
+
+`examples/http11_server/src/main.rs` (line 280-286):
+```rust
+// 変更前
+let request = Request {
+    method: head.method,
+    uri: head.uri,
+    version: head.version,
+    headers: head.headers,
+    body: state.body.take(),
+};
+
+// 変更後 (examples は外部 crate のため from_raw_parts 使用不可)
+let mut request = Request::with_version(
+    &head.method, &head.uri, &head.version,
+)?;
+for (name, value) in &head.headers {
+    request.add_header(name, value)?;
+}
+let request = if let Some(body) = state.body.take() {
+    request.body(body)
+} else {
+    request
+};
+```
 
 ### examples の改修方針
 
@@ -249,21 +466,19 @@ CLAUDE.md「サンプルは **お手本**」原則に従い、examples は **`.u
 
 ## CHANGES.md
 
-`## develop` セクションに以下を追加する:
+`## develop` セクションに以下を追加する (AGENTS.md に従い UPDATE → ADD → CHANGE → FIX の順):
 
 ```
 - [CHANGE] `Request` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Request::new` / `Request::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
-  - `set_header` を新設し、同名ヘッダーの上書きを可能にする
-  - method を RFC 9110 Section 9.1 token として、URI を構文レベル (CRLF/NUL/SP 禁止) でバリデートする
+  - `set_header` を新設し、同名ヘッダー (case-insensitive) の上書きを可能にする
+  - method を RFC 9110 Section 9.1 token として、URI を既存の `is_valid_request_target` (制御文字/RFC 3986 除外文字/%00 拒否 + obs-text 非含有) でバリデートする
   - HTTP Request Smuggling (CWE-444) 防御を強化する
-  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする
-  - `method()` / `uri()` / `version()` / `body()` の読み取り専用アクセサを追加する
+  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする (debug_assert! 付き)
+  - `method()` / `uri()` / `version()` / `body_bytes()` の読み取り専用アクセサを追加する
   - 構造体に `#[non_exhaustive]` を付与する
   - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
-  - @voluntas
-- [ADD] `EncodeError::InvalidMethod` バリアントを追加する
   - @voluntas
 ```
 
@@ -274,11 +489,12 @@ CLAUDE.md「サンプルは **お手本**」原則に従い、examples は **`.u
 新規単体テスト (`tests/test_request.rs`) で以下を検証する:
 
 - 不正な method (空文字列、CRLF を含む、SP を含む、token 違反文字を含む) で `Err(InvalidMethod)` が返る
-- 不正な URI (空文字列、CRLF を含む、NUL を含む、SP を含む) で `Err(InvalidUri)` が返る
+- 不正な URI (空文字列、CRLF を含む、NUL を含む、SP を含む、制御文字を含む、RFC 3986 除外文字を含む) で `Err(InvalidRequestTarget)` が返る
 - スペースを含むヘッダー名で `Err(InvalidHeaderName)` が返る
 - CRLF を含むヘッダー値で `Err(InvalidHeaderValue)` が返る
 - NUL を含むヘッダー値で `Err(InvalidHeaderValue)` が返る
-- 空ヘッダー値が合法であること (RFC 9110 Section 5.5: `field-value = *field-content`)
+- 空ヘッダー値が合法であること (RFC 9110 Section 5.5: `field-value = *field-content`) — `is_valid_field_value` は空文字列で `true` を返す (空イテレータで `.all()` が常に `true`)
+- 先頭/末尾に SP/HTAB を含むヘッダー値は合法であること (trim は行わない。RFC 9110 §5.5 は「A field parsing implementation MUST exclude such whitespace prior to evaluating the field value」と MUST で先行/末尾空白の除外を要求しているが、本 issue の目的は smuggling 防御であり、先行/末尾空白の trim を本 issue に含めるとスコープが拡大しすぎる。trim は後続 issue で対応する。本テストは RFC 逸脱の暫定テストであり、後続 issue で修正される動作であることを注記すること)
 - token/DIGIT.DIGIT 形式に違反する version で `Err(InvalidVersion)` が返る
 - `set_header` が case-insensitive に上書きできる
 - `set_header` のバリデーション失敗時に既存ヘッダーが消えない (アトミック性)
@@ -303,14 +519,20 @@ assert!(matches!(
 // URI への SP 注入 (smuggling の典型ペイロード) を構築時に拒否する
 assert!(matches!(
     Request::new("GET", "/api?q=x HTTP/1.1\r\nGET /admin").unwrap_err(),
-    EncodeError::InvalidUri { .. }
+    EncodeError::InvalidRequestTarget { .. }
+));
+
+// URI への %00 NUL エンコーディング (smuggling ペイロード) を構築時に拒否する
+assert!(matches!(
+    Request::new("GET", "/path%00bad").unwrap_err(),
+    EncodeError::InvalidRequestTarget { .. }
 ));
 ```
 
 ### 既存挙動が回帰しないことの確認
 
-- 既存の単体テスト (`tests/test_encoder.rs` 等) が新 API に追従して green になる
-- PBT (`prop_request.rs`, `prop_encoder.rs`, `prop_decoder/request.rs` 等) が新 API に追従して green になる
+- 既存の単体テスト (`tests/test_encoder.rs`, `tests/test_decoder.rs` 等) が新 API に追従して green になる
+- PBT (`prop_request.rs`, `prop_encoder.rs`, `prop_decoder/request.rs`, `prop_decoder/body.rs` 等) が新 API に追従して green になる
 - fuzz ターゲット (`fuzz_encode_request`, `fuzz_decoder_roundtrip`, `fuzz_request_response_helpers`) が新 API に追従して green になる
 - 全 examples (`http11_server`, `http11_server_io_uring`, `http11_reverse_proxy`, `http11_client`) がコンパイルおよび実行可能である
 
@@ -318,9 +540,17 @@ assert!(matches!(
 
 ```bash
 cargo llvm-cov clean --workspace
-cargo llvm-cov --no-report -p shiguredo_http11 --lib -- request validate
+# request.rs の #[cfg(test)] mod tests を実行
+cargo llvm-cov --no-report -p shiguredo_http11 --lib -- request
+# validate.rs の検証関数を request テスト経由で計測
+cargo llvm-cov --no-report -p shiguredo_http11 --lib -- validate
+# encoder.rs — 内部テスト + from_raw_parts 経由の decoder 到達パスを含む
 cargo llvm-cov --no-report -p shiguredo_http11 --lib -- encoder
+# decoder 経由の from_raw_parts 呼び出しパス
+cargo llvm-cov --no-report -p shiguredo_http11 --lib -- decoder
+# 新規単体テスト
 cargo llvm-cov --no-report -p shiguredo_http11 --test test_request
+# PBT
 cargo llvm-cov --no-report -p pbt --test prop_request
 cargo llvm-cov report
 ```
@@ -333,22 +563,23 @@ cargo llvm-cov report
 - `make fmt && make clippy && make check && make test` がすべて成功する
 - `src/request.rs` から `pub method` / `pub uri` / `pub version` / `pub headers` / `pub body` が消えている
 - `Request` 構造体に `#[non_exhaustive]` が付いている
-- `pub(crate) fn from_raw_parts` が Request に存在し、decoder がこれを使用している
+- `pub(crate) fn from_raw_parts` が Request に存在し、decoder がこれを使用している。かつ `debug_assert!` で method, uri, version, headers の全不変条件が検査されている
 - バリデーションエラー再現テストが全種成功する
   - `InvalidMethod` (空文字列, CRLF 含む, SP 含む, token 違反)
-  - `InvalidUri` (空文字列, CRLF 含む, NUL 含む, SP 含む)
+  - `InvalidRequestTarget` (空文字列, CRLF 含む, NUL 含む, SP 含む, 制御文字含む, RFC 3986 除外文字含む)
   - `InvalidHeaderName` (スペース含む, 空文字列)
   - `InvalidHeaderValue` (CRLF 含む, LF 含む, NUL 含む)
   - `InvalidVersion` (不正形式)
 - 空ヘッダー値が合法であることのテストが存在する
-- `set_header` の上書き動作が検証されている
-- Request smuggling ペイロード (CRLF 注入による TE/CL 偽装、method/URI への CRLF 注入) を構築時に拒否することのテストが存在する
+- 先頭・末尾に SP を含むヘッダー値が合法であることのテストが存在する (trim は行わない判断の確認)
+- `set_header` の上書き動作および case-insensitive 上書きが検証されている
+- Request smuggling ペイロード (CRLF 注入による TE/CL 偽装、method/URI への CRLF 注入、URI への %00 注入) を構築時に拒否することのテストが存在する
 - `encoder.rs` 内部で `request.method` / `request.uri` / `request.version` / `request.headers` / `request.body` への直接フィールドアクセスが残っていない
 - `cargo llvm-cov` でコンストラクタ / `add_header` / `set_header` / `from_raw_parts` のバリデーション分岐がカバーされている
 - 全 fuzz ターゲットが新 API に追従しコンパイル可能である
 - `set_header` のバリデーション失敗時に既存ヘッダーが消えない (アトミック性) ことが単体テストで検証されている
 - 全 examples が `.unwrap()` を使わず `?` 伝播で書かれている (静的リテラルへの `.expect("...")` は理由付きで許容)
-- `encoder.rs` 内の `validate_request_fields` 各検証分岐が `from_raw_parts` 経由のテストでカバーされている
+- `encoder.rs` 内の `validate_request_fields` の obs-text 拒否分岐が `from_raw_parts` 経由のテストでカバーされている (method / URI / version / headers 分岐は debug ビルドで `from_raw_parts` の `debug_assert!` が先に catch するため到達不能。これらは release ビルドの最終防御線として機能する)
 - `skills/shiguredo-http11/SKILL.md` の Request API 一覧およびサンプルコードが新 API に追従している
-- `EncodeError::InvalidMethod` バリアントが追加されている
 - `from_raw_parts` の不変条件が `debug_assert!` で検査されており、debug ビルドで契約破りを検出可能であること
+- `Request::body_bytes()` が `Response::body_bytes()` (0017 の命名) と一貫した名前であること
