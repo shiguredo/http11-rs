@@ -1,6 +1,7 @@
 # 0016: ResponseDecoder の expect_no_body を request_method に統合する
 
 Created: 2026-05-06
+Completed: 2026-05-06
 Model: Opus 4.7
 
 ## 概要

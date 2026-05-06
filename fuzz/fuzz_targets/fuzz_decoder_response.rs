@@ -2,7 +2,7 @@
 //!
 //! - 通常デコード: 任意のバイト列を ResponseDecoder に投入し、
 //!   ヘッダーデコード → ボディ消費の全パスでパニックしないことを確認する
-//! - HEAD レスポンス: set_expect_no_body(true) でのデコードパスを検証する
+//! - HEAD レスポンス: set_request_method("HEAD") でのデコードパスを検証する
 //! - ストリーミング feed: 同じデータを 23 バイト単位に分割して段階的にデコードする
 //! - 直接書き込み API: mut_buf / advance_buf 経由でも同じ全パスがパニックしないことを確認する
 
@@ -34,7 +34,7 @@ fuzz_target!(|data: &[u8]| {
 
     // HEAD リクエストへのレスポンスとしてデコード
     decoder.reset();
-    decoder.set_expect_no_body(true);
+    decoder.set_request_method("HEAD");
     if decoder.feed(data).is_ok() {
         let _ = decoder.decode_headers();
     }

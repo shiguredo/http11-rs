@@ -22,9 +22,13 @@ use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, RequestDecoder, Re
 
 /// CONNECT + 2xx レスポンスでトンネルモードになることを確認。
 /// Content-Length が付いていても無視して Tunnel を返す (MUST ignore)。
+///
+/// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+/// item 1 (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より
+/// 優先されるため、CONNECT + 204 は `BodyKind::None` になる。
 #[test]
 fn test_connect_2xx_tunnel_mode() {
-    for status in [200, 201, 202, 204, 299] {
+    for status in [200, 201, 202, 299] {
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
@@ -50,6 +54,26 @@ fn test_connect_2xx_tunnel_mode() {
         );
         assert!(decoder.is_tunnel());
     }
+}
+
+/// CONNECT + 204 No Content は `BodyKind::None` になることを確認。
+///
+/// RFC 9112 Section 6.3 の "in order of precedence" により item 1
+/// (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より優先される。
+/// このため CONNECT + 204 はトンネルモードに切り替わらず、ヘッダー終了で
+/// メッセージが完了する。
+#[test]
+fn test_connect_204_no_body() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 204 No Content\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.status_code, 204);
+    assert_eq!(body_kind, BodyKind::None);
+    assert!(!decoder.is_tunnel());
 }
 
 /// CONNECT + 非 2xx レスポンスはトンネルモードにならず、通常のボディ判定に従う。
@@ -233,7 +257,7 @@ fn test_304_ignores_invalid_te() {
 #[test]
 fn test_head_ignores_invalid_te() {
     let mut decoder = ResponseDecoder::new();
-    decoder.set_expect_no_body(true); // HEAD リクエストへのレスポンス
+    decoder.set_request_method("HEAD"); // HEAD リクエストへのレスポンス
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
@@ -245,7 +269,7 @@ fn test_head_ignores_invalid_te() {
 #[test]
 fn test_head_ignores_invalid_cl() {
     let mut decoder = ResponseDecoder::new();
-    decoder.set_expect_no_body(true);
+    decoder.set_request_method("HEAD");
     // 通常は異なる値はエラーだが、HEAD では無視
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Length: 200\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();

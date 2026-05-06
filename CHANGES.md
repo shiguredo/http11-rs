@@ -11,6 +11,14 @@
 
 ## develop
 
+- [CHANGE] `ResponseDecoder::set_expect_no_body` を撤去し、HEAD レスポンスの指定を `set_request_method("HEAD")` に統一する
+  - `expect_no_body` フィールドと `request_method` フィールドの二重化を解消し、`request_method` 一本に集約する
+  - `determine_body_kind` の判定順序を RFC 9112 Section 6.3 の優先順位に合わせる (CONNECT + 204 の挙動が Tunnel → None に変わる)
+  - @voluntas
+- [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
+  - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
+  - @voluntas
+
 ### misc
 
 ## 2026.3.0
