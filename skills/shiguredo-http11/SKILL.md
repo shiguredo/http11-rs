@@ -33,7 +33,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
 | `Request` | HTTP リクエスト | `new()`, `with_version()`, `header()`, `body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_keep_alive()`, `is_chunked()` |
-| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`, `is_keep_alive()` |
+| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`, `is_keep_alive()` |
+| `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `from_code(u16)` (未登録コードは `None`) |
 | `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `with_compressor()` |
 | `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `with_compressor()` |
 
@@ -171,7 +172,7 @@ loop {
 ### サーバー実装
 
 ```rust
-use shiguredo_http11::{RequestDecoder, Response};
+use shiguredo_http11::{RequestDecoder, Response, StatusCode};
 use std::io::Read;
 
 // リクエストデコード: 内部バッファに直接 read してコピーを排除
@@ -195,9 +196,11 @@ let request = loop {
 };
 
 // レスポンス作成
-// Response::new / with_version / header / add_header / set_header は
-// 構築時バリデーション付きで Result<_, EncodeError> を返す。
-let response = Response::new(200, "OK")?
+// IANA 登録済みステータスコードは `Response::with_status(StatusCode::OK)` で
+// infallible に構築できる (canonical reason phrase が自動付与される)。
+// カスタムバージョンや任意の reason phrase が必要な場合は
+// `Response::new` / `with_version` を使う (Result<_, EncodeError> を返す)。
+let response = Response::with_status(StatusCode::OK)
     .header("Content-Type", "text/plain")?
     .body(b"Hello, World!".to_vec());
 let bytes = response.encode();
@@ -209,12 +212,12 @@ let bytes = response.encode();
 HEAD リクエストへのレスポンスは GET と同じヘッダーを返すがボディは送信しない (RFC 9110 Section 9.3.2)。
 
 ```rust
-use shiguredo_http11::{Request, Response, ResponseDecoder};
+use shiguredo_http11::{Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: Response::omit_body() でボディ送信を抑止
 let is_head = request.method.eq_ignore_ascii_case("HEAD");
 let body = b"Hello, World!";
-let mut response = Response::new(200, "OK")?
+let mut response = Response::with_status(StatusCode::OK)
     .header("Content-Type", "text/plain")?
     .header("Content-Length", &body.len().to_string())?
     .omit_body(is_head);
@@ -350,9 +353,9 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 ### Chunked Transfer Encoding
 
 ```rust
-use shiguredo_http11::{Response, encode_chunk};
+use shiguredo_http11::{Response, StatusCode, encode_chunk};
 
-let response = Response::new(200, "OK")?
+let response = Response::with_status(StatusCode::OK)
     .header("Transfer-Encoding", "chunked")?;
 
 // ヘッダーを送信

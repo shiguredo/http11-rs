@@ -11,6 +11,11 @@
 
 ## develop
 
+- [ADD] `StatusCode` 型を導入し IANA HTTP Status Code Registry の status code を const 値として提供する
+  - `Response::with_status(StatusCode::OK)` 等で infallible に Response を構築できる (HTTP/1.1 固定、canonical reason phrase が自動付与される)
+  - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する
+  - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` でアクセス可能 (`Copy` / `Eq` / `Hash` 派生、IANA 未登録コードは `None`)
+  - @voluntas
 - [CHANGE] `Response` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Response::new` / `Response::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
