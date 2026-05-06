@@ -274,7 +274,7 @@ async fn serve_request(
     tls: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let h = state.head.take().unwrap();
-    state.body_kind.take().unwrap();
+    let _ = state.body_kind.take();
     let request = Request {
         method: h.method,
         uri: h.uri,

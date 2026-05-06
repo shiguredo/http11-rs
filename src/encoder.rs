@@ -80,11 +80,16 @@ fn should_auto_emit_content_length_for_request(request: &Request) -> bool {
         && !request.has_header("Transfer-Encoding")
 }
 
+/// ステータスコードがボディを持ちうるか判定
+///
+/// RFC 9110 Section 6.4.1: 1xx / 204 / 304 はボディを含めてはならない
+fn response_status_has_body(status_code: u16) -> bool {
+    !((100..200).contains(&status_code) || status_code == 204 || status_code == 304)
+}
+
 /// `encode_response` で Content-Length を自動付与するか判定
 fn should_auto_emit_content_length_for_response(response: &Response) -> bool {
-    let status_has_body = !((100..200).contains(&response.status_code)
-        || response.status_code == 204
-        || response.status_code == 304);
+    let status_has_body = response_status_has_body(response.status_code);
     let body_len = response.body.as_deref().map(<[u8]>::len);
     status_has_body
         && !response.has_header("Content-Length")
@@ -143,10 +148,8 @@ fn estimate_response_capacity(response: &Response) -> Option<usize> {
         total = total.checked_add(AUTO_CONTENT_LENGTH_CAPACITY)?;
     }
     total = total.checked_add(2)?;
-    let status_has_body = !((100..200).contains(&response.status_code)
-        || response.status_code == 204
-        || response.status_code == 304);
-    let body_will_be_encoded = status_has_body && !response.omit_body;
+    let body_will_be_encoded =
+        response_status_has_body(response.status_code) && !response.omit_body;
     if body_will_be_encoded && let Some(body) = response.body.as_deref() {
         total = total.checked_add(body.len())?;
     }
@@ -767,10 +770,8 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         }
     }
 
-    let status_has_body = !((100..200).contains(&response.status_code)
-        || response.status_code == 204
-        || response.status_code == 304);
-    let body_will_be_encoded = status_has_body && !response.omit_body;
+    let body_will_be_encoded =
+        response_status_has_body(response.status_code) && !response.omit_body;
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // - 通常レスポンス: 常に一致必須
@@ -778,7 +779,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     //   (HEAD レスポンスで Content-Length が表現長を示すケース)
     // - 1xx/204/304 は message body がないため、ここでは検証しない
     // body == None は body 長 0 として扱う
-    if status_has_body
+    if response_status_has_body(response.status_code)
         && !response.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(&response.headers)?
     {
@@ -1426,7 +1427,7 @@ mod capacity_tests {
     }
 
     #[test]
-    fn test_request_capacity_overflow_returns_none_does_not_panic() {
+    fn test_request_capacity_normal_input_does_not_panic() {
         // 巨大なヘッダー長をシミュレートするのは現実不可能なので、
         // ここではオーバーフロー時のフォールバックパス (`Vec::new()`) が
         // パニックしないことを通常入力で確認する。
