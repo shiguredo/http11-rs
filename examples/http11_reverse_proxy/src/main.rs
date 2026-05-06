@@ -578,7 +578,7 @@ async fn stream_response_on_connection(
     }
 
     if let Some(len) = content_length {
-        response_for_headers.add_header("Content-Length", &len.to_string())?;
+        response_for_headers.add_header("Content-Length", len.to_string())?;
         debug!(content_length = len, "Using Content-Length");
     } else if use_chunked {
         response_for_headers.add_header("Transfer-Encoding", "chunked")?;

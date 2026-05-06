@@ -383,7 +383,7 @@ fn test_encode_request_nul_in_header_value() {
 fn test_encode_response_crlf_in_reason_phrase() {
     // 不正な reason_phrase は構築時に拒否される
     for phrase in &["OK\r\nEvil: header", "OK\n", "OK\r"] {
-        let result = Response::new(200, phrase);
+        let result = Response::new(200, *phrase);
         assert!(
             matches!(result, Err(EncodeError::InvalidReasonPhrase { .. })),
             "CRLF in reason-phrase should be rejected at construction: {:?}",
@@ -397,7 +397,7 @@ fn test_encode_response_crlf_in_header_name() {
     // 不正なヘッダー名は構築時に拒否される
     for name in &["Evil\r\nHeader", "Evil\nHeader"] {
         let res = Response::with_status(StatusCode::OK);
-        let result = res.header(name, "value");
+        let result = res.header(*name, "value");
         assert!(
             matches!(result, Err(EncodeError::InvalidHeaderName { .. })),
             "CRLF in response header name should be rejected at construction: {:?}",
@@ -411,7 +411,7 @@ fn test_encode_response_crlf_in_header_value() {
     // 不正なヘッダー値は構築時に拒否される
     for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
         let res = Response::with_status(StatusCode::OK);
-        let result = res.header("X-Test", value);
+        let result = res.header("X-Test", *value);
         assert!(
             matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
             "CRLF in response header value should be rejected at construction: {:?}",

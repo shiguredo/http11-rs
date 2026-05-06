@@ -639,7 +639,7 @@ fn build_compressed_response(
     let mut response = Response::new(status_code, reason_phrase)?
         .header("Date", date)?
         .header("Content-Type", content_type)?
-        .header("Content-Length", &final_body.len().to_string())?
+        .header("Content-Length", final_body.len().to_string())?
         .header("Server", "shiguredo_http11/0.1.0")?
         .header("Vary", "Accept-Encoding")?;
 
