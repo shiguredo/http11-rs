@@ -3,15 +3,14 @@
 //! - 任意の method, uri, version, ヘッダー, ボディから Request を構築し、
 //!   get_header, get_headers, has_header, connection, content_length,
 //!   is_chunked, is_keep_alive の各メソッドが期待値と一致することを確認する
-//! - 同様に Response を構築し、上記に加えて is_success, is_redirect,
-//!   is_client_error, is_server_error, is_informational の
-//!   ステータスコード分類メソッドの整合性を検証する
+//! - 同様に Response を構築し、上記に加えて status_class() による
+//!   ステータスコード分類の整合性を検証する
 
 #![no_main]
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Request, Response};
+use shiguredo_http11::{Request, Response, StatusClass};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzRequest {
@@ -152,18 +151,26 @@ fn exercise_response(input: FuzzResponse) {
         expected_keep_alive(&version, &headers)
     );
 
-    assert_eq!(response.is_success(), (200..300).contains(&status_code));
-    assert_eq!(response.is_redirect(), (300..400).contains(&status_code));
+    // Response::with_version はバリデーションを通すため、
+    // 到達した時点で status_code は 100..=599 に閉じ込められている。
     assert_eq!(
-        response.is_client_error(),
+        response.status_class() == StatusClass::Successful,
+        (200..300).contains(&status_code)
+    );
+    assert_eq!(
+        response.status_class() == StatusClass::Redirection,
+        (300..400).contains(&status_code)
+    );
+    assert_eq!(
+        response.status_class() == StatusClass::ClientError,
         (400..500).contains(&status_code)
     );
     assert_eq!(
-        response.is_server_error(),
+        response.status_class() == StatusClass::ServerError,
         (500..600).contains(&status_code)
     );
     assert_eq!(
-        response.is_informational(),
+        response.status_class() == StatusClass::Informational,
         (100..200).contains(&status_code)
     );
 }

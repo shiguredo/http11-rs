@@ -30,6 +30,12 @@
   - `expect_no_body` フィールドと `request_method` フィールドの二重化を解消し、`request_method` 一本に集約する
   - `determine_body_kind` の判定順序を RFC 9112 Section 6.3 の優先順位に合わせる (CONNECT + 204 の挙動が Tunnel → None に変わる)
   - @voluntas
+- [CHANGE] `Response` と `ResponseHead` の `is_informational` / `is_success` / `is_redirect` / `is_client_error` / `is_server_error` を撤去し、`StatusClass` enum と `status_class()` メソッドに統合する
+  - 5 個の bool メソッドが網羅性を型で保証できなかった問題を解消する
+  - バリアント名は RFC 9110 Section 15 の節タイトルに準拠する: `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`
+  - `StatusCode::class()` を追加し、IANA 登録済み code から直接 `StatusClass` を取得できるようにする
+  - 利用側は `response.is_success()` を `matches!(response.status_class(), StatusClass::Successful)` 等に書き換える
+  - @voluntas
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas

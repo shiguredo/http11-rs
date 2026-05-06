@@ -95,4 +95,4 @@ pub use error::{EncodeError, Error};
 pub use limits::DecoderLimits;
 pub use request::Request;
 pub use response::Response;
-pub use status_code::StatusCode;
+pub use status_code::{StatusClass, StatusCode};

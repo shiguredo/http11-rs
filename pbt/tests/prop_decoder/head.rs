@@ -1,7 +1,9 @@
 //! ヘッダーパース・HttpHead トレイトの PBT
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, HttpHead, RequestDecoder, ResponseDecoder, ResponseHead};
+use shiguredo_http11::{
+    BodyKind, HttpHead, RequestDecoder, ResponseDecoder, ResponseHead, StatusClass,
+};
 
 use super::{
     http_method, invalid_header_name_char, transfer_encoding_token, valid_header_name_special_char,
@@ -800,47 +802,53 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// is_redirect: 3xx ステータスコードで true
+    /// status_class: 3xx ステータスコードで Redirection
     #[test]
-    fn prop_response_head_is_redirect(status in 300u16..=399) {
+    fn prop_response_head_status_class_redirection(status in 300u16..=399) {
         let data = format!("HTTP/1.1 {} Redirect\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(head.is_redirect());
-        prop_assert!(!head.is_success());
-        prop_assert!(!head.is_client_error());
-        prop_assert!(!head.is_server_error());
+        prop_assert_eq!(head.status_class(), StatusClass::Redirection);
     }
 }
 
 proptest! {
-    /// is_client_error: 4xx ステータスコードで true
+    /// status_class: 4xx ステータスコードで ClientError
     #[test]
-    fn prop_response_head_is_client_error(status in 400u16..=451) {
+    fn prop_response_head_status_class_client_error(status in 400u16..=499) {
         let data = format!("HTTP/1.1 {} Error\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(head.is_client_error());
-        prop_assert!(!head.is_success());
-        prop_assert!(!head.is_redirect());
-        prop_assert!(!head.is_server_error());
+        prop_assert_eq!(head.status_class(), StatusClass::ClientError);
     }
 }
 
 proptest! {
-    /// is_server_error: 5xx ステータスコードで true
+    /// status_class: 5xx ステータスコードで ServerError
     #[test]
-    fn prop_response_head_is_server_error(status in 500u16..=511) {
+    fn prop_response_head_status_class_server_error(status in 500u16..=599) {
         let data = format!("HTTP/1.1 {} Error\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(head.is_server_error());
-        prop_assert!(!head.is_success());
-        prop_assert!(!head.is_redirect());
-        prop_assert!(!head.is_client_error());
+        prop_assert_eq!(head.status_class(), StatusClass::ServerError);
+    }
+}
+
+proptest! {
+    /// status_class: 任意の status_code (100..=599) が
+    /// StatusClass::from_status_code と整合する
+    #[test]
+    fn prop_response_head_status_class_consistency(status in 100u16..=599) {
+        let data = format!("HTTP/1.1 {} Status\r\n\r\n", status);
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        let expected = StatusClass::from_status_code(status)
+            .expect("100..=599 always classified");
+        prop_assert_eq!(head.status_class(), expected);
     }
 }
 

@@ -284,4 +284,78 @@ impl StatusCode {
             _ => return None,
         })
     }
+
+    /// この `StatusCode` のクラス分類を返す。
+    ///
+    /// `StatusCode` は構築時に `100..=599` が保証されているため、
+    /// 必ず分類が定まる (戻り値は `Option` ではない)。
+    #[must_use]
+    pub const fn class(&self) -> StatusClass {
+        // `code` は `new_const` の assert で 100..=599 が保証されている。
+        // 直接 match することで `Option` のラップ/アンラップと `unreachable!()`
+        // を避け、コンパイラの網羅性チェックも有効にできる。
+        // 注: `_` アームは `new_const` の assert により到達不能だが、
+        // `core::hint::unreachable_unchecked()` の使用は unsafe であり、
+        // 防御的コードとして残す。到達不能ではあるがデッドコードではない。
+        match self.code.get() {
+            100..=199 => StatusClass::Informational,
+            200..=299 => StatusClass::Successful,
+            300..=399 => StatusClass::Redirection,
+            400..=499 => StatusClass::ClientError,
+            500..=599 => StatusClass::ServerError,
+            _ => panic!("StatusCode constraint violation: code out of 100..=599"),
+        }
+    }
+}
+
+/// HTTP ステータスコードのクラス分類 — RFC 9110 Section 15 準拠。
+///
+/// # 分類表
+///
+/// | バリアント       | 範囲          | RFC 9110 |
+/// |------------------|---------------|----------|
+/// | `Informational`  | `100..=199`   | §15.2    |
+/// | `Successful`     | `200..=299`   | §15.3    |
+/// | `Redirection`    | `300..=399`   | §15.4    |
+/// | `ClientError`    | `400..=499`   | §15.5    |
+/// | `ServerError`    | `500..=599`   | §15.6    |
+///
+/// 範囲外 (`0..=99`, `600..=65535`) の値は `from_status_code` で `None` を返す。
+/// 本ライブラリ内では `Response` と `ResponseHead` の構築時に
+/// `100..=599` のバリデーションが効いているため、これらの型を経由する限り
+/// 範囲外の値が到達することはない。
+///
+/// RFC 9110 Section 15 (lines 6828-6832) は範囲外の status code を受信した
+/// クライアントに対して「5xx (Server Error) として扱うべき (SHOULD)」と勧告している。
+/// `from_status_code` の `None` は「分類不能」を表現しており、この SHOULD 勧告に
+/// 従ったフォールバック (例: `unwrap_or(StatusClass::ServerError)`) は API 利用者の責務。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum StatusClass {
+    /// 1xx Informational — RFC 9110 Section 15.2
+    Informational,
+    /// 2xx Successful — RFC 9110 Section 15.3
+    Successful,
+    /// 3xx Redirection — RFC 9110 Section 15.4
+    Redirection,
+    /// 4xx Client Error — RFC 9110 Section 15.5
+    ClientError,
+    /// 5xx Server Error — RFC 9110 Section 15.6
+    ServerError,
+}
+
+impl StatusClass {
+    /// `u16` のステータスコードから `StatusClass` を生成する。
+    ///
+    /// 範囲外の値 (`0..=99`, `600..=65535`) は `None` を返す。
+    #[must_use]
+    pub const fn from_status_code(code: u16) -> Option<Self> {
+        Some(match code {
+            100..=199 => StatusClass::Informational,
+            200..=299 => StatusClass::Successful,
+            300..=399 => StatusClass::Redirection,
+            400..=499 => StatusClass::ClientError,
+            500..=599 => StatusClass::ServerError,
+            _ => return None,
+        })
+    }
 }

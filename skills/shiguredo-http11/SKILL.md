@@ -33,8 +33,9 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
 | `Request` | HTTP リクエスト | `new()`, `with_version()`, `header()`, `body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_keep_alive()`, `is_chunked()` |
-| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`, `is_keep_alive()` |
-| `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `from_code(u16)` (未登録コードは `None`) |
+| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `status_class()`, `is_keep_alive()` |
+| `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `class()`, `from_code(u16)` (未登録コードは `None`) |
+| `StatusClass` | RFC 9110 Section 15 のクラス分類 enum | `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`, `from_status_code(u16)` (範囲外は `None`) |
 | `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `with_compressor()` |
 | `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `with_compressor()` |
 
@@ -47,7 +48,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
 | `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
-| `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`) |
+| `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `status_class()`) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
 | `request_target::RequestTargetForm` | request-target 形式 (encoder/decoder で共通) | `Origin`, `Absolute`, `Authority`, `Asterisk` |
 

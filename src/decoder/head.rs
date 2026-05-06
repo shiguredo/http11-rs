@@ -1,5 +1,6 @@
 //! HTTP ヘッダー型の定義
 
+use crate::status_code::StatusClass;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -151,28 +152,22 @@ impl HttpHead for ResponseHead {
 }
 
 impl ResponseHead {
-    /// ステータスコードが成功 (2xx) か確認
-    pub fn is_success(&self) -> bool {
-        (200..300).contains(&self.status_code)
-    }
-
-    /// ステータスコードがリダイレクト (3xx) か確認
-    pub fn is_redirect(&self) -> bool {
-        (300..400).contains(&self.status_code)
-    }
-
-    /// ステータスコードがクライアントエラー (4xx) か確認
-    pub fn is_client_error(&self) -> bool {
-        (400..500).contains(&self.status_code)
-    }
-
-    /// ステータスコードがサーバーエラー (5xx) か確認
-    pub fn is_server_error(&self) -> bool {
-        (500..600).contains(&self.status_code)
-    }
-
-    /// ステータスコードが情報レスポンス (1xx) か確認
-    pub fn is_informational(&self) -> bool {
-        (100..200).contains(&self.status_code)
+    /// ステータスコードのクラス分類を返す。
+    ///
+    /// RFC 9110 Section 15 に基づく分類。
+    ///
+    /// 注: `ResponseHead` の全フィールドは現在 `pub` であるため、
+    /// 構造体リテラルで不正な `status_code` を直接注入された場合に
+    /// パニックが発生する。`ResponseHead` のフィールド非公開化
+    /// (将来 issue) が完了すればこの問題は解消される。
+    /// デコーダー経由で構築された `ResponseHead` では
+    /// `status_code` は 100..=599 にバリデートされているため安全。
+    #[must_use]
+    pub fn status_class(&self) -> StatusClass {
+        // `ResponseDecoder` は status-line をデコードする際に
+        // `is_valid_status_code` (100..=599) を通している。
+        StatusClass::from_status_code(self.status_code).expect(
+            "ResponseHead::status_code must be in 100..=599 (ResponseDecoder validates at decode time)",
+        )
     }
 }
