@@ -543,21 +543,6 @@ impl<D: Decompressor> RequestDecoder<D> {
         Ok(Some(status))
     }
 
-    /// 利用可能なボディデータのバイト数を取得
-    fn available_body_len(&self) -> usize {
-        match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => {
-                if *remaining >= self.buf.len() as u64 {
-                    self.buf.len()
-                } else {
-                    *remaining as usize
-                }
-            }
-            DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
-            _ => 0,
-        }
-    }
-
     /// ボディデータを消費
     ///
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
@@ -622,28 +607,27 @@ impl<D: Decompressor> RequestDecoder<D> {
                 unreachable!("Tunnel mode is only for CONNECT responses")
             }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
-                // 直接バッファから利用可能なデータ長を取得（コピーなし）
-                let available = self.available_body_len();
-                if available > 0 {
-                    // バッファから直接コピー
-                    self.decoded_body.extend_from_slice(&self.buf[..available]);
-                    match self.consume_body(available)? {
-                        BodyProgress::Complete { .. } => break,
-                        BodyProgress::Continue => continue,
+                // バッファからボディデータを直接消費。
+                // body_decoder.peek_body() を直接呼ぶことで、返り値の lifetime が
+                // &self.buf に紐付き、self.decoded_body の可変借用と並立できる。
+                if let Some(data) = self.body_decoder.peek_body(&self.buf, &self.phase) {
+                    let len = data.len();
+                    self.decoded_body.extend_from_slice(data);
+                    self.consume_body(len)?;
+                    // consume_body の戻り値ではなく phase で完了判定する。
+                    // BodyChunkedData → BodyChunkedDataCrlf → BodyChunkedSize の
+                    // 多段遷移時は Advanced を返すため、phase を直接見るのが確実。
+                    if matches!(self.phase, DecodePhase::Complete) {
+                        break;
                     }
+                    continue;
                 }
 
-                // データがない場合、状態機械を進める
+                // ボディデータがない → 状態機械を進める
                 match self.progress()? {
                     BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => {
-                        // 状態遷移後にデータが利用可能になったか確認
-                        if self.available_body_len() > 0 {
-                            continue;
-                        }
-                        // データ不足
-                        return Ok(None);
-                    }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => return Ok(None),
                 }
             },
             BodyKind::CloseDelimited | BodyKind::None => {}

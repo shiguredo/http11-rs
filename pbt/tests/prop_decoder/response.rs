@@ -276,7 +276,7 @@ proptest! {
         body_content in "[a-z]{1,32}",
         trailer_name in "[A-Za-z]{1,16}"
     ) {
-        // 不完全なトレーラーは Continue
+        // 不完全なトレーラーは Complete に到達してはならない
         let len = body_content.len();
         let data = format!(
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: value",
@@ -286,21 +286,24 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
-        // ボディを消費
-        loop {
+        // ボディを消費。多段遷移を経て最終的に NeedData (もしくは Complete) に収束する。
+        // 不完全トレーラの場合は Complete に到達してはならない。
+        let final_result = loop {
             if let Some(data) = decoder.peek_body() {
                 let len = data.len();
-                let result = decoder.consume_body(len).unwrap();
-                if matches!(result, BodyProgress::Complete { .. }) {
-                    break;
+                match decoder.consume_body(len).unwrap() {
+                    r @ BodyProgress::Complete { .. } => break r,
+                    BodyProgress::Advanced | BodyProgress::NeedData => continue,
                 }
-            } else {
-                let result = decoder.progress().unwrap();
-                // トレーラーが不完全なので Continue
-                prop_assert!(matches!(result, BodyProgress::Continue));
-                break;
             }
-        }
+            match decoder.progress().unwrap() {
+                r @ BodyProgress::Complete { .. } => break r,
+                BodyProgress::Advanced => continue,
+                r @ BodyProgress::NeedData => break r,
+            }
+        };
+        let is_complete = matches!(final_result, BodyProgress::Complete { .. });
+        prop_assert!(!is_complete);
     }
 }
 

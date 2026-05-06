@@ -24,7 +24,7 @@ fuzz_target!(|data: &[u8]| {
                     let len = body_data.len();
                     match decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => break,
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => break,
                     }
                 }
@@ -46,7 +46,7 @@ fuzz_target!(|data: &[u8]| {
                         let len = body_data.len();
                         match decoder.consume_body(len) {
                             Ok(BodyProgress::Complete { .. }) => break,
-                            Ok(BodyProgress::Continue) => {}
+                            Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                             Err(_) => break,
                         }
                     }
@@ -73,7 +73,7 @@ fuzz_target!(|data: &[u8]| {
                         let len = body_data.len();
                         match decoder.consume_body(len) {
                             Ok(BodyProgress::Complete { .. }) => break,
-                            Ok(BodyProgress::Continue) => {}
+                            Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                             Err(_) => break,
                         }
                     }

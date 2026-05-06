@@ -22,24 +22,55 @@
 //! let mut body = Vec::new();
 //! if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 //!     loop {
+//!         // バッファにあるボディデータを消費
 //!         if let Some(data) = decoder.peek_body() {
 //!             body.extend_from_slice(data);
 //!             let len = data.len();
-//!             if let BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
-//!                 break;
+//!             match decoder.consume_body(len).unwrap() {
+//!                 BodyProgress::Complete { .. } => break,
+//!                 // NeedData (chunked CRLF 不足) でも loop 先頭に戻って peek_body 再試行。
+//!                 // peek_body が None なら progress() に fall through する。
+//!                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
 //!             }
-//!         } else {
-//!             // peek_body() が None でも progress() で状態遷移を試みる
-//!             // Chunked の場合、チャンクサイズ行や終端チャンクのパースが進む
-//!             if let BodyProgress::Complete { .. } = decoder.progress().unwrap() {
-//!                 break;
-//!             }
-//!             // Continue の場合は追加データが必要（実際の使用ではネットワーク I/O が必要）
-//!             break;
+//!         }
+//!         // peek_body() が None → 状態機械を進める
+//!         match decoder.progress().unwrap() {
+//!             BodyProgress::Complete { .. } => break,
+//!             // 状態が進んだ: peek_body 再試行のため loop 先頭へ
+//!             BodyProgress::Advanced => continue,
+//!             // バッファ不足: 実際の使用ではネットワーク I/O に戻って追加データを得る
+//!             BodyProgress::NeedData => break,
 //!         }
 //!     }
 //! }
 //! assert_eq!(body, b"hello");
+//! ```
+//!
+//! ### close-delimited ボディ (`ResponseDecoder` 専用)
+//!
+//! `mark_eof()` は `ResponseDecoder` にのみ存在する。
+//! リクエストでは close-delimited を使わない。
+//!
+//! ```rust
+//! use shiguredo_http11::{ResponseDecoder, BodyKind};
+//!
+//! let mut decoder = ResponseDecoder::new();
+//! decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nhello world").unwrap();
+//!
+//! let (_head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+//! assert_eq!(body_kind, BodyKind::CloseDelimited);
+//!
+//! // mark_eof() 前に peek_body() でバッファ内の全ボディデータを消費する
+//! let mut body = Vec::new();
+//! while let Some(data) = decoder.peek_body() {
+//!     body.extend_from_slice(data);
+//!     let len = data.len();
+//!     decoder.consume_body(len).unwrap();
+//! }
+//! // I/O レイヤーが接続切断を検知したら mark_eof() を呼ぶ。
+//! // mark_eof() 後は phase が Complete に遷移し peek_body() は None を返す。
+//! decoder.mark_eof();
+//! assert_eq!(body, b"hello world");
 //! ```
 //!
 //! ### 一括デコード API

@@ -581,19 +581,20 @@ fn test_chunked_crlf_arrives_in_separate_feed() {
 
     // progress でチャンクサイズを処理し、チャンクデータを利用可能にする
     let result = decoder.progress().unwrap();
-    assert_eq!(result, BodyProgress::Continue);
+    assert_eq!(result, BodyProgress::Advanced);
 
-    // チャンクデータを消費
+    // チャンクデータを消費 → CRLF 不足のため BodyChunkedDataCrlf で停止
     let peeked = decoder.peek_body().unwrap();
     assert_eq!(peeked, b"hello");
     let result = decoder.consume_body(5).unwrap();
-    assert_eq!(result, BodyProgress::Continue);
+    assert_eq!(result, BodyProgress::NeedData);
 
     // CRLF + 終端チャンクを別フィードで送る
     decoder.feed(b"\r\n0\r\n\r\n").unwrap();
+    // 1 回目: BodyChunkedDataCrlf → BodyChunkedSize に遷移 (Advanced)
     let result = decoder.progress().unwrap();
-    // BodyChunkedDataCrlf → BodyChunkedSize → 終端チャンク処理
-    assert_eq!(result, BodyProgress::Continue);
+    assert_eq!(result, BodyProgress::Advanced);
+    // 2 回目: BodyChunkedSize で 0-size 行を処理し、トレーラ終端まで読みきって Complete
     let result = decoder.progress().unwrap();
     assert_eq!(
         result,
@@ -613,13 +614,13 @@ fn test_chunked_invalid_crlf_in_separate_feed() {
 
     // progress でチャンクサイズを処理
     let result = decoder.progress().unwrap();
-    assert_eq!(result, BodyProgress::Continue);
+    assert_eq!(result, BodyProgress::Advanced);
 
-    // チャンクデータを消費
+    // チャンクデータを消費 → CRLF 不足のため BodyChunkedDataCrlf で停止
     let peeked = decoder.peek_body().unwrap();
     assert_eq!(peeked, b"hello");
     let result = decoder.consume_body(5).unwrap();
-    assert_eq!(result, BodyProgress::Continue);
+    assert_eq!(result, BodyProgress::NeedData);
 
     // 不正な CRLF (LF LF)
     decoder.feed(b"\n\n").unwrap();

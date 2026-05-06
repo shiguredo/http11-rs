@@ -497,7 +497,7 @@ proptest! {
         body_content in "[a-z]{1,32}",
         trailer_name in "[A-Za-z]{1,16}"
     ) {
-        // 不完全なトレーラーは Continue
+        // 不完全なトレーラーは Complete に到達してはならない
         let len = body_content.len();
         let data = format!(
             "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: value",
@@ -507,19 +507,25 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (_, _) = decoder.decode_headers().unwrap().unwrap();
 
-        loop {
+        // 不完全なトレーラ行は Complete に到達せず、最終的に NeedData で停止する。
+        // 多段遷移 (BodyChunkedSize → ChunkedTrailer) は Advanced を経由するため、
+        // ループで NeedData / Complete のいずれかに収束するまで進める。
+        let final_result = loop {
             if let Some(data) = decoder.peek_body() {
                 let len = data.len();
-                let result = decoder.consume_body(len).unwrap();
-                if matches!(result, BodyProgress::Complete { .. }) {
-                    break;
+                match decoder.consume_body(len).unwrap() {
+                    r @ BodyProgress::Complete { .. } => break r,
+                    BodyProgress::Advanced | BodyProgress::NeedData => continue,
                 }
-            } else {
-                let result = decoder.progress().unwrap();
-                prop_assert!(matches!(result, BodyProgress::Continue));
-                break;
             }
-        }
+            match decoder.progress().unwrap() {
+                r @ BodyProgress::Complete { .. } => break r,
+                BodyProgress::Advanced => continue,
+                r @ BodyProgress::NeedData => break r,
+            }
+        };
+        let is_complete = matches!(final_result, BodyProgress::Complete { .. });
+        prop_assert!(!is_complete);
     }
 }
 
@@ -717,11 +723,8 @@ proptest! {
                 // progress を試す
                 match decoder.progress().unwrap() {
                     BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => {
-                        if decoder.peek_body().is_none() {
-                            break;
-                        }
-                    }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => break,
                 }
             }
             if let Some(data) = decoder.peek_body() {
@@ -729,7 +732,7 @@ proptest! {
                 consumed.extend_from_slice(&data[..take]);
                 match decoder.consume_body(take).unwrap() {
                     BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => continue,
+                    BodyProgress::Advanced | BodyProgress::NeedData => continue,
                 }
             } else {
                 break;

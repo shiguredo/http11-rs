@@ -43,8 +43,12 @@ pub enum BodyKind {
 /// ボディデコードの進捗
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodyProgress {
-    /// まだデータがある（続きを読む）
-    Continue,
+    /// 現在のバッファでさらに処理を試行できる。
+    /// 直後に peek_body() / progress() / consume_body() を続けて呼ぶこと。
+    Advanced,
+    /// バッファに処理可能なデータがなく、追加の feed() が必要。
+    /// 呼び出し側はループを抜けてネットワーク I/O に戻る。
+    NeedData,
     /// 完了（トレーラーがある場合は含む）
     Complete { trailers: Vec<(String, String)> },
 }
@@ -168,16 +172,29 @@ impl BodyDecoder {
                     });
                 }
 
-                Ok(BodyProgress::Continue)
+                // len > 0: データを消費 → Advanced
+                // len == 0: progress() 経路で何も消費していない → NeedData
+                if len > 0 {
+                    Ok(BodyProgress::Advanced)
+                } else {
+                    Ok(BodyProgress::NeedData)
+                }
             }
             DecodePhase::BodyChunkedSize => {
+                debug_assert_eq!(
+                    len, 0,
+                    "BodyChunkedSize では consume_body ではなく progress を使うこと"
+                );
+                let initial_phase = phase.clone();
                 self.process_chunked_size(buf, phase, limits)?;
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
                         trailers: core::mem::take(&mut self.trailers),
                     }),
-                    _ => Ok(BodyProgress::Continue),
+                    // チャンクサイズ行を発見できず phase が変化しなかった
+                    p if *p == initial_phase => Ok(BodyProgress::NeedData),
+                    _ => Ok(BodyProgress::Advanced),
                 }
             }
             DecodePhase::BodyChunkedData { remaining } => {
@@ -190,6 +207,11 @@ impl BodyDecoder {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds buffer".to_string(),
                     ));
+                }
+
+                if len == 0 {
+                    // progress() 経路: このフェーズでは何も進まない
+                    return Ok(BodyProgress::NeedData);
                 }
 
                 buf.drain(..len);
@@ -218,9 +240,20 @@ impl BodyDecoder {
                     }
                 }
 
-                Ok(BodyProgress::Continue)
+                // 多段遷移後の最終 phase で判定:
+                // - BodyChunkedDataCrlf: CRLF 不足で追加データ必要 → NeedData
+                // - BodyChunkedSize / BodyChunkedData (remaining > 0): 続行可能 → Advanced
+                if matches!(*phase, DecodePhase::BodyChunkedDataCrlf) {
+                    Ok(BodyProgress::NeedData)
+                } else {
+                    Ok(BodyProgress::Advanced)
+                }
             }
             DecodePhase::BodyChunkedDataCrlf => {
+                debug_assert_eq!(
+                    len, 0,
+                    "BodyChunkedDataCrlf では consume_body ではなく progress を使うこと"
+                );
                 // CRLF 待ち状態: バッファに CRLF があれば処理
                 if buf.len() >= 2 {
                     if buf[..2] != *b"\r\n" {
@@ -230,17 +263,24 @@ impl BodyDecoder {
                     }
                     buf.drain(..2);
                     *phase = DecodePhase::BodyChunkedSize;
+                    Ok(BodyProgress::Advanced)
+                } else {
+                    Ok(BodyProgress::NeedData)
                 }
-                Ok(BodyProgress::Continue)
             }
             DecodePhase::ChunkedTrailer => {
-                self.process_trailers(buf, phase, limits)?;
+                debug_assert_eq!(
+                    len, 0,
+                    "ChunkedTrailer では consume_body ではなく progress を使うこと"
+                );
+                let advanced = self.process_trailers(buf, phase, limits)?;
 
                 match phase {
                     DecodePhase::Complete => Ok(BodyProgress::Complete {
                         trailers: core::mem::take(&mut self.trailers),
                     }),
-                    _ => Ok(BodyProgress::Continue),
+                    _ if advanced => Ok(BodyProgress::Advanced),
+                    _ => Ok(BodyProgress::NeedData),
                 }
             }
             DecodePhase::BodyCloseDelimited => {
@@ -250,6 +290,12 @@ impl BodyDecoder {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds buffer".to_string(),
                     ));
+                }
+
+                if len == 0 {
+                    // progress() 経路: このフェーズでは何も進まない
+                    // Complete への遷移は mark_eof() でのみ発生する
+                    return Ok(BodyProgress::NeedData);
                 }
 
                 // max_body_size チェック (加算前にオーバーフロー検出)
@@ -270,8 +316,8 @@ impl BodyDecoder {
                 buf.drain(..len);
                 self.body_consumed = new_size;
 
-                // close-delimited は mark_eof() が呼ばれるまで Continue
-                Ok(BodyProgress::Continue)
+                // close-delimited は mark_eof() が呼ばれるまで Advanced/NeedData を返す
+                Ok(BodyProgress::Advanced)
             }
             DecodePhase::Complete => Ok(BodyProgress::Complete {
                 trailers: core::mem::take(&mut self.trailers),
@@ -374,7 +420,8 @@ impl BodyDecoder {
 
             if chunk_size == 0 {
                 *phase = DecodePhase::ChunkedTrailer;
-                return self.process_trailers(buf, phase, limits);
+                let _ = self.process_trailers(buf, phase, limits)?;
+                return Ok(());
             } else {
                 let new_size =
                     self.body_consumed
@@ -398,18 +445,22 @@ impl BodyDecoder {
     }
 
     /// トレーラーヘッダーを処理
+    ///
+    /// 戻り値の `bool` は「1 行以上のトレーラ行を処理したか (終端の空行を含む)」。
+    /// `consume_body()` の `ChunkedTrailer` 分岐で `Advanced` / `NeedData` を判定するために使う。
     fn process_trailers(
         &mut self,
         buf: &mut Vec<u8>,
         phase: &mut DecodePhase,
         limits: &DecoderLimits,
-    ) -> Result<(), Error> {
+    ) -> Result<bool, Error> {
+        let mut advanced = false;
         while matches!(phase, DecodePhase::ChunkedTrailer) {
             if let Some(pos) = find_line(buf) {
                 if pos == 0 {
                     buf.drain(..2);
                     *phase = DecodePhase::Complete;
-                    return Ok(());
+                    return Ok(true);
                 } else {
                     // 行長制限チェック
                     if pos > limits.max_header_line_size {
@@ -444,12 +495,13 @@ impl BodyDecoder {
 
                     self.trailers.push((name, value));
                     self.trailer_count += 1;
+                    advanced = true;
                 }
             } else {
-                return Ok(());
+                return Ok(advanced);
             }
         }
-        Ok(())
+        Ok(advanced)
     }
 }
 
