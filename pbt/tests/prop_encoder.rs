@@ -212,7 +212,7 @@ proptest! {
     ) {
         let res = Response::new(status, "OK")
             .unwrap()
-            .header("Content-Length", &content_length.to_string())
+            .header("Content-Length", content_length.to_string())
             .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
@@ -416,7 +416,7 @@ proptest! {
             .unwrap()
             .header("Transfer-Encoding", "chunked")
             .unwrap()
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_response(&res);
         prop_assert!(matches!(
@@ -519,7 +519,7 @@ proptest! {
     #[test]
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_response(&res);
         match result {
@@ -621,7 +621,7 @@ proptest! {
             .unwrap()
             .header("Transfer-Encoding", "chunked")
             .unwrap()
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_response_headers(&res);
         prop_assert!(matches!(
@@ -702,7 +702,7 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_response_headers(&res);
         match result {

@@ -1425,8 +1425,8 @@ mod capacity_tests {
         for i in 0..50 {
             res = res
                 .header(
-                    &alloc::format!("X-Custom-{i}"),
-                    &alloc::format!("value-{i}-with-some-padding"),
+                    alloc::format!("X-Custom-{i}"),
+                    alloc::format!("value-{i}-with-some-padding"),
                 )
                 .unwrap();
         }

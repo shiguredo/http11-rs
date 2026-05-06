@@ -42,14 +42,17 @@ fuzz_target!(|input: FuzzResponse| {
             return;
         }
     }
-    // body_present=false のときは body() builder を呼ばず、Response の body を None のまま残す。
-    // これにより fuzz は body=None / body=Some(...) の両パスをカバーする。
-    let response = if body_present {
+    // body_present=true のときは body() builder で body=Some(...) を設定する。
+    // body_present=false のときは clear_body() で body=None を明示する
+    // (Response::new 直後の body=None と同じだが、clear_body() の動作確認も兼ねる)。
+    let mut response = if body_present {
         response.body(body)
     } else {
+        // clear_body() の戻り値 &mut Self は ; で破棄され借用が終了するため後続行で再利用可能。
+        response.clear_body();
         response
     };
-    let response = response.omit_body(omit_body);
+    response.set_omit_body(omit_body);
 
     let first = encode_response(&response);
     let second = encode_response(&response);

@@ -11,6 +11,16 @@
 
 ## develop
 
+- [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
+  - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる
+  - @voluntas
+- [ADD] `Response::set_body` / `Response::clear_body` / `Response::without_body` を追加する
+  - @voluntas
+- [ADD] `Response::set_omit_body` を追加する
+  - @voluntas
+- [CHANGE] `Response::add_header` / `Response::set_header` の戻り値を `Result<&mut Self, EncodeError>` に変更しチェイン可能にする
+  - @voluntas
 - [ADD] `StatusCode` 型を導入し IANA HTTP Status Code Registry の status code を const 値として提供する
   - `Response::with_status(StatusCode::OK)` 等で infallible に Response を構築できる (HTTP/1.1 固定、canonical reason phrase が自動付与される)
   - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する

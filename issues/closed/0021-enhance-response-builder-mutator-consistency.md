@@ -1,6 +1,7 @@
 # 0021: Response のビルダーと mutator API を整備する
 
 Created: 2026-05-06
+Completed: 2026-05-07
 Model: Opus 4.7 / DeepSeek V4 Pro
 
 ## 概要
@@ -626,3 +627,36 @@ cargo llvm-cov report
 - 全 examples がコンパイルおよび実行可能である
 - 既存テスト・例が新 API に追従して green になる
 - `body_bytes()` getter の命名が維持されている (改名しない)
+
+## 解決方法
+
+`feature/change-response-builder-mutator-consistency` ブランチで以下を実装した。
+
+### `src/response.rs`
+
+- `Response::add_header` / `Response::set_header` の戻り値を `Result<(), EncodeError>` から `Result<&mut Self, EncodeError>` に変更し `?` 演算子でチェイン可能にした
+- `Response::set_body(impl Into<Vec<u8>>)` (mutator) を追加
+- `Response::clear_body()` (mutator) を追加 — `body = None` に設定する
+- `Response::without_body()` (builder) を追加 — `body = None` に設定する
+- `Response::set_omit_body(bool)` (mutator) を追加 — `omit_body` フラグを設定する
+  (`pending/0018` の状況に応じて将来削除する可能性あり)
+- 文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
+  - バリデーション失敗時もアロケーションが発生するトレードオフを doc コメントに明記
+
+### テスト
+
+- `tests/test_response.rs` に新規 mutator / builder のテストを追加 (16 ケース増)
+- `pbt/tests/prop_response.rs` に PBT を追加 (8 ケース増)
+- 既存の `tests/test_encoder.rs` / `pbt/tests/prop_encoder.rs` の `&str` 取得を `*ref` / `String` 直接形式に追従修正
+
+### Fuzz / Examples
+
+- `fuzz/fuzz_targets/fuzz_encode_response.rs` を `clear_body()` / `set_omit_body()` 経由に修正
+- `examples/http11_server/src/main.rs`, `examples/http11_reverse_proxy/src/main.rs`, `examples/http11_server_io_uring/src/main.rs` の `&len.to_string()` を `len.to_string()` に簡略化 (clippy `needless-borrows-for-generic-args` 対応)
+- `src/encoder.rs` 内のテストコードも同様に簡略化
+
+### 検証
+
+- `make fmt && make clippy && make check && make test` がすべて成功
+- fuzz クレート (`cargo check --all-targets`) も成功

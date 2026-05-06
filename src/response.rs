@@ -58,22 +58,27 @@ impl Response {
     ///
     /// # 引数の文字集合制限 (既存の API 制限を継承)
     ///
-    /// `reason_phrase: &str` は Rust の `&str` (UTF-8 不変条件) を要求するため、
+    /// `reason_phrase: impl Into<String>` は Rust の `String` / `&str` (UTF-8 不変条件) を要求するため、
     /// RFC 9112 Section 4 の `obs-text = %x80-FF` のうち UTF-8 として valid なシーケンスのみ
     /// を表現可能。任意バイト列の obs-text を渡す API は本 issue では提供しない。
-    pub fn new(status_code: u16, reason_phrase: &str) -> Result<Self, EncodeError> {
+    ///
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な `status_code` でも
+    /// `reason_phrase` のアロケーションが発生する。これは `impl Into<String>` で
+    /// 所有値のムーブを受け付けるためのトレードオフである。
+    pub fn new(status_code: u16, reason_phrase: impl Into<String>) -> Result<Self, EncodeError> {
+        let reason_phrase = reason_phrase.into();
         if !is_valid_status_code(status_code) {
             return Err(EncodeError::InvalidStatusCode { code: status_code });
         }
-        if !is_valid_reason_phrase(reason_phrase) {
+        if !is_valid_reason_phrase(&reason_phrase) {
             return Err(EncodeError::InvalidReasonPhrase {
-                phrase: reason_phrase.to_string(),
+                phrase: reason_phrase,
             });
         }
         Ok(Self {
             version: "HTTP/1.1".to_string(),
             status_code,
-            reason_phrase: reason_phrase.to_string(),
+            reason_phrase,
             headers: Vec::new(),
             body: None,
             omit_body: false,
@@ -114,28 +119,32 @@ impl Response {
     /// `"HTTP/1.1"` を渡す責務がある。
     /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
+    ///
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
+    /// アロケーションが発生する。これは `impl Into<String>` で所有値のムーブを
+    /// 受け付けるためのトレードオフである。
     pub fn with_version(
-        version: &str,
+        version: impl Into<String>,
         status_code: u16,
-        reason_phrase: &str,
+        reason_phrase: impl Into<String>,
     ) -> Result<Self, EncodeError> {
-        if !is_valid_protocol_version(version) {
-            return Err(EncodeError::InvalidVersion {
-                version: version.to_string(),
-            });
+        let version = version.into();
+        let reason_phrase = reason_phrase.into();
+        if !is_valid_protocol_version(&version) {
+            return Err(EncodeError::InvalidVersion { version });
         }
         if !is_valid_status_code(status_code) {
             return Err(EncodeError::InvalidStatusCode { code: status_code });
         }
-        if !is_valid_reason_phrase(reason_phrase) {
+        if !is_valid_reason_phrase(&reason_phrase) {
             return Err(EncodeError::InvalidReasonPhrase {
-                phrase: reason_phrase.to_string(),
+                phrase: reason_phrase,
             });
         }
         Ok(Self {
-            version: version.to_string(),
+            version,
             status_code,
-            reason_phrase: reason_phrase.to_string(),
+            reason_phrase,
             headers: Vec::new(),
             body: None,
             omit_body: false,
@@ -223,10 +232,17 @@ impl Response {
     ///
     /// # 値の文字集合制限 (既存の API 制限を継承)
     ///
-    /// `value: &str` は UTF-8 不変条件を持つため、RFC 9110 Section 5.5 の
-    /// `obs-text = %x80-FF` のうち UTF-8 として valid なシーケンスのみ
-    /// 表現可能。
-    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+    /// `value: impl Into<String>` は Rust の `String` / `&str` (UTF-8 不変条件) を要求するため、
+    /// RFC 9110 Section 5.5 の `obs-text = %x80-FF` のうち UTF-8 として valid な
+    /// シーケンスのみ表現可能。
+    pub fn header(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, EncodeError> {
+        // add_header は Result<&mut Self, EncodeError> を返す。? 演算子の脱糖は
+        // Ok(v) => v, Err(e) => return Err(e) であり、成功値 v: &mut Self は
+        // ; で破棄され NLL により借用が終了するため、後続の Ok(self) はコンパイル可能。
         self.add_header(name, value)?;
         Ok(self)
     }
@@ -235,28 +251,48 @@ impl Response {
     ///
     /// 空 `Vec` を渡した場合は「明示的な空ボディ」として扱われ、
     /// エンコード時に `Content-Length: 0` が自動付与される。
-    pub fn body(mut self, body: Vec<u8>) -> Self {
-        self.body = Some(body);
+    pub fn body(mut self, body: impl Into<Vec<u8>>) -> Self {
+        self.body = Some(body.into());
         self
     }
 
-    /// ヘッダーを追加
+    /// ボディなしを明示 (ビルダーパターン)
     ///
-    /// 戻り値は `Result<(), EncodeError>`。
-    pub fn add_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError> {
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName {
-                name: name.to_string(),
-            });
+    /// `body = None` に設定する。builder チェイン中に `body()` を呼んだ後で
+    /// ボディを取り消す場合に使用する。
+    ///
+    /// 注: `omit_body(true)` (ボディ送信抑止) とは異なる操作である。
+    /// `without_body()` は body フィールド自体を None にする (Content-Length 自動付与なし)。
+    /// `omit_body(true)` は body は保持したままメッセージボディの送信のみ抑止する
+    /// (HEAD レスポンスで Content-Length を残しつつボディを送らない用途)。
+    pub fn without_body(mut self) -> Self {
+        self.body = None;
+        self
+    }
+
+    /// ヘッダーを追加 (mutator)
+    ///
+    /// 戻り値は `Result<&mut Self, EncodeError>` でチェイン可能。
+    /// バリデーション成功後にのみ `headers` に追加される (失敗時は self 不変)。
+    ///
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
+    /// アロケーションが発生する。これは `impl Into<String>` で所有値のムーブを
+    /// 受け付けるためのトレードオフである。
+    pub fn add_header(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<&mut Self, EncodeError> {
+        let name = name.into();
+        let value = value.into();
+        if !is_valid_header_name(&name) {
+            return Err(EncodeError::InvalidHeaderName { name });
         }
-        if !is_valid_field_value(value) {
-            return Err(EncodeError::InvalidHeaderValue {
-                name: name.to_string(),
-                value: value.to_string(),
-            });
+        if !is_valid_field_value(&value) {
+            return Err(EncodeError::InvalidHeaderValue { name, value });
         }
-        self.headers.push((name.to_string(), value.to_string()));
-        Ok(())
+        self.headers.push((name, value));
+        Ok(self)
     }
 
     /// 指定した名前の既存ヘッダーを全削除し、新規に追加する
@@ -267,24 +303,62 @@ impl Response {
     ///
     /// バリデーションが失敗した場合は既存ヘッダーは変更されない (アトミック性の保証)。
     ///
+    /// 戻り値は `Result<&mut Self, EncodeError>` でチェイン可能。
+    ///
     /// 注: Set-Cookie のように同名複数値が意味を持つヘッダーには使ってはならない。
     /// その場合は `add_header` を使うこと (RFC 6265 など)。
-    pub fn set_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError> {
+    ///
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
+    /// アロケーションが発生する。アトミック性 (self の状態変更不可) は依然として保たれる
+    /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
+    pub fn set_header(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<&mut Self, EncodeError> {
         // アトミック性のため、バリデーションを先に行う。
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName {
-                name: name.to_string(),
-            });
+        let name = name.into();
+        let value = value.into();
+        if !is_valid_header_name(&name) {
+            return Err(EncodeError::InvalidHeaderName { name });
         }
-        if !is_valid_field_value(value) {
-            return Err(EncodeError::InvalidHeaderValue {
-                name: name.to_string(),
-                value: value.to_string(),
-            });
+        if !is_valid_field_value(&value) {
+            return Err(EncodeError::InvalidHeaderValue { name, value });
         }
-        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
-        self.headers.push((name.to_string(), value.to_string()));
-        Ok(())
+        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        self.headers.push((name, value));
+        Ok(self)
+    }
+
+    /// ボディを設定 (mutator)
+    ///
+    /// 空 `Vec` を渡した場合は「明示的な空ボディ」として扱われ、
+    /// エンコード時に `Content-Length: 0` が自動付与される。
+    pub fn set_body(&mut self, body: impl Into<Vec<u8>>) -> &mut Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    /// ボディを削除 (mutator)
+    ///
+    /// `body` を `None` に設定する。明示的に空ボディ (`Content-Length: 0`) を
+    /// 設定したい場合は `set_body(Vec::new())` を使うこと。
+    pub fn clear_body(&mut self) -> &mut Self {
+        self.body = None;
+        self
+    }
+
+    /// ボディ送信抑止フラグを設定 (mutator)
+    ///
+    /// HEAD レスポンスではヘッダーのみ送信し、メッセージボディを送信しない
+    /// (RFC 9110 Section 9.3.2 / RFC 9110 Section 6.4.1)。
+    /// Content-Length は表現長として残しつつメッセージボディを送信しない場合に使用する
+    /// (HEAD レスポンスで Content-Length を送信できる根拠は RFC 9110 Section 8.6:
+    /// MUST NOT send Content-Length unless its field value equals the decimal number
+    /// of octets that would have been sent in the content if the same request had used GET)。
+    pub fn set_omit_body(&mut self, omit: bool) -> &mut Self {
+        self.omit_body = omit;
+        self
     }
 
     /// HTTP バージョンを取得

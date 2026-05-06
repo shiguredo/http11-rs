@@ -357,7 +357,7 @@ proptest! {
     #[test]
     fn prop_response_content_length(code in status_code(), len in 0usize..1_000_000) {
         let response = Response::new(code, "OK").unwrap()
-            .header("Content-Length", &len.to_string()).unwrap();
+            .header("Content-Length", len.to_string()).unwrap();
 
         prop_assert_eq!(response.content_length(), Some(len as u64));
     }
@@ -483,5 +483,115 @@ proptest! {
         let result = response.add_header(&name, &value);
         let is_invalid = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
         prop_assert!(is_invalid);
+    }
+}
+
+// ========================================
+// 0021: mutator (set_body / clear_body / without_body / set_omit_body / チェイン) の PBT
+// ========================================
+
+// set_body → body_bytes() のラウンドトリップ
+proptest! {
+    #[test]
+    fn prop_response_set_body_roundtrip(
+        code in status_code(),
+        body_data in proptest::collection::vec(any::<u8>(), 0..256),
+    ) {
+        let mut response = Response::new(code, "OK").unwrap();
+        response.set_body(body_data.clone());
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
+    }
+}
+
+// set_body → clear_body で body が None になる
+proptest! {
+    #[test]
+    fn prop_response_set_then_clear_body(
+        code in status_code(),
+        body_data in proptest::collection::vec(any::<u8>(), 0..256),
+    ) {
+        let mut response = Response::new(code, "OK").unwrap();
+        response.set_body(body_data);
+        response.clear_body();
+        prop_assert!(response.body_bytes().is_none());
+    }
+}
+
+// without_body ビルダーで body が None になる
+proptest! {
+    #[test]
+    fn prop_response_without_body_builder(
+        code in status_code(),
+        body_data in proptest::collection::vec(any::<u8>(), 0..256),
+    ) {
+        let response = Response::new(code, "OK").unwrap()
+            .body(body_data)
+            .without_body();
+        prop_assert!(response.body_bytes().is_none());
+    }
+}
+
+// set_omit_body の値が is_body_omitted() で取得できる
+proptest! {
+    #[test]
+    fn prop_response_set_omit_body(
+        code in status_code(),
+        omit in any::<bool>(),
+    ) {
+        let mut response = Response::new(code, "OK").unwrap();
+        response.set_omit_body(omit);
+        prop_assert_eq!(response.is_body_omitted(), omit);
+    }
+}
+
+// add_header のチェイン呼び出しで複数ヘッダーが順序通り追加される
+proptest! {
+    #[test]
+    fn prop_response_add_header_chain(
+        code in status_code(),
+        headers in proptest::collection::vec((header_name(), header_value()), 1..5),
+    ) {
+        let mut response = Response::new(code, "OK").unwrap();
+        // 1 つ目だけは add_header(..)?... のチェイン形式で呼べないので unwrap で受ける
+        // ここでは for ループで unwrap するが、内部的には Result<&mut Self, _> を消費している。
+        for (name, value) in &headers {
+            response.add_header(name.as_str(), value.as_str()).unwrap();
+        }
+        prop_assert_eq!(HttpHead::headers(&response).len(), headers.len());
+        for (i, (name, value)) in headers.iter().enumerate() {
+            prop_assert_eq!(&HttpHead::headers(&response)[i].0, name);
+            prop_assert_eq!(&HttpHead::headers(&response)[i].1, value);
+        }
+    }
+}
+
+// add_header は impl Into<String> として &str / String の両方を受け取る
+proptest! {
+    #[test]
+    fn prop_response_add_header_accepts_str_and_string(
+        code in status_code(),
+        name in header_name(),
+        value in header_value(),
+    ) {
+        // &str
+        let mut r1 = Response::new(code, "OK").unwrap();
+        r1.add_header(name.as_str(), value.as_str()).unwrap();
+        // String (ムーブ)
+        let mut r2 = Response::new(code, "OK").unwrap();
+        r2.add_header(name.clone(), value.clone()).unwrap();
+        prop_assert_eq!(r1.get_header(&name), Some(value.as_str()));
+        prop_assert_eq!(r2.get_header(&name), Some(value.as_str()));
+    }
+}
+
+// body は impl Into<Vec<u8>> として Vec<u8> を受け取る
+proptest! {
+    #[test]
+    fn prop_response_body_accepts_vec(
+        code in status_code(),
+        body_data in proptest::collection::vec(any::<u8>(), 0..256),
+    ) {
+        let response = Response::new(code, "OK").unwrap().body(body_data.clone());
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }
