@@ -1,6 +1,6 @@
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
-use crate::status_code::StatusCode;
+use crate::status_code::{StatusClass, StatusCode};
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_protocol_version, is_valid_reason_phrase,
     is_valid_status_code,
@@ -330,24 +330,14 @@ impl Response {
         HttpHead::has_header(self, name)
     }
 
-    /// ステータスコードが成功 (2xx) か確認
-    pub fn is_success(&self) -> bool {
-        (200..300).contains(&self.status_code)
-    }
-
-    /// ステータスコードがリダイレクト (3xx) か確認
-    pub fn is_redirect(&self) -> bool {
-        (300..400).contains(&self.status_code)
-    }
-
-    /// ステータスコードがクライアントエラー (4xx) か確認
-    pub fn is_client_error(&self) -> bool {
-        (400..500).contains(&self.status_code)
-    }
-
-    /// ステータスコードがサーバーエラー (5xx) か確認
-    pub fn is_server_error(&self) -> bool {
-        (500..600).contains(&self.status_code)
+    /// ステータスコードのクラス分類を返す。
+    ///
+    /// RFC 9110 Section 15 に基づく分類。
+    #[must_use]
+    pub fn status_class(&self) -> StatusClass {
+        // `Response` は構築時に 100..=599 が保証されているため必ず `Some` を返す。
+        StatusClass::from_status_code(self.status_code())
+            .expect("Response::status_code is validated to 100..=599 at construction")
     }
 
     /// Connection ヘッダーの値を取得
@@ -375,10 +365,5 @@ impl Response {
     /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
     pub fn is_chunked(&self) -> bool {
         HttpHead::is_chunked(self)
-    }
-
-    /// ステータスコードが情報レスポンス (1xx) か確認
-    pub fn is_informational(&self) -> bool {
-        (100..200).contains(&self.status_code)
     }
 }

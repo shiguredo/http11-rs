@@ -5,7 +5,7 @@
 //! ラウンドトリップ系の検証は PBT (`prop_response.rs`) に任せ、
 //! ここでは const 値そのものの不変条件と境界値を担保する。
 
-use shiguredo_http11::StatusCode;
+use shiguredo_http11::{StatusClass, StatusCode};
 
 // 全 const 定数の網羅リスト
 // 追加・変更時は本リストにも反映する。
@@ -187,6 +187,68 @@ fn test_status_code_from_code_unknown_returns_none() {
     assert_eq!(StatusCode::from_code(600), None);
     assert_eq!(StatusCode::from_code(999), None);
     assert_eq!(StatusCode::from_code(u16::MAX), None);
+}
+
+#[test]
+fn test_status_class_from_status_code_boundaries() {
+    // RFC 9110 Section 15 の各クラス境界値を検証
+    assert_eq!(StatusClass::from_status_code(0), None);
+    assert_eq!(StatusClass::from_status_code(99), None);
+    assert_eq!(
+        StatusClass::from_status_code(100),
+        Some(StatusClass::Informational)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(199),
+        Some(StatusClass::Informational)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(200),
+        Some(StatusClass::Successful)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(299),
+        Some(StatusClass::Successful)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(300),
+        Some(StatusClass::Redirection)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(399),
+        Some(StatusClass::Redirection)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(400),
+        Some(StatusClass::ClientError)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(499),
+        Some(StatusClass::ClientError)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(500),
+        Some(StatusClass::ServerError)
+    );
+    assert_eq!(
+        StatusClass::from_status_code(599),
+        Some(StatusClass::ServerError)
+    );
+    assert_eq!(StatusClass::from_status_code(600), None);
+    assert_eq!(StatusClass::from_status_code(u16::MAX), None);
+}
+
+#[test]
+fn test_status_code_class_representative() {
+    // 主要 StatusCode のクラス分類を検証
+    assert_eq!(StatusCode::CONTINUE.class(), StatusClass::Informational);
+    assert_eq!(StatusCode::OK.class(), StatusClass::Successful);
+    assert_eq!(StatusCode::NOT_MODIFIED.class(), StatusClass::Redirection);
+    assert_eq!(StatusCode::NOT_FOUND.class(), StatusClass::ClientError);
+    assert_eq!(
+        StatusCode::INTERNAL_SERVER_ERROR.class(),
+        StatusClass::ServerError
+    );
 }
 
 #[test]

@@ -1,7 +1,7 @@
 //! Response 構造体のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{EncodeError, HttpHead, Response, ResponseDecoder, StatusCode};
+use shiguredo_http11::{EncodeError, HttpHead, Response, ResponseDecoder, StatusClass, StatusCode};
 
 // ========================================
 // Strategy 定義
@@ -24,6 +24,12 @@ fn status_code() -> impl Strategy<Value = u16> {
         400u16..=451, // 4xx
         500u16..=511, // 5xx
     ]
+}
+
+// RFC 9110 Section 15 が許容する 100..=599 の全範囲を生成する Strategy
+// (IANA 未登録の拡張 / 私的ステータスコードを含む全範囲をカバーする)
+fn status_code_full_range() -> impl Strategy<Value = u16> {
+    100u16..=599
 }
 
 // IANA 登録の StatusCode 定数を全網羅で選択する Strategy
@@ -173,6 +179,17 @@ proptest! {
         prop_assert_eq!(head.status_code, status.code());
         prop_assert_eq!(&head.reason_phrase, status.canonical_reason());
         prop_assert_eq!(&head.version, "HTTP/1.1");
+    }
+}
+
+// 任意の status_code (100..=599) で構築した Response の status_class() が
+// StatusClass::from_status_code(status_code) と一致する
+proptest! {
+    #[test]
+    fn prop_response_status_class(code in status_code_full_range()) {
+        let response = Response::new(code, "OK").unwrap();
+        let expected = StatusClass::from_status_code(code).expect("100..=599 always classified");
+        prop_assert_eq!(response.status_class(), expected);
     }
 }
 

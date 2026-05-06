@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Response, ResponseDecoder,
+    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Response, ResponseDecoder, StatusClass,
 };
 
 use super::{body, reason_phrase, status_code};
@@ -143,7 +143,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(head.is_informational());
+        prop_assert_eq!(head.status_class(), StatusClass::Informational);
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -160,7 +160,7 @@ proptest! {
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
         // 204 は特別扱い
         if code != 204 {
-            prop_assert!(head.is_success());
+            prop_assert_eq!(head.status_class(), StatusClass::Successful);
         }
     }
 }
