@@ -2,8 +2,9 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, encode_chunk, encode_chunks,
-    encode_request, encode_request_headers, encode_response, encode_response_headers,
+    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, StatusCode, encode_chunk,
+    encode_chunks, encode_request, encode_request_headers, encode_response,
+    encode_response_headers,
 };
 
 // ========================================
@@ -484,7 +485,7 @@ proptest! {
     fn prop_encode_response_205_with_body_always_error(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(205, "Reset Content").unwrap().body(data);
+        let res = Response::with_status(StatusCode::RESET_CONTENT).body(data);
         let result = encode_response(&res);
         prop_assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
     }
@@ -500,8 +501,7 @@ proptest! {
             Just("deflate".to_string()),
         ]
     ) {
-        let res = Response::new(205, "Reset Content")
-            .unwrap()
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header("Transfer-Encoding", &te_value)
             .unwrap();
         let result = encode_response(&res);
@@ -518,8 +518,7 @@ proptest! {
     /// 205 レスポンスで Content-Length が非 0 は常にエラー
     #[test]
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
-        let res = Response::new(205, "Reset Content")
-            .unwrap()
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header("Content-Length", &cl.to_string())
             .unwrap();
         let result = encode_response(&res);
@@ -542,7 +541,7 @@ proptest! {
     fn prop_encode_response_304_no_body(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(304, "Not Modified").unwrap().body(data);
+        let res = Response::with_status(StatusCode::NOT_MODIFIED).body(data);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
         let header_end = encoded_str.find("\r\n\r\n").unwrap();
@@ -685,8 +684,7 @@ proptest! {
             Just("gzip".to_string()),
         ]
     ) {
-        let res = Response::new(205, "Reset Content")
-            .unwrap()
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header("Transfer-Encoding", &te_value)
             .unwrap();
         let result = encode_response_headers(&res);
@@ -703,8 +701,7 @@ proptest! {
     /// encode_response_headers で 205+CL(非 0) 禁止
     #[test]
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
-        let res = Response::new(205, "Reset Content")
-            .unwrap()
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header("Content-Length", &cl.to_string())
             .unwrap();
         let result = encode_response_headers(&res);

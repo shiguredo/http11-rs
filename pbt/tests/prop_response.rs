@@ -1,7 +1,7 @@
 //! Response 構造体のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{EncodeError, HttpHead, Response};
+use shiguredo_http11::{EncodeError, HttpHead, Response, ResponseDecoder, StatusCode};
 
 // ========================================
 // Strategy 定義
@@ -24,6 +24,82 @@ fn status_code() -> impl Strategy<Value = u16> {
         400u16..=451, // 4xx
         500u16..=511, // 5xx
     ]
+}
+
+// IANA 登録の StatusCode 定数を全網羅で選択する Strategy
+fn iana_status_code() -> impl Strategy<Value = StatusCode> {
+    proptest::sample::select(
+        [
+            // 1xx
+            StatusCode::CONTINUE,
+            StatusCode::SWITCHING_PROTOCOLS,
+            StatusCode::PROCESSING,
+            StatusCode::EARLY_HINTS,
+            // 2xx
+            StatusCode::OK,
+            StatusCode::CREATED,
+            StatusCode::ACCEPTED,
+            StatusCode::NON_AUTHORITATIVE_INFORMATION,
+            StatusCode::NO_CONTENT,
+            StatusCode::RESET_CONTENT,
+            StatusCode::PARTIAL_CONTENT,
+            StatusCode::MULTI_STATUS,
+            StatusCode::ALREADY_REPORTED,
+            StatusCode::IM_USED,
+            // 3xx
+            StatusCode::MULTIPLE_CHOICES,
+            StatusCode::MOVED_PERMANENTLY,
+            StatusCode::FOUND,
+            StatusCode::SEE_OTHER,
+            StatusCode::NOT_MODIFIED,
+            StatusCode::USE_PROXY,
+            StatusCode::TEMPORARY_REDIRECT,
+            StatusCode::PERMANENT_REDIRECT,
+            // 4xx
+            StatusCode::BAD_REQUEST,
+            StatusCode::UNAUTHORIZED,
+            StatusCode::PAYMENT_REQUIRED,
+            StatusCode::FORBIDDEN,
+            StatusCode::NOT_FOUND,
+            StatusCode::METHOD_NOT_ALLOWED,
+            StatusCode::NOT_ACCEPTABLE,
+            StatusCode::PROXY_AUTHENTICATION_REQUIRED,
+            StatusCode::REQUEST_TIMEOUT,
+            StatusCode::CONFLICT,
+            StatusCode::GONE,
+            StatusCode::LENGTH_REQUIRED,
+            StatusCode::PRECONDITION_FAILED,
+            StatusCode::CONTENT_TOO_LARGE,
+            StatusCode::URI_TOO_LONG,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            StatusCode::EXPECTATION_FAILED,
+            StatusCode::IM_A_TEAPOT,
+            StatusCode::MISDIRECTED_REQUEST,
+            StatusCode::UNPROCESSABLE_CONTENT,
+            StatusCode::LOCKED,
+            StatusCode::FAILED_DEPENDENCY,
+            StatusCode::TOO_EARLY,
+            StatusCode::UPGRADE_REQUIRED,
+            StatusCode::PRECONDITION_REQUIRED,
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE,
+            StatusCode::UNAVAILABLE_FOR_LEGAL_REASONS,
+            // 5xx
+            StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::NOT_IMPLEMENTED,
+            StatusCode::BAD_GATEWAY,
+            StatusCode::SERVICE_UNAVAILABLE,
+            StatusCode::GATEWAY_TIMEOUT,
+            StatusCode::HTTP_VERSION_NOT_SUPPORTED,
+            StatusCode::VARIANT_ALSO_NEGOTIATES,
+            StatusCode::INSUFFICIENT_STORAGE,
+            StatusCode::LOOP_DETECTED,
+            StatusCode::NOT_EXTENDED,
+            StatusCode::NETWORK_AUTHENTICATION_REQUIRED,
+        ]
+        .as_slice(),
+    )
 }
 
 fn reason_phrase() -> impl Strategy<Value = String> {
@@ -59,6 +135,46 @@ fn header_value() -> impl Strategy<Value = String> {
 // ========================================
 // コンストラクタのテスト
 // ========================================
+
+// with_status() はすべての IANA 登録 StatusCode 定数で infallible に Response を構築できる
+proptest! {
+    #[test]
+    fn prop_response_with_status_constructs_infallibly(status in iana_status_code()) {
+        let response = Response::with_status(status);
+
+        // version は HTTP/1.1 固定
+        prop_assert_eq!(HttpHead::version(&response), "HTTP/1.1");
+        // status_code() は StatusCode::code() と一致
+        prop_assert_eq!(response.status_code(), status.code());
+        // reason_phrase() は StatusCode::canonical_reason() と一致
+        prop_assert_eq!(response.reason_phrase(), status.canonical_reason());
+        // 初期状態はヘッダーなし、ボディなし
+        prop_assert!(HttpHead::headers(&response).is_empty());
+        prop_assert!(response.body_bytes().is_none());
+        prop_assert!(!response.is_body_omitted());
+    }
+}
+
+// with_status() で構築した Response は encode → decode のラウンドトリップで
+// status_code / reason_phrase / version が保存される
+proptest! {
+    #[test]
+    fn prop_response_with_status_roundtrip(status in iana_status_code()) {
+        let response = Response::with_status(status);
+        let bytes = response.try_encode().unwrap();
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&bytes).unwrap();
+        let (head, _body_kind) = decoder
+            .decode_headers()
+            .unwrap()
+            .expect("headers should be ready");
+
+        prop_assert_eq!(head.status_code, status.code());
+        prop_assert_eq!(&head.reason_phrase, status.canonical_reason());
+        prop_assert_eq!(&head.version, "HTTP/1.1");
+    }
+}
 
 // new() はデフォルトで HTTP/1.1
 proptest! {

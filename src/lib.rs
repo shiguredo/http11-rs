@@ -32,7 +32,7 @@
 //! ### サーバー (リクエスト受信、レスポンス送信)
 //!
 //! ```rust
-//! use shiguredo_http11::{RequestDecoder, Response};
+//! use shiguredo_http11::{RequestDecoder, Response, StatusCode};
 //!
 //! // リクエストをデコード
 //! let mut decoder = RequestDecoder::new();
@@ -41,7 +41,7 @@
 //! // if let Some(request) = decoder.decode()? { ... }
 //!
 //! // レスポンスを作成してエンコード
-//! let response = Response::new(200, "OK").unwrap()
+//! let response = Response::with_status(StatusCode::OK)
 //!     .header("Content-Type", "text/plain").unwrap()
 //!     .body(b"Hello, World!".to_vec());
 //! let bytes = response.encode();
@@ -77,6 +77,7 @@ pub mod range;
 mod request;
 pub mod request_target;
 mod response;
+pub mod status_code;
 pub mod trailer;
 pub mod upgrade;
 pub mod uri;
@@ -94,3 +95,4 @@ pub use error::{EncodeError, Error};
 pub use limits::DecoderLimits;
 pub use request::Request;
 pub use response::Response;
+pub use status_code::StatusCode;

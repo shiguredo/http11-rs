@@ -1305,6 +1305,7 @@ mod capacity_tests {
     use super::*;
     use crate::request::Request;
     use crate::response::Response;
+    use crate::status_code::StatusCode;
 
     fn assert_request_capacity_sufficient(req: &Request) {
         let est = estimate_request_capacity(req).expect("estimate overflow");
@@ -1388,7 +1389,7 @@ mod capacity_tests {
 
     #[test]
     fn test_response_capacity_simple_ok() {
-        let res = Response::new(200, "OK").unwrap().body(b"hello".to_vec());
+        let res = Response::with_status(StatusCode::OK).body(b"hello".to_vec());
         assert_response_capacity_sufficient(&res);
     }
 
@@ -1403,8 +1404,7 @@ mod capacity_tests {
 
     #[test]
     fn test_response_capacity_omit_body_with_content_length() {
-        let res = Response::new(200, "OK")
-            .unwrap()
+        let res = Response::with_status(StatusCode::OK)
             .header("Content-Length", "100")
             .unwrap()
             .omit_body(true);
@@ -1413,8 +1413,7 @@ mod capacity_tests {
 
     #[test]
     fn test_response_capacity_with_transfer_encoding() {
-        let res = Response::new(200, "OK")
-            .unwrap()
+        let res = Response::with_status(StatusCode::OK)
             .header("Transfer-Encoding", "chunked")
             .unwrap();
         assert_response_capacity_sufficient(&res);
@@ -1422,7 +1421,7 @@ mod capacity_tests {
 
     #[test]
     fn test_response_capacity_many_headers() {
-        let mut res = Response::new(200, "OK").unwrap().body(vec![b'X'; 1024]);
+        let mut res = Response::with_status(StatusCode::OK).body(vec![b'X'; 1024]);
         for i in 0..50 {
             res = res
                 .header(

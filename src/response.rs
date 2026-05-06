@@ -1,5 +1,6 @@
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
+use crate::status_code::StatusCode;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_protocol_version, is_valid_reason_phrase,
     is_valid_status_code,
@@ -77,6 +78,24 @@ impl Response {
             body: None,
             omit_body: false,
         })
+    }
+
+    /// IANA 登録済みの `StatusCode` から Response を作成 (HTTP/1.1)
+    ///
+    /// `StatusCode` は const 値で構成されており、すべての構築時バリデーションを
+    /// 通過することが静的に保証されているため、本コンストラクタは infallible である。
+    ///
+    /// version は `"HTTP/1.1"` 固定。`reason_phrase` は `StatusCode` の
+    /// `canonical_reason` を使用する。カスタムバージョンや任意の reason phrase が
+    /// 必要な場合は `Response::with_version` または `Response::new` を使うこと。
+    pub fn with_status(status: StatusCode) -> Self {
+        // 以下の不変条件はすべて構築時に静的に保証されるため `with_version` の
+        // バリデーションは確実に通過する:
+        // - version: リテラル `"HTTP/1.1"` は `is_valid_protocol_version` を通過する
+        // - status_code: `StatusCode` は 100..=599 範囲内 (`new_const` の assert 済み)
+        // - canonical_reason: IANA 登録の ASCII 文字列で `is_valid_reason_phrase` を通過する
+        Self::with_version("HTTP/1.1", status.code(), status.canonical_reason())
+            .expect("StatusCode constants are always valid by construction")
     }
 
     /// カスタムバージョンでレスポンスを作成

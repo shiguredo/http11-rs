@@ -31,7 +31,7 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{EncodeError, RequestDecoder, Response};
+use shiguredo_http11::{EncodeError, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
@@ -876,7 +876,7 @@ fn build_response(
         "/echo" => {
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             if is_head {
-                let head_response = Response::new(200, "OK")?
+                let head_response = Response::with_status(StatusCode::OK)
                     .header("Date", &date)?
                     .header("Content-Type", "text/plain; charset=utf-8")?
                     .header("Content-Length", "0")?

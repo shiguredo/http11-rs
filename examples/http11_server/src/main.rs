@@ -30,7 +30,7 @@ use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use shiguredo_http11::{
-    BodyKind, BodyProgress, EncodeError, Request, RequestDecoder, RequestHead, Response,
+    BodyKind, BodyProgress, EncodeError, Request, RequestDecoder, RequestHead, Response, StatusCode,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
@@ -553,7 +553,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             // (実際の GET レスポンスはリクエストに依存するため)
             if is_head {
-                let head_response = Response::new(200, "OK")?
+                let head_response = Response::with_status(StatusCode::OK)
                     .header("Date", &date)?
                     .header("Content-Type", "text/plain; charset=utf-8")?
                     .header("Content-Length", "0")?
