@@ -1,6 +1,7 @@
 # 0017: Response のフィールドを非公開化しバリデート付き構築に統一する
 
 Created: 2026-05-06
+Completed: 2026-05-06
 Model: Opus 4.7
 
 ## 概要
@@ -733,3 +734,21 @@ cargo llvm-cov report
 - `pbt/tests/proptest-regressions/response.txt` の既存シードが新 API でも再現可能であること (確認の上で更新不要)
 - decoder が空 reason-phrase (`HTTP/1.1 200 \r\n`) を `from_raw_parts` 経由で受理し、それを encoder で再エンコードした結果が `HTTP/1.1 200 \r\n` (status-code の後に SP 1 個 + CRLF) になることを単体テストまたは PBT で確認する (reverse proxy 経路の RFC 9112 §4 準拠維持)
 - `from_raw_parts` の不変条件が `debug_assert!` で検査されており、debug ビルドで契約破りを検出可能であること
+
+## 解決方法
+
+- `src/response.rs` の全フィールドを非公開化し `#[non_exhaustive]` を付与
+- `Response::new` / `with_version` を `Result<Self, EncodeError>` 化し構築時バリデーション (status_code / reason_phrase / version) を実装
+- `add_header` / `header` を `Result` 化し、ヘッダー名 (RFC 9110 token) と値 (CR/LF/NUL 拒否) のバリデーションを実装
+- `set_header` を新設し、case-insensitive 上書きを提供 (バリデーション失敗時のアトミック性確保)
+- `pub(crate) fn from_raw_parts` を新設しデコーダー経路の検証済み構築を可能にし、`debug_assert!` で契約を表明
+- 読み取り専用アクセサ `status_code()` / `reason_phrase()` / `version()` / `body_bytes()` / `is_body_omitted()` を追加
+  - 注: builder `body(data) -> Self` と getter `body() -> Option<&[u8]>` の同名併存は Rust の inherent impl 制約により不可能なため、getter は `body_bytes` に改名 (issue 本文の「同名併存可能」記述は Rust の仕様誤認だった)
+- `validate.rs` の `is_valid_reason_phrase` を RFC 9112 §4 ABNF `1*(...)` に厳密準拠させ空文字列を拒否
+- decoder / encoder の `is_valid_reason_phrase` 呼び出しは空文字列 (reason-phrase absent) をスキップする形に統一
+- `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由 (`HttpHead` トレイト経由含む) に書き換え
+- `Response::encode()` の doc を意味論的違反 (Content-Length 不一致等) に限定する旨に更新
+- 全 examples (`http11_server`, `http11_server_io_uring`, `http11_reverse_proxy`, `http11_client`) を `?` 伝播形式に書き換え
+- 全 tests / PBT / fuzz ターゲットを新 API に追従、`tests/test_response.rs` を新設して構築時バリデーションのエラーパスを網羅
+- `SKILL.md` の Response API 一覧およびサンプルコードを新 API に追従
+- `make fmt && make clippy && make check && make test` がすべて成功することを確認

@@ -31,43 +31,37 @@ fn test_encode_request_invalid_version() {
 
 #[test]
 fn test_encode_response_invalid_version() {
-    // 空文字列はエラー
-    let res = Response::with_version("", 200, "OK");
-    let result = encode_response(&res);
+    // 空文字列は構築時に拒否
+    let result = Response::with_version("", 200, "OK");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 
-    // スペースを含むバージョンはエラー
-    let res = Response::with_version("HTTP /1.1", 200, "OK");
-    let result = encode_response(&res);
+    // スペースを含むバージョンは構築時に拒否
+    let result = Response::with_version("HTTP /1.1", 200, "OK");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 
-    // 制御文字を含むバージョンはエラー
-    let res = Response::with_version("HTTP\x01/1.1", 200, "OK");
-    let result = encode_response(&res);
+    // 制御文字を含むバージョンは構築時に拒否
+    let result = Response::with_version("HTTP\x01/1.1", 200, "OK");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 }
 
 #[test]
 fn test_encode_response_invalid_status_code() {
-    // 100 未満のステータスコードはエラー
-    let res = Response::with_version("HTTP/1.1", 99, "Invalid");
-    let result = encode_response(&res);
+    // 100 未満のステータスコードは構築時に拒否
+    let result = Response::with_version("HTTP/1.1", 99, "Invalid");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidStatusCode { code: 99 })
     ));
 
-    // 600 以上のステータスコードはエラー
-    let res = Response::with_version("HTTP/1.1", 600, "Invalid");
-    let result = encode_response(&res);
+    // 600 以上のステータスコードは構築時に拒否
+    let result = Response::with_version("HTTP/1.1", 600, "Invalid");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidStatusCode { code: 600 })
     ));
 
-    // 0 もエラー
-    let res = Response::with_version("HTTP/1.1", 0, "Invalid");
-    let result = encode_response(&res);
+    // 0 も構築時に拒否
+    let result = Response::with_version("HTTP/1.1", 0, "Invalid");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidStatusCode { code: 0 })
@@ -148,7 +142,9 @@ fn test_encode_get_without_body_emits_no_content_length() {
 fn test_encode_response_no_content_length_with_transfer_encoding() {
     // Transfer-Encoding がある場合は Content-Length を追加しない
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Transfer-Encoding", "chunked")
+        .unwrap()
         .body(b"hello".to_vec());
     let encoded = encode_response(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -209,7 +205,9 @@ fn test_encode_request_headers_ignores_body() {
 
 #[test]
 fn test_encode_response_headers_ignores_body() {
-    let res = Response::new(200, "OK").body(b"hello world".to_vec());
+    let res = Response::new(200, "OK")
+        .unwrap()
+        .body(b"hello world".to_vec());
     let encoded = encode_response_headers(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -242,7 +240,10 @@ fn test_encode_request_cl_only_ok() {
 
 #[test]
 fn test_encode_response_te_only_ok() {
-    let res = Response::new(200, "OK").header("Transfer-Encoding", "chunked");
+    let res = Response::new(200, "OK")
+        .unwrap()
+        .header("Transfer-Encoding", "chunked")
+        .unwrap();
     let result = encode_response(&res);
     assert!(result.is_ok());
 }
@@ -250,7 +251,9 @@ fn test_encode_response_te_only_ok() {
 #[test]
 fn test_encode_response_cl_only_ok() {
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "100")
+        .unwrap()
         .body(vec![0u8; 100]);
     let result = encode_response(&res);
     assert!(result.is_ok());
@@ -262,7 +265,7 @@ fn test_encode_response_cl_only_ok() {
 
 #[test]
 fn test_encode_response_205_empty_body_ok() {
-    let res = Response::new(205, "Reset Content");
+    let res = Response::new(205, "Reset Content").unwrap();
     let result = encode_response(&res);
     assert!(result.is_ok());
 }
@@ -270,7 +273,10 @@ fn test_encode_response_205_empty_body_ok() {
 #[test]
 fn test_encode_response_205_with_cl_zero_ok() {
     // 205 で Content-Length: 0 は許可
-    let res = Response::new(205, "Reset Content").header("Content-Length", "0");
+    let res = Response::new(205, "Reset Content")
+        .unwrap()
+        .header("Content-Length", "0")
+        .unwrap();
     let result = encode_response(&res);
     assert!(result.is_ok());
 }
@@ -381,12 +387,12 @@ fn test_encode_request_nul_in_header_value() {
 
 #[test]
 fn test_encode_response_crlf_in_reason_phrase() {
+    // 不正な reason_phrase は構築時に拒否される
     for phrase in &["OK\r\nEvil: header", "OK\n", "OK\r"] {
-        let res = Response::new(200, phrase);
-        let result = encode_response(&res);
+        let result = Response::new(200, phrase);
         assert!(
-            result.is_err(),
-            "CRLF in reason-phrase should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidReasonPhrase { .. })),
+            "CRLF in reason-phrase should be rejected at construction: {:?}",
             phrase
         );
     }
@@ -394,12 +400,13 @@ fn test_encode_response_crlf_in_reason_phrase() {
 
 #[test]
 fn test_encode_response_crlf_in_header_name() {
+    // 不正なヘッダー名は構築時に拒否される
     for name in &["Evil\r\nHeader", "Evil\nHeader"] {
-        let res = Response::new(200, "OK").header(name, "value");
-        let result = encode_response(&res);
+        let res = Response::new(200, "OK").unwrap();
+        let result = res.header(name, "value");
         assert!(
-            result.is_err(),
-            "CRLF in response header name should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidHeaderName { .. })),
+            "CRLF in response header name should be rejected at construction: {:?}",
             name
         );
     }
@@ -407,12 +414,13 @@ fn test_encode_response_crlf_in_header_name() {
 
 #[test]
 fn test_encode_response_crlf_in_header_value() {
+    // 不正なヘッダー値は構築時に拒否される
     for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
-        let res = Response::new(200, "OK").header("X-Test", value);
-        let result = encode_response(&res);
+        let res = Response::new(200, "OK").unwrap();
+        let result = res.header("X-Test", value);
         assert!(
-            result.is_err(),
-            "CRLF in response header value should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
+            "CRLF in response header value should be rejected at construction: {:?}",
             value
         );
     }
@@ -468,7 +476,9 @@ fn test_encode_request_non_http_scheme_userinfo_allowed() {
 fn test_encode_response_content_length_mismatch() {
     // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "10")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(
@@ -500,7 +510,7 @@ fn test_encode_request_content_length_mismatch() {
 #[test]
 fn test_encode_response_omit_body_without_content_length_does_not_add_header() {
     // omit_body: true かつ body が空の場合、自動で Content-Length を追加しない
-    let res = Response::new(200, "OK").omit_body(true);
+    let res = Response::new(200, "OK").unwrap().omit_body(true);
     let encoded = encode_response(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
     assert!(!encoded_str.contains("Content-Length"));
@@ -510,7 +520,9 @@ fn test_encode_response_omit_body_without_content_length_does_not_add_header() {
 fn test_encode_response_omit_body_allows_content_length_without_body() {
     // HEAD レスポンス相当: body を送信しないが Content-Length で表現長を返す
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "100")
+        .unwrap()
         .omit_body(true);
     let encoded = encode_response(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -523,7 +535,9 @@ fn test_encode_response_omit_body_allows_content_length_without_body() {
 fn test_encode_response_omit_body_does_not_encode_body() {
     // omit_body: true の場合、status がボディ許可でも実ボディは送信しない
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .body(b"hello".to_vec())
         .omit_body(true);
     let encoded = encode_response(&res).unwrap();
@@ -538,7 +552,9 @@ fn test_encode_response_omit_body_does_not_encode_body() {
 fn test_encode_response_omit_body_with_non_empty_body_still_validates_content_length() {
     // omit_body: true でも body を持っている場合は Content-Length 整合性を検証する
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "10")
+        .unwrap()
         .body(b"hello".to_vec())
         .omit_body(true);
     let result = encode_response(&res);
@@ -554,7 +570,10 @@ fn test_encode_response_omit_body_with_non_empty_body_still_validates_content_le
 #[test]
 fn test_encode_response_304_content_length_representation_size_ok() {
     // RFC 9110 Section 8.6: 304 の Content-Length は表現長を示せる
-    let res = Response::new(304, "Not Modified").header("Content-Length", "100");
+    let res = Response::new(304, "Not Modified")
+        .unwrap()
+        .header("Content-Length", "100")
+        .unwrap();
     let encoded = encode_response(&res).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -565,7 +584,7 @@ fn test_encode_response_304_content_length_representation_size_ok() {
 #[test]
 fn test_encode_response_204_no_auto_content_length_with_no_body() {
     // 204: status_has_body=false なので Content-Length 自動付与なし (body=None)
-    let res = Response::new(204, "No Content");
+    let res = Response::new(204, "No Content").unwrap();
     let encoded = encode_response(&res).unwrap();
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
@@ -575,7 +594,7 @@ fn test_encode_response_204_no_auto_content_length_with_no_body() {
 #[test]
 fn test_encode_response_204_no_auto_content_length_with_empty_body() {
     // 204: body=Some(vec![]) でも Content-Length は自動付与しない
-    let res = Response::new(204, "No Content").body(Vec::new());
+    let res = Response::new(204, "No Content").unwrap().body(Vec::new());
     let encoded = encode_response(&res).unwrap();
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
@@ -585,7 +604,9 @@ fn test_encode_response_204_no_auto_content_length_with_empty_body() {
 #[test]
 fn test_encode_response_205_with_non_empty_body_error() {
     // RFC 9110 Section 15.3.6: 205 はボディを生成してはならない (MUST NOT)
-    let res = Response::new(205, "Reset Content").body(b"hello".to_vec());
+    let res = Response::new(205, "Reset Content")
+        .unwrap()
+        .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
 }
@@ -594,7 +615,10 @@ fn test_encode_response_205_with_non_empty_body_error() {
 fn test_encode_response_omit_body_with_explicit_empty_body_does_not_add_content_length() {
     // omit_body=true かつ body=Some(vec![]) のケースで Content-Length を自動付与しない
     // (encoder の (omit_body, body_len) == (true, Some(0)) 分岐を固定)
-    let res = Response::new(200, "OK").body(Vec::new()).omit_body(true);
+    let res = Response::new(200, "OK")
+        .unwrap()
+        .body(Vec::new())
+        .omit_body(true);
     let encoded = encode_response(&res).unwrap();
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
@@ -936,7 +960,9 @@ fn test_encode_request_non_numeric_content_length() {
 fn test_encode_response_non_numeric_content_length() {
     // 非数値の Content-Length はエラー
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "abc")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(
@@ -961,8 +987,11 @@ fn test_encode_request_duplicate_content_length_mismatch() {
 fn test_encode_response_duplicate_content_length_mismatch() {
     // 重複 Content-Length で値が不一致はエラー
     let res = Response::new(200, "OK")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .header("Content-Length", "10")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
@@ -1009,7 +1038,7 @@ fn test_encode_chunk_hex_boundaries() {
 fn test_encode_response_status_code_decimal_boundaries() {
     // status_code 100 / 200 / 999 のステータスラインが format!("{}") と一致する
     for &code in &[100u16, 200, 599] {
-        let res = Response::new(code, "Reason").body(Vec::new());
+        let res = Response::new(code, "Reason").unwrap().body(Vec::new());
         let encoded = encode_response(&res).unwrap();
         let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
         assert!(
@@ -1024,7 +1053,7 @@ fn test_encode_response_content_length_decimal_boundaries() {
     // body.len() の桁の境界 (0, 9, 10, 99, 100) で Content-Length が format!("{}") と一致する
     for &len in &[0usize, 9, 10, 99, 100] {
         let body = vec![b'x'; len];
-        let res = Response::new(200, "OK").body(body.clone());
+        let res = Response::new(200, "OK").unwrap().body(body.clone());
         let encoded = encode_response(&res).unwrap();
         let encoded_str = core::str::from_utf8(&encoded).unwrap();
         let expected_header = format!("Content-Length: {len}\r\n");
@@ -1057,7 +1086,7 @@ fn test_encode_request_content_length_decimal_boundaries() {
 fn test_encode_response_headers_status_code_decimal_boundaries() {
     // encode_response_headers 経路でも status_code が format!("{}") と一致する
     for &code in &[100u16, 200, 599] {
-        let res = Response::new(code, "Reason");
+        let res = Response::new(code, "Reason").unwrap();
         let encoded = encode_response_headers(&res).unwrap();
         let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
         assert!(

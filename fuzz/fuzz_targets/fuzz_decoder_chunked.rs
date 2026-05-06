@@ -211,8 +211,8 @@ fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
 }
 
 fn exercise_response(body: &[u8], expected: &[u8], split_size: usize) {
-    let mut response = Response::new(200, "OK");
-    response.add_header("Transfer-Encoding", "chunked");
+    let mut response = Response::new(200, "OK").unwrap();
+    response.add_header("Transfer-Encoding", "chunked").unwrap();
     let mut encoded = match encode_response_headers(&response) {
         Ok(v) => v,
         Err(_) => return,

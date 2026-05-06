@@ -341,11 +341,11 @@ proptest! {
 
         // 1 回目のデコード
         let response1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response1.body.as_deref().map(<[u8]>::len), Some(body1_len));
+        prop_assert_eq!(response1.body_bytes().map(<[u8]>::len), Some(body1_len));
 
         // 2 回目のデコード
         let response2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response2.body.as_deref().map(<[u8]>::len), Some(body2_len));
+        prop_assert_eq!(response2.body_bytes().map(<[u8]>::len), Some(body2_len));
     }
 }
 
@@ -412,7 +412,7 @@ proptest! {
         // decode() を連続して呼ぶ
         for body_data in &bodies {
             let response = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -638,8 +638,8 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
-        prop_assert_eq!(response.status_code, 200);
+        prop_assert_eq!(response.body_bytes(), Some(expected_body.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
     }
 }
 
@@ -684,8 +684,8 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&full).unwrap();
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
-        prop_assert_eq!(response.status_code, 200);
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
     }
 }
 

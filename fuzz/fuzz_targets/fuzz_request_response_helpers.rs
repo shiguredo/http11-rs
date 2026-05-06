@@ -125,11 +125,15 @@ fn exercise_response(input: FuzzResponse) {
         headers,
         body,
     } = input;
-    let mut response = Response::with_version(&version, status_code, &reason_phrase);
+    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+        return;
+    };
     for (name, value) in &headers {
-        response.add_header(name, value);
+        if response.add_header(name, value).is_err() {
+            return;
+        }
     }
-    response.body = Some(body);
+    let response = response.body(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(response.get_header(name), header_value(&headers, name));

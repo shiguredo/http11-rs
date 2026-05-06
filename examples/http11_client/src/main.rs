@@ -25,7 +25,9 @@ use decompressor::{decompress_body, supported_encodings};
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
-use shiguredo_http11::{BodyKind, BodyProgress, Request, Response, ResponseDecoder, ResponseHead};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, HttpHead, Request, Response, ResponseDecoder, ResponseHead,
+};
 use tracing::{error, info};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -213,17 +215,18 @@ fn http_request(
         "Timing"
     );
 
-    Ok(Response {
-        version: h.version,
-        status_code: h.status_code,
-        reason_phrase: h.reason_phrase,
-        headers: h.headers,
-        body: match k {
-            BodyKind::None | BodyKind::Tunnel => None,
-            _ => Some(body),
-        },
-        omit_body: false,
-    })
+    let body_field = match k {
+        BodyKind::None | BodyKind::Tunnel => None,
+        _ => Some(body),
+    };
+    let mut response = Response::with_version(&h.version, h.status_code, &h.reason_phrase)?;
+    for (name, value) in h.headers {
+        response.add_header(&name, &value)?;
+    }
+    if let Some(b) = body_field {
+        response = response.body(b);
+    }
+    Ok(response)
 }
 
 fn https_request(
@@ -336,41 +339,38 @@ fn https_request(
         "Timing"
     );
 
-    Ok(Response {
-        version: h.version,
-        status_code: h.status_code,
-        reason_phrase: h.reason_phrase,
-        headers: h.headers,
-        body: match k {
-            BodyKind::None | BodyKind::Tunnel => None,
-            _ => Some(body),
-        },
-        omit_body: false,
-    })
+    let body_field = match k {
+        BodyKind::None | BodyKind::Tunnel => None,
+        _ => Some(body),
+    };
+    let mut response = Response::with_version(&h.version, h.status_code, &h.reason_phrase)?;
+    for (name, value) in h.headers {
+        response.add_header(&name, &value)?;
+    }
+    if let Some(b) = body_field {
+        response = response.body(b);
+    }
+    Ok(response)
 }
 
 fn print_response(response: &Response) {
     info!(
-        version = %response.version,
-        status_code = response.status_code,
-        reason_phrase = %response.reason_phrase,
+        version = HttpHead::version(response),
+        status_code = response.status_code(),
+        reason_phrase = response.reason_phrase(),
         "Response received"
     );
 
-    for (name, value) in &response.headers {
+    for (name, value) in HttpHead::headers(response) {
         info!(name, value, "Header");
     }
 
     // Content-Encoding ヘッダーを取得
-    let content_encoding = response
-        .headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Content-Encoding"))
-        .map(|(_, value)| value.as_str());
+    let content_encoding = response.get_header("Content-Encoding");
 
     // ボディを展開（必要な場合）
     // body == None のケースは空スライスとして扱う
-    let raw_body: &[u8] = response.body.as_deref().unwrap_or(&[]);
+    let raw_body: &[u8] = response.body_bytes().unwrap_or(&[]);
     let body = match content_encoding {
         Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
             match decompress_body(raw_body, encoding) {

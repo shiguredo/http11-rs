@@ -1356,8 +1356,8 @@ mod direct_buffer_write {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
         let response = decoder.decode().unwrap().expect("response decoded");
-        assert_eq!(response.status_code, 200);
-        assert_eq!(response.body.as_deref(), Some(b"hello".as_slice()));
+        assert_eq!(response.status_code(), 200);
+        assert_eq!(response.body_bytes(), Some(b"hello".as_slice()));
     }
 
     #[test]

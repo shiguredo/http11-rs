@@ -33,12 +33,23 @@ fuzz_target!(|input: FuzzResponse| {
         body,
         omit_body,
     } = input;
-    let mut response = Response::with_version(&version, status_code, &reason_phrase);
+    // バリデーション失敗は早期 return (fuzzer は次の入力に進める)
+    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+        return;
+    };
     for (name, value) in &headers {
-        response.add_header(name, value);
+        if response.add_header(name, value).is_err() {
+            return;
+        }
     }
-    response.body = if body_present { Some(body) } else { None };
-    response.omit_body = omit_body;
+    // body_present=false のときは body() builder を呼ばず、Response の body を None のまま残す。
+    // これにより fuzz は body=None / body=Some(...) の両パスをカバーする。
+    let response = if body_present {
+        response.body(body)
+    } else {
+        response
+    };
+    let response = response.omit_body(omit_body);
 
     let first = encode_response(&response);
     let second = encode_response(&response);

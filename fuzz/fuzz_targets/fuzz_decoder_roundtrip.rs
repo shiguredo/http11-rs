@@ -116,9 +116,14 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             .cloned()
             .collect();
 
-        let mut response = Response::new(fuzz_resp.status_code, &fuzz_resp.reason_phrase);
+        let mut response = match Response::new(fuzz_resp.status_code, &fuzz_resp.reason_phrase) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
         for (name, value) in &valid_headers {
-            response.add_header(name, value);
+            if response.add_header(name, value).is_err() {
+                return;
+            }
         }
 
         // 1xx, 204, 304 以外の場合のみボディを設定
@@ -126,9 +131,16 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             || fuzz_resp.status_code == 204
             || fuzz_resp.status_code == 304);
 
-        if has_body && !fuzz_resp.body.is_empty() {
-            response.body = Some(fuzz_resp.body.clone());
+        let response_body = fuzz_resp.body.clone();
+        if has_body && !response_body.is_empty() {
+            response = response.body(response_body.clone());
         }
+
+        let expected_body = if has_body && !response_body.is_empty() {
+            response_body
+        } else {
+            Vec::new()
+        };
 
         let encoded = match response.try_encode() {
             Ok(v) => v,
@@ -158,7 +170,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                     }
                     BodyKind::None | BodyKind::Tunnel => {}
                 }
-                assert_eq!(decoded_body, response.body.unwrap_or_default());
+                assert_eq!(decoded_body, expected_body);
             }
         }
     }
