@@ -18,7 +18,7 @@ Please read <https://github.com/shiguredo/oss> before use.
 
 ## 概要
 
-Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイル テキストプロトコルライブラリです。HTTP/1.1 の他、RTSP/1.0, RTSP/2.0 等のプロトコルでも利用できます。
+Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテキストプロトコルライブラリです。HTTP/1.1 の他、RTSP/1.0, RTSP/2.0 等のプロトコルでも利用できます。
 
 ## 特徴
 

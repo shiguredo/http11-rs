@@ -11,6 +11,12 @@
 
 ## develop
 
+### misc
+
+## 2026.3.0
+
+**リリース日**: 2026-05-06
+
 - [UPDATE] `MultipartParser` のバッファ管理を読み取り位置オフセット方式に変更する
   - 多数パートの multipart ボディに対するコピー量を `O(N²)` から amortized `O(N)` に改善する
   - boundary 文字列のデリミタを `MultipartParser::new()` で事前計算してフィールドに持ち、`next_part()` ごとの `format!` を除去する
