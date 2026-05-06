@@ -487,11 +487,11 @@ async fn stream_response_on_connection(
         ..Default::default()
     });
 
-    // RFC 9110 Section 9.3.2: HEAD レスポンスにはボディが存在しない
-    if method.eq_ignore_ascii_case("HEAD") {
-        decoder.set_expect_no_body(true);
-        debug!("HEAD request: expecting no body in response");
-    }
+    // RFC 9112 Section 6.3: メッセージ長は元リクエストのメソッドに依存する
+    // (HEAD はボディなし、CONNECT 2xx はトンネルモード)。
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive のため、
+    // 小文字化等の変換をせずそのまま渡す。
+    decoder.set_request_method(method);
 
     const READ_CHUNK: usize = 8192;
 

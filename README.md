@@ -124,7 +124,7 @@ let bytes = request.encode();
 // bytes を送信...
 
 let mut decoder = ResponseDecoder::new();
-decoder.set_expect_no_body(true); // HEAD レスポンスではボディなし
+decoder.set_request_method("HEAD"); // HEAD レスポンスではボディなし
 // 受信データを mut_buf 経由で直接書き込む
 // let buf = decoder.mut_buf(8192)?;
 // let n = stream.read(buf)?;

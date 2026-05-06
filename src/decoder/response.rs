@@ -56,8 +56,6 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     headers: Vec<(String, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
-    /// HEAD リクエストへのレスポンスかどうか
-    expect_no_body: bool,
     /// ステータスコード（ヘッダーデコード後に保持）
     status_code: u16,
     /// decode() 用: デコード済みヘッダー
@@ -68,7 +66,7 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     decoded_body: Vec<u8>,
     /// 展開器
     decompressor: D,
-    /// リクエストメソッド (CONNECT トンネル判定用)
+    /// リクエストメソッド (HEAD/CONNECT 判定用)
     request_method: Option<String>,
     /// `mut_buf` で確保した未確定領域のバイト数
     pending: usize,
@@ -90,7 +88,6 @@ impl ResponseDecoder<NoCompression> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits: DecoderLimits::default(),
-            expect_no_body: false,
             status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
@@ -110,7 +107,6 @@ impl ResponseDecoder<NoCompression> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits,
-            expect_no_body: false,
             status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
@@ -132,7 +128,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits: DecoderLimits::default(),
-            expect_no_body: false,
             status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
@@ -152,7 +147,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits,
-            expect_no_body: false,
             status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
@@ -163,15 +157,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
     }
 
-    /// HEAD リクエストへのレスポンスとしてデコード (ボディなし)
-    pub fn set_expect_no_body(&mut self, expect_no_body: bool) {
-        self.expect_no_body = expect_no_body;
-    }
-
-    /// リクエストメソッドを設定 (CONNECT トンネル判定用)
+    /// リクエストメソッドを設定 (HEAD/CONNECT 判定用)
     ///
-    /// CONNECT メソッドへの 2xx レスポンスはトンネルモードに切り替わる。
-    /// この場合、ボディは存在せず、バッファ残りデータはトンネルデータとなる。
+    /// レスポンスの元となったリクエストのメソッドを通知する。
+    ///
+    /// - `"HEAD"` を渡すと、Content-Length / Transfer-Encoding の値に関わらず
+    ///   ボディなしとして扱う (RFC 9112 Section 6.3 item 1)。
+    /// - `"CONNECT"` を渡すと、2xx レスポンスはトンネルモードに切り替わる
+    ///   (RFC 9112 Section 6.3 item 2)。この場合、ボディは存在せず、
+    ///   バッファ残りデータはトンネルデータとなる。
+    ///
+    /// RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
     pub fn set_request_method(&mut self, method: &str) {
         self.request_method = Some(method.to_string());
     }
@@ -302,7 +298,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.start_line = None;
         self.headers.clear();
         self.body_decoder.reset();
-        self.expect_no_body = false;
         self.status_code = 0;
         self.decoded_head = None;
         self.decoded_body_kind = None;
@@ -338,17 +333,47 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
     /// ボディモードを決定
     ///
-    /// RFC 9112 Section 6.3 の優先順位に従う:
-    /// 1. CONNECT 2xx はトンネルモード (Transfer-Encoding/Content-Length は無視)
-    /// 2. HEAD レスポンス、1xx/204/304 はボディなし (Transfer-Encoding/Content-Length を解析しない)
-    ///    注: 205 は送信者制約 (RFC 9110) だが、受信者はメッセージ長決定規則に従う
-    /// 3. Transfer-Encoding がある場合:
-    ///    - chunked が最後 → chunked
-    ///    - chunked がないか最後でない → close-delimited
-    /// 4. Content-Length がある場合は固定長
-    /// 5. それ以外は close-delimited (接続が閉じるまでがボディ)
+    /// RFC 9112 Section 6.3 の "in order of precedence" に従う。
+    /// 将来 RFC が改訂された場合は、優先順位の見直しが必要になる可能性がある。
+    ///
+    /// 1. item 1: HEAD レスポンス / 1xx / 204 / 304 はボディなし
+    ///    (CONNECT + 204 もここで吸収される)
+    /// 2. item 2: CONNECT への 2xx (204 を除く) はトンネルモード
+    /// 3. RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault
+    /// 4. item 3〜8: Transfer-Encoding / Content-Length 解析
     fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
-        // RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault
+        // RFC 9112 Section 6.3 item 1: HEAD レスポンス、1xx/204/304 はヘッダー
+        // フィールドの内容に関わらずヘッダー終了で終わる。
+        // "in order of precedence" により item 1 が最優先で評価される。
+        // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
+        // 205 は status_has_body が true を返すためここではマッチせず、後続の
+        // TE/CL 解析に進む (RFC 9110 Section 15.3.6: 送信者制約のみ)。
+        // 将来 RFC が改訂されてステータスコードの分類が変わる可能性がある。
+        if self.request_method.as_deref().is_some_and(|m| m == "HEAD")
+            || !Self::status_has_body(status_code)
+        {
+            return Ok(BodyKind::None);
+        }
+
+        // RFC 9112 Section 6.3 item 2: CONNECT メソッドへの 2xx レスポンスは
+        // トンネルモードに切り替わる。Transfer-Encoding と Content-Length は無視される。
+        // item 1 で 1xx/204/304 は既に返っているため、ここに到達するのは
+        // status が 200-203, 205-299 でかつ request_method == "CONNECT" の場合のみ。
+        // RFC 9110 Section 9.3.6: CONNECT への 2xx はヘッダー終了直後にトンネル
+        // モードへ切り替わる。
+        // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
+        if self
+            .request_method
+            .as_deref()
+            .is_some_and(|m| m == "CONNECT")
+            && (200..300).contains(&status_code)
+        {
+            return Ok(BodyKind::Tunnel);
+        }
+
+        // RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault。
+        // item 1 で HEAD/1xx/204/304 は既に返っているため、このチェックに到達
+        // するのはボディが存在しうるレスポンスのみ。
         let version = self
             .start_line
             .as_ref()
@@ -365,26 +390,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
             ));
         }
 
-        // RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
-        // トンネルモードに切り替わる。Transfer-Encoding と Content-Length は無視される。
-        // RFC 9110 Section 9.1: メソッドトークンは case-sensitive
-        if let Some(ref method) = self.request_method
-            && method == "CONNECT"
-            && (200..300).contains(&status_code)
-        {
-            return Ok(BodyKind::Tunnel);
-        }
-
-        // RFC 9112 Section 6.3: HEAD/1xx/204/304 はボディなし
-        // 205 は送信者がボディを生成してはならない (RFC 9110 Section 15.3.6) が、
-        // 受信者はメッセージ長決定規則に従って処理する必要がある
-        // これらのステータスでは Transfer-Encoding/Content-Length を解析しない
-        // (不正な TE/CL があってもエラーにしない)
-        if self.expect_no_body || !Self::status_has_body(status_code) {
-            return Ok(BodyKind::None);
-        }
-
-        // ボディがある場合のみ TE/CL を解析
+        // RFC 9112 Section 6.3 item 3〜8: TE/CL 解析。
+        // chunked → Chunked (item 4)、非 chunked → CloseDelimited (item 4)、
+        // CL → ContentLength (item 6)、どちらもなし → CloseDelimited (item 8)。
         let (te_result, content_length) = resolve_body_headers_for_response(&self.headers)?;
 
         match te_result {
@@ -403,8 +411,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
             return Ok(BodyKind::ContentLength(len));
         }
 
-        // RFC 9112: TE も CL もない場合は close-delimited
-        // 接続が閉じられるまでをボディとして扱う
+        // RFC 9112 Section 6.3 item 8: TE も CL もない場合は close-delimited
+        // (接続が閉じられるまでをボディとして扱う)
         Ok(BodyKind::CloseDelimited)
     }
 
@@ -572,8 +580,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     self.start_line = None;
                     self.headers.clear();
                     self.body_decoder.reset();
-                    self.expect_no_body = false;
                     self.status_code = 0;
+                    // request_method は元のリクエストごとに設定し直す前提で
+                    // ここでクリアする。クリアしないと Keep-Alive 接続で前回の
+                    // CONNECT などが残り、次のレスポンスを誤ってトンネル判定
+                    // してしまう状態漏れバグになる。
+                    self.request_method = None;
                     continue;
                 }
                 DecodePhase::Tunnel => {
@@ -784,8 +796,11 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.body_decoder.reset();
-        self.expect_no_body = false;
         self.status_code = 0;
+        // request_method は元のリクエストごとに設定し直す前提でクリアする。
+        // クリアしないと Keep-Alive 接続で前回の CONNECT などが残り、次のレス
+        // ポンスを誤ってトンネル判定してしまう状態漏れバグになる。
+        self.request_method = None;
 
         Ok(Some(Response {
             version: head.version,

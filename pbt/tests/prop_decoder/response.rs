@@ -62,7 +62,7 @@ proptest! {
         // HEAD レスポンスは Content-Length があってもボディなし
         let data = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", content_length);
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
@@ -77,7 +77,7 @@ proptest! {
         // HEAD レスポンスは Transfer-Encoding があってもボディなし
         let data = format!("HTTP/1.1 {} OK\r\nTransfer-Encoding: chunked\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
@@ -517,22 +517,74 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_response_decoder_reset_expect_no_body(
+    fn prop_response_decoder_reset_request_method(
         // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
         status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 100\r\n\r\n", status_code);
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
         decoder.reset();
-        // reset 後は expect_no_body がクリアされる
+        // reset 後は request_method がクリアされる
         let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
         decoder.feed(data2.as_bytes()).unwrap();
         let (_, body_kind2) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind2, BodyKind::ContentLength(5));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_head_request_method_cleared_on_decode_headers_complete(
+        // 200..=299 のうちボディがあるステータスコード (204 は status_has_body=false で除外)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
+    ) {
+        // set_request_method("HEAD") + 空ボディレスポンスを decode_headers() で
+        // 処理した後、続けて通常のレスポンスを decode_headers() で処理した場合に
+        // request_method が Complete 遷移時にクリアされていることを検証する。
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("HEAD");
+        let data1 = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
+        decoder.feed(data1.as_bytes()).unwrap();
+        let (_, body_kind1) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind1, BodyKind::None);
+
+        // 次のレスポンスを供給する。Complete 遷移時に request_method がクリア
+        // されていれば、Content-Length: 5 が正しく解釈されるはず。
+        let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
+        decoder.feed(data2.as_bytes()).unwrap();
+        let (_, body_kind2) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind2, BodyKind::ContentLength(5));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_head_request_method_cleared_on_decode_complete(
+        // 200..=299 のうちボディがあるステータスコード (204 は status_has_body=false で除外)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
+    ) {
+        // set_request_method("HEAD") + 空ボディレスポンスを decode() で処理した後、
+        // 続けて通常のレスポンスを decode() で処理した場合に request_method が
+        // decode() 完了時にクリアされていることを検証する。
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("HEAD");
+        let data1 = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
+        decoder.feed(data1.as_bytes()).unwrap();
+        let resp1 = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(resp1.status_code, status_code);
+        // HEAD レスポンスはボディなし扱い
+        prop_assert!(resp1.body.is_none());
+
+        // 次のレスポンスを供給する。decode() 完了時に request_method がクリア
+        // されていれば、Content-Length: 5 が正しく解釈されてボディが取れるはず。
+        let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
+        decoder.feed(data2.as_bytes()).unwrap();
+        let resp2 = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(resp2.body.as_deref(), Some(&b"hello"[..]));
     }
 }
 
@@ -764,9 +816,14 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// CONNECT + 2xx の全ステータスコードでトンネルモードになることを確認
+    /// CONNECT + 2xx (204 を除く) の全ステータスコードでトンネルモードになることを確認
+    ///
+    /// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+    /// item 1 (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より
+    /// 優先されるため、CONNECT + 204 は `BodyKind::None` になる。
     #[test]
     fn prop_connect_all_2xx_tunnel(status in 200u16..300u16) {
+        prop_assume!(status != 204);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
@@ -909,9 +966,13 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// CONNECT 2xx 後に decode() → エラー
+    /// CONNECT 2xx (204 を除く) 後に decode() → エラー
+    ///
+    /// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+    /// CONNECT + 204 は `BodyKind::None` になり、`decode()` はエラーにならない。
     #[test]
     fn prop_response_decode_tunnel_error(status in 200u16..300) {
+        prop_assume!(status != 204);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 

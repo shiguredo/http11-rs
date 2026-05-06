@@ -44,7 +44,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
 | `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
-| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_expect_no_body()`, `set_request_method()` |
+| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
 | `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
@@ -221,9 +221,9 @@ if !is_head {
 }
 let bytes = response.encode();
 
-// クライアント側: ResponseDecoder::set_expect_no_body() でボディなしを通知
+// クライアント側: ResponseDecoder::set_request_method("HEAD") でボディなしを通知
 let mut decoder = ResponseDecoder::new();
-decoder.set_expect_no_body(true);
+decoder.set_request_method("HEAD");
 ```
 
 ### CONNECT トンネルの処理
