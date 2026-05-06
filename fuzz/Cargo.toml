@@ -190,6 +190,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "fuzz_decoder_mut_buf"
+path = "fuzz_targets/fuzz_decoder_mut_buf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fuzz_request_response_helpers"
 path = "fuzz_targets/fuzz_request_response_helpers.rs"
 test = false
@@ -206,6 +213,20 @@ bench = false
 [[bin]]
 name = "fuzz_expect"
 path = "fuzz_targets/fuzz_expect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_encode_request"
+path = "fuzz_targets/fuzz_encode_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_encode_response"
+path = "fuzz_targets/fuzz_encode_response.rs"
 test = false
 doc = false
 bench = false

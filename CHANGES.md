@@ -13,6 +13,47 @@
 
 ### misc
 
+## 2026.3.0
+
+**リリース日**: 2026-05-06
+
+- [UPDATE] `MultipartParser` のバッファ管理を読み取り位置オフセット方式に変更する
+  - 多数パートの multipart ボディに対するコピー量を `O(N²)` から amortized `O(N)` に改善する
+  - boundary 文字列のデリミタを `MultipartParser::new()` で事前計算してフィールドに持ち、`next_part()` ごとの `format!` を除去する
+  - @voluntas
+- [UPDATE] `encode_chunk` / `encode_chunks` のチャンクサイズ生成からヒープ確保を除去する
+  - 16 進数文字列の生成にスタックバッファを使う `write_hex_usize` ヘルパーを導入し、ストリーミング送信時の `format!` を除去する
+  - 併せて `encode_request` / `encode_response` / `encode_response_headers` のステータスコード / Content-Length の `to_string()` を `write_usize_decimal` ヘルパーに置き換える
+  - `encode_chunk` / `encode_chunks` のバッファを `Vec::with_capacity` に変更し、`checked_add` ベースで容量を見積もる
+  - @voluntas
+- [UPDATE] `encode_request` / `encode_response` のバッファに `Vec::with_capacity` を導入する
+  - 容量見積もりを `checked_add` ベースで行い、オーバーフロー時は `Vec::new()` にフォールバックする
+  - `ENCODE_CAPACITY_LIMIT` (64 MB) を導入し、攻撃者制御のヘッダー値による `Vec::with_capacity` の OOM abort を防ぐ
+  - 自動付与する Content-Length 行と auto-emit 判定ロジックは見積もり / 書き込み双方で共通の関数 (`should_auto_emit_content_length_for_request` / `..._for_response`) を経由するように整理する
+  - 任意入力でのパニック / abort 安全性を `fuzz_encode_request` / `fuzz_encode_response` で網羅する
+  - @voluntas
+- [ADD] `ResponseDecoder` / `RequestDecoder` に直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`) を追加する
+  - OS の `recv()` 等がデコーダー内部バッファに直接書き込めるようにし、`feed(&[u8])` 経由の中間コピーを排除する
+  - `available_buf()` で残容量を問い合わせてチャンクサイズを適応させる
+  - `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の受信ループを新 API に書き換える
+  - @voluntas
+- [CHANGE] `BodyProgress` を `Advanced` / `NeedData` / `Complete` の 3 値に細分化し、追加データが必要な状態を戻り値だけで判定できるようにする
+  - 内部で利用していた非公開 `available_body_len()` を撤去し、`decode()` を `peek_body()` ベースに統一する
+  - `src/decoder/mod.rs` のストリーミング API doc サンプルと `examples/http11_client` / `examples/http11_server` / `examples/http11_reverse_proxy` の `remaining_before` 比較ハックを 3 値パターンマッチに書き換える
+  - @voluntas
+
+### misc
+
+- [UPDATE] `examples/http11_client` をストリーミング API の実装例に書き換える
+  - `decode()` 一括 API から `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` に変更する
+  - `Instant` で TTFB / first-body-byte / total の各タイミングを計測して `tracing::info!` で出力する
+  - 全 `BodyKind` (Chunked / ContentLength / CloseDelimited / None / Tunnel) に対応する
+  - @voluntas
+- [UPDATE] `examples/http11_server` をストリーミング API の実装例に書き換える
+  - `while let Some(request) = decoder.decode()?` を `decode_headers()` + ストリーミングボディ受信に変更する
+  - `StreamingState` / `stream_body()` / `serve_request()` で Keep-Alive 対応を維持しつつコードを整理する
+  - @voluntas
+
 ## 2026.2.0
 
 **リリース日**: 2026-04-30

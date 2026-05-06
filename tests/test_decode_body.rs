@@ -35,7 +35,7 @@
 //!
 //! ### 4. アプリケーションコードの責務
 //!
-//! デコーダー自体は正しく動作する。不完全なデータを与えると、正しく `Continue` を返す。
+//! デコーダー自体は正しく動作する。不完全なデータを与えると、正しく `NeedData` を返す。
 //! 問題は「アプリケーションコードがその状態を正しく処理するか」という点である。
 //!
 //! 例えば reverse proxy の場合：
@@ -73,21 +73,16 @@ fn incomplete_content_length_body() {
 
     // ボディを読み取っても Complete にならない
     let mut body = Vec::new();
-    loop {
-        if let Some(data) = decoder.peek_body() {
-            body.extend_from_slice(data);
-            let len = data.len();
-            match decoder.consume_body(len).unwrap() {
-                BodyProgress::Complete { .. } => panic!("should not complete with incomplete body"),
-                BodyProgress::Continue => {}
-            }
-        } else {
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => panic!("should not complete with incomplete body"),
-                BodyProgress::Continue => break, // データ不足
-            }
-        }
-    }
+    // peek_body() で 50 バイトを取得 → consume_body(50) は Advanced を返す
+    let data = decoder.peek_body().unwrap();
+    body.extend_from_slice(data);
+    let len = data.len();
+    assert_eq!(decoder.consume_body(len).unwrap(), BodyProgress::Advanced);
+
+    // 次の peek_body() は None (バッファが空) → progress() は NeedData を返す
+    assert!(decoder.peek_body().is_none());
+    assert_eq!(decoder.progress().unwrap(), BodyProgress::NeedData);
+
     assert_eq!(body.len(), 50); // 50 バイトのみ読み取れた
 }
 
@@ -115,22 +110,16 @@ fn incomplete_chunked_body() {
                 BodyProgress::Complete { .. } => {
                     panic!("should not complete without terminating chunk")
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            // peek_body() が None でも progress() で状態遷移を試みる
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    panic!("should not complete without terminating chunk")
-                }
-                BodyProgress::Continue => {
-                    // remaining が変化した場合は継続、変化なしならデータ不足
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        // peek_body() が None → progress() で状態遷移を試みる
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                panic!("should not complete without terminating chunk")
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert_eq!(body, b"hello");
@@ -147,30 +136,15 @@ fn complete_content_length_body() {
     let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert!(matches!(body_kind, BodyKind::ContentLength(5)));
 
+    // peek_body() で 5 バイトを取得 → consume_body(5) で Complete に到達
     let mut body = Vec::new();
-    let mut completed = false;
-    loop {
-        if let Some(data) = decoder.peek_body() {
-            body.extend_from_slice(data);
-            let len = data.len();
-            match decoder.consume_body(len).unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {}
-            }
-        } else {
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => break,
-            }
-        }
-    }
-    assert!(completed);
+    let data = decoder.peek_body().unwrap();
+    body.extend_from_slice(data);
+    let len = data.len();
+    assert!(matches!(
+        decoder.consume_body(len).unwrap(),
+        BodyProgress::Complete { .. }
+    ));
     assert_eq!(body, b"hello");
 }
 
@@ -196,23 +170,17 @@ fn complete_chunked_body() {
                     completed = true;
                     break;
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            // peek_body() が None でも progress() で状態遷移を試みる
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {
-                    // remaining が変化した場合は継続、変化なしならデータ不足
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        // peek_body() が None → progress() で状態遷移を試みる
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                completed = true;
+                break;
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert!(completed);
@@ -457,21 +425,16 @@ fn chunked_with_obs_text_in_extension_should_succeed() {
                     completed = true;
                     break;
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                completed = true;
+                break;
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert!(completed);
@@ -506,21 +469,16 @@ fn chunked_with_bws_before_extension_should_succeed() {
                     completed = true;
                     break;
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                completed = true;
+                break;
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert!(completed);
@@ -708,21 +666,16 @@ fn test_chunk_ext_valid_with_value() {
                     completed = true;
                     break;
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                completed = true;
+                break;
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert!(completed);
@@ -755,21 +708,16 @@ fn test_chunk_ext_valid_quoted_string() {
                     completed = true;
                     break;
                 }
-                BodyProgress::Continue => {}
+                BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
-        } else {
-            let remaining_before = decoder.remaining().len();
-            match decoder.progress().unwrap() {
-                BodyProgress::Complete { .. } => {
-                    completed = true;
-                    break;
-                }
-                BodyProgress::Continue => {
-                    if decoder.remaining().len() == remaining_before {
-                        break;
-                    }
-                }
+        }
+        match decoder.progress().unwrap() {
+            BodyProgress::Complete { .. } => {
+                completed = true;
+                break;
             }
+            BodyProgress::Advanced => continue,
+            BodyProgress::NeedData => break,
         }
     }
     assert!(completed);

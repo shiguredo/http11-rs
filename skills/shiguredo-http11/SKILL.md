@@ -43,8 +43,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `limits()` |
-| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `set_expect_no_body()`, `set_request_method()` |
+| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
+| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_expect_no_body()`, `set_request_method()` |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
 | `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
@@ -75,7 +75,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `BodyKind::CloseDelimited` | 接続終了まで (レスポンスのみ) |
 | `BodyKind::Tunnel` | CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視) |
 | `BodyKind::None` | ボディなし |
-| `BodyProgress::Continue` | デコード継続中 |
+| `BodyProgress::Advanced` | 状態機械が前進し、続けて呼び出すことで処理を進められる |
+| `BodyProgress::NeedData` | 追加データが必要。呼び出し側はループを抜けて I/O に戻る |
 | `BodyProgress::Complete { trailers }` | 完了 (トレーラーヘッダー含む) |
 
 ### エンコーダー関数
@@ -135,6 +136,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 ```rust
 use shiguredo_http11::{Request, ResponseDecoder};
+use std::io::Read;
 
 // リクエスト作成
 let request = Request::new("GET", "/")
@@ -143,22 +145,54 @@ let request = Request::new("GET", "/")
 let bytes = request.encode();
 // bytes をネットワークに送信...
 
-// レスポンスデコード
+// レスポンスデコード: 内部バッファに直接 read してコピーを排除
 let mut decoder = ResponseDecoder::new();
-decoder.feed(&received_data)?;
-let (head, body_kind) = decoder.decode_headers()?.unwrap();
-println!("Status: {}", head.status_code);
+const READ_CHUNK: usize = 8192;
+loop {
+    let want = decoder.available_buf().min(READ_CHUNK);
+    if want == 0 {
+        return Err("decoder buffer full".into());
+    }
+    let buf = decoder.mut_buf(want)?;
+    let n = stream.read(buf)?;
+    if n == 0 {
+        decoder.advance_buf(0);
+        decoder.mark_eof();
+        break;
+    }
+    decoder.advance_buf(n);
+    if let Some(response) = decoder.decode()? {
+        println!("Status: {}", response.status_code);
+        break;
+    }
+}
 ```
 
 ### サーバー実装
 
 ```rust
 use shiguredo_http11::{RequestDecoder, Response};
+use std::io::Read;
 
-// リクエストデコード
+// リクエストデコード: 内部バッファに直接 read してコピーを排除
 let mut decoder = RequestDecoder::new();
-decoder.feed(&received_data)?;
-let request = decoder.decode()?.unwrap();
+const READ_CHUNK: usize = 8192;
+let request = loop {
+    let want = decoder.available_buf().min(READ_CHUNK);
+    if want == 0 {
+        return Err("decoder buffer full".into());
+    }
+    let buf = decoder.mut_buf(want)?;
+    let n = stream.read(buf)?;
+    if n == 0 {
+        decoder.advance_buf(0);
+        return Err("client disconnected".into());
+    }
+    decoder.advance_buf(n);
+    if let Some(req) = decoder.decode()? {
+        break req;
+    }
+};
 
 // レスポンス作成
 let response = Response::new(200, "OK")
@@ -204,36 +238,109 @@ decoder.set_request_method("CONNECT");
 // CONNECT 2xx 応答後のボディは Tunnel として扱われる
 ```
 
+### 直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`)
+
+OS の `read` 等にデコーダーの内部バッファを直接渡せる API。
+
+- `mut_buf(len) -> Result<&mut [u8], Error>`: 内部バッファ末尾に `len` バイトの書き込み枠 (ゼロ初期化済み) を確保。`max_buffer_size` を超える場合は `BufferOverflow` を返し、バッファ状態は不変。
+- `advance_buf(n)`: 直前の `mut_buf` で確保した枠のうち、実際に書き込まれた `n` バイトを確定する。`n = 0` で枠全体を破棄 (EOF や read 失敗時のリセット用)。
+- `available_buf() -> usize`: 書き込み可能な残り容量 (`max_buffer_size - 現在のバッファ長`)。`pending` を含めて差し引いた値。
+
+#### `feed` / `feed_unchecked` との使い分け
+
+両者は入力経路の違う別の最適解として共存する。用途で使い分ける:
+
+- **これから書き込む先のバッファが必要なケース** (OS の `read` でソケットから受信する等) は `mut_buf` / `advance_buf`。OS が内部バッファに直接書き込めるので、スタックバッファ → 内部 `Vec<u8>` のコピーが発生しない。
+- **既にバイト列が `&[u8]` として手元にあるケース** (io_uring 等の完了通知型 I/O、テスト用バイトリテラル、別経路から受け取ったバイト列の中継等) は `feed` / `feed_unchecked`。`mut_buf` 経由だと「ゼロ初期化 + memcpy」の二段になるが、`feed` は素直に 1 memcpy で済む。
+
+```rust
+use shiguredo_http11::ResponseDecoder;
+
+let mut decoder = ResponseDecoder::new();
+const READ_CHUNK: usize = 8192;
+
+loop {
+    let want = decoder.available_buf().min(READ_CHUNK);
+    if want == 0 {
+        return Err("decoder buffer full".into());
+    }
+    let buf = decoder.mut_buf(want)?;
+    let n = stream.read(buf)?;
+    if n == 0 {
+        decoder.advance_buf(0);
+        decoder.mark_eof();
+        if let Some(response) = decoder.decode()? {
+            return Ok(response);
+        }
+        return Err("Connection closed before response complete".into());
+    }
+    decoder.advance_buf(n);
+
+    if let Some(response) = decoder.decode()? {
+        return Ok(response);
+    }
+}
+```
+
+`mut_buf` 後 `advance_buf` を呼ばずに `feed` / `decode_headers` / `peek_body` / `consume_body` 等を呼ぶと debug ビルドで panic する (誤用検出)。
+
 ### ストリーミングボディ処理
 
 ```rust
 use shiguredo_http11::{RequestDecoder, BodyKind, BodyProgress};
+use std::io::Read;
 
 let mut decoder = RequestDecoder::new();
-decoder.feed(&data)?;
+const READ_CHUNK: usize = 8192;
 
-// ヘッダーをデコード
-let (head, body_kind) = decoder.decode_headers()?.unwrap();
+// ヘッダーがそろうまで mut_buf 経由で受信
+let (head, body_kind) = loop {
+    let want = decoder.available_buf().min(READ_CHUNK);
+    let buf = decoder.mut_buf(want)?;
+    let n = stream.read(buf)?;
+    if n == 0 {
+        decoder.advance_buf(0);
+        return Err("client disconnected before headers".into());
+    }
+    decoder.advance_buf(n);
+    if let Some(result) = decoder.decode_headers()? {
+        break result;
+    }
+};
 
 // ボディをストリーミングで読み取り
 let mut body = Vec::new();
 if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
-    loop {
-        if let Some(data) = decoder.peek_body() {
-            body.extend_from_slice(data);
-            let len = data.len();
-            if let BodyProgress::Complete { .. } = decoder.consume_body(len)? {
-                break;
+    'outer: loop {
+        loop {
+            if let Some(data) = decoder.peek_body() {
+                body.extend_from_slice(data);
+                let len = data.len();
+                match decoder.consume_body(len)? {
+                    BodyProgress::Complete { .. } => break 'outer,
+                    // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                    // 直後の peek_body() は None を返すため progress 分岐に進む。
+                    BodyProgress::Advanced | BodyProgress::NeedData => continue,
+                }
             }
-        } else {
-            // peek_body() が None でも progress() で状態遷移を試みる
-            // Chunked の場合、チャンクサイズ行や終端チャンクのパースが進む
-            if let BodyProgress::Complete { .. } = decoder.progress()? {
-                break;
+            // peek_body() が None → 状態機械を進める
+            match decoder.progress()? {
+                BodyProgress::Complete { .. } => break 'outer,
+                BodyProgress::Advanced => continue,
+                // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
+                BodyProgress::NeedData => break,
             }
-            // 追加データが必要 (実際の使用ではネットワーク I/O を行う)
-            break;
         }
+
+        // 追加データを内部バッファに直接 read
+        let want = decoder.available_buf().min(READ_CHUNK);
+        let buf = decoder.mut_buf(want)?;
+        let n = stream.read(buf)?;
+        if n == 0 {
+            decoder.advance_buf(0);
+            return Err("client disconnected during body".into());
+        }
+        decoder.advance_buf(n);
     }
 }
 ```

@@ -19,6 +19,7 @@ use super::body::{
     BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, parse_header_line,
     resolve_body_headers_for_response,
 };
+use super::buffer;
 use super::head::ResponseHead;
 use super::phase::DecodePhase;
 
@@ -69,6 +70,8 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     decompressor: D,
     /// リクエストメソッド (CONNECT トンネル判定用)
     request_method: Option<String>,
+    /// `mut_buf` で確保した未確定領域のバイト数
+    pending: usize,
 }
 
 impl Default for ResponseDecoder<NoCompression> {
@@ -94,6 +97,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -113,6 +117,7 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            pending: 0,
         }
     }
 }
@@ -134,6 +139,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -153,6 +159,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            pending: 0,
         }
     }
 
@@ -176,6 +183,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// 呼び出し後、バッファは空になる。
     pub fn take_remaining(&mut self) -> Vec<u8> {
+        debug_assert!(
+            self.pending == 0,
+            "take_remaining called with pending mut_buf"
+        );
+        // 不変条件 "buf 空 ↔ pending == 0" を維持する。
+        // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
+        // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
+        self.pending = 0;
         core::mem::take(&mut self.buf)
     }
 
@@ -191,20 +206,37 @@ impl<D: Decompressor> ResponseDecoder<D> {
         &self.limits
     }
 
-    /// バッファにデータを追加
+    /// 既にメモリ上にあるバイト列を内部バッファに投入する
+    ///
+    /// `data` を `extend_from_slice` でコピーする (1 回の memcpy)。
+    ///
+    /// # 使い分け
+    ///
+    /// `feed` と [`mut_buf`](Self::mut_buf) / [`advance_buf`](Self::advance_buf)
+    /// は入力経路の違う別の最適解として共存しており、用途で使い分ける:
+    ///
+    /// - **これから書き込む先のバッファが必要なケース** (OS の `read` でソケット
+    ///   から受信する等): `mut_buf` / `advance_buf` を使う。OS が内部バッファに
+    ///   直接書き込めるので、スタックバッファ → 内部 `Vec<u8>` のコピーが発生
+    ///   しない。
+    /// - **既にバイト列が `&[u8]` として手元にあるケース** (io_uring 等の完了通知
+    ///   型 I/O で渡されるバイト列、テスト用バイトリテラル、別経路から受け取った
+    ///   バイト列の中継等): `feed` を使う。`mut_buf(len) + copy_from_slice +
+    ///   advance_buf(len)` だと「ゼロ初期化 + memcpy」の二段になるが、`feed`
+    ///   は素直に 1 memcpy で済む。
     pub fn feed(&mut self, data: &[u8]) -> Result<(), Error> {
-        let new_size = self.buf.len() + data.len();
-        if new_size > self.limits.max_buffer_size {
-            return Err(Error::BufferOverflow {
-                size: new_size,
-                limit: self.limits.max_buffer_size,
-            });
-        }
-        self.buf.extend_from_slice(data);
-        Ok(())
+        buffer::feed(
+            &mut self.buf,
+            self.pending,
+            self.limits.max_buffer_size,
+            data,
+        )
     }
 
     /// バッファにデータを追加 (制限チェックなし)
+    ///
+    /// 用途は [`feed`](Self::feed) と同じ「既にメモリ上にあるバイト列を投入する」
+    /// で、`max_buffer_size` チェックをスキップする点だけが異なる。
     ///
     /// # 警告
     ///
@@ -212,12 +244,55 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
     /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn feed_unchecked(&mut self, data: &[u8]) {
-        self.buf.extend_from_slice(data);
+        buffer::feed_unchecked(&mut self.buf, self.pending, data);
+    }
+
+    /// 内部バッファ末尾に `len` バイトの書き込み枠を確保し、その可変スライスを返す
+    ///
+    /// 返るスライスは `Vec::resize(_, 0)` によりゼロ初期化済みなので、
+    /// `std::io::Read::read` 等にそのまま渡せる。書き込み後は必ず
+    /// [`advance_buf`](Self::advance_buf) で実書き込みバイト数を通知すること。
+    ///
+    /// 直前の `mut_buf` で確保された未確定領域は、関数の先頭で必ず破棄される
+    /// (`advance_buf` 呼び忘れの回復)。よってエラー時 (`BufferOverflow`) も
+    /// 「呼び出し前の状態に巻き戻る」のではなく、「pending 領域が破棄された
+    /// 上で新規枠が確保されない」状態になる。
+    ///
+    /// pending 破棄後の `remaining().len() + len` が `max_buffer_size` を
+    /// 超える場合は `Err(Error::BufferOverflow)` を返す。
+    pub fn mut_buf(&mut self, len: usize) -> Result<&mut [u8], Error> {
+        buffer::mut_buf(
+            &mut self.buf,
+            &mut self.pending,
+            self.limits.max_buffer_size,
+            len,
+        )
+    }
+
+    /// 直前の [`mut_buf`](Self::mut_buf) で確保した枠のうち、
+    /// 実際に書き込まれた `len` バイトを確定する
+    ///
+    /// 残り (`mut_buf` で確保した長さ - `len`) は破棄される。
+    /// `len = 0` で呼ぶと枠全体を破棄 (EOF や read 失敗時のリセット用)。
+    ///
+    /// `len > pending` の場合、debug ビルドでは panic、release ビルドでは
+    /// `pending` で飽和する。
+    pub fn advance_buf(&mut self, len: usize) {
+        buffer::advance_buf(&mut self.buf, &mut self.pending, len);
+    }
+
+    /// 書き込み可能な残り容量を返す
+    ///
+    /// `max_buffer_size` から現在のバッファ長 (確定済みデータ + 未確定 `pending`)
+    /// を引いた値。`mut_buf(decoder.available_buf().min(N))` のようにチャンクサイズ
+    /// を残容量に適応させる用途で使う。
+    pub fn available_buf(&self) -> usize {
+        buffer::available_buf(&self.buf, self.limits.max_buffer_size)
     }
 
     /// バッファの残りデータを取得
     pub fn remaining(&self) -> &[u8] {
-        &self.buf
+        buffer::remaining(&self.buf, self.pending)
     }
 
     /// デコーダーをリセット
@@ -234,6 +309,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body.clear();
         self.decompressor.reset();
         self.request_method = None;
+        self.pending = 0;
     }
 
     /// 接続終了を通知 (close-delimited ボディ用)
@@ -243,6 +319,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// close-delimited 以外の状態で呼び出した場合は何もしない。
     pub fn mark_eof(&mut self) {
+        debug_assert!(self.pending == 0, "mark_eof called with pending mut_buf");
         if matches!(self.phase, DecodePhase::BodyCloseDelimited) {
             self.phase = DecodePhase::Complete;
         }
@@ -337,6 +414,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// データ不足の場合は `None` を返す
     /// 既にヘッダーデコード済みの場合はエラー
     pub fn decode_headers(&mut self) -> Result<Option<(ResponseHead, BodyKind)>, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "decode_headers called with pending mut_buf"
+        );
         loop {
             match &self.phase {
                 DecodePhase::StartLine => {
@@ -515,6 +596,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// データがある場合はスライスを返す
     /// ボディがない場合や完了済みの場合は `None` を返す
     pub fn peek_body(&self) -> Option<&[u8]> {
+        debug_assert!(self.pending == 0, "peek_body called with pending mut_buf");
         self.body_decoder.peek_body(&self.buf, &self.phase)
     }
 
@@ -546,6 +628,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
         &mut self,
         output: &mut [u8],
     ) -> Result<Option<CompressionStatus>, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "peek_body_decompressed called with pending mut_buf"
+        );
         let input = match self.body_decoder.peek_body(&self.buf, &self.phase) {
             Some(data) if !data.is_empty() => data,
             _ => return Ok(None),
@@ -555,27 +641,15 @@ impl<D: Decompressor> ResponseDecoder<D> {
         Ok(Some(status))
     }
 
-    /// 利用可能なボディデータのバイト数を取得
-    fn available_body_len(&self) -> usize {
-        match &self.phase {
-            DecodePhase::BodyContentLength { remaining } => {
-                if *remaining >= self.buf.len() as u64 {
-                    self.buf.len()
-                } else {
-                    *remaining as usize
-                }
-            }
-            DecodePhase::BodyChunkedData { remaining } => self.buf.len().min(*remaining),
-            DecodePhase::BodyCloseDelimited => self.buf.len(),
-            _ => 0,
-        }
-    }
-
     /// ボディデータを消費
     ///
     /// `peek_body()` で取得したデータを処理した後に呼ぶ
     /// `len` は消費するバイト数 (1 以上)
     pub fn consume_body(&mut self, len: usize) -> Result<BodyProgress, Error> {
+        debug_assert!(
+            self.pending == 0,
+            "consume_body called with pending mut_buf"
+        );
         if len == 0 {
             return Err(Error::InvalidData(
                 "consume_body(0) is not allowed, use progress() instead".to_string(),
@@ -590,6 +664,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// Chunked エンコーディングの場合、チャンクサイズ行のパースや
     /// 終端チャンクの処理を行う。
     pub fn progress(&mut self) -> Result<BodyProgress, Error> {
+        debug_assert!(self.pending == 0, "progress called with pending mut_buf");
         self.body_decoder
             .consume_body(&mut self.buf, &mut self.phase, 0, &self.limits)
     }
@@ -608,6 +683,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// `decode()` を使う場合は、接続終了後に `mark_eof()` を呼んでから
     /// 再度 `decode()` を呼ぶ必要がある。
     pub fn decode(&mut self) -> Result<Option<Response>, Error> {
+        debug_assert!(self.pending == 0, "decode called with pending mut_buf");
         // ヘッダーがまだデコードされていない場合はデコード
         if self.decoded_head.is_none() {
             match self.phase {
@@ -636,50 +712,51 @@ impl<D: Decompressor> ResponseDecoder<D> {
                 ));
             }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
-                // 直接バッファから利用可能なデータ長を取得（コピーなし）
-                let available = self.available_body_len();
-                if available > 0 {
-                    // バッファから直接コピー
-                    self.decoded_body.extend_from_slice(&self.buf[..available]);
-                    match self.consume_body(available)? {
-                        BodyProgress::Complete { .. } => break,
-                        BodyProgress::Continue => continue,
+                // バッファからボディデータを直接消費。
+                // body_decoder.peek_body() を直接呼ぶことで、返り値の lifetime が
+                // &self.buf に紐付き、self.decoded_body の可変借用と並立できる。
+                if let Some(data) = self.body_decoder.peek_body(&self.buf, &self.phase) {
+                    let len = data.len();
+                    self.decoded_body.extend_from_slice(data);
+                    self.consume_body(len)?;
+                    // consume_body の戻り値ではなく phase で完了判定する。
+                    // BodyChunkedData → BodyChunkedDataCrlf → BodyChunkedSize の
+                    // 多段遷移時は Advanced を返すため、phase を直接見るのが確実。
+                    if matches!(self.phase, DecodePhase::Complete) {
+                        break;
                     }
+                    continue;
                 }
 
-                // データがない場合、状態機械を進める
+                // ボディデータがない → 状態機械を進める
                 match self.progress()? {
                     BodyProgress::Complete { .. } => break,
-                    BodyProgress::Continue => {
-                        // 状態遷移後にデータが利用可能になったか確認
-                        if self.available_body_len() > 0 {
-                            continue;
-                        }
-                        // データ不足
-                        return Ok(None);
-                    }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => return Ok(None),
                 }
             },
             BodyKind::CloseDelimited => {
-                // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ
-                let available = self.available_body_len();
-                if available > 0 {
-                    // max_body_size チェック (コピー前に行う)
-                    // checked_add でオーバーフローを検出し、オーバーフロー時も BodyTooLarge を返す
-                    let new_size = self.decoded_body.len().checked_add(available).ok_or(
-                        Error::BodyTooLarge {
-                            size: usize::MAX,
-                            limit: self.limits.max_body_size,
-                        },
-                    )?;
+                // close-delimited: バッファにあるデータを読み込み、mark_eof() を待つ。
+                // max_body_size チェックは consume_body 内でも行うが、ここでは
+                // decoded_body に書き込む前にも事前チェックする (既存コードと同様)。
+                if let Some(data) = self.body_decoder.peek_body(&self.buf, &self.phase) {
+                    let len = data.len();
+                    let new_size =
+                        self.decoded_body
+                            .len()
+                            .checked_add(len)
+                            .ok_or(Error::BodyTooLarge {
+                                size: usize::MAX,
+                                limit: self.limits.max_body_size,
+                            })?;
                     if new_size > self.limits.max_body_size {
                         return Err(Error::BodyTooLarge {
                             size: new_size,
                             limit: self.limits.max_body_size,
                         });
                     }
-                    self.decoded_body.extend_from_slice(&self.buf[..available]);
-                    self.consume_body(available)?;
+                    self.decoded_body.extend_from_slice(data);
+                    self.consume_body(len)?;
                 }
 
                 // mark_eof() が呼ばれて Complete になったか確認

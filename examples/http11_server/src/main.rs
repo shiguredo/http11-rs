@@ -14,6 +14,12 @@
 //! 圧縮対応:
 //!   クライアントの Accept-Encoding ヘッダーに基づいて gzip, br, zstd で圧縮します。
 //!   優先順位: zstd > br > gzip
+//!
+//! ストリーミング API:
+//!   このサンプルは decode() 一括 API ではなく、
+//!   decode_headers() + peek_body() / consume_body() / progress() を
+//!   使用したストリーミング API の実装例です。
+//!   詳細は本ソースコードを参照してください。
 
 mod compressor;
 
@@ -23,7 +29,7 @@ use std::time::Duration;
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use shiguredo_http11::{RequestDecoder, Response};
+use shiguredo_http11::{BodyKind, BodyProgress, Request, RequestDecoder, RequestHead, Response};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
@@ -48,6 +54,30 @@ struct ConnectionState {
     request_count: u32,
     max_requests: u32,
     keep_alive_timeout: Duration,
+}
+
+/// ストリーミングデコードの状態
+struct StreamingState {
+    head: Option<RequestHead>,
+    body_kind: Option<BodyKind>,
+    body: Option<Vec<u8>>,
+}
+
+impl StreamingState {
+    fn new() -> Self {
+        Self {
+            head: None,
+            body_kind: None,
+            body: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn reset(&mut self) {
+        self.head = None;
+        self.body_kind = None;
+        self.body = None;
+    }
 }
 
 #[tokio::main]
@@ -186,6 +216,110 @@ fn load_tls_config(
     Ok(config)
 }
 
+/// ボディをストリーミングで受信する
+///
+/// true を返す: ボディ受信完了
+/// false を返す: 追加データが必要
+fn stream_body(
+    decoder: &mut RequestDecoder,
+    body_kind: &BodyKind,
+    buf: &mut Option<Vec<u8>>,
+) -> Result<bool, shiguredo_http11::Error> {
+    match body_kind {
+        BodyKind::None | BodyKind::CloseDelimited | BodyKind::Tunnel => {
+            *buf = None;
+            Ok(true)
+        }
+        BodyKind::ContentLength(_) | BodyKind::Chunked => {
+            let mut acc = buf.take().unwrap_or_default();
+            loop {
+                if let Some(data) = decoder.peek_body() {
+                    acc.extend_from_slice(data);
+                    let len = data.len();
+                    match decoder.consume_body(len)? {
+                        BodyProgress::Complete { .. } => {
+                            *buf = Some(acc);
+                            return Ok(true);
+                        }
+                        // NeedData (chunked CRLF 不足) でも内側ループ継続。
+                        // 直後の peek_body() は None を返すため progress 分岐に fall through する。
+                        BodyProgress::Advanced | BodyProgress::NeedData => continue,
+                    }
+                }
+                match decoder.progress()? {
+                    BodyProgress::Complete { .. } => {
+                        *buf = Some(acc);
+                        return Ok(true);
+                    }
+                    BodyProgress::Advanced => continue,
+                    BodyProgress::NeedData => {
+                        *buf = Some(acc);
+                        return Ok(false);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 1 リクエストを処理し、Keep-Alive を継続するかどうかを返す
+///
+/// true を返す: 次のリクエストを処理可能
+/// false を返す: 接続をクローズすべき
+async fn serve_request(
+    state: &mut StreamingState,
+    conn_state: &mut ConnectionState,
+    writer: &mut (impl AsyncWriteExt + Unpin),
+    peer_addr: std::net::SocketAddr,
+    tls: bool,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    let h = state.head.take().unwrap();
+    let _ = state.body_kind.take();
+    let request = Request {
+        method: h.method,
+        uri: h.uri,
+        version: h.version,
+        headers: h.headers,
+        body: state.body.take(),
+    };
+
+    conn_state.request_count += 1;
+
+    info!(
+        method = %request.method,
+        uri = %request.uri,
+        version = %request.version,
+        peer_addr = %peer_addr,
+        tls = tls,
+        request_count = conn_state.request_count,
+        "Request received"
+    );
+
+    let should_keep_alive =
+        request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
+
+    let response = build_response(&request, should_keep_alive);
+    let response_bytes = response.encode();
+    writer.write_all(&response_bytes).await?;
+    writer.flush().await?;
+
+    if !should_keep_alive {
+        if conn_state.request_count >= conn_state.max_requests {
+            info!(
+                max_requests = conn_state.max_requests,
+                peer_addr = %peer_addr,
+                tls = tls,
+                "Max requests reached"
+            );
+        } else {
+            info!(peer_addr = %peer_addr, tls = tls, "Connection close");
+        }
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 async fn handle_client(
     stream: TcpStream,
     peer_addr: std::net::SocketAddr,
@@ -197,67 +331,70 @@ async fn handle_client(
     let mut writer = BufWriter::with_capacity(65536, writer);
 
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
     let mut conn_state = ConnectionState {
         request_count: 0,
         max_requests: DEFAULT_MAX_REQUESTS,
         keep_alive_timeout: Duration::from_secs(DEFAULT_KEEP_ALIVE_TIMEOUT),
     };
+    let mut state = StreamingState::new();
 
     loop {
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            error!(peer_addr = %peer_addr, "Decoder buffer full");
+            break;
+        }
+        let buf = decoder.mut_buf(want)?;
         let read_result =
-            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(buf)).await;
 
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
+                decoder.advance_buf(0);
                 error!(peer_addr = %peer_addr, error = %e, "Read error");
                 break;
             }
             Err(_) => {
+                decoder.advance_buf(0);
                 info!(peer_addr = %peer_addr, "Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
+            decoder.advance_buf(0);
             info!(peer_addr = %peer_addr, "Connection closed by client");
             break;
         }
 
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
-        while let Some(request) = decoder.decode()? {
-            conn_state.request_count += 1;
-
-            info!(
-                method = %request.method,
-                uri = %request.uri,
-                version = %request.version,
-                peer_addr = %peer_addr,
-                request_count = conn_state.request_count,
-                "Request received"
-            );
-
-            // Keep-Alive 継続判定
-            let should_keep_alive =
-                request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
-
-            let response = build_response(&request, should_keep_alive);
-            let response_bytes = response.encode();
-            writer.write_all(&response_bytes).await?;
-            writer.flush().await?;
-
-            if !should_keep_alive {
-                if conn_state.request_count >= conn_state.max_requests {
-                    info!(
-                        max_requests = conn_state.max_requests,
-                        peer_addr = %peer_addr,
-                        "Max requests reached"
-                    );
-                } else {
-                    info!(peer_addr = %peer_addr, "Connection close requested by client");
+        loop {
+            if state.head.is_none() {
+                match decoder.decode_headers()? {
+                    Some((h, k)) => {
+                        state.head = Some(h);
+                        state.body_kind = Some(k);
+                    }
+                    None => break,
                 }
+            }
+
+            let body_complete = stream_body(
+                &mut decoder,
+                state.body_kind.as_ref().unwrap(),
+                &mut state.body,
+            )?;
+
+            if !body_complete {
+                break;
+            }
+
+            let keep_alive =
+                serve_request(&mut state, &mut conn_state, &mut writer, peer_addr, false).await?;
+            if !keep_alive {
                 return Ok(());
             }
         }
@@ -277,69 +414,70 @@ async fn handle_tls_client(
     let mut writer = BufWriter::with_capacity(65536, writer);
 
     let mut decoder = RequestDecoder::new();
-    let mut buf = [0u8; 8192];
+    const READ_CHUNK: usize = 8192;
     let mut conn_state = ConnectionState {
         request_count: 0,
         max_requests: DEFAULT_MAX_REQUESTS,
         keep_alive_timeout: Duration::from_secs(DEFAULT_KEEP_ALIVE_TIMEOUT),
     };
+    let mut state = StreamingState::new();
 
     loop {
+        let want = decoder.available_buf().min(READ_CHUNK);
+        if want == 0 {
+            error!(peer_addr = %peer_addr, "TLS decoder buffer full");
+            break;
+        }
+        let buf = decoder.mut_buf(want)?;
         let read_result =
-            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(&mut buf)).await;
+            tokio::time::timeout(conn_state.keep_alive_timeout, reader.read(buf)).await;
 
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => {
+                decoder.advance_buf(0);
                 error!(peer_addr = %peer_addr, error = %e, "TLS read error");
                 break;
             }
             Err(_) => {
+                decoder.advance_buf(0);
                 info!(peer_addr = %peer_addr, "TLS Keep-Alive timeout");
                 break;
             }
         };
 
         if n == 0 {
+            decoder.advance_buf(0);
             info!(peer_addr = %peer_addr, "TLS connection closed by client");
             break;
         }
 
-        decoder.feed(&buf[..n])?;
+        decoder.advance_buf(n);
 
-        while let Some(request) = decoder.decode()? {
-            conn_state.request_count += 1;
-
-            info!(
-                method = %request.method,
-                uri = %request.uri,
-                version = %request.version,
-                peer_addr = %peer_addr,
-                tls = true,
-                request_count = conn_state.request_count,
-                "Request received"
-            );
-
-            // Keep-Alive 継続判定
-            let should_keep_alive =
-                request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
-
-            let response = build_response(&request, should_keep_alive);
-            let response_bytes = response.encode();
-            writer.write_all(&response_bytes).await?;
-            writer.flush().await?;
-
-            if !should_keep_alive {
-                if conn_state.request_count >= conn_state.max_requests {
-                    info!(
-                        max_requests = conn_state.max_requests,
-                        peer_addr = %peer_addr,
-                        tls = true,
-                        "Max requests reached"
-                    );
-                } else {
-                    info!(peer_addr = %peer_addr, tls = true, "Connection close requested by client");
+        loop {
+            if state.head.is_none() {
+                match decoder.decode_headers()? {
+                    Some((h, k)) => {
+                        state.head = Some(h);
+                        state.body_kind = Some(k);
+                    }
+                    None => break,
                 }
+            }
+
+            let body_complete = stream_body(
+                &mut decoder,
+                state.body_kind.as_ref().unwrap(),
+                &mut state.body,
+            )?;
+
+            if !body_complete {
+                break;
+            }
+
+            let keep_alive =
+                serve_request(&mut state, &mut conn_state, &mut writer, peer_addr, true).await?;
+            if !keep_alive {
                 return Ok(());
             }
         }
@@ -348,7 +486,7 @@ async fn handle_tls_client(
     Ok(())
 }
 
-fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) -> Response {
+fn build_response(request: &Request, should_keep_alive: bool) -> Response {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

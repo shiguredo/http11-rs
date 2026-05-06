@@ -4,6 +4,7 @@
 //!   ヘッダーデコード → ボディ消費の全パスでパニックしないことを確認する
 //! - HEAD レスポンス: set_expect_no_body(true) でのデコードパスを検証する
 //! - ストリーミング feed: 同じデータを 23 バイト単位に分割して段階的にデコードする
+//! - 直接書き込み API: mut_buf / advance_buf 経由でも同じ全パスがパニックしないことを確認する
 
 #![no_main]
 
@@ -22,7 +23,7 @@ fuzz_target!(|data: &[u8]| {
                     let len = body_data.len();
                     match decoder.consume_body(len) {
                         Ok(BodyProgress::Complete { .. }) => break,
-                        Ok(BodyProgress::Continue) => {}
+                        Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                         Err(_) => break,
                     }
                 }
@@ -51,7 +52,34 @@ fuzz_target!(|data: &[u8]| {
                         let len = body_data.len();
                         match decoder.consume_body(len) {
                             Ok(BodyProgress::Complete { .. }) => break,
-                            Ok(BodyProgress::Continue) => {}
+                            Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
+                            Err(_) => break,
+                        }
+                    }
+                }
+                BodyKind::None | BodyKind::Tunnel => {}
+            }
+            break;
+        }
+    }
+
+    // mut_buf / advance_buf 経由で投入するシナリオ
+    decoder.reset();
+    for chunk in data.chunks(29) {
+        let dst = match decoder.mut_buf(chunk.len()) {
+            Ok(dst) => dst,
+            Err(_) => return,
+        };
+        dst.copy_from_slice(chunk);
+        decoder.advance_buf(chunk.len());
+        if let Ok(Some((_, body_kind))) = decoder.decode_headers() {
+            match body_kind {
+                BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {
+                    while let Some(body_data) = decoder.peek_body() {
+                        let len = body_data.len();
+                        match decoder.consume_body(len) {
+                            Ok(BodyProgress::Complete { .. }) => break,
+                            Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {}
                             Err(_) => break,
                         }
                     }

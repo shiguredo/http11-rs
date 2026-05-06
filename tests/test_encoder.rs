@@ -979,3 +979,90 @@ fn test_encode_request_duplicate_content_length_same_value() {
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
+
+// `write_hex_usize` / `write_usize_decimal` の桁繰り上がり境界値テスト
+// (ヘルパーは encoder.rs のプライベート関数なので公開 API 経由で検証する)
+
+#[test]
+fn test_encode_chunk_hex_boundaries() {
+    // 桁の境界を跨ぐ data.len() で先頭の hex が format!("{:x}") と一致する
+    for &len in &[0usize, 1, 15, 16, 255, 256] {
+        let data = vec![b'a'; len];
+        let encoded = encode_chunk(&data);
+        if len == 0 {
+            assert_eq!(encoded, b"0\r\n\r\n");
+        } else {
+            let expected_hex = format!("{:x}\r\n", len);
+            assert!(
+                encoded.starts_with(expected_hex.as_bytes()),
+                "len={len}: encoded does not start with {expected_hex:?}",
+            );
+            assert!(encoded.ends_with(b"\r\n"));
+            let data_start = expected_hex.len();
+            let data_end = encoded.len() - 2;
+            assert_eq!(&encoded[data_start..data_end], data.as_slice());
+        }
+    }
+}
+
+#[test]
+fn test_encode_response_status_code_decimal_boundaries() {
+    // status_code 100 / 200 / 999 のステータスラインが format!("{}") と一致する
+    for &code in &[100u16, 200, 599] {
+        let res = Response::new(code, "Reason").body(Vec::new());
+        let encoded = encode_response(&res).unwrap();
+        let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
+        assert!(
+            encoded.starts_with(expected_status_line.as_bytes()),
+            "code={code}: encoded does not start with {expected_status_line:?}",
+        );
+    }
+}
+
+#[test]
+fn test_encode_response_content_length_decimal_boundaries() {
+    // body.len() の桁の境界 (0, 9, 10, 99, 100) で Content-Length が format!("{}") と一致する
+    for &len in &[0usize, 9, 10, 99, 100] {
+        let body = vec![b'x'; len];
+        let res = Response::new(200, "OK").body(body.clone());
+        let encoded = encode_response(&res).unwrap();
+        let encoded_str = core::str::from_utf8(&encoded).unwrap();
+        let expected_header = format!("Content-Length: {len}\r\n");
+        assert!(
+            encoded_str.contains(&expected_header),
+            "len={len}: encoded does not contain {expected_header:?}",
+        );
+    }
+}
+
+#[test]
+fn test_encode_request_content_length_decimal_boundaries() {
+    // body.len() の桁の境界 (0, 9, 10, 99, 100) で Content-Length が format!("{}") と一致する
+    for &len in &[0usize, 9, 10, 99, 100] {
+        let body = vec![b'x'; len];
+        let req = Request::new("POST", "/")
+            .header("Host", "example.com")
+            .body(body.clone());
+        let encoded = encode_request(&req).unwrap();
+        let encoded_str = core::str::from_utf8(&encoded).unwrap();
+        let expected_header = format!("Content-Length: {len}\r\n");
+        assert!(
+            encoded_str.contains(&expected_header),
+            "len={len}: encoded does not contain {expected_header:?}",
+        );
+    }
+}
+
+#[test]
+fn test_encode_response_headers_status_code_decimal_boundaries() {
+    // encode_response_headers 経路でも status_code が format!("{}") と一致する
+    for &code in &[100u16, 200, 599] {
+        let res = Response::new(code, "Reason");
+        let encoded = encode_response_headers(&res).unwrap();
+        let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
+        assert!(
+            encoded.starts_with(expected_status_line.as_bytes()),
+            "code={code}: encoded does not start with {expected_status_line:?}",
+        );
+    }
+}
