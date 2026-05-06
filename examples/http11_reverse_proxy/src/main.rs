@@ -535,7 +535,12 @@ async fn stream_response_on_connection(
     }
 
     // クライアントへレスポンスヘッダーを送信
-    let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase);
+    // 注: upstream の reason_phrase が空文字列の場合 (RFC 9112 Section 4 の reason-phrase absent)、
+    // Response::new は Err を返すため from_raw_parts 経路に切り替える必要があるが、
+    // 本サンプルでは upstream が常に reason_phrase を送る前提で `Response::new` を使う。
+    // 任意の upstream を受け入れる本格的な proxy では、decoder 経由で得た raw_parts を
+    // そのまま再構築する経路 (本 issue では公開されていない) を将来検討する。
+    let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase)?;
 
     let connection_headers: Vec<String> = resp_head
         .headers
@@ -569,23 +574,22 @@ async fn stream_response_on_connection(
         {
             continue;
         }
-        response_for_headers.add_header(name, value);
+        response_for_headers.add_header(name, value)?;
     }
 
     if let Some(len) = content_length {
-        response_for_headers.add_header("Content-Length", &len.to_string());
+        response_for_headers.add_header("Content-Length", &len.to_string())?;
         debug!(content_length = len, "Using Content-Length");
     } else if use_chunked {
-        response_for_headers.add_header("Transfer-Encoding", "chunked");
+        response_for_headers.add_header("Transfer-Encoding", "chunked")?;
         debug!("using Transfer-Encoding: chunked");
     } else if is_close_delimited {
         // close-delimited body: 接続が閉じるまでがボディ
-        response_for_headers.add_header("Connection", "close");
+        response_for_headers.add_header("Connection", "close")?;
         debug!("using Connection: close (close-delimited body)");
     }
 
-    let header_bytes =
-        encode_response_headers(&response_for_headers).expect("RFC-compliant response headers");
+    let header_bytes = encode_response_headers(&response_for_headers)?;
     downstream.write_all(&header_bytes).await?;
     downstream.flush().await?;
 

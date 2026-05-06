@@ -11,6 +11,16 @@
 
 ## develop
 
+- [CHANGE] `Response` の全フィールドを非公開化し、構築時バリデーションを追加する
+  - 構築は `Response::new` / `Response::with_version` が `Result<Self, EncodeError>` を返す形に変更する
+  - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
+  - `set_header` を新設し、同名ヘッダー (case-insensitive) の上書きを可能にする
+  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする
+  - `status_code()` / `reason_phrase()` / `version()` / `body_bytes()` / `is_body_omitted()` の読み取り専用アクセサを追加する (getter `body_bytes` は builder `body(data)` との同名衝突を避けるため改名)
+  - 構造体に `#[non_exhaustive]` を付与し、将来のフィールド追加を非破壊的に扱えるようにする
+  - `Response::encode()` のパニック条件を意味論的違反 (Content-Length 不一致等) に限定した doc に更新する
+  - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
+  - @voluntas
 - [CHANGE] `ResponseDecoder::set_expect_no_body` を撤去し、HEAD レスポンスの指定を `set_request_method("HEAD")` に統一する
   - `expect_no_body` フィールドと `request_method` フィールドの二重化を解消し、`request_method` 一本に集約する
   - `determine_body_kind` の判定順序を RFC 9112 Section 6.3 の優先順位に合わせる (CONNECT + 204 の挙動が Tunnel → None に変わる)
@@ -20,6 +30,11 @@
   - @voluntas
 
 ### misc
+
+- [UPDATE] (crate 内部) `is_valid_reason_phrase` を RFC 9112 Section 4 ABNF `1*(HTAB / SP / VCHAR / obs-text)` に厳密準拠させ、空文字列を非合法と判定する
+  - decoder / encoder の呼び出し側で reason-phrase absent (空文字列) はスキップする方式に統一する
+  - reverse proxy 等の経路で「decoder が受理した空 reason_phrase の Response を encoder で再送信する」ケースを RFC 9112 Section 4 に準拠したまま透過できる
+  - @voluntas
 
 ## 2026.3.0
 

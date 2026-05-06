@@ -156,7 +156,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_basic(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let encoded = encode_response(&res).unwrap();
 
         let status_line = format!("HTTP/1.1 {} {}\r\n", status, phrase);
@@ -174,7 +174,10 @@ proptest! {
         header_name in header_name(),
         header_value in header_value()
     ) {
-        let res = Response::new(status, phrase).header(&header_name, &header_value);
+        let res = Response::new(status, phrase)
+            .unwrap()
+            .header(&header_name, &header_value)
+            .unwrap();
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -186,7 +189,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
-        let res = Response::new(status, phrase).body(data.clone());
+        let res = Response::new(status, phrase).unwrap().body(data.clone());
         let encoded = encode_response(&res).unwrap();
 
         let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
@@ -207,7 +210,9 @@ proptest! {
         content_length in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .header("Content-Length", &content_length.to_string())
+            .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -224,6 +229,7 @@ proptest! {
         status in 200..204u16
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -341,7 +347,9 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
-            .header("Content-Type", "text/html");
+            .unwrap()
+            .header("Content-Type", "text/html")
+            .unwrap();
         let encoded = encode_response_headers(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -404,8 +412,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_response(&res);
         prop_assert!(matches!(
             result,
@@ -423,7 +434,10 @@ proptest! {
     fn prop_encode_response_1xx_or_204_with_te_always_error(
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
-        let res = Response::new(status, "Info").header("Transfer-Encoding", "chunked");
+        let res = Response::new(status, "Info")
+            .unwrap()
+            .header("Transfer-Encoding", "chunked")
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
@@ -445,7 +459,10 @@ proptest! {
     fn prop_encode_response_1xx_or_204_with_cl_always_error(
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
-        let res = Response::new(status, "Info").header("Content-Length", "0");
+        let res = Response::new(status, "Info")
+            .unwrap()
+            .header("Content-Length", "0")
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
@@ -467,7 +484,7 @@ proptest! {
     fn prop_encode_response_205_with_body_always_error(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(205, "Reset Content").body(data);
+        let res = Response::new(205, "Reset Content").unwrap().body(data);
         let result = encode_response(&res);
         prop_assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
     }
@@ -484,7 +501,9 @@ proptest! {
         ]
     ) {
         let res = Response::new(205, "Reset Content")
-            .header("Transfer-Encoding", &te_value);
+            .unwrap()
+            .header("Transfer-Encoding", &te_value)
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
@@ -500,7 +519,9 @@ proptest! {
     #[test]
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
         let res = Response::new(205, "Reset Content")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
@@ -521,7 +542,7 @@ proptest! {
     fn prop_encode_response_304_no_body(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(304, "Not Modified").body(data);
+        let res = Response::new(304, "Not Modified").unwrap().body(data);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
         let header_end = encoded_str.find("\r\n\r\n").unwrap();
@@ -598,8 +619,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_response_headers(&res);
         prop_assert!(matches!(
             result,
@@ -615,7 +639,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .header("Transfer-Encoding", "chunked");
+            .unwrap()
+            .header("Transfer-Encoding", "chunked")
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
@@ -635,7 +661,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .header("Content-Length", "0");
+            .unwrap()
+            .header("Content-Length", "0")
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
@@ -658,7 +686,9 @@ proptest! {
         ]
     ) {
         let res = Response::new(205, "Reset Content")
-            .header("Transfer-Encoding", &te_value);
+            .unwrap()
+            .header("Transfer-Encoding", &te_value)
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
@@ -674,7 +704,9 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
         let res = Response::new(205, "Reset Content")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
@@ -704,7 +736,7 @@ proptest! {
     /// Response::encode() は encode_response() と同じ結果を返す
     #[test]
     fn prop_response_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let via_method = res.encode();
         let via_free = encode_response(&res).unwrap();
         prop_assert_eq!(via_method, via_free);
@@ -730,7 +762,9 @@ proptest! {
         phrase in reason_phrase()
     ) {
         let res = Response::new(status, phrase)
-            .header("Content-Type", "text/html");
+            .unwrap()
+            .header("Content-Type", "text/html")
+            .unwrap();
         let via_method = res.encode_headers();
         let via_free = encode_response_headers(&res).unwrap();
         prop_assert_eq!(via_method, via_free);
@@ -752,7 +786,7 @@ proptest! {
     /// Response::try_encode() は encode_response() と同じ結果を返す
     #[test]
     fn prop_response_try_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let via_method = res.try_encode();
         let via_free = encode_response(&res);
         prop_assert_eq!(via_method, via_free);
@@ -777,7 +811,7 @@ proptest! {
         status in status_code(),
         phrase in reason_phrase()
     ) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let via_method = res.try_encode_headers();
         let via_free = encode_response_headers(&res);
         prop_assert_eq!(via_method, via_free);

@@ -33,7 +33,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
 | `Request` | HTTP リクエスト | `new()`, `with_version()`, `header()`, `body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_keep_alive()`, `is_chunked()` |
-| `Response` | HTTP レスポンス | `new()`, `with_version()`, `header()`, `body()`, `omit_body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_keep_alive()` |
+| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`, `is_keep_alive()` |
 | `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `with_compressor()` |
 | `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `with_compressor()` |
 
@@ -195,8 +195,10 @@ let request = loop {
 };
 
 // レスポンス作成
-let response = Response::new(200, "OK")
-    .header("Content-Type", "text/plain")
+// Response::new / with_version / header / add_header / set_header は
+// 構築時バリデーション付きで Result<_, EncodeError> を返す。
+let response = Response::new(200, "OK")?
+    .header("Content-Type", "text/plain")?
     .body(b"Hello, World!".to_vec());
 let bytes = response.encode();
 // bytes をネットワークに送信...
@@ -212,9 +214,9 @@ use shiguredo_http11::{Request, Response, ResponseDecoder};
 // サーバー側: Response::omit_body() でボディ送信を抑止
 let is_head = request.method.eq_ignore_ascii_case("HEAD");
 let body = b"Hello, World!";
-let mut response = Response::new(200, "OK")
-    .header("Content-Type", "text/plain")
-    .header("Content-Length", &body.len().to_string())
+let mut response = Response::new(200, "OK")?
+    .header("Content-Type", "text/plain")?
+    .header("Content-Length", &body.len().to_string())?
     .omit_body(is_head);
 if !is_head {
     response = response.body(body.to_vec());
@@ -350,8 +352,8 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 ```rust
 use shiguredo_http11::{Response, encode_chunk};
 
-let response = Response::new(200, "OK")
-    .header("Transfer-Encoding", "chunked");
+let response = Response::new(200, "OK")?
+    .header("Transfer-Encoding", "chunked")?;
 
 // ヘッダーを送信
 let headers = response.encode_headers();

@@ -41,8 +41,8 @@
 //! // if let Some(request) = decoder.decode()? { ... }
 //!
 //! // レスポンスを作成してエンコード
-//! let response = Response::new(200, "OK")
-//!     .header("Content-Type", "text/plain")
+//! let response = Response::new(200, "OK").unwrap()
+//!     .header("Content-Type", "text/plain").unwrap()
 //!     .body(b"Hello, World!".to_vec());
 //! let bytes = response.encode();
 //! // bytes を送信...

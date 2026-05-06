@@ -1,7 +1,9 @@
 //! ResponseDecoder のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, Error, Response, ResponseDecoder};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Response, ResponseDecoder,
+};
 
 use super::{body, reason_phrase, status_code};
 
@@ -575,16 +577,16 @@ proptest! {
         let data1 = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
         decoder.feed(data1.as_bytes()).unwrap();
         let resp1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(resp1.status_code, status_code);
+        prop_assert_eq!(resp1.status_code(), status_code);
         // HEAD レスポンスはボディなし扱い
-        prop_assert!(resp1.body.is_none());
+        prop_assert!(resp1.body_bytes().is_none());
 
         // 次のレスポンスを供給する。decode() 完了時に request_method がクリア
         // されていれば、Content-Length: 5 が正しく解釈されてボディが取れるはず。
         let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
         decoder.feed(data2.as_bytes()).unwrap();
         let resp2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(resp2.body.as_deref(), Some(&b"hello"[..]));
+        prop_assert_eq!(resp2.body_bytes(), Some(&b"hello"[..]));
     }
 }
 
@@ -634,11 +636,11 @@ proptest! {
             // 明示的に空ボディを指定して Content-Length: 0 を確保する。
             // 1xx/204/304 では status_has_body=false により Content-Length は付かないが、
             // body=Some(vec![]) でもエンコーダーは body バイトを出力しないため問題ない。
-            let response = Response::new(*code, "OK").body(Vec::new());
+            let response = Response::new(*code, "OK").unwrap().body(Vec::new());
             let encoded = response.encode();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(decoded.status_code, *code);
+            prop_assert_eq!(decoded.status_code(), *code);
             decoder.reset();
         }
     }
@@ -683,7 +685,7 @@ proptest! {
         reason in reason_phrase(),
         body_data in body()
     ) {
-        let mut response = Response::new(status, &reason);
+        let mut response = Response::new(status, &reason).unwrap();
 
         // RFC 9110: 1xx/204/205/304 はエンコーダー側でボディ生成を禁止
         // (デコーダー側では 205 はメッセージ長決定規則に従うが、ラウンドトリップテストでは
@@ -711,10 +713,10 @@ proptest! {
         decoder.feed(&encoded).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
 
-        prop_assert_eq!(decoded.status_code, status);
+        prop_assert_eq!(decoded.status_code(), status);
         if !status_forbids_body {
             // 空ボディも .body(vec![]) で明示しているため、デコーダーは Some(vec![]) を返す。
-            prop_assert_eq!(decoded.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(decoded.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -770,7 +772,7 @@ proptest! {
         // 明示的に空ボディを指定する。
         let mut all_data = Vec::new();
         for code in &status_codes {
-            let response = Response::new(*code, "OK").body(Vec::new());
+            let response = Response::new(*code, "OK").unwrap().body(Vec::new());
             all_data.extend(response.encode());
         }
         decoder.feed(&all_data).unwrap();
@@ -778,7 +780,7 @@ proptest! {
         // decode() を連続して呼ぶ（reset() なし）
         for code in &status_codes {
             let response = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(response.status_code, *code);
+            prop_assert_eq!(response.status_code(), *code);
         }
     }
 }
@@ -914,8 +916,8 @@ proptest! {
         // mark_eof() 後に decode() で取得可能
         decoder.mark_eof();
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.status_code, 200);
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }
 
@@ -1061,7 +1063,7 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
+        prop_assert_eq!(response.body_bytes(), Some(expected_body.as_slice()));
     }
 }
 
@@ -1086,7 +1088,7 @@ proptest! {
         prop_assert!(!decoder.is_close_delimited());
 
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }
 
@@ -1157,10 +1159,10 @@ proptest! {
 
         let by_feed = by_feed.expect("feed path produced response");
         let by_mut_buf = by_mut_buf.expect("mut_buf path produced response");
-        prop_assert_eq!(by_feed.status_code, by_mut_buf.status_code);
-        prop_assert_eq!(&by_feed.reason_phrase, &by_mut_buf.reason_phrase);
-        prop_assert_eq!(&by_feed.headers, &by_mut_buf.headers);
-        prop_assert_eq!(&by_feed.body, &by_mut_buf.body);
+        prop_assert_eq!(by_feed.status_code(), by_mut_buf.status_code());
+        prop_assert_eq!(by_feed.reason_phrase(), by_mut_buf.reason_phrase());
+        prop_assert_eq!(HttpHead::headers(&by_feed), HttpHead::headers(&by_mut_buf));
+        prop_assert_eq!(by_feed.body_bytes(), by_mut_buf.body_bytes());
     }
 }
 

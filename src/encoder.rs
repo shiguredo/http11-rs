@@ -1,4 +1,5 @@
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
+use crate::decoder::HttpHead;
 use crate::error::EncodeError;
 use crate::host::Host;
 use crate::request::Request;
@@ -89,12 +90,12 @@ fn response_status_has_body(status_code: u16) -> bool {
 
 /// `encode_response` で Content-Length を自動付与するか判定
 fn should_auto_emit_content_length_for_response(response: &Response) -> bool {
-    let status_has_body = response_status_has_body(response.status_code);
-    let body_len = response.body.as_deref().map(<[u8]>::len);
+    let status_has_body = response_status_has_body(response.status_code());
+    let body_len = response.body_bytes().map(<[u8]>::len);
     status_has_body
         && !response.has_header("Content-Length")
         && !response.has_header("Transfer-Encoding")
-        && match (response.omit_body, body_len) {
+        && match (response.is_body_omitted(), body_len) {
             (_, None) => false,
             (true, Some(0)) => false,
             (_, Some(_)) => true,
@@ -135,11 +136,11 @@ fn estimate_response_capacity(response: &Response) -> Option<usize> {
     let mut total: usize = 0;
     // Status line: VERSION SP STATUS-CODE SP REASON CRLF
     // (固定 4: SP + SP + CRLF, 加えて status code は 3 桁固定で見積もる)
-    total = total.checked_add(response.version.len())?;
+    total = total.checked_add(HttpHead::version(response).len())?;
     total = total.checked_add(3)?; // status_code 最大桁数 (validate_response_fields で 100..=599 が保証)
-    total = total.checked_add(response.reason_phrase.len())?;
+    total = total.checked_add(response.reason_phrase().len())?;
     total = total.checked_add(4)?;
-    for (name, value) in &response.headers {
+    for (name, value) in HttpHead::headers(response) {
         total = total.checked_add(name.len())?;
         total = total.checked_add(value.len())?;
         total = total.checked_add(4)?;
@@ -149,8 +150,8 @@ fn estimate_response_capacity(response: &Response) -> Option<usize> {
     }
     total = total.checked_add(2)?;
     let body_will_be_encoded =
-        response_status_has_body(response.status_code) && !response.omit_body;
-    if body_will_be_encoded && let Some(body) = response.body.as_deref() {
+        response_status_has_body(response.status_code()) && !response.is_body_omitted();
+    if body_will_be_encoded && let Some(body) = response.body_bytes() {
         total = total.checked_add(body.len())?;
     }
     Some(total)
@@ -362,28 +363,32 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
 /// レスポンスフィールドのバリデーション
 fn validate_response_fields(response: &Response) -> Result<(), EncodeError> {
     // バージョンの検証
-    if !is_valid_version_for_encode(&response.version) {
+    if !is_valid_version_for_encode(HttpHead::version(response)) {
         return Err(EncodeError::InvalidVersion {
-            version: response.version.clone(),
+            version: HttpHead::version(response).to_string(),
         });
     }
 
     // ステータスコードの検証
-    if !is_valid_status_code(response.status_code) {
+    if !is_valid_status_code(response.status_code()) {
         return Err(EncodeError::InvalidStatusCode {
-            code: response.status_code,
+            code: response.status_code(),
         });
     }
 
     // reason-phrase の検証
-    if !is_valid_reason_phrase(&response.reason_phrase) {
+    // RFC 9112 Section 4: status-line ABNF では reason-phrase は OPTIONAL であり、
+    // server は absent でも SP を送信しなければならない (MUST)。
+    // decoder 経路で空文字列を持つ Response (reason-phrase absent の再送信) を
+    // 受理するため、空文字列は文字集合検証をスキップする。
+    if !response.reason_phrase().is_empty() && !is_valid_reason_phrase(response.reason_phrase()) {
         return Err(EncodeError::InvalidReasonPhrase {
-            phrase: response.reason_phrase.clone(),
+            phrase: response.reason_phrase().to_string(),
         });
     }
 
     // ヘッダーの検証
-    validate_headers(&response.headers)?;
+    validate_headers(HttpHead::headers(response))?;
 
     Ok(())
 }
@@ -739,24 +744,25 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     }
 
     // RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding は禁止
-    let is_1xx_or_204 = (100..200).contains(&response.status_code) || response.status_code == 204;
+    let is_1xx_or_204 =
+        (100..200).contains(&response.status_code()) || response.status_code() == 204;
     if is_1xx_or_204 && response.has_header("Transfer-Encoding") {
         return Err(EncodeError::ForbiddenTransferEncoding {
-            status_code: response.status_code,
+            status_code: response.status_code(),
         });
     }
 
     // RFC 9110 Section 8.6: 1xx / 204 レスポンスに Content-Length は禁止
     if is_1xx_or_204 && response.has_header("Content-Length") {
         return Err(EncodeError::ForbiddenContentLength {
-            status_code: response.status_code,
+            status_code: response.status_code(),
         });
     }
 
     // RFC 9110 Section 15.3.6: 205 Reset Content はボディを生成してはならない
     // body == Some(non-empty) のときのみ違反。Some(vec![]) と None は許容する。
-    if response.status_code == 205 {
-        if response.body.as_deref().is_some_and(|b| !b.is_empty()) {
+    if response.status_code() == 205 {
+        if response.body_bytes().is_some_and(|b| !b.is_empty()) {
             return Err(EncodeError::ForbiddenBodyFor205);
         }
         if response.has_header("Transfer-Encoding") {
@@ -771,7 +777,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     }
 
     let body_will_be_encoded =
-        response_status_has_body(response.status_code) && !response.omit_body;
+        response_status_has_body(response.status_code()) && !response.is_body_omitted();
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // - 通常レスポンス: 常に一致必須
@@ -779,11 +785,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     //   (HEAD レスポンスで Content-Length が表現長を示すケース)
     // - 1xx/204/304 は message body がないため、ここでは検証しない
     // body == None は body 長 0 として扱う
-    if response_status_has_body(response.status_code)
+    if response_status_has_body(response.status_code())
         && !response.has_header("Transfer-Encoding")
-        && let Some(header_value) = validate_content_length_headers(&response.headers)?
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
     {
-        let body_length = response.body.as_deref().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
         let should_validate = body_will_be_encoded || body_length != 0;
         if should_validate && header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
@@ -796,15 +802,15 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     let mut buf = allocate_encode_buffer(estimate_response_capacity(response));
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
-    buf.extend_from_slice(response.version.as_bytes());
+    buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
-    write_usize_decimal(&mut buf, response.status_code as usize);
+    write_usize_decimal(&mut buf, response.status_code() as usize);
     buf.push(b' ');
-    buf.extend_from_slice(response.reason_phrase.as_bytes());
+    buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
     // Headers
-    for (name, value) in &response.headers {
+    for (name, value) in HttpHead::headers(response) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
         buf.extend_from_slice(value.as_bytes());
@@ -822,7 +828,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // 容量見積もりと判定ロジックを統一するため、`should_auto_emit_content_length_for_response`
     // を介して判定する (条件がずれると過小確保で再確保が発生する)
     if should_auto_emit_content_length_for_response(response) {
-        let len = response.body.as_deref().map(<[u8]>::len).unwrap_or(0);
+        let len = response.body_bytes().map(<[u8]>::len).unwrap_or(0);
         buf.extend_from_slice(b"Content-Length: ");
         write_usize_decimal(&mut buf, len);
         buf.extend_from_slice(b"\r\n");
@@ -834,7 +840,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // Body
     // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
     // HEAD レスポンスでは omit_body: true としてボディ送信を抑止する
-    if body_will_be_encoded && let Some(body) = response.body.as_deref() {
+    if body_will_be_encoded && let Some(body) = response.body_bytes() {
         buf.extend_from_slice(body);
     }
 
@@ -861,8 +867,11 @@ impl Request {
 impl Response {
     /// レスポンスをバイト列にエンコード
     ///
-    /// RFC 違反のヘッダー組み合わせがある場合はパニックする。
-    /// エラーハンドリングが必要な場合は `try_encode()` を使用する。
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Response ならば、
+    /// 意味論的な RFC 違反 (Content-Length 不一致、1xx/204 への Transfer-Encoding 等)
+    /// がある場合のみパニックする。エラーハンドリングが必要な場合は `try_encode()` を使用する。
+    /// `from_raw_parts` 経由で構築された Response が release ビルドで構文エラーを
+    /// 含む場合もパニックする (encoder のエラーメッセージは構文/意味論を区別しない)。
     pub fn encode(&self) -> Vec<u8> {
         encode_response(self).expect("invalid header combination")
     }
@@ -1021,27 +1030,28 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     }
 
     // RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding は禁止
-    let is_1xx_or_204 = (100..200).contains(&response.status_code) || response.status_code == 204;
+    let is_1xx_or_204 =
+        (100..200).contains(&response.status_code()) || response.status_code() == 204;
     if is_1xx_or_204 && response.has_header("Transfer-Encoding") {
         return Err(EncodeError::ForbiddenTransferEncoding {
-            status_code: response.status_code,
+            status_code: response.status_code(),
         });
     }
 
     // RFC 9110 Section 8.6: 1xx / 204 レスポンスに Content-Length は禁止
     if is_1xx_or_204 && response.has_header("Content-Length") {
         return Err(EncodeError::ForbiddenContentLength {
-            status_code: response.status_code,
+            status_code: response.status_code(),
         });
     }
 
     // RFC 9110 Section 15.3.6: 205 Reset Content の Transfer-Encoding 禁止
-    if response.status_code == 205 && response.has_header("Transfer-Encoding") {
+    if response.status_code() == 205 && response.has_header("Transfer-Encoding") {
         return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
     }
 
     // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
-    if response.status_code == 205
+    if response.status_code() == 205
         && let Some(cl) = response.get_header("Content-Length")
         && cl.trim() != "0"
     {
@@ -1051,15 +1061,15 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     let mut buf = Vec::new();
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
-    buf.extend_from_slice(response.version.as_bytes());
+    buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
-    write_usize_decimal(&mut buf, response.status_code as usize);
+    write_usize_decimal(&mut buf, response.status_code() as usize);
     buf.push(b' ');
-    buf.extend_from_slice(response.reason_phrase.as_bytes());
+    buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
     // Headers
-    for (name, value) in &response.headers {
+    for (name, value) in HttpHead::headers(response) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
         buf.extend_from_slice(value.as_bytes());
@@ -1378,7 +1388,7 @@ mod capacity_tests {
 
     #[test]
     fn test_response_capacity_simple_ok() {
-        let res = Response::new(200, "OK").body(b"hello".to_vec());
+        let res = Response::new(200, "OK").unwrap().body(b"hello".to_vec());
         assert_response_capacity_sufficient(&res);
     }
 
@@ -1386,7 +1396,7 @@ mod capacity_tests {
     fn test_response_capacity_no_body_status() {
         // 1xx / 204 / 304 は body を含めない
         for &code in &[100u16, 204, 304] {
-            let res = Response::new(code, "Reason");
+            let res = Response::new(code, "Reason").unwrap();
             assert_response_capacity_sufficient(&res);
         }
     }
@@ -1394,25 +1404,32 @@ mod capacity_tests {
     #[test]
     fn test_response_capacity_omit_body_with_content_length() {
         let res = Response::new(200, "OK")
+            .unwrap()
             .header("Content-Length", "100")
+            .unwrap()
             .omit_body(true);
         assert_response_capacity_sufficient(&res);
     }
 
     #[test]
     fn test_response_capacity_with_transfer_encoding() {
-        let res = Response::new(200, "OK").header("Transfer-Encoding", "chunked");
+        let res = Response::new(200, "OK")
+            .unwrap()
+            .header("Transfer-Encoding", "chunked")
+            .unwrap();
         assert_response_capacity_sufficient(&res);
     }
 
     #[test]
     fn test_response_capacity_many_headers() {
-        let mut res = Response::new(200, "OK").body(vec![b'X'; 1024]);
+        let mut res = Response::new(200, "OK").unwrap().body(vec![b'X'; 1024]);
         for i in 0..50 {
-            res = res.header(
-                &alloc::format!("X-Custom-{i}"),
-                &alloc::format!("value-{i}-with-some-padding"),
-            );
+            res = res
+                .header(
+                    &alloc::format!("X-Custom-{i}"),
+                    &alloc::format!("value-{i}-with-some-padding"),
+                )
+                .unwrap();
         }
         assert_response_capacity_sufficient(&res);
     }
@@ -1421,7 +1438,9 @@ mod capacity_tests {
     fn test_response_capacity_status_code_3_digit_boundary() {
         // status_code は 100..=599、見積もりは 3 桁固定なので過小確保にならない
         for &code in &[100u16, 200, 599] {
-            let res = Response::new(code, "Phrase").body(b"body".to_vec());
+            let res = Response::new(code, "Phrase")
+                .unwrap()
+                .body(b"body".to_vec());
             assert_response_capacity_sufficient(&res);
         }
     }
@@ -1434,5 +1453,32 @@ mod capacity_tests {
         // 実際のオーバーフロー検出は fuzz_encode_request で網羅する。
         let req = Request::new("GET", "/").header("Host", "example.com");
         let _ = encode_request(&req).unwrap();
+    }
+}
+
+/// `validate_response_fields` の reason-phrase absent 経路のカバレッジ補填テスト。
+///
+/// 構築時バリデーション (`Response::new` / `with_version`) では空 reason_phrase は
+/// 拒否されるため、`Response::from_raw_parts` (`pub(crate)`) 経由で空 reason_phrase
+/// を持つ Response を構築し、`encode_response` が空文字列を absent として受理する
+/// ことを確認する (reverse proxy の transparent forward 経路の RFC 9112 Section 4 準拠)。
+///
+/// 他の検証分岐 (status_code, header name, header value 等) は `from_raw_parts` の
+/// `debug_assert!` 契約と `validate_response_fields` の検査が同等のため、debug ビルド
+/// (テスト時) では `from_raw_parts` 側の `debug_assert!` で先に弾かれる。これらの分岐
+/// は release ビルドの最終防御線として機能するが、debug テスト経路では到達不能。
+#[cfg(test)]
+mod validate_response_fields_tests {
+    use super::*;
+    use crate::response::Response;
+    use alloc::string::ToString;
+
+    #[test]
+    fn test_validate_response_fields_empty_reason_phrase_is_accepted() {
+        let res =
+            Response::from_raw_parts("HTTP/1.1".to_string(), 200, String::new(), Vec::new(), None);
+        let encoded = encode_response(&res).unwrap();
+        // status-line は "HTTP/1.1 200 \r\n" (status-code の後に SP 1 個 + CRLF)
+        assert!(encoded.starts_with(b"HTTP/1.1 200 \r\n"));
     }
 }

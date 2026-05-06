@@ -473,7 +473,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                         }
 
                         // reason-phrase の検証 (RFC 9112 Section 4)
+                        // 空文字列は status-line ABNF における reason-phrase absent
+                        // (`HTTP/1.1 200 \r\n`) として許容する。
                         if let Some(reason) = parts.get(2)
+                            && !reason.is_empty()
                             && !is_valid_reason_phrase(reason)
                         {
                             return Err(Error::InvalidData(
@@ -802,13 +805,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // ポンスを誤ってトンネル判定してしまう状態漏れバグになる。
         self.request_method = None;
 
-        Ok(Some(Response {
-            version: head.version,
-            status_code: head.status_code,
-            reason_phrase: head.reason_phrase,
-            headers: head.headers,
+        Ok(Some(Response::from_raw_parts(
+            head.version,
+            head.status_code,
+            head.reason_phrase,
+            head.headers,
             body,
-            omit_body: false,
-        }))
+        )))
     }
 }
