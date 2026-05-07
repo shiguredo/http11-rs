@@ -42,3 +42,19 @@ br = ["dep:brotli"]
 gzip = ["dep:noflate"]
 # Zstd 圧縮展開を有効化
 zstd = ["dep:zstd"]
+
+[dev-dependencies]
+# Docker コンテナ起動 (実 nginx 相手の integration test)
+testcontainers = { version = "0.27", default-features = false, features = [
+  # 暗号バックエンド (AGENTS.md: 暗号ライブラリは aws-lc-rs)
+  "aws-lc-rs",
+] }
+# 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
+tokio = { version = "1.52", features = [
+  # tokio::test マクロ
+  "macros",
+  # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
+  "rt-multi-thread",
+  # タイムアウト
+  "time",
+] }
