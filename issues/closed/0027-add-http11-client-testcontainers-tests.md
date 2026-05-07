@@ -232,3 +232,4 @@ make fmt && make clippy && make check && make test
   - `with_copy_to` の第二引数は `Vec<u8>` を受け取れる (`From<Vec<u8>> for CopyDataSource` impl 済み)
   - `nginx:1.27-alpine` の起動完了ログ `start worker processes` は stderr / stdout どちらに出るか構成依存だったため `WaitFor::message_on_either_std` で OR 待ち
   - HEAD レスポンスでは nginx が Content-Length を返してくるため、decoder に request method を伝えないと length 分の body を待ってハングする (issue 内の方針に「シグネチャは変えない」と書いていたが、テスト要件として method 追加を実施)
+  - issue 設計では `pub async fn ensure_docker()` だったが、実装では `pub fn` (sync) に変更した。`docker version --format ...` を `std::process::Command` で 1 回叩くだけの軽い同期 I/O であり、async ランタイム上で `spawn_blocking` で囲むより呼び出し側が単純になるため

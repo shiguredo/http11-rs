@@ -4,12 +4,18 @@
 //! - `nginx:1.27-alpine` を `--port 0` 相当 (testcontainers のランダム host port) で起動する
 //! - カスタム `nginx.conf` を `/etc/nginx/conf.d/default.conf` にコピーした構成も組める
 //! - コンテナは `ContainerAsync` の Drop で自動停止する
+//!
+//! `#![allow(dead_code)]` を有効にしている理由:
+//! `tests/<name>.rs` ごとに別バイナリとしてビルドされ、各バイナリは `mod helpers;` で
+//! 本ファイル全体を取り込む。例えば basic テスト視点では `spawn_nginx_with_files` が、
+//! streaming テスト視点では `spawn_nginx_default` が「使われない」と判定されるため、
+//! file-level の `#![allow(dead_code)]` で抑止する必要がある (個別に `#[allow]` を付けると煩雑になる)。
 
 #![allow(dead_code)]
 
 use std::process::Stdio;
 
-use testcontainers::core::{ContainerPort, IntoContainerPort, WaitFor};
+use testcontainers::core::{IntoContainerPort, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 
@@ -73,12 +79,6 @@ pub async fn spawn_nginx_default() -> NginxHandle {
 ///
 /// nginx の Docker イメージは `/etc/nginx/conf.d/*.conf` を `http {}` ブロック内で `include` するため、
 /// `default.conf` を上書きすればデフォルト server 定義を完全に置き換えられる。
-pub async fn spawn_nginx_with_conf(conf: &str) -> NginxHandle {
-    spawn_nginx_with_files(conf, &[]).await
-}
-
-/// カスタム `nginx.conf` + 任意の追加ファイルをコピーして起動する
-///
 /// `files` は `(コンテナ内パス, 内容)` の組のスライス。`/usr/share/nginx/html/` 配下に
 /// 静的ファイルを置きたい場合や、テスト用 fixture を仕込みたい場合に使う。
 pub async fn spawn_nginx_with_files(conf: &str, files: &[(&str, Vec<u8>)]) -> NginxHandle {
@@ -106,9 +106,4 @@ async fn spawn(request: testcontainers::ContainerRequest<GenericImage>) -> Nginx
         _container: container,
         port,
     }
-}
-
-/// 内部ポートを TCP として宣言する補助関数 (型推論をはっきりさせるため)
-pub fn nginx_tcp_port() -> ContainerPort {
-    NGINX_INTERNAL_PORT.tcp()
 }
