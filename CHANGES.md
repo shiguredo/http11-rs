@@ -26,6 +26,11 @@
   - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する
   - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` でアクセス可能 (`Copy` / `Eq` / `Hash` 派生、IANA 未登録コードは `None`)
   - @voluntas
+- [ADD] `examples/http11_server` に `--port 0` 対応と `LISTENING_PORT=<port>` の stdout 出力を追加する
+  - `--port 0` で OS にランダムポートを割当させ、bind 後に実ポートを stdout に出力する
+  - 併せて tracing の出力先を stdout から stderr に変更する (stdout は LISTENING_PORT 出力専用)
+  - integration test (curl ベース) のテストハーネス前提として導入する
+  - @voluntas
 - [CHANGE] `Request` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Request::new` / `Request::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
@@ -76,6 +81,14 @@
   - `omit_body` フィールドに RFC 9110 Section 9.3.2 / Section 6.4.1 の参照を追加し、1xx/204/304 はエンコーダーが自動抑止するため不要であることも明記する
   - @voluntas
 - [FIX] `HttpHead::is_keep_alive` の doc 内の誤った RFC 節番号 (Section 9.1 → Section 9.3 / Section 7.6.1) を修正する
+  - @voluntas
+- [ADD] `examples/http11_server` に curl ベースの integration test を追加する
+  - `tests/http_basic.rs` (GET / HEAD / POST / 404 の 7 ケース) を追加する
+  - `tests/http_compression.rs` (gzip / br / zstd の Content-Encoding と優先順位の 9 ケース) を追加する
+  - `tests/http_keep_alive.rs` (Keep-Alive と Connection: close の 3 ケース) を追加する
+  - `tests/https_tls.rs` (rcgen で生成した自己署名証明書による HTTPS の 4 ケース) を追加する
+  - `tests/helpers/mod.rs` にサーバー起動・kill ガード・curl 実行・証明書生成の共通ヘルパーを新設する
+  - dev-dependencies に `rcgen` / `tempfile` / `tokio` (process feature) を追加する
   - @voluntas
 
 ## 2026.3.0
