@@ -104,7 +104,10 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 proptest! {
     #[test]
     fn prop_encode_request_basic(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let encoded = encode_request(&req).unwrap();
 
         let request_line = format!("{} {} HTTP/1.1\r\n", method, uri);
@@ -123,8 +126,11 @@ proptest! {
         header_value in header_value()
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
-            .header(&header_name, &header_value);
+            .unwrap()
+            .header(&header_name, &header_value)
+            .unwrap();
         let encoded = encode_request(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -137,7 +143,9 @@ proptest! {
     #[test]
     fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .body(data.clone());
         let encoded = encode_request(&req).unwrap();
 
@@ -329,7 +337,9 @@ proptest! {
     #[test]
     fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
-            .header("Host", "example.com");
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let encoded = encode_request_headers(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -368,7 +378,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_required_for_http11(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
+        let req = Request::new(method, &uri).unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -377,7 +387,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_optional_for_http10(method in http_method(), uri in uri()) {
-        let req = Request::with_version(method, &uri, "HTTP/1.0");
+        let req = Request::with_version(method, &uri, "HTTP/1.0").unwrap();
         let result = encode_request(&req);
         prop_assert!(result.is_ok());
     }
@@ -395,9 +405,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(
             result,
@@ -562,8 +576,11 @@ proptest! {
         host2 in "[a-z]{3,8}\\.org"
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", &host1)
-            .header("Host", &host2);
+            .unwrap()
+            .header("Host", &host2)
+            .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
     }
@@ -580,7 +597,7 @@ proptest! {
         method in http_method(),
         uri in uri()
     ) {
-        let req = Request::new(method, &uri);
+        let req = Request::new(method, &uri).unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -595,9 +612,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", &cl.to_string())
+            .unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(
             result,
@@ -722,7 +743,10 @@ proptest! {
     /// Request::encode() は encode_request() と同じ結果を返す
     #[test]
     fn prop_request_encode_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.encode();
         let via_free = encode_request(&req).unwrap();
         prop_assert_eq!(via_method, via_free);
@@ -744,7 +768,10 @@ proptest! {
     /// Request::encode_headers() は encode_request_headers() と同じ結果を返す
     #[test]
     fn prop_request_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.encode_headers();
         let via_free = encode_request_headers(&req).unwrap();
         prop_assert_eq!(via_method, via_free);
@@ -772,7 +799,10 @@ proptest! {
     /// Request::try_encode() は encode_request() と同じ結果を返す
     #[test]
     fn prop_request_try_encode_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.try_encode();
         let via_free = encode_request(&req);
         prop_assert_eq!(via_method, via_free);
@@ -794,7 +824,10 @@ proptest! {
     /// Request::try_encode_headers() は encode_request_headers() と同じ結果を返す
     #[test]
     fn prop_request_try_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.try_encode_headers();
         let via_free = encode_request_headers(&req);
         prop_assert_eq!(via_method, via_free);

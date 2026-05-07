@@ -26,6 +26,18 @@
   - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する
   - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` でアクセス可能 (`Copy` / `Eq` / `Hash` 派生、IANA 未登録コードは `None`)
   - @voluntas
+- [CHANGE] `Request` の全フィールドを非公開化し、構築時バリデーションを追加する
+  - 構築は `Request::new` / `Request::with_version` が `Result<Self, EncodeError>` を返す形に変更する
+  - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
+  - `set_header` を新設し、同名ヘッダー (case-insensitive) の上書きを可能にする
+  - method を RFC 9110 Section 9.1 token として、URI を既存の `is_valid_request_target` (制御文字/RFC 3986 除外文字/%00 拒否 + obs-text 非含有) でバリデートする
+  - HTTP Request Smuggling (CWE-444) 防御を強化する
+  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする (`debug_assert!` 付き)
+  - `method()` / `uri()` / `version()` / `body_bytes()` の読み取り専用アクセサを追加する
+  - 構造体に `#[non_exhaustive]` を付与し、将来のフィールド追加を非破壊的に扱えるようにする
+  - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
+  - decoder が obs-text (0x80-0xFF) を含む request-target を拒否するよう変更する (送信側と一貫したポリシーを decoder にも適用)
+  - @voluntas
 - [CHANGE] `Response` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Response::new` / `Response::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す

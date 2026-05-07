@@ -342,7 +342,7 @@ async fn handle_client(
     }
 
     // アップストリームへプロキシリクエストを作成
-    let mut upstream_request = Request::new(&req_head.method, &req_head.uri);
+    let mut upstream_request = Request::new(&req_head.method, &req_head.uri)?;
 
     // Connection ヘッダーに列挙されたヘッダー名を収集
     let connection_headers: Vec<String> = req_head
@@ -371,26 +371,22 @@ async fn handle_client(
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
-        upstream_request.add_header(name, value);
+        upstream_request.add_header(name, value)?;
     }
 
-    upstream_request.add_header("Host", upstream_host);
+    upstream_request.add_header("Host", upstream_host)?;
     // Keep-Alive を使用して接続を再利用
-    upstream_request.add_header("Connection", "keep-alive");
+    upstream_request.add_header("Connection", "keep-alive")?;
     // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
     // BodyKind::None なら upstream にもボディなしで送る (Content-Length 自動付与もしない)。
-    upstream_request.body = if matches!(req_body_kind, BodyKind::None) {
-        None
+    let upstream_request = if matches!(req_body_kind, BodyKind::None) {
+        upstream_request
     } else {
-        Some(request_body)
+        upstream_request.body(request_body)
     };
 
     debug!(
-        body_size = upstream_request
-            .body
-            .as_deref()
-            .map(<[u8]>::len)
-            .unwrap_or(0),
+        body_size = upstream_request.body_bytes().map(<[u8]>::len).unwrap_or(0),
         "Upstream request body"
     );
 
@@ -444,8 +440,9 @@ async fn stream_upstream_response_pooled(
     );
 
     // リクエスト送信とレスポンス受信
+    let request_method = request.method().to_string();
     let result =
-        stream_response_on_connection(downstream, request, &request.method, &mut conn.stream).await;
+        stream_response_on_connection(downstream, request, &request_method, &mut conn.stream).await;
 
     // 接続を再利用するかどうかを判定
     let should_reuse = match &result {

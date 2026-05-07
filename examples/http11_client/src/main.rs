@@ -67,19 +67,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!(host, port, "Connecting");
 
-    let mut request = Request::new("GET", &path)
-        .header("Host", &host)
-        .header("User-Agent", "shiguredo_http11/0.1.0")
-        .header("Accept", "*/*")
-        .header("Connection", "close");
+    let mut request = Request::new("GET", &path)?
+        .header("Host", &host)?
+        .header("User-Agent", "shiguredo_http11/0.1.0")?
+        .header("Accept", "*/*")?
+        .header("Connection", "close")?;
 
     // 有効な圧縮形式があれば Accept-Encoding を追加
     let encodings = supported_encodings();
     if !encodings.is_empty() {
-        request = request.header("Accept-Encoding", encodings);
+        request = request.header("Accept-Encoding", encodings)?;
     }
 
-    let request_bytes = request.encode();
+    let request_bytes = request.try_encode()?;
 
     if scheme == "https" {
         // HTTPS

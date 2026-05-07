@@ -76,7 +76,7 @@ const AUTO_CONTENT_LENGTH_CAPACITY: usize = 38;
 
 /// `encode_request` で Content-Length を自動付与するか判定
 fn should_auto_emit_content_length_for_request(request: &Request) -> bool {
-    request.body.is_some()
+    request.body_bytes().is_some()
         && !request.has_header("Content-Length")
         && !request.has_header("Transfer-Encoding")
 }
@@ -108,12 +108,12 @@ fn should_auto_emit_content_length_for_response(response: &Response) -> bool {
 fn estimate_request_capacity(request: &Request) -> Option<usize> {
     let mut total: usize = 0;
     // Request line: METHOD SP URI SP VERSION CRLF (固定 4: SP + SP + CRLF)
-    total = total.checked_add(request.method.len())?;
-    total = total.checked_add(request.uri.len())?;
-    total = total.checked_add(request.version.len())?;
+    total = total.checked_add(request.method().len())?;
+    total = total.checked_add(request.uri().len())?;
+    total = total.checked_add(request.version().len())?;
     total = total.checked_add(4)?;
     // 各ヘッダー: name + ": " + value + CRLF (固定 4)
-    for (name, value) in &request.headers {
+    for (name, value) in HttpHead::headers(request) {
         total = total.checked_add(name.len())?;
         total = total.checked_add(value.len())?;
         total = total.checked_add(4)?;
@@ -123,7 +123,7 @@ fn estimate_request_capacity(request: &Request) -> Option<usize> {
     }
     // End-of-headers CRLF
     total = total.checked_add(2)?;
-    if let Some(body) = request.body.as_deref() {
+    if let Some(body) = request.body_bytes() {
         total = total.checked_add(body.len())?;
     }
     Some(total)
@@ -172,39 +172,39 @@ fn allocate_encode_buffer(estimated: Option<usize>) -> Vec<u8> {
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
     // メソッドの検証
-    if !is_valid_method(&request.method) {
+    if !is_valid_method(request.method()) {
         return Err(EncodeError::InvalidMethod {
-            method: request.method.clone(),
+            method: request.method().to_string(),
         });
     }
 
     // リクエストターゲットの検証
-    if !is_valid_request_target(&request.uri) {
+    if !is_valid_request_target(request.uri()) {
         return Err(EncodeError::InvalidRequestTarget {
-            uri: request.uri.clone(),
+            uri: request.uri().to_string(),
         });
     }
 
     // is_valid_request_target() は受信側の寛容な検証で obs-text を許容する。
     // 送信側では新規に obs-text を生成してはならないため、ここで拒否する。
-    if request.uri.bytes().any(|b| b > 0x7E) {
+    if request.uri().bytes().any(|b| b > 0x7E) {
         return Err(EncodeError::InvalidRequestTarget {
-            uri: request.uri.clone(),
+            uri: request.uri().to_string(),
         });
     }
 
     // RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証
-    validate_request_target_form(&request.method, &request.uri)?;
+    validate_request_target_form(request.method(), request.uri())?;
 
     // バージョンの検証
-    if !is_valid_version_for_encode(&request.version) {
+    if !is_valid_version_for_encode(request.version()) {
         return Err(EncodeError::InvalidVersion {
-            version: request.version.clone(),
+            version: request.version().to_string(),
         });
     }
 
     // ヘッダーの検証
-    validate_headers(&request.headers)?;
+    validate_headers(HttpHead::headers(request))?;
 
     Ok(())
 }
@@ -416,12 +416,11 @@ fn validate_headers(headers: &[(String, String)]) -> Result<(), EncodeError> {
 /// - Host ヘッダーは重複してはならない
 /// - Host ヘッダーの値は有効な authority でなければならない
 fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
-    if request.version != "HTTP/1.1" {
+    if request.version() != "HTTP/1.1" {
         return Ok(());
     }
 
-    let host_headers: Vec<&str> = request
-        .headers
+    let host_headers: Vec<&str> = HttpHead::headers(request)
         .iter()
         .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
         .map(|(_, value)| value.as_str())
@@ -445,8 +444,8 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
 
     // RFC 9112 Section 3.2: absolute-form の場合、Host は authority と同一でなければならない (MUST)
     // authority が非空なら Host も非空かつ一致していなければならない
-    if request.uri.contains("://")
-        && let Some(authority) = extract_authority_from_uri(&request.uri)
+    if request.uri().contains("://")
+        && let Some(authority) = extract_authority_from_uri(request.uri())
         && !authority.is_empty()
         && !authority.eq_ignore_ascii_case(host_value)
     {
@@ -462,17 +461,17 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
     // RFC 9112 Section 3.2.3 / RFC 9110 Section 9.3.6 の例:
     //   CONNECT www.example.com:80 HTTP/1.1
     //   Host: www.example.com
-    if request.method == "CONNECT"
-        && let Some(colon_pos) = request.uri.rfind(':')
+    if request.method() == "CONNECT"
+        && let Some(colon_pos) = request.uri().rfind(':')
     {
-        let target_host = &request.uri[..colon_pos];
-        let target_port_str = &request.uri[colon_pos + 1..];
+        let target_host = &request.uri()[..colon_pos];
+        let target_port_str = &request.uri()[colon_pos + 1..];
 
         // CONNECT の authority は常に存在するため、Host は非空でなければならない
         if host_value.is_empty() {
             return Err(EncodeError::HostAuthorityMismatch {
                 host: host_value.to_string(),
-                authority: request.uri.clone(),
+                authority: request.uri().to_string(),
             });
         }
 
@@ -481,7 +480,7 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
             if !parsed_host.host().eq_ignore_ascii_case(target_host) {
                 return Err(EncodeError::HostAuthorityMismatch {
                     host: host_value.to_string(),
-                    authority: request.uri.clone(),
+                    authority: request.uri().to_string(),
                 });
             }
 
@@ -492,7 +491,7 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
             {
                 return Err(EncodeError::HostAuthorityMismatch {
                     host: host_value.to_string(),
-                    authority: request.uri.clone(),
+                    authority: request.uri().to_string(),
                 });
             }
         }
@@ -500,13 +499,13 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
 
     // RFC 9112 Section 3.2: authority がない target URI では Host を空にしなければならない (MUST)
     // "://" を含まない absolute-form (例: urn:isbn:xxx) が該当する
-    if let Ok(RequestTargetForm::Absolute) = detect_request_target_form(&request.uri)
-        && !request.uri.contains("://")
+    if let Ok(RequestTargetForm::Absolute) = detect_request_target_form(request.uri())
+        && !request.uri().contains("://")
         && !host_value.is_empty()
     {
         return Err(EncodeError::NonEmptyHostWithoutAuthority {
             host: host_value.to_string(),
-            uri: request.uri.clone(),
+            uri: request.uri().to_string(),
         });
     }
 
@@ -651,10 +650,10 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     validate_request_fields(request)?;
 
     // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
-    reject_http_userinfo(&request.uri)?;
+    reject_http_userinfo(request.uri())?;
 
     // RFC 9110 Section 4.2.1/4.2.2: http/https URI の空 host を拒否する
-    reject_http_empty_host(&request.uri)?;
+    reject_http_empty_host(request.uri())?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;
@@ -671,9 +670,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // body == None の場合は body 長 0 として扱う
     if !request.has_header("Transfer-Encoding")
-        && let Some(header_value) = validate_content_length_headers(&request.headers)?
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
     {
-        let body_length = request.body.as_deref().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
         if header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
@@ -685,15 +684,15 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     let mut buf = allocate_encode_buffer(estimate_request_capacity(request));
 
     // Request line: METHOD SP URI SP VERSION CRLF
-    buf.extend_from_slice(request.method.as_bytes());
+    buf.extend_from_slice(request.method().as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(request.uri.as_bytes());
+    buf.extend_from_slice(request.uri().as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(request.version.as_bytes());
+    buf.extend_from_slice(request.version().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
     // Headers
-    for (name, value) in &request.headers {
+    for (name, value) in HttpHead::headers(request) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
         buf.extend_from_slice(value.as_bytes());
@@ -703,7 +702,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // Content-Length (body == Some の場合、Content-Length / Transfer-Encoding 未指定なら自動付与)
     // RFC 9110 Section 8.6: メソッド意味論で content が想定されるかは呼び出し側の判断とする。
     // body == Some(vec![]) なら Content-Length: 0、body == None なら自動付与しない。
-    if let Some(body) = request.body.as_deref()
+    if let Some(body) = request.body_bytes()
         && !request.has_header("Content-Length")
         && !request.has_header("Transfer-Encoding")
     {
@@ -716,7 +715,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     buf.extend_from_slice(b"\r\n");
 
     // Body
-    if let Some(body) = request.body.as_deref() {
+    if let Some(body) = request.body_bytes() {
         buf.extend_from_slice(body);
     }
 
@@ -850,10 +849,14 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 impl Request {
     /// リクエストをバイト列にエンコード
     ///
-    /// HTTP/1.1 リクエストで Host ヘッダーがない場合はパニックする。
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request ならば、
+    /// 意味論的な RFC 違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と
+    /// Content-Length の競合等) がある場合のみパニックする。
     /// エラーハンドリングが必要な場合は `try_encode()` を使用する。
+    /// `from_raw_parts` 経由で構築された Request が release ビルドで構文エラーを
+    /// 含む場合もパニックする (encoder のエラーメッセージは構文/意味論を区別しない)。
     pub fn encode(&self) -> Vec<u8> {
-        encode_request(self).expect("HTTP/1.1 request requires Host header")
+        encode_request(self).expect("invalid request fields or headers")
     }
 
     /// リクエストをバイト列にエンコード (Result 版)
@@ -964,10 +967,10 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
     validate_request_fields(request)?;
 
     // RFC 9110 Section 4.2.4: http/https URI の userinfo を拒否する
-    reject_http_userinfo(&request.uri)?;
+    reject_http_userinfo(request.uri())?;
 
     // RFC 9110 Section 4.2.1/4.2.2: http/https URI の空 host を拒否する
-    reject_http_empty_host(&request.uri)?;
+    reject_http_empty_host(request.uri())?;
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;
@@ -985,15 +988,15 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
     let mut buf = Vec::new();
 
     // Request line: METHOD SP URI SP VERSION CRLF
-    buf.extend_from_slice(request.method.as_bytes());
+    buf.extend_from_slice(request.method().as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(request.uri.as_bytes());
+    buf.extend_from_slice(request.uri().as_bytes());
     buf.push(b' ');
-    buf.extend_from_slice(request.version.as_bytes());
+    buf.extend_from_slice(request.version().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
     // Headers
-    for (name, value) in &request.headers {
+    for (name, value) in HttpHead::headers(request) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
         buf.extend_from_slice(value.as_bytes());
@@ -1085,10 +1088,12 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
 impl Request {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
     ///
-    /// HTTP/1.1 リクエストで Host ヘッダーがない場合はパニックする。
-    /// エラーハンドリングが必要な場合は `try_encode_headers()` を使用する。
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request ならば、
+    /// 意味論的な RFC 違反 (Host 欠落、Transfer-Encoding と Content-Length の競合等) が
+    /// ある場合のみパニックする。エラーハンドリングが必要な場合は
+    /// `try_encode_headers()` を使用する。
     pub fn encode_headers(&self) -> Vec<u8> {
-        encode_request_headers(self).expect("HTTP/1.1 request requires Host header")
+        encode_request_headers(self).expect("invalid request fields or headers")
     }
 
     /// ヘッダーのみをエンコード (Result 版)
@@ -1331,14 +1336,19 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_simple_get() {
-        let req = Request::new("GET", "/").header("Host", "example.com");
+        let req = Request::new("GET", "/")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         assert_request_capacity_sufficient(&req);
     }
 
     #[test]
     fn test_request_capacity_post_with_body_auto_content_length() {
         let req = Request::new("POST", "/api")
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
     }
@@ -1346,8 +1356,11 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_post_with_explicit_content_length() {
         let req = Request::new("POST", "/api")
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Content-Length", "11")
+            .unwrap()
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
     }
@@ -1355,20 +1368,28 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_post_with_transfer_encoding_no_auto() {
         let req = Request::new("POST", "/api")
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
+            .unwrap()
             .body(b"hello".to_vec());
         assert_request_capacity_sufficient(&req);
     }
 
     #[test]
     fn test_request_capacity_many_headers() {
-        let mut req = Request::new("GET", "/").header("Host", "example.com");
+        let mut req = Request::new("GET", "/")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         for i in 0..50 {
-            req = req.header(
-                &alloc::format!("X-Custom-{i}"),
-                &alloc::format!("value-{i}-with-some-padding"),
-            );
+            req = req
+                .header(
+                    &alloc::format!("X-Custom-{i}"),
+                    &alloc::format!("value-{i}-with-some-padding"),
+                )
+                .unwrap();
         }
         assert_request_capacity_sufficient(&req);
     }
@@ -1376,14 +1397,19 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_empty_body_auto_content_length_zero() {
         let req = Request::new("POST", "/")
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .body(Vec::new());
         assert_request_capacity_sufficient(&req);
     }
 
     #[test]
     fn test_request_capacity_no_body() {
-        let req = Request::new("GET", "/path/to/resource?q=1").header("Host", "example.com");
+        let req = Request::new("GET", "/path/to/resource?q=1")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         assert_request_capacity_sufficient(&req);
     }
 
@@ -1450,7 +1476,10 @@ mod capacity_tests {
         // ここではオーバーフロー時のフォールバックパス (`Vec::new()`) が
         // パニックしないことを通常入力で確認する。
         // 実際のオーバーフロー検出は fuzz_encode_request で網羅する。
-        let req = Request::new("GET", "/").header("Host", "example.com");
+        let req = Request::new("GET", "/")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let _ = encode_request(&req).unwrap();
     }
 }

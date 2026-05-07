@@ -197,8 +197,10 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
 }
 
 fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
-    let mut request = Request::new("POST", "/");
-    request.add_header("Transfer-Encoding", "chunked");
+    let mut request = Request::new("POST", "/").unwrap();
+    request
+        .add_header("Transfer-Encoding", "chunked")
+        .unwrap();
     let mut encoded = match encode_request_headers(&request) {
         Ok(v) => v,
         Err(_) => return,

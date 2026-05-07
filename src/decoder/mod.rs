@@ -81,7 +81,7 @@
 //! let mut decoder = RequestDecoder::new();
 //! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").unwrap();
 //! let request = decoder.decode().unwrap().unwrap();
-//! assert_eq!(request.method, "GET");
+//! assert_eq!(request.method(), "GET");
 //! ```
 
 mod body;

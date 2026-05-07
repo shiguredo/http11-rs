@@ -1,7 +1,9 @@
 //! RequestDecoder のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, Error, Request, RequestDecoder};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Request, RequestDecoder,
+};
 
 use super::{body, http_method, http_uri};
 
@@ -352,13 +354,13 @@ proptest! {
         let mut decoder = RequestDecoder::new();
 
         for i in 0..count {
-            let mut request = Request::new(&methods[i], &uris[i]);
-            request.add_header("Host", "localhost");
+            let mut request = Request::new(&methods[i], &uris[i]).unwrap();
+            request.add_header("Host", "localhost").unwrap();
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&decoded.method, &methods[i]);
-            prop_assert_eq!(&decoded.uri, &uris[i]);
+            prop_assert_eq!(decoded.method(), methods[i].as_str());
+            prop_assert_eq!(decoded.uri(), uris[i].as_str());
             decoder.reset();
         }
     }
@@ -376,11 +378,11 @@ proptest! {
         let _ = decoder.decode_headers();
         decoder.reset();
         // リセット後は正常に動作
-        let mut request = Request::new(&valid_method, &valid_uri);
-        request.add_header("Host", "localhost");
+        let mut request = Request::new(&valid_method, &valid_uri).unwrap();
+        request.add_header("Host", "localhost").unwrap();
         decoder.feed(&request.encode()).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(decoded.method, valid_method);
+        prop_assert_eq!(decoded.method(), valid_method.as_str());
     }
 }
 
@@ -454,7 +456,9 @@ proptest! {
         body_data in body()
     ) {
         let mut request = Request::new(&method, &uri)
-            .header("Host", "example.com");
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
 
         if !body_data.is_empty() {
             request = request.body(body_data.clone());
@@ -465,16 +469,16 @@ proptest! {
         decoder.feed(&encoded).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
 
-        prop_assert_eq!(decoded.method, method);
-        prop_assert_eq!(decoded.uri, uri);
+        prop_assert_eq!(decoded.method(), method.as_str());
+        prop_assert_eq!(decoded.uri(), uri.as_str());
         // body_data が空のときは .body() を呼んでいないので request.body == None。
         // エンコード時に Content-Length も付かないため、デコーダーは body == None を返す。
-        let expected = if body_data.is_empty() {
+        let expected: Option<&[u8]> = if body_data.is_empty() {
             None
         } else {
-            Some(body_data)
+            Some(body_data.as_slice())
         };
-        prop_assert_eq!(decoded.body, expected);
+        prop_assert_eq!(decoded.body_bytes(), expected);
     }
 }
 
@@ -529,8 +533,8 @@ proptest! {
         // 全リクエストを一度にバッファに入れる
         let mut all_data = Vec::new();
         for i in 0..count {
-            let mut request = Request::new(&methods[i], &uris[i]);
-            request.add_header("Host", "localhost");
+            let mut request = Request::new(&methods[i], &uris[i]).unwrap();
+            request.add_header("Host", "localhost").unwrap();
             all_data.extend(request.encode());
         }
         decoder.feed(&all_data).unwrap();
@@ -538,8 +542,8 @@ proptest! {
         // decode() を連続して呼ぶ（reset() なし）
         for i in 0..count {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(&request.method, &methods[i]);
-            prop_assert_eq!(&request.uri, &uris[i]);
+            prop_assert_eq!(request.method(), methods[i].as_str());
+            prop_assert_eq!(request.uri(), uris[i].as_str());
         }
     }
 }
@@ -557,9 +561,9 @@ proptest! {
         // 全リクエストを一度にバッファに入れる
         let mut all_data = Vec::new();
         for body_data in &bodies {
-            let mut request = Request::new("POST", "/");
-            request.add_header("Host", "localhost");
-            request.body = Some(body_data.clone());
+            let mut request = Request::new("POST", "/").unwrap();
+            request.add_header("Host", "localhost").unwrap();
+            let request = request.body(body_data.clone());
             all_data.extend(request.encode());
         }
         decoder.feed(&all_data).unwrap();
@@ -569,7 +573,7 @@ proptest! {
         // デコーダー側も Some(empty) を返す。
         for body_data in &bodies {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -896,10 +900,10 @@ proptest! {
 
         let by_feed = by_feed.expect("feed path produced request");
         let by_mut_buf = by_mut_buf.expect("mut_buf path produced request");
-        prop_assert_eq!(&by_feed.method, &by_mut_buf.method);
-        prop_assert_eq!(&by_feed.uri, &by_mut_buf.uri);
-        prop_assert_eq!(&by_feed.headers, &by_mut_buf.headers);
-        prop_assert_eq!(&by_feed.body, &by_mut_buf.body);
+        prop_assert_eq!(by_feed.method(), by_mut_buf.method());
+        prop_assert_eq!(by_feed.uri(), by_mut_buf.uri());
+        prop_assert_eq!(HttpHead::headers(&by_feed), HttpHead::headers(&by_mut_buf));
+        prop_assert_eq!(by_feed.body_bytes(), by_mut_buf.body_bytes());
     }
 }
 
