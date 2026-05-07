@@ -30,10 +30,27 @@ jobs:
           toolchain: stable
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # examples の integration test は外部依存 (curl / Docker) を要求するため
+      # 別 job (e2e-test) に分離し、ここでは除外する
+      - run: cargo test --workspace --exclude http11_client --exclude http11_server
+
+  e2e-test:
+    name: e2e-test
+    # examples の integration test は curl / Docker daemon が揃っている Linux でのみ実行する
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+      - run: rustup update stable
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+        with:
+          os: ubuntu-24.04
+          toolchain: stable
+      - run: cargo test -p http11_client -p http11_server
 
   slack_notify:
-    needs: [ci]
+    needs: [ci, e2e-test]
     timeout-minutes: 5
     runs-on: ubuntu-slim
     if: ${{ always() }}

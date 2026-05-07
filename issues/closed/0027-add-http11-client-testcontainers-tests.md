@@ -1,6 +1,7 @@
 # 0027: examples/http11_client に testcontainers ベースの integration test を追加する
 
 Created: 2026-05-07
+Completed: 2026-05-07
 Model: Opus 4.7
 
 ## 概要
@@ -198,3 +199,37 @@ make fmt && make clippy && make check && make test
 - バージョン番号がマイナーまでで指定されていること
 - コメントが日本語、ログメッセージが英語、エラーメッセージ (panic) が英語であること
 - `CHANGES.md` の `## develop` の `### misc` に `[ADD]` エントリが追加されていること
+
+## 解決方法
+
+- `examples/http11_client/src/main.rs` を 3 ファイルに分割した:
+  - `src/lib.rs` を新設し、`pub mod decompressor;` と `parse_url` / `http_request` / `https_request` を pub re-export
+  - `src/url.rs` に `parse_url` を移動 (戻り値の `Box<dyn Error>` を `Box<dyn Error + Send + Sync>` に統一)
+  - `src/transport.rs` に `http_request` / `https_request` を移動 (戻り値も `Send + Sync` 化)
+  - `src/main.rs` は noargs パース + `print_response` のみ残す薄い CLI フロントエンドに整理
+- HEAD / CONNECT 経路で decoder が body を待ち続ける問題を解消するため、`http_request` / `https_request` のシグネチャに `request_method: &str` を追加し、内部で `ResponseDecoder::set_request_method` を呼ぶようにした (RFC 9110 §9.3.2 / §9.3.6 の body 抑止判定に必要)
+- `examples/http11_client/Cargo.toml` に `[dev-dependencies]` を新設:
+  - `testcontainers = { version = "0.27", default-features = false, features = ["aws-lc-rs"] }`
+  - `tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "time"] }`
+  - `testcontainers-modules` には nginx モジュールが存在しないことを事前調査で確認したため、`GenericImage` 一本で組む方針に決定
+  - 各依存に用途コメントを記載
+- `examples/http11_client/tests/helpers/mod.rs` を新設:
+  - `ensure_docker()`: `docker version --format '{{.Server.Version}}'` を実行し、失敗時は `panic!("Docker daemon is required for these integration tests")`
+  - `NginxHandle`: `ContainerAsync<GenericImage>` を保持して Drop 時に testcontainers が自動停止する仕組みを利用 (`port: u16` を pub フィールドで保持)
+  - `spawn_nginx_default()`: `nginx:1.27-alpine` を `with_exposed_port(80.tcp())` + `WaitFor::message_on_either_std("start worker processes")` で起動
+  - `spawn_nginx_with_conf(conf)`: `with_copy_to("/etc/nginx/conf.d/default.conf", ...)` でカスタム設定を注入
+  - `spawn_nginx_with_files(conf, files)`: 上記に加えて `/usr/share/nginx/html/` 等への追加ファイルコピーをループで適用
+- `examples/http11_client/tests/nginx_basic.rs` を新設し 5 ケース実装:
+  - `get_root_returns_200_html` / `get_unknown_returns_404` / `head_root_returns_no_body` / `includes_server_header` / `http_version_is_1_1`
+  - `fetch` ヘルパーで `tokio::task::spawn_blocking` 経由で同期 client API を async test 内から呼び出す
+- `examples/http11_client/tests/nginx_streaming.rs` を新設し 3 ケース実装:
+  - `chunked_response_decoded_properly`: `gzip on; gzip_min_length 0;` で nginx の gzip filter 経由で `Transfer-Encoding: chunked` を強制し、decompressor で展開した本文が元と一致することを検証 (chunked decoder 経路)
+  - `large_body_received_completely`: 1 MiB の決定論的バイト列 (`(0..1024*1024).map(|i| (i % 251) as u8)`) を `with_copy_to` で nginx html 配下に置き、Content-Length 経由で完全受信されることを検証 (BodyKind::Length 経路)
+  - `connection_close_terminates_request`: `keepalive_timeout 0;` でサーバー側に close を強制し、リクエスト側が `Connection: keep-alive` を送ってもレスポンスに `Connection: close` が含まれることを検証
+- `CHANGES.md` の `## develop` の `### misc` に `[ADD]` エントリを追加
+- `make fmt && make clippy && make check && make test` がすべて成功することを確認 (新規 8 ケースが pass、既存テスト・http11_server 23 ケース・PBT などすべて回帰なし)
+- 検証時の発見:
+  - `with_copy_to` の第二引数は `Vec<u8>` を受け取れる (`From<Vec<u8>> for CopyDataSource` impl 済み)
+  - `nginx:1.27-alpine` の起動完了ログ `start worker processes` は stderr / stdout どちらに出るか構成依存だったため `WaitFor::message_on_either_std` で OR 待ち
+  - HEAD レスポンスでは nginx が Content-Length を返してくるため、decoder に request method を伝えないと length 分の body を待ってハングする (issue 内の方針に「シグネチャは変えない」と書いていたが、テスト要件として method 追加を実施)
+  - issue 設計では `pub async fn ensure_docker()` だったが、実装では `pub fn` (sync) に変更した。`docker version --format ...` を `std::process::Command` で 1 回叩くだけの軽い同期 I/O であり、async ランタイム上で `spawn_blocking` で囲むより呼び出し側が単純になるため
