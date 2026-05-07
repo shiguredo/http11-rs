@@ -21,7 +21,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## バージョン情報
 
 - crate 名: `shiguredo_http11`
-- バージョン: 2026.2.0
+- バージョン: 2026.3.0
 - Rust Edition: 2024
 - 最小 Rust バージョン: 1.88
 - ライセンス: Apache-2.0
@@ -33,11 +33,11 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
 | `Request` | HTTP リクエスト | `new()` (Result), `with_version()` (Result), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `method()`, `uri()`, `version()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_keep_alive()`, `is_chunked()` |
-| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `omit_body()`, `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `status_class()`, `is_keep_alive()` |
+| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result, builder), `add_header()` (Result, mutator, チェイン可), `set_header()` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `omit_body()` (builder), `set_omit_body()` (mutator), `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `status_class()`, `is_keep_alive()` |
 | `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `class()`, `from_code(u16)` (未登録コードは `None`) |
 | `StatusClass` | RFC 9110 Section 15 のクラス分類 enum | `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`, `from_status_code(u16)` (範囲外は `None`) |
-| `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `with_compressor()` |
-| `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `with_compressor()` |
+| `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `new()`, `with_compressor()`, `compress_body()`, `finish()`, `reset()` |
+| `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `new()`, `with_compressor()`, `compress_body()`, `finish()`, `reset()` |
 
 `encode()` と `encode_headers()` は RFC 違反時にパニックする。エラーハンドリングが必要なら `try_encode()` / `try_encode_headers()` を使う。
 
@@ -45,7 +45,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
+| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
 | `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
 | `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `status_class()`) |
@@ -104,7 +104,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 `CompressionStatus` には `consumed()`, `produced()`, `is_complete()`, `is_output_full()` ヘルパーがある。
 
-ライブラリ本体は圧縮実装を含まないため、利用者が `flate2`, `brotli`, `zstd` などを使って実装する。
+ライブラリ本体は圧縮実装を含まないため、利用者が `noflate` / `flate2` (gzip), `brotli`, `zstd` などを使って実装する。サンプル (`examples/`) は `noflate` ベースで実装されている。
 
 ## ヘッダーパースモジュール
 
@@ -166,7 +166,7 @@ loop {
     }
     decoder.advance_buf(n);
     if let Some(response) = decoder.decode()? {
-        println!("Status: {}", response.status_code);
+        println!("Status: {}", response.status_code());
         break;
     }
 }
