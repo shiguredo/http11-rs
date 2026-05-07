@@ -619,14 +619,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
     ///
     /// `decode_headers()` 成功後に呼ぶ。
     /// 利用可能なボディデータを展開して output に書き込む。
+    /// ボディデータが枯渇しても展開器の内部 buffer に未 drain のバイトが
+    /// 残っている場合があるため、その場合は空 input で展開器を駆動して
+    /// 残りを drain する。
     ///
     /// # 引数
     /// - `output`: 展開データを書き込む出力バッファ
     ///
     /// # 戻り値
     /// - `Ok(Some(status))`: 展開成功。`status.produced()` バイトが output に書き込まれた。
-    ///   `status.consumed()` バイトを `consume_body()` で消費する必要がある。
-    /// - `Ok(None)`: 利用可能なボディデータがない
+    ///   `status.consumed()` バイトを `consume_body()` で消費する必要がある (0 のときは不要)。
+    /// - `Ok(None)`: 利用可能なボディデータがなく、展開器の内部 buffer も空
     /// - `Err(e)`: 展開エラー
     ///
     /// # 使い方
@@ -636,7 +639,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// while let Some(status) = decoder.peek_body_decompressed(&mut output)? {
     ///     // output[..status.produced()] に展開済みデータ
     ///     process(&output[..status.produced()]);
-    ///     decoder.consume_body(status.consumed())?;
+    ///     if status.consumed() > 0 {
+    ///         decoder.consume_body(status.consumed())?;
+    ///     }
     /// }
     /// ```
     pub fn peek_body_decompressed(
@@ -647,13 +652,34 @@ impl<D: Decompressor> ResponseDecoder<D> {
             self.pending == 0,
             "peek_body_decompressed called with pending mut_buf"
         );
-        let input = match self.body_decoder.peek_body(&self.buf, &self.phase) {
-            Some(data) if !data.is_empty() => data,
-            _ => return Ok(None),
-        };
-
+        // ボディデータがあればそれを、なければ空 input を渡して展開器内部の
+        // 未 drain バイトを取り出す。
+        // 例: noflate::gzip::Decoder のように feed したバイトを内部 buffer に
+        //     蓄積する型の Decompressor 実装では、ボディ末尾の chunk を feed
+        //     した後でも内部 buffer に展開済みバイトが残ることがある。
+        let input = self
+            .body_decoder
+            .peek_body(&self.buf, &self.phase)
+            .unwrap_or(&[]);
         let status = self.decompressor.decompress(input, output)?;
-        Ok(Some(status))
+
+        // 進展なし & 待機すべき状態でなければ None を返す。
+        // - Continue { 0, 0 }: 入力も出力もない、より多くのボディデータが必要
+        // - Complete { 0, 0 }: 終端到達後の重複呼び出し
+        // どちらも呼び出し側がループを抜けるべきタイミング。
+        // 一方 OutputFull { 0, 0 } は「output buffer が小さすぎる」back-pressure
+        // のシグナルなので Some で返し、呼び出し側に通知する。
+        match status {
+            CompressionStatus::Continue {
+                consumed: 0,
+                produced: 0,
+            }
+            | CompressionStatus::Complete {
+                consumed: 0,
+                produced: 0,
+            } => Ok(None),
+            _ => Ok(Some(status)),
+        }
     }
 
     /// ボディデータを消費

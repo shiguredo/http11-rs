@@ -1372,3 +1372,214 @@ mod direct_buffer_write {
         assert_eq!(request.body_bytes(), Some(b"hello".as_slice()));
     }
 }
+
+// ========================================
+// peek_body_decompressed のテスト
+// ========================================
+
+mod peek_body_decompressed {
+    use super::*;
+    use shiguredo_http11::compression::{
+        CompressionError, CompressionStatus, Decompressor, NoCompression,
+    };
+
+    /// `NoCompression` 経由でボディ受信中: ボディデータがある間は `Some` を返す
+    #[test]
+    fn no_compression_returns_some_during_body() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder.decode_headers().unwrap().expect("headers decoded");
+
+        let mut output = vec![0u8; 32];
+        let status = decoder
+            .peek_body_decompressed(&mut output)
+            .unwrap()
+            .expect("body data available");
+        assert_eq!(status.consumed(), 5);
+        assert_eq!(status.produced(), 5);
+        assert_eq!(&output[..5], b"hello");
+        decoder.consume_body(status.consumed()).unwrap();
+    }
+
+    /// `NoCompression` 経由でボディ完了後: `None` に収束する
+    /// (`Complete { 0, 0 }` が返るので新しい peek_body_decompressed の判定で None になる)
+    #[test]
+    fn no_compression_returns_none_after_body_complete() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder.decode_headers().unwrap().expect("headers decoded");
+
+        let mut output = vec![0u8; 32];
+        let status = decoder
+            .peek_body_decompressed(&mut output)
+            .unwrap()
+            .expect("body data available");
+        decoder.consume_body(status.consumed()).unwrap();
+
+        // ボディ完了後の呼び出しは None
+        let next = decoder.peek_body_decompressed(&mut output).unwrap();
+        assert!(next.is_none());
+    }
+
+    /// 内部 buffer 蓄積型の Decompressor 実装でも、ボディ枯渇後に drain できる
+    /// (peek_body_decompressed が `decompress(&[], output)` を呼ぶ振る舞いの検証)
+    #[test]
+    fn drain_internal_buffer_after_body_exhausted() {
+        /// テスト用 stub: feed 時に `produce_per_byte` 倍の出力を内部 buffer に蓄積する
+        struct BufferingDecompressor {
+            buffered: Vec<u8>,
+            produce_per_byte: usize,
+            finished: bool,
+        }
+
+        impl Decompressor for BufferingDecompressor {
+            fn decompress(
+                &mut self,
+                input: &[u8],
+                output: &mut [u8],
+            ) -> Result<CompressionStatus, CompressionError> {
+                // 内部 buffer に蓄積されたバイトを優先的に drain
+                if !self.buffered.is_empty() {
+                    let n = self.buffered.len().min(output.len());
+                    output[..n].copy_from_slice(&self.buffered[..n]);
+                    self.buffered.drain(..n);
+
+                    if !self.buffered.is_empty() {
+                        return Ok(CompressionStatus::OutputFull {
+                            consumed: 0,
+                            produced: n,
+                        });
+                    }
+                    if self.finished {
+                        return Ok(CompressionStatus::Complete {
+                            consumed: 0,
+                            produced: n,
+                        });
+                    }
+                    return Ok(CompressionStatus::Continue {
+                        consumed: 0,
+                        produced: n,
+                    });
+                }
+
+                // 入力を全消費して内部 buffer に蓄積 (noflate 風の振る舞い)
+                if !input.is_empty() {
+                    for &b in input {
+                        for _ in 0..self.produce_per_byte {
+                            self.buffered.push(b);
+                        }
+                    }
+                    // ストリーム終端を 'X' バイトで表現する単純な擬似プロトコル
+                    if input.contains(&b'X') {
+                        self.finished = true;
+                    }
+
+                    let n = self.buffered.len().min(output.len());
+                    output[..n].copy_from_slice(&self.buffered[..n]);
+                    self.buffered.drain(..n);
+
+                    if !self.buffered.is_empty() {
+                        return Ok(CompressionStatus::OutputFull {
+                            consumed: input.len(),
+                            produced: n,
+                        });
+                    }
+                    if self.finished {
+                        return Ok(CompressionStatus::Complete {
+                            consumed: input.len(),
+                            produced: n,
+                        });
+                    }
+                    return Ok(CompressionStatus::Continue {
+                        consumed: input.len(),
+                        produced: n,
+                    });
+                }
+
+                // empty input かつ buffered 空: 進展なし
+                if self.finished {
+                    Ok(CompressionStatus::Complete {
+                        consumed: 0,
+                        produced: 0,
+                    })
+                } else {
+                    Ok(CompressionStatus::Continue {
+                        consumed: 0,
+                        produced: 0,
+                    })
+                }
+            }
+
+            fn reset(&mut self) {
+                self.buffered.clear();
+                self.finished = false;
+            }
+        }
+
+        let mut decoder = ResponseDecoder::with_decompressor(BufferingDecompressor {
+            buffered: Vec::new(),
+            produce_per_byte: 4, // 1 byte 入力 → 4 bytes 出力
+            finished: false,
+        });
+
+        // body は 2 bytes ('A', 'X')。X でストリーム終端。
+        // 期待される展開後出力: AAAAXXXX (8 bytes)
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nAX";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder.decode_headers().unwrap().expect("headers decoded");
+
+        // 出力 buffer は 3 bytes (内部 buffer が複数回に分かれて drain される設定)
+        let mut output = vec![0u8; 3];
+        let mut decompressed = Vec::new();
+        let mut total_consumed = 0;
+
+        for _ in 0..16 {
+            // 安全上限
+            match decoder.peek_body_decompressed(&mut output).unwrap() {
+                Some(status) => {
+                    decompressed.extend_from_slice(&output[..status.produced()]);
+                    if status.consumed() > 0 {
+                        decoder.consume_body(status.consumed()).unwrap();
+                        total_consumed += status.consumed();
+                    }
+                }
+                None => break,
+            }
+        }
+
+        assert_eq!(total_consumed, 2, "all body bytes consumed");
+        assert_eq!(
+            decompressed, b"AAAAXXXX",
+            "all 8 bytes of decompressed output collected"
+        );
+    }
+
+    /// 進展なしのときに None を返す (`Continue { 0, 0 }` のケース)
+    #[test]
+    fn returns_none_when_no_progress() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder.decode_headers().unwrap().expect("headers decoded");
+
+        // ボディがまだ届いていない → peek_body は None → decompress(&[], output) 経由で
+        // NoCompression は Complete { 0, 0 } を返す → peek_body_decompressed は None を返す
+        let mut output = vec![0u8; 32];
+        let result = decoder.peek_body_decompressed(&mut output).unwrap();
+        assert!(result.is_none(), "no progress should yield None");
+    }
+}
