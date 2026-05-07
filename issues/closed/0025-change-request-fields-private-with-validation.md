@@ -606,3 +606,32 @@ cargo llvm-cov report
 - `skills/shiguredo-http11/SKILL.md` の Request API 一覧およびサンプルコードが新 API に追従している
 - `from_raw_parts` の不変条件が `debug_assert!` で検査されており、debug ビルドで契約破りを検出可能であること
 - `Request::body_bytes()` が `Response::body_bytes()` (0017 の命名) と一貫した名前であること
+
+## 解決方法
+
+- `src/request.rs` の全フィールド (`method` / `uri` / `version` / `headers` / `body`) を非公開化し `#[non_exhaustive]` を付与
+- `Request::new` / `with_version` を `Result<Self, EncodeError>` 化し、構築時バリデーション (method: `is_valid_method`、URI: `is_valid_request_target` + obs-text 0x80-0xFF 拒否、version: `is_valid_protocol_version`) を実装
+- バリデーション順序を `new`: method → uri → obs-text、`with_version`: method → uri → obs-text → version とし、最初に失敗した検証のエラーを返す
+- `header` / `add_header` / `set_header` を `Result` 化し、ヘッダー名 (RFC 9110 token) と値 (CR/LF/NUL 拒否) のバリデーションを実装
+- `set_header` を新設し、case-insensitive 上書きを提供 (バリデーション失敗時のアトミック性確保: バリデーション通過後にのみ `retain` + `push` を実行)
+- `pub(crate) fn from_raw_parts` を新設しデコーダー経路の検証済み構築を可能にし、`debug_assert!` で method / URI / obs-text / version / headers の不変条件を表明
+  - 注: 命名は `Vec::from_raw_parts` 等の unsafe 慣習と表面的に衝突するが、本関数は unsafe ではない (`pub(crate)` のため外部影響なし)。命名衝突の解消は別 issue で扱う
+- 読み取り専用アクセサ `method()` / `uri()` / `version()` / `body_bytes()` を追加 (builder `body(data) -> Self` と inherent impl 同名衝突を回避するため getter は `body_bytes`、Response 側 0017 と命名統一)
+- `src/decoder/request.rs` で `Request { ... }` 構造体リテラル構築を `Request::from_raw_parts(...)` に置換
+- decoder 側 (`src/decoder/request.rs:334` 直後) で request-target の obs-text (0x80-0xFF) 拒否チェックを追加し、構築された Request の不変条件を decoder 側でも満たすことを保証 (validate.rs 側の obs-text 許容撤去は別 issue で対応するまでの暫定措置)
+- `src/encoder.rs` 内の Request 関連の全フィールド直接アクセスをアクセサ経由 (`HttpHead` トレイト経由含む) に書き換え
+- `Request::encode()` / `encode_headers()` の doc とパニック expect メッセージを意味論的違反 (Host 欠落、Content-Length 不一致、TE+CL 競合等) に限定する旨で更新し、`Response::encode()` と文体を揃える
+- `src/encoder.rs` 内部 `#[cfg(test)] mod capacity_tests` の `Request::new()` / `.header()` 呼び出しに `.unwrap()` を追加
+- `src/decoder/mod.rs` および `src/lib.rs` の doctest を新 API に追従
+- 全 examples (`http11_client`, `http11_server`, `http11_server_io_uring`, `http11_reverse_proxy`) を `?` 伝播形式に書き換え (`.unwrap()` を使わず、CLAUDE.md「サンプルは **お手本**」原則に従う)
+- 全テスト / PBT / fuzz ターゲットを新 API に追従:
+  - `tests/test_request.rs` を新設し、method / URI / version / ヘッダー名 / ヘッダー値の各バリデーションエラー、構築時順序、smuggling ペイロード拒否 (CRLF / NUL / SP / %00 / obs-text)、`set_header` のアトミック性 (case-insensitive 上書き、失敗時に既存ヘッダー保持) を網羅 (46 テスト)
+  - `tests/test_encoder.rs` の構築時で弾かれる不正値テスト (CRLF in method/URI/header) を「構築時に `Err` を返すこと」を検証する形に書き換え、それ以外は `.unwrap()` を追加
+  - `tests/test_decoder.rs` の `request.method` / `request.body.as_deref()` をアクセサに書き換え
+  - `pbt/tests/prop_request.rs` を新 API に追従させ、構築時バリデーションの PBT (CRLF を含む method/URI/ヘッダー値の常時拒否、`set_header` アトミック性) を追加
+  - `pbt/tests/prop_encoder.rs` / `pbt/tests/prop_decoder/{request,body}.rs` のフィールド直接アクセスをアクセサ経由に書き換え、`Request::new()` / `.header()` に `.unwrap()` を追加
+  - `fuzz_targets/fuzz_encode_request.rs` / `fuzz_decoder_roundtrip.rs` / `fuzz_request_response_helpers.rs` / `fuzz_decoder_chunked.rs` を新 API に追従させ、構築失敗時は `let Ok(...) else { return; }` で早期 return
+- `skills/shiguredo-http11/SKILL.md` の Request API 一覧およびサンプルコードを新 API に追従
+- `CHANGES.md` の `## develop` セクションに `[CHANGE]` エントリを追加
+- `make fmt && make clippy && make check && make test` がすべて成功することを確認
+- `cargo llvm-cov` で `request.rs` のラインカバレッジ 71.76% / `validate.rs` 83.63% を確認 (構築時バリデーションの全分岐 + `from_raw_parts` 経由の `validate_request_fields` 到達パスがカバー)
