@@ -1,7 +1,7 @@
 //! Request 構造体のプロパティテスト (request.rs)
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, BodyProgress, Request, RequestDecoder};
+use shiguredo_http11::{BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder};
 
 // ========================================
 // Strategy 定義
@@ -32,6 +32,14 @@ fn header_name() -> impl Strategy<Value = String> {
 // HTTP ヘッダー値 (RFC 9110 Section 5.5)
 // field-vchar = VCHAR / obs-text
 // VCHAR = %x21-7E, obs-text = %x80-FF, SP = 0x20, HTAB = 0x09
+//
+// 注: 構築時バリデーション (Request::add_header / .header) を通過するため、
+// VCHAR + SP + HTAB のみを生成する (obs-text は UTF-8 として扱われ、
+// validate.rs の is_valid_field_value では受理されるが、本 strategy は
+// ASCII safe な集合に限定する)。
+//
+// また先頭/末尾の SP は構築時バリデーションを通過するが、
+// ヘッダー数の比較を簡単にするため空文字は許容する。
 fn header_value_char() -> impl Strategy<Value = char> {
     prop_oneof![
         prop::char::range('!', '~'), // VCHAR: 0x21-0x7E
@@ -109,17 +117,17 @@ proptest! {
         hdrs in headers(),
         body_data in body()
     ) {
-        let mut request = Request::new(&method, &uri);
+        let mut request = Request::new(&method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value);
+        request.add_header("Host", &host_value).unwrap();
         for (name, value) in &hdrs {
             // Host ヘッダーの重複を避ける
             if !name.eq_ignore_ascii_case("Host") {
-                request.add_header(name, value);
+                request.add_header(name, value).unwrap();
             }
         }
         if !body_data.is_empty() {
-            request.body = Some(body_data.clone());
+            request = request.body(body_data.clone());
         }
 
         let encoded = request.encode();
@@ -148,7 +156,11 @@ proptest! {
             BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
         }
 
-        prop_assert_eq!(decoded_body, request.body.clone().unwrap_or_default());
+        let expected_body: Vec<u8> = request
+            .body_bytes()
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default();
+        prop_assert_eq!(decoded_body, expected_body);
 
         // ヘッダー数は同じ (Content-Length が自動追加される可能性、Host は +1)
         let expected_header_count = if !body_data.is_empty()
@@ -175,12 +187,12 @@ proptest! {
         uri in http_uri(),
         hdrs in headers()
     ) {
-        let mut request = Request::new(&method, &uri);
+        let mut request = Request::new(&method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value);
+        request.add_header("Host", &host_value).unwrap();
         for (name, value) in &hdrs {
             if !name.eq_ignore_ascii_case("Host") {
-                request.add_header(name, value);
+                request.add_header(name, value).unwrap();
             }
         }
 
@@ -206,10 +218,10 @@ proptest! {
         uri in http_uri(),
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let mut request = Request::new(&method, &uri);
+        let mut request = Request::new(&method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value);
-        request.body = Some(body_data.clone());
+        request.add_header("Host", &host_value).unwrap();
+        let request = request.body(body_data.clone());
         let encoded = request.encode();
 
         // チャンクサイズで分割して feed し、デコード完了まで繰り返す
@@ -272,9 +284,9 @@ proptest! {
             if i > 0 {
                 decoder.reset();
             }
-            let mut request = Request::new(&methods[i], &uris[i]);
+            let mut request = Request::new(&methods[i], &uris[i]).unwrap();
             let host_value = host_for_uri(&uris[i]);
-            request.add_header("Host", &host_value);
+            request.add_header("Host", &host_value).unwrap();
             let encoded = request.encode();
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -301,9 +313,9 @@ proptest! {
 
         // リセットして正常なリクエストをデコード
         decoder.reset();
-        let mut request = Request::new(&method, &uri);
+        let mut request = Request::new(&method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value);
+        request.add_header("Host", &host_value).unwrap();
         let encoded = request.encode();
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -320,24 +332,24 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_new_creates_valid_request(method in http_method(), uri in http_uri()) {
-        let request = Request::new(&method, &uri);
+        let request = Request::new(&method, &uri).unwrap();
 
-        prop_assert_eq!(&request.method, &method);
-        prop_assert_eq!(&request.uri, &uri);
-        prop_assert_eq!(&request.version, "HTTP/1.1");
-        prop_assert!(request.headers.is_empty());
-        prop_assert!(request.body.is_none());
+        prop_assert_eq!(request.method(), &method);
+        prop_assert_eq!(request.uri(), &uri);
+        prop_assert_eq!(request.version(), "HTTP/1.1");
+        prop_assert!(HttpHead::headers(&request).is_empty());
+        prop_assert!(request.body_bytes().is_none());
     }
 }
 
 proptest! {
     #[test]
     fn prop_request_with_version(method in http_method(), uri in http_uri()) {
-        let request10 = Request::with_version(&method, &uri, "HTTP/1.0");
-        let request11 = Request::with_version(&method, &uri, "HTTP/1.1");
+        let request10 = Request::with_version(&method, &uri, "HTTP/1.0").unwrap();
+        let request11 = Request::with_version(&method, &uri, "HTTP/1.1").unwrap();
 
-        prop_assert_eq!(&request10.version, "HTTP/1.0");
-        prop_assert_eq!(&request11.version, "HTTP/1.1");
+        prop_assert_eq!(request10.version(), "HTTP/1.0");
+        prop_assert_eq!(request11.version(), "HTTP/1.1");
     }
 }
 
@@ -349,11 +361,12 @@ proptest! {
         name in header_name(),
         value in header_value()
     ) {
-        let request = Request::new(&method, &uri).header(&name, &value);
+        let request = Request::new(&method, &uri).unwrap().header(&name, &value).unwrap();
 
-        prop_assert_eq!(request.headers.len(), 1);
-        prop_assert_eq!(&request.headers[0].0, &name);
-        prop_assert_eq!(&request.headers[0].1, &value);
+        let headers = HttpHead::headers(&request);
+        prop_assert_eq!(headers.len(), 1);
+        prop_assert_eq!(&headers[0].0, &name);
+        prop_assert_eq!(&headers[0].1, &value);
     }
 }
 
@@ -364,9 +377,9 @@ proptest! {
         uri in http_uri(),
         body_data in body()
     ) {
-        let request = Request::new(&method, &uri).body(body_data.clone());
+        let request = Request::new(&method, &uri).unwrap().body(body_data.clone());
 
-        prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
+        prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
     }
 }
 
@@ -378,7 +391,9 @@ proptest! {
         value in header_value()
     ) {
         let request = Request::new(&method, &uri)
-            .header("Content-Type", &value);
+            .unwrap()
+            .header("Content-Type", &value)
+            .unwrap();
 
         prop_assert_eq!(request.get_header("content-type"), Some(value.as_str()));
         prop_assert_eq!(request.get_header("CONTENT-TYPE"), Some(value.as_str()));
@@ -395,12 +410,84 @@ proptest! {
         value2 in header_value()
     ) {
         let request = Request::new(&method, &uri)
+            .unwrap()
             .header("X-Custom", &value1)
-            .header("x-custom", &value2);
+            .unwrap()
+            .header("x-custom", &value2)
+            .unwrap();
 
         let values = request.get_headers("X-CUSTOM");
         prop_assert_eq!(values.len(), 2);
         prop_assert!(values.contains(&value1.as_str()));
         prop_assert!(values.contains(&value2.as_str()));
+    }
+}
+
+// ========================================
+// 構築時バリデーションの PBT
+// ========================================
+
+// CRLF を含む method は常に拒否される
+proptest! {
+    #[test]
+    fn prop_request_rejects_method_with_crlf(
+        prefix in token_string(8),
+        infix in prop_oneof![Just("\r\n"), Just("\r"), Just("\n")],
+        suffix in token_string(8),
+    ) {
+        let method = format!("{prefix}{infix}{suffix}");
+        let result = Request::new(&method, "/");
+        let is_invalid_method = matches!(result, Err(EncodeError::InvalidMethod { .. }));
+        prop_assert!(is_invalid_method);
+    }
+}
+
+// CRLF を含む URI は常に拒否される
+proptest! {
+    #[test]
+    fn prop_request_rejects_uri_with_crlf(
+        prefix in "/[a-zA-Z0-9/_.-]{1,16}",
+        infix in prop_oneof![Just("\r\n"), Just("\r"), Just("\n")],
+        suffix in "[a-zA-Z0-9/_.-]{1,16}",
+    ) {
+        let uri = format!("{prefix}{infix}{suffix}");
+        let result = Request::new("GET", &uri);
+        let is_invalid_target = matches!(result, Err(EncodeError::InvalidRequestTarget { .. }));
+        prop_assert!(is_invalid_target);
+    }
+}
+
+// ヘッダー値に CRLF が含まれていれば構築時に拒否される (smuggling 防御)
+proptest! {
+    #[test]
+    fn prop_request_rejects_header_value_with_crlf(
+        prefix in header_value(),
+        infix in prop_oneof![Just("\r\n"), Just("\r"), Just("\n")],
+        suffix in header_value(),
+    ) {
+        let req = Request::new("GET", "/").unwrap();
+        let value = format!("{prefix}{infix}{suffix}");
+        let result = req.header("X-Test", &value);
+        let is_invalid_value = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
+        prop_assert!(is_invalid_value);
+    }
+}
+
+// set_header のアトミック性: 不正な値で失敗しても既存ヘッダーは残る
+proptest! {
+    #[test]
+    fn prop_request_set_header_atomicity_on_invalid_value(
+        old_value in header_value(),
+        new_value in header_value(),
+    ) {
+        let mut req = Request::new("GET", "/").unwrap();
+        req.add_header("X-Test", &old_value).unwrap();
+        // 不正な値で set_header 失敗
+        let invalid = format!("{new_value}\r\nEvil: x");
+        let result = req.set_header("X-Test", &invalid);
+        let is_invalid_value = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
+        prop_assert!(is_invalid_value);
+        // 既存ヘッダーが消えていない
+        prop_assert_eq!(req.get_header("X-Test"), Some(old_value.as_str()));
     }
 }

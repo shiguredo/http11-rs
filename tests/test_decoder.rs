@@ -1368,7 +1368,7 @@ mod direct_buffer_write {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
         let request = decoder.decode().unwrap().expect("request decoded");
-        assert_eq!(request.method, "POST");
-        assert_eq!(request.body.as_deref(), Some(b"hello".as_slice()));
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.body_bytes(), Some(b"hello".as_slice()));
     }
 }

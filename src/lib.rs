@@ -17,8 +17,11 @@
 //!
 //! // リクエストを作成してエンコード
 //! let request = Request::new("GET", "/")
+//!     .unwrap()
 //!     .header("Host", "example.com")
-//!     .header("Connection", "close");
+//!     .unwrap()
+//!     .header("Connection", "close")
+//!     .unwrap();
 //! let bytes = request.encode();
 //! // bytes を送信...
 //!

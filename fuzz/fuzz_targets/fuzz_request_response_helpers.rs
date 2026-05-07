@@ -92,11 +92,15 @@ fn exercise_request(input: FuzzRequest) {
         headers,
         body,
     } = input;
-    let mut request = Request::with_version(&method, &uri, &version);
+    let Ok(mut request) = Request::with_version(&method, &uri, &version) else {
+        return;
+    };
     for (name, value) in &headers {
-        request.add_header(name, value);
+        if request.add_header(name, value).is_err() {
+            return;
+        }
     }
-    request.body = Some(body);
+    let request = request.body(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(request.get_header(name), header_value(&headers, name));

@@ -62,15 +62,21 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             .cloned()
             .collect();
 
-        let mut request = Request::new(&fuzz_req.method, &fuzz_req.uri);
+        let Ok(mut request) = Request::new(&fuzz_req.method, &fuzz_req.uri) else {
+            return;
+        };
         for (name, value) in &valid_headers {
-            request.add_header(name, value);
+            if request.add_header(name, value).is_err() {
+                return;
+            }
         }
 
         // ボディがある場合のみ設定
-        if !fuzz_req.body.is_empty() {
-            request.body = Some(fuzz_req.body.clone());
-        }
+        let request = if !fuzz_req.body.is_empty() {
+            request.body(fuzz_req.body.clone())
+        } else {
+            request
+        };
 
         let encoded = match request.try_encode() {
             Ok(v) => v,
@@ -99,7 +105,11 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
             }
-            assert_eq!(decoded_body, request.body.unwrap_or_default());
+            let expected_body: Vec<u8> = request
+                .body_bytes()
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default();
+            assert_eq!(decoded_body, expected_body);
         }
     }
 

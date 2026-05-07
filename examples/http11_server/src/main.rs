@@ -30,7 +30,8 @@ use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use shiguredo_http11::{
-    BodyKind, BodyProgress, EncodeError, Request, RequestDecoder, RequestHead, Response, StatusCode,
+    BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder, RequestHead, Response,
+    StatusCode,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
@@ -277,20 +278,25 @@ async fn serve_request(
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let h = state.head.take().unwrap();
     let _ = state.body_kind.take();
-    let request = Request {
-        method: h.method,
-        uri: h.uri,
-        version: h.version,
-        headers: h.headers,
-        body: state.body.take(),
+    // examples は外部 crate のため `from_raw_parts` 使用不可。
+    // 構築時バリデーション付きの Request::with_version 経由で再構築する。
+    // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
+    let mut request = Request::with_version(&h.method, &h.uri, &h.version)?;
+    for (name, value) in &h.headers {
+        request.add_header(name, value)?;
+    }
+    let request = if let Some(body) = state.body.take() {
+        request.body(body)
+    } else {
+        request
     };
 
     conn_state.request_count += 1;
 
     info!(
-        method = %request.method,
-        uri = %request.uri,
-        version = %request.version,
+        method = %request.method(),
+        uri = %request.uri(),
+        version = %request.version(),
         peer_addr = %peer_addr,
         tls = tls,
         request_count = conn_state.request_count,
@@ -498,18 +504,17 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+    let is_head = request.method().eq_ignore_ascii_case("HEAD");
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
-    let accept_encoding = request
-        .headers
+    let accept_encoding = HttpHead::headers(request)
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
 
-    let response = match request.uri.as_str() {
+    let response = match request.uri() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
 <html>
@@ -564,14 +569,16 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
 
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
-                request.method, request.uri, request.version
+                request.method(),
+                request.uri(),
+                request.version()
             );
 
-            for (name, value) in &request.headers {
+            for (name, value) in HttpHead::headers(request) {
                 body.push_str(&format!("  {}: {}\n", name, value));
             }
 
-            if let Some(req_body) = request.body.as_deref()
+            if let Some(req_body) = request.body_bytes()
                 && !req_body.is_empty()
             {
                 body.push_str(&format!("\nBody ({} bytes):\n", req_body.len()));

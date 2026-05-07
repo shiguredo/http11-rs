@@ -13,19 +13,16 @@ use shiguredo_http11::{
 
 #[test]
 fn test_encode_request_invalid_version() {
-    // 空文字列はエラー
-    let req = Request::with_version("GET", "/", "");
-    let result = encode_request(&req);
+    // 空文字列は構築時に拒否
+    let result = Request::with_version("GET", "/", "");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 
-    // スペースを含むバージョンはエラー (SP は VCHAR ではない)
-    let req = Request::with_version("GET", "/", "HTTP /1.1");
-    let result = encode_request(&req);
+    // スペースを含むバージョンは構築時に拒否 (SP は VCHAR ではない)
+    let result = Request::with_version("GET", "/", "HTTP /1.1");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 
-    // 制御文字を含むバージョンはエラー
-    let req = Request::with_version("GET", "/", "HTTP\x00/1.1");
-    let result = encode_request(&req);
+    // 制御文字を含むバージョンは構築時に拒否
+    let result = Request::with_version("GET", "/", "HTTP\x00/1.1");
     assert!(matches!(result, Err(EncodeError::InvalidVersion { .. })));
 }
 
@@ -76,8 +73,11 @@ fn test_encode_response_invalid_status_code() {
 fn test_encode_request_with_existing_content_length() {
     // Content-Length が既に設定されている場合は追加しない
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .body(b"hello".to_vec());
     let encoded = encode_request(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -93,7 +93,9 @@ fn test_encode_request_with_existing_content_length() {
 fn test_encode_post_with_explicit_empty_body_emits_content_length_zero() {
     // POST + body=Some(vec![]) なら Content-Length: 0 を自動付与する
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .body(Vec::new());
     let encoded = encode_request(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -108,10 +110,11 @@ fn test_encode_post_with_explicit_empty_body_emits_content_length_zero() {
 fn test_encode_post_without_body_emits_no_content_length() {
     // POST + body=None なら Content-Length は自動付与しない
     // (RFC 9110 8.6 はメソッド意味論で content が想定されるかは呼び出し側の判断とする)
-    let mut req = Request::new("POST", "/").header("Host", "example.com");
-    assert!(req.body.is_none());
-    // 念のため明示的に None を確認
-    req.body = None;
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
+    assert!(req.body_bytes().is_none());
     let encoded = encode_request(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -124,7 +127,10 @@ fn test_encode_post_without_body_emits_no_content_length() {
 #[test]
 fn test_encode_get_without_body_emits_no_content_length() {
     // GET + body=None (デフォルト) は Content-Length を自動付与しない
-    let req = Request::new("GET", "/").header("Host", "example.com");
+    let req = Request::new("GET", "/")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let encoded = encode_request(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -192,7 +198,9 @@ fn test_encode_chunks_various_sizes() {
 
 #[test]
 fn test_encode_request_headers_ignores_body() {
-    let req = Request::with_version("POST", "/", "HTTP/1.0").body(b"hello world".to_vec());
+    let req = Request::with_version("POST", "/", "HTTP/1.0")
+        .unwrap()
+        .body(b"hello world".to_vec());
     let encoded = encode_request_headers(&req).unwrap();
     let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -219,8 +227,11 @@ fn test_encode_response_headers_ignores_body() {
 #[test]
 fn test_encode_request_te_only_ok() {
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
-        .header("Transfer-Encoding", "chunked");
+        .unwrap()
+        .header("Transfer-Encoding", "chunked")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -228,8 +239,11 @@ fn test_encode_request_te_only_ok() {
 #[test]
 fn test_encode_request_cl_only_ok() {
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "100")
+        .unwrap()
         .body(vec![0u8; 100]);
     let result = encode_request(&req);
     assert!(result.is_ok());
@@ -282,7 +296,10 @@ fn test_encode_response_205_with_cl_zero_ok() {
 #[test]
 fn test_encode_request_invalid_host_error() {
     // 不正な Host ヘッダー値はエラー
-    let req = Request::new("GET", "/").header("Host", "exam ple.com");
+    let req = Request::new("GET", "/")
+        .unwrap()
+        .header("Host", "exam ple.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(result, Err(EncodeError::InvalidHostHeader { .. })));
 }
@@ -290,7 +307,10 @@ fn test_encode_request_invalid_host_error() {
 #[test]
 fn test_encode_request_host_authority_mismatch_error() {
     // Host と URI authority の不一致はエラー
-    let req = Request::new("GET", "http://example.com/path").header("Host", "other.com");
+    let req = Request::new("GET", "http://example.com/path")
+        .unwrap()
+        .header("Host", "other.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -301,7 +321,10 @@ fn test_encode_request_host_authority_mismatch_error() {
 #[test]
 fn test_encode_request_host_authority_match_ok() {
     // Host と URI authority の一致は OK
-    let req = Request::new("GET", "http://example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "http://example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -309,7 +332,10 @@ fn test_encode_request_host_authority_match_ok() {
 #[test]
 fn test_encode_request_empty_host_ok() {
     // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
-    let req = Request::new("GET", "/").header("Host", "");
+    let req = Request::new("GET", "/")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -320,12 +346,12 @@ fn test_encode_request_empty_host_ok() {
 
 #[test]
 fn test_encode_request_crlf_in_method() {
+    // 不正な method は構築時に拒否される
     for method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
-        let req = Request::new(method, "/").header("Host", "example.com");
-        let result = encode_request(&req);
+        let result = Request::new(method, "/");
         assert!(
-            result.is_err(),
-            "CRLF in method should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidMethod { .. })),
+            "CRLF in method should be rejected at construction: {:?}",
             method
         );
     }
@@ -333,23 +359,29 @@ fn test_encode_request_crlf_in_method() {
 
 #[test]
 fn test_encode_request_crlf_in_uri() {
+    // 不正な URI は構築時に拒否される
     for uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
-        let req = Request::new("GET", uri).header("Host", "example.com");
-        let result = encode_request(&req);
-        assert!(result.is_err(), "CRLF in URI should be rejected: {:?}", uri);
+        let result = Request::new("GET", uri);
+        assert!(
+            matches!(result, Err(EncodeError::InvalidRequestTarget { .. })),
+            "CRLF in URI should be rejected at construction: {:?}",
+            uri
+        );
     }
 }
 
 #[test]
 fn test_encode_request_crlf_in_header_name() {
+    // 不正なヘッダー名は構築時に拒否される
     for name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
         let req = Request::new("GET", "/")
+            .unwrap()
             .header("Host", "example.com")
-            .header(name, "value");
-        let result = encode_request(&req);
+            .unwrap();
+        let result = req.header(name, "value");
         assert!(
-            result.is_err(),
-            "CRLF in header name should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidHeaderName { .. })),
+            "CRLF in header name should be rejected at construction: {:?}",
             name
         );
     }
@@ -357,14 +389,16 @@ fn test_encode_request_crlf_in_header_name() {
 
 #[test]
 fn test_encode_request_crlf_in_header_value() {
+    // 不正なヘッダー値は構築時に拒否される
     for value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
         let req = Request::new("GET", "/")
+            .unwrap()
             .header("Host", "example.com")
-            .header("X-Test", value);
-        let result = encode_request(&req);
+            .unwrap();
+        let result = req.header("X-Test", value);
         assert!(
-            result.is_err(),
-            "CRLF in header value should be rejected: {:?}",
+            matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
+            "CRLF in header value should be rejected at construction: {:?}",
             value
         );
     }
@@ -372,11 +406,16 @@ fn test_encode_request_crlf_in_header_value() {
 
 #[test]
 fn test_encode_request_nul_in_header_value() {
+    // NUL を含むヘッダー値は構築時に拒否される
     let req = Request::new("GET", "/")
+        .unwrap()
         .header("Host", "example.com")
-        .header("X-Test", "evil\0value");
-    let result = encode_request(&req);
-    assert!(result.is_err(), "NUL in header value should be rejected");
+        .unwrap();
+    let result = req.header("X-Test", "evil\0value");
+    assert!(
+        matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
+        "NUL in header value should be rejected at construction"
+    );
 }
 
 #[test]
@@ -427,8 +466,10 @@ fn test_encode_response_crlf_in_header_value() {
 #[test]
 fn test_encode_request_http_userinfo_rejected() {
     // RFC 9110 Section 4.2.4: http URI の userinfo は MUST NOT
-    let req =
-        Request::new("GET", "http://user:pass@example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "http://user:pass@example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -438,7 +479,10 @@ fn test_encode_request_http_userinfo_rejected() {
 #[test]
 fn test_encode_request_https_userinfo_rejected() {
     // RFC 9110 Section 4.2.4: https URI の userinfo は MUST NOT
-    let req = Request::new("GET", "https://user@example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "https://user@example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -447,8 +491,10 @@ fn test_encode_request_https_userinfo_rejected() {
 
 #[test]
 fn test_encode_request_http_userinfo_with_port_rejected() {
-    let req =
-        Request::new("GET", "http://user@example.com:8080/path").header("Host", "example.com:8080");
+    let req = Request::new("GET", "http://user@example.com:8080/path")
+        .unwrap()
+        .header("Host", "example.com:8080")
+        .unwrap();
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -458,7 +504,10 @@ fn test_encode_request_http_userinfo_with_port_rejected() {
 #[test]
 fn test_encode_request_non_http_scheme_userinfo_allowed() {
     // http/https 以外のスキームでは userinfo は許可
-    let req = Request::new("GET", "ftp://user@example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "ftp://user@example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     assert!(encode_request(&req).is_ok());
 }
 
@@ -487,8 +536,11 @@ fn test_encode_response_content_length_mismatch() {
 fn test_encode_request_content_length_mismatch() {
     // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "10")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(
@@ -614,8 +666,10 @@ fn test_encode_response_omit_body_with_explicit_empty_body_does_not_add_content_
 #[test]
 fn test_encode_request_absolute_form_at_in_userinfo() {
     // RFC 9110 Section 4.2.4: userinfo の "@" は http URI で禁止
-    let req =
-        Request::new("GET", "http://user%40name@example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "http://user%40name@example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -651,25 +705,37 @@ fn test_encode_request_absolute_form_at_in_userinfo() {
 fn test_encode_request_connect_accepts_body_headers() {
     // body 付き + Content-Length
     let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
         .header("Host", "example.com:443")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .body(b"hello".to_vec());
     assert!(encode_request(&req).is_ok());
 
     // Content-Length: 0 (content がないことの明示)
     let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
         .header("Host", "example.com:443")
-        .header("Content-Length", "0");
+        .unwrap()
+        .header("Content-Length", "0")
+        .unwrap();
     assert!(encode_request(&req).is_ok());
 
     // Transfer-Encoding: chunked
     let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
         .header("Host", "example.com:443")
-        .header("Transfer-Encoding", "chunked");
+        .unwrap()
+        .header("Transfer-Encoding", "chunked")
+        .unwrap();
     assert!(encode_request(&req).is_ok());
 
     // body なし (最も一般的なケース)
-    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
+        .header("Host", "example.com:443")
+        .unwrap();
     assert!(encode_request(&req).is_ok());
 }
 
@@ -680,14 +746,20 @@ fn test_encode_request_connect_accepts_body_headers() {
 fn test_encode_request_headers_connect_accepts_content_length() {
     // Content-Length: 0
     let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
         .header("Host", "example.com:443")
-        .header("Content-Length", "0");
+        .unwrap()
+        .header("Content-Length", "0")
+        .unwrap();
     assert!(encode_request_headers(&req).is_ok());
 
     // Content-Length: N > 0
     let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
         .header("Host", "example.com:443")
-        .header("Content-Length", "10");
+        .unwrap()
+        .header("Content-Length", "10")
+        .unwrap();
     assert!(encode_request_headers(&req).is_ok());
 }
 
@@ -698,7 +770,10 @@ fn test_encode_request_headers_connect_accepts_content_length() {
 #[test]
 fn test_encode_request_connect_authority_form_ok() {
     // CONNECT は authority-form (host:port) のみ許可
-    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
+        .header("Host", "example.com:443")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -706,7 +781,10 @@ fn test_encode_request_connect_authority_form_ok() {
 #[test]
 fn test_encode_request_connect_origin_form_error() {
     // CONNECT で origin-form は不正
-    let req = Request::new("CONNECT", "/path").header("Host", "example.com");
+    let req = Request::new("CONNECT", "/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -717,7 +795,10 @@ fn test_encode_request_connect_origin_form_error() {
 #[test]
 fn test_encode_request_connect_absolute_form_error() {
     // CONNECT で absolute-form は不正
-    let req = Request::new("CONNECT", "http://example.com/path").header("Host", "example.com");
+    let req = Request::new("CONNECT", "http://example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -728,7 +809,10 @@ fn test_encode_request_connect_absolute_form_error() {
 #[test]
 fn test_encode_request_connect_asterisk_form_error() {
     // CONNECT で asterisk-form は不正
-    let req = Request::new("CONNECT", "*").header("Host", "example.com");
+    let req = Request::new("CONNECT", "*")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -739,7 +823,10 @@ fn test_encode_request_connect_asterisk_form_error() {
 #[test]
 fn test_encode_request_options_asterisk_form_ok() {
     // OPTIONS * は asterisk-form 許可
-    let req = Request::new("OPTIONS", "*").header("Host", "example.com");
+    let req = Request::new("OPTIONS", "*")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -747,7 +834,10 @@ fn test_encode_request_options_asterisk_form_ok() {
 #[test]
 fn test_encode_request_get_asterisk_form_error() {
     // GET で asterisk-form は不正
-    let req = Request::new("GET", "*").header("Host", "example.com");
+    let req = Request::new("GET", "*")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -758,7 +848,10 @@ fn test_encode_request_get_asterisk_form_error() {
 #[test]
 fn test_encode_request_get_authority_form_error() {
     // GET で authority-form は不正
-    let req = Request::new("GET", "example.com:80").header("Host", "example.com");
+    let req = Request::new("GET", "example.com:80")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -773,7 +866,7 @@ fn test_encode_request_get_authority_form_error() {
 #[test]
 fn test_encode_request_absolute_form_without_double_slash_ok() {
     // "://" を含まない absolute-URI (urn:isbn:...) は absolute-form
-    let req = Request::with_version("GET", "urn:isbn:0451450523", "HTTP/1.0");
+    let req = Request::with_version("GET", "urn:isbn:0451450523", "HTTP/1.0").unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -781,7 +874,7 @@ fn test_encode_request_absolute_form_without_double_slash_ok() {
 #[test]
 fn test_encode_request_absolute_form_urn_nid_nss() {
     // urn:nid:nss 形式の absolute-URI
-    let req = Request::with_version("GET", "urn:example:animal:ferret:nose", "HTTP/1.0");
+    let req = Request::with_version("GET", "urn:example:animal:ferret:nose", "HTTP/1.0").unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -793,7 +886,10 @@ fn test_encode_request_absolute_form_urn_nid_nss() {
 #[test]
 fn test_encode_request_authority_less_uri_non_empty_host_error() {
     // authority がない absolute-form で Host が非空はエラー
-    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "example.com");
+    let req = Request::new("GET", "urn:isbn:0451450523")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -804,7 +900,10 @@ fn test_encode_request_authority_less_uri_non_empty_host_error() {
 #[test]
 fn test_encode_request_authority_less_uri_empty_host_ok() {
     // authority がない absolute-form で Host が空は OK
-    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "");
+    let req = Request::new("GET", "urn:isbn:0451450523")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -816,7 +915,10 @@ fn test_encode_request_authority_less_uri_empty_host_ok() {
 #[test]
 fn test_encode_request_http_empty_host_error() {
     // http:///path は空 host で不正
-    let req = Request::new("GET", "http:///path").header("Host", "");
+    let req = Request::new("GET", "http:///path")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -827,7 +929,10 @@ fn test_encode_request_http_empty_host_error() {
 #[test]
 fn test_encode_request_https_port_only_host_error() {
     // https://:443/path は空 host で不正
-    let req = Request::new("GET", "https://:443/path").header("Host", "");
+    let req = Request::new("GET", "https://:443/path")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -838,7 +943,10 @@ fn test_encode_request_https_port_only_host_error() {
 #[test]
 fn test_encode_request_authority_form_still_works() {
     // 通常の authority-form (host:port) は引き続き authority-form と判定
-    let req = Request::new("CONNECT", "example.com:443").header("Host", "example.com:443");
+    let req = Request::new("CONNECT", "example.com:443")
+        .unwrap()
+        .header("Host", "example.com:443")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -850,7 +958,10 @@ fn test_encode_request_authority_form_still_works() {
 #[test]
 fn test_encode_request_http_without_double_slash_error() {
     // http:foo は "://" がないので不正
-    let req = Request::new("GET", "http:foo").header("Host", "");
+    let req = Request::new("GET", "http:foo")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -861,7 +972,10 @@ fn test_encode_request_http_without_double_slash_error() {
 #[test]
 fn test_encode_request_https_without_double_slash_error() {
     // https:path は "://" がないので不正
-    let req = Request::new("GET", "https:path").header("Host", "");
+    let req = Request::new("GET", "https:path")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -872,7 +986,10 @@ fn test_encode_request_https_without_double_slash_error() {
 #[test]
 fn test_encode_request_non_http_scheme_without_double_slash_ok() {
     // urn:isbn:xxx は http/https ではないので OK
-    let req = Request::new("GET", "urn:isbn:0451450523").header("Host", "");
+    let req = Request::new("GET", "urn:isbn:0451450523")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -884,7 +1001,10 @@ fn test_encode_request_non_http_scheme_without_double_slash_ok() {
 #[test]
 fn test_encode_request_connect_userinfo_error() {
     // user@example.com:443 は authority-form として不正 (userinfo を含む)
-    let req = Request::new("CONNECT", "user@example.com:443").header("Host", "example.com:443");
+    let req = Request::new("CONNECT", "user@example.com:443")
+        .unwrap()
+        .header("Host", "example.com:443")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -896,7 +1016,10 @@ fn test_encode_request_connect_userinfo_error() {
 #[test]
 fn test_encode_request_connect_empty_host_error() {
     // :443 は authority-form として不正 (ホストが空)
-    let req = Request::new("CONNECT", ":443").header("Host", "");
+    let req = Request::new("CONNECT", ":443")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_err());
 }
@@ -908,7 +1031,10 @@ fn test_encode_request_connect_empty_host_error() {
 #[test]
 fn test_encode_request_empty_host_with_authority_uri_error() {
     // URI に authority があるのに Host が空は不正
-    let req = Request::new("GET", "http://example.com/path").header("Host", "");
+    let req = Request::new("GET", "http://example.com/path")
+        .unwrap()
+        .header("Host", "")
+        .unwrap();
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -919,7 +1045,10 @@ fn test_encode_request_empty_host_with_authority_uri_error() {
 #[test]
 fn test_encode_request_matching_host_with_authority_uri_ok() {
     // URI の authority と Host が一致する場合は OK
-    let req = Request::new("GET", "http://example.com/path").header("Host", "example.com");
+    let req = Request::new("GET", "http://example.com/path")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap();
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -932,8 +1061,11 @@ fn test_encode_request_matching_host_with_authority_uri_ok() {
 fn test_encode_request_non_numeric_content_length() {
     // 非数値の Content-Length はエラー
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "abc")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(
@@ -960,9 +1092,13 @@ fn test_encode_response_non_numeric_content_length() {
 fn test_encode_request_duplicate_content_length_mismatch() {
     // 重複 Content-Length で値が不一致はエラー
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .header("Content-Length", "10")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
@@ -985,9 +1121,13 @@ fn test_encode_response_duplicate_content_length_mismatch() {
 fn test_encode_request_duplicate_content_length_same_value() {
     // 同一値の重複 Content-Length は通過する
     let req = Request::new("POST", "/")
+        .unwrap()
         .header("Host", "example.com")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .header("Content-Length", "5")
+        .unwrap()
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(result.is_ok());
@@ -1054,7 +1194,9 @@ fn test_encode_request_content_length_decimal_boundaries() {
     for &len in &[0usize, 9, 10, 99, 100] {
         let body = vec![b'x'; len];
         let req = Request::new("POST", "/")
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .body(body.clone());
         let encoded = encode_request(&req).unwrap();
         let encoded_str = core::str::from_utf8(&encoded).unwrap();

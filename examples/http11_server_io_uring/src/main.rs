@@ -31,7 +31,7 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{EncodeError, RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
@@ -648,9 +648,9 @@ fn handle_read(
                 request_count += 1;
 
                 info!(
-                    method = %request.method,
-                    uri = %request.uri,
-                    version = %request.version,
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    version = %request.version(),
                     peer_addr = %peer_addr,
                     request_count,
                     "Request received (kTLS)"
@@ -822,18 +822,17 @@ fn build_response(
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+    let is_head = request.method().eq_ignore_ascii_case("HEAD");
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
-    let accept_encoding = request
-        .headers
+    let accept_encoding = HttpHead::headers(request)
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
 
-    let response = match request.uri.as_str() {
+    let response = match request.uri() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
 <html>
@@ -887,16 +886,20 @@ fn build_response(
 
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
-                request.method, request.uri, request.version
+                request.method(),
+                request.uri(),
+                request.version()
             );
 
-            for (name, value) in &request.headers {
+            for (name, value) in HttpHead::headers(request) {
                 body.push_str(&format!("  {}: {}\n", name, value));
             }
 
-            if !request.body.is_empty() {
-                body.push_str(&format!("\nBody ({} bytes):\n", request.body.len()));
-                if let Ok(text) = std::str::from_utf8(&request.body) {
+            if let Some(req_body) = request.body_bytes()
+                && !req_body.is_empty()
+            {
+                body.push_str(&format!("\nBody ({} bytes):\n", req_body.len()));
+                if let Ok(text) = std::str::from_utf8(req_body) {
                     body.push_str(text);
                 } else {
                     body.push_str("[binary data]");
