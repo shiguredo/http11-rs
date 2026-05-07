@@ -23,6 +23,7 @@
 
 mod compressor;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -99,9 +100,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_addr = listener.local_addr()?;
     // テストハーネスが parse する machine-readable な行を stdout に出す
     println!("LISTENING_PORT={}", local_addr.port());
-    // 子プロセス pipe 経由で確実に届けるため flush する
-    use std::io::Write;
-    std::io::stdout().flush().ok();
+    // 子プロセス pipe 経由で確実に届けるため flush する。
+    // 失敗するとテスト側が LISTENING_PORT を読めずタイムアウトでハングするため expect で明示的に panic する
+    std::io::stdout().flush().expect("stdout flush failed");
     let addr = local_addr.to_string();
 
     if options.tls {
