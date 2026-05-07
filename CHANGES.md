@@ -56,6 +56,15 @@
   - decoder / encoder の呼び出し側で reason-phrase absent (空文字列) はスキップする方式に統一する
   - reverse proxy 等の経路で「decoder が受理した空 reason_phrase の Response を encoder で再送信する」ケースを RFC 9112 Section 4 に準拠したまま透過できる
   - @voluntas
+- [UPDATE] `Response`、`Request`、`HttpHead` の委譲メソッドの doc に RFC 節番号を明記する
+  - 対象メソッド: `omit_body` / `is_body_omitted` / `is_keep_alive` / `is_chunked` / `content_length` / `connection`
+  - `is_keep_alive` の doc に判定ロジックの全体像 (`close` 優先、version フォールバック) を明記し、RFC 9112 Section 9.6 (close option) の参照を追加する
+  - `content_length` の doc に「最初のヘッダー値のみを返す」挙動と RFC 9110 Section 17.5 の整数変換オーバーフロー防止要件を明記する
+  - `connection` の doc に「そのままの &str で返し、トークン分割は行わない」挙動を明記する
+  - `omit_body` フィールドに RFC 9110 Section 9.3.2 / Section 6.4.1 の参照を追加し、1xx/204/304 はエンコーダーが自動抑止するため不要であることも明記する
+  - @voluntas
+- [FIX] `HttpHead::is_keep_alive` の doc 内の誤った RFC 節番号 (Section 9.1 → Section 9.3 / Section 7.6.1) を修正する
+  - @voluntas
 
 ## 2026.3.0
 

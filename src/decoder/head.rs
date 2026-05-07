@@ -36,15 +36,38 @@ pub trait HttpHead {
             .any(|(n, _)| n.eq_ignore_ascii_case(name))
     }
 
-    /// Connection ヘッダーの値を取得
+    /// Connection ヘッダーの値を取得 (RFC 9110 Section 7.6.1)
+    ///
+    /// 最初の `Connection` ヘッダー値をそのままの `&str` で返す。
+    /// カンマ区切りトークンリストの分割は行わない。
+    /// 戻り値から自前でトークン分割する場合は `split(',')` を使用すること。
+    /// `Connection` ヘッダーが存在しない場合は `None` を返す。
     fn connection(&self) -> Option<&str> {
         self.get_header("Connection")
     }
 
     /// キープアライブ接続かどうかを判定
     ///
-    /// RFC 9110 Section 9.1: 複数の Connection ヘッダーはリストとして結合して処理する。
-    /// close トークンがいずれかのヘッダーに存在すれば false を返す。
+    /// 判定ロジックは `Connection` ヘッダーのトークンリストを評価した後、
+    /// プロトコルバージョンにフォールバックする:
+    ///
+    /// - RFC 9112 Section 9.3: 持続性の判定基準
+    /// - RFC 9112 Section 9.6: close connection option の定義
+    /// - RFC 9110 Section 7.6.1: Connection ヘッダーの定義
+    /// - RFC 9110 Section 5.3: 複数ヘッダー行の結合規則
+    ///
+    /// 判定順序:
+    ///
+    /// 1. `Connection` ヘッダーのいずれかに `close` トークンが存在 → `false`
+    ///    (`keep-alive` が同時に存在しても `close` が優先される)
+    /// 2. `Connection` ヘッダーのいずれかに `keep-alive` トークンが存在 → `true`
+    /// 3. それ以外 → `version` 文字列が `/1.1` で終わる場合のみ `true`
+    ///
+    /// 注: HTTP/1.1 でも `Connection: close` が指定された場合は keep-alive にならない。
+    /// HTTP/1.0 で `Connection: keep-alive` がない場合も keep-alive にならない。
+    /// RFC 9112 Section 9.3 の HTTP/1.0 keep-alive 持続に含まれる proxy 条件
+    /// (recipient is not a proxy OR message is a response) は本メソッドでは区別しない。
+    /// これは上位層の責務である。
     fn is_keep_alive(&self) -> bool {
         let mut has_keep_alive = false;
         // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
@@ -72,6 +95,12 @@ pub trait HttpHead {
     }
 
     /// Content-Length ヘッダーの値を取得
+    /// (RFC 9110 Section 8.6 / RFC 9112 Section 6.2)
+    ///
+    /// 最初の `Content-Length` ヘッダー値を `u64` としてパースして返す。
+    /// RFC 9110 Section 5.3 により複数ヘッダー行の生成は禁止されているため、
+    /// 最初の値のみを参照する。
+    /// パース不能な場合は `None` を返す。
     fn content_length(&self) -> Option<u64> {
         self.get_header("Content-Length")
             .and_then(|v| v.parse::<u64>().ok())

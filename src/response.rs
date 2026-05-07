@@ -16,7 +16,16 @@ use alloc::vec::Vec;
 /// - `Some(data)`: 通常のボディ (`Content-Length: N` を自動付与)
 ///
 /// `omit_body` は body の有無とは直交する。HEAD レスポンスのように
-/// `Content-Length` は表現長として残しつつメッセージボディを送らない場合に使う。
+/// メッセージボディを送らない場合に使う
+/// (RFC 9110 Section 9.3.2 / RFC 9110 Section 6.4.1)。
+/// `Content-Length` は表現長として残す。
+///
+/// 注: 1xx/204/304 はエンコーダーが自動的にボディを抑止するため
+/// `omit_body` の設定は不要。
+/// 注: 304 は 1xx/204 と異なり Transfer-Encoding / Content-Length ヘッダーの
+/// 設定が拒否されないが、ボディ送出自体は抑止される (encoder.rs の
+/// `response_status_has_body` が false を返す)。
+/// また pending/0018 で encoder 側への移譲が検討されており、将来撤去される可能性がある。
 ///
 /// 全フィールドは非公開で、構築時バリデーション付きの `new` / `with_version` /
 /// `header` / `add_header` / `set_header` 経由でのみ操作できる。`#[non_exhaustive]`
@@ -29,6 +38,15 @@ pub struct Response {
     reason_phrase: String,
     headers: Vec<(String, String)>,
     body: Option<Vec<u8>>,
+    // ボディ送信を抑止するフラグ (HEAD レスポンス用)
+    //
+    // HEAD レスポンスはメッセージボディを送信しない (RFC 9110 Section 9.3.2 MUST NOT /
+    // RFC 9110 Section 6.4.1 "never include content")。
+    // 1xx/204/304 はエンコーダーが自動的にボディを抑止するため、本フラグの設定は不要。
+    // `pub fn omit_body(omit: bool)` 経由でのみ設定可能。
+    //
+    // 注: pending/0018 で encoder 側のフラグへの移譲が検討されており、
+    // 本フィールドは将来撤去される可能性がある。
     omit_body: bool,
 }
 
@@ -216,8 +234,19 @@ impl Response {
 
     /// ボディ送信を抑止する (ビルダーパターン)
     ///
-    /// HEAD レスポンス (RFC 9110 Section 9.3.2) で使用する。ボディは送信しないが、Content-Length ヘッダーは
-    /// 必要に応じて明示的に設定できる。
+    /// HEAD リクエストへのレスポンスでメッセージボディを送信しない場合に使用する
+    /// (RFC 9110 Section 9.3.2 / RFC 9110 Section 6.4.1)。
+    ///
+    /// 1xx/204/304 レスポンスはエンコーダーが自動的にボディを抑止するため、
+    /// 本メソッドの呼び出しは不要。
+    ///
+    /// `body` に非空データが設定されている場合、Content-Length は
+    /// body 長から自動付与される (ただしボディ実体は送信されない)。
+    /// `body: Some(vec![])` の場合は Content-Length の自動付与も抑止される
+    /// (encoder.rs `should_auto_emit_content_length_for_response` 参照)。
+    /// `body: None` の場合は Content-Length の自動付与も抑止される。
+    /// 任意の Content-Length を指定したい場合は、本メソッド呼び出し後に
+    /// `header("Content-Length", value)?` で手動設定する。
     pub fn omit_body(mut self, omit: bool) -> Self {
         self.omit_body = omit;
         self
@@ -385,6 +414,11 @@ impl Response {
     }
 
     /// ボディ送信抑止フラグを取得 (HEAD レスポンス用)
+    ///
+    /// RFC 9110 Section 6.4.1 / RFC 9110 Section 9.3.2 に基づき、
+    /// HEAD リクエストへのレスポンスでメッセージボディを送信しない場合に `true` を返す。
+    /// 1xx/204/304 等、エンコーダーが自動的にボディを抑止するレスポンスでは
+    /// 本フラグは常に `false` のままでも問題ない。
     pub fn is_body_omitted(&self) -> bool {
         self.omit_body
     }
@@ -414,29 +448,85 @@ impl Response {
             .expect("Response::status_code is validated to 100..=599 at construction")
     }
 
-    /// Connection ヘッダーの値を取得
+    /// Connection ヘッダーの値を取得 (RFC 9110 Section 7.6.1)
+    ///
+    /// 最初の `Connection` ヘッダー値をそのままの `&str` で返す。
+    /// カンマ区切りトークンリストの分割は行わない。
+    /// `close` / `keep-alive` 等のトークン判定は `is_keep_alive()` が行う。
+    /// 戻り値から自前でトークン分割する場合は `split(',')` を使用すること。
+    ///
+    /// `Connection` ヘッダーが存在しない場合は `None` を返す。
     pub fn connection(&self) -> Option<&str> {
         HttpHead::connection(self)
     }
 
     /// キープアライブ接続かどうかを判定
     ///
-    /// HTTP/1.1 ではデフォルトでキープアライブ
-    /// HTTP/1.0 では Connection: keep-alive が必要
-    /// Connection ヘッダーはカンマ区切りのトークンリストとして扱う (RFC 9110)
+    /// 判定ロジックは `Connection` ヘッダーのトークンリストを評価した後、
+    /// プロトコルバージョンにフォールバックする:
+    ///
+    /// - RFC 9112 Section 9.3: 持続性の判定基準
+    /// - RFC 9112 Section 9.6: close connection option の定義
+    /// - RFC 9110 Section 7.6.1: Connection ヘッダーの定義
+    /// - RFC 9110 Section 5.3: 複数ヘッダー行の結合規則
+    ///
+    /// 判定順序:
+    ///
+    /// 1. `Connection` ヘッダーのいずれかに `close` トークンが存在 → `false`
+    ///    (`keep-alive` が同時に存在しても `close` が優先される)
+    /// 2. `Connection` ヘッダーのいずれかに `keep-alive` トークンが存在 → `true`
+    /// 3. それ以外 → `version` 文字列が `/1.1` で終わる場合のみ `true`
+    ///
+    /// `Connection` ヘッダーはカンマ区切りトークンリストとして扱う
+    /// (RFC 9110 Section 7.6.1)。
+    ///
+    /// 注: HTTP/1.1 でも `Connection: close` が指定された場合は keep-alive にならない。
+    /// HTTP/1.0 で `Connection: keep-alive` がない場合も keep-alive にならない。
+    /// RFC 9112 Section 9.3 の HTTP/1.0 keep-alive 持続に含まれる proxy 条件
+    /// (recipient is not a proxy OR message is a response) は本メソッドでは区別しない。
+    /// これは上位層の責務である。
+    ///
+    /// 詳細は委譲先 `HttpHead::is_keep_alive` を参照。
     pub fn is_keep_alive(&self) -> bool {
         HttpHead::is_keep_alive(self)
     }
 
-    /// Content-Length ヘッダーの値を取得
+    /// `Content-Length` ヘッダーの値を取得
+    /// (RFC 9110 Section 8.6 / RFC 9112 Section 6.2)
+    ///
+    /// 最初の `Content-Length` ヘッダー値を `u64` としてパースして返す。
+    /// 複数ヘッダーが存在しても最初の値のみ参照する
+    /// (RFC 9110 Section 5.3 により、`Content-Length` の複数フィールド行生成は
+    /// そもそも禁止されている)。
+    ///
+    /// 値がパース不能な場合は `None` を返す。
+    ///
+    /// 注: `Content-Length` の型は `u64` で、RFC 9110 Section 8.6 の
+    /// 「整数変換オーバーフロー防止 (Section 17.5)」要件に基づく。
+    /// RFC 9110 Section 17.5 (Attacks via Protocol Element Length) は
+    /// 算術オーバーフロー・DoS の一般的脅威を論じている。
+    ///
+    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.1:
+    /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
+    /// は本メソッドの責務外であり、呼び出し側で判定する。
+    ///
+    /// 詳細は委譲先 `HttpHead::content_length` を参照。
     pub fn content_length(&self) -> Option<u64> {
         HttpHead::content_length(self)
     }
 
-    /// Transfer-Encoding が chunked かどうかを判定
+    /// Transfer-Encoding が chunked かどうかを判定 (RFC 9112 Section 6.3)
     ///
-    /// Transfer-Encoding リストの最後が chunked かどうかを確認する (RFC 9112)
-    /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
+    /// 全 `Transfer-Encoding` ヘッダーを走査し、RFC 9110 Section 5.3 に従い
+    /// 単一のトークンリストとして扱い、最後のトークンが `chunked` かどうかを確認する。
+    /// RFC 9112 Section 6.3 #4 の "chunked transfer coding is the final encoding" に基づく。
+    ///
+    /// 例:
+    /// - `Transfer-Encoding: chunked` → `true`
+    /// - `Transfer-Encoding: gzip, chunked` → `true`
+    /// - `Transfer-Encoding: chunked, gzip` → `false`
+    ///
+    /// 詳細は委譲先 `HttpHead::is_chunked` を参照。
     pub fn is_chunked(&self) -> bool {
         HttpHead::is_chunked(self)
     }
