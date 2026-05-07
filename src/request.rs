@@ -90,29 +90,85 @@ impl Request {
         HttpHead::has_header(self, name)
     }
 
-    /// Connection ヘッダーの値を取得
+    /// Connection ヘッダーの値を取得 (RFC 9110 Section 7.6.1)
+    ///
+    /// 最初の `Connection` ヘッダー値をそのままの `&str` で返す。
+    /// カンマ区切りトークンリストの分割は行わない。
+    /// `close` / `keep-alive` 等のトークン判定は `is_keep_alive()` が行う。
+    /// 戻り値から自前でトークン分割する場合は `split(',')` を使用すること。
+    ///
+    /// `Connection` ヘッダーが存在しない場合は `None` を返す。
     pub fn connection(&self) -> Option<&str> {
         HttpHead::connection(self)
     }
 
     /// キープアライブ接続かどうかを判定
     ///
-    /// HTTP/1.1 ではデフォルトでキープアライブ
-    /// HTTP/1.0 では Connection: keep-alive が必要
-    /// Connection ヘッダーはカンマ区切りのトークンリストとして扱う (RFC 9110)
+    /// 判定ロジックは `Connection` ヘッダーのトークンリストを評価した後、
+    /// プロトコルバージョンにフォールバックする:
+    ///
+    /// - RFC 9112 Section 9.3: 持続性の判定基準
+    /// - RFC 9112 Section 9.6: close connection option の定義
+    /// - RFC 9110 Section 7.6.1: Connection ヘッダーの定義
+    /// - RFC 9110 Section 5.3: 複数ヘッダー行の結合規則
+    ///
+    /// 判定順序:
+    ///
+    /// 1. `Connection` ヘッダーのいずれかに `close` トークンが存在 → `false`
+    ///    (`keep-alive` が同時に存在しても `close` が優先される)
+    /// 2. `Connection` ヘッダーのいずれかに `keep-alive` トークンが存在 → `true`
+    /// 3. それ以外 → `version` 文字列が `/1.1` で終わる場合のみ `true`
+    ///
+    /// `Connection` ヘッダーはカンマ区切りトークンリストとして扱う
+    /// (RFC 9110 Section 7.6.1)。
+    ///
+    /// 注: HTTP/1.1 でも `Connection: close` が指定された場合は keep-alive にならない。
+    /// HTTP/1.0 で `Connection: keep-alive` がない場合も keep-alive にならない。
+    /// RFC 9112 Section 9.3 の HTTP/1.0 keep-alive 持続に含まれる proxy 条件
+    /// (recipient is not a proxy OR message is a response) は本メソッドでは区別しない。
+    /// これは上位層の責務である。
+    ///
+    /// 詳細は委譲先 `HttpHead::is_keep_alive` を参照。
     pub fn is_keep_alive(&self) -> bool {
         HttpHead::is_keep_alive(self)
     }
 
-    /// Content-Length ヘッダーの値を取得
+    /// `Content-Length` ヘッダーの値を取得
+    /// (RFC 9110 Section 8.6 / RFC 9112 Section 6.2)
+    ///
+    /// 最初の `Content-Length` ヘッダー値を `u64` としてパースして返す。
+    /// 複数ヘッダーが存在しても最初の値のみ参照する
+    /// (RFC 9110 Section 5.3 により、`Content-Length` の複数フィールド行生成は
+    /// そもそも禁止されている)。
+    ///
+    /// 値がパース不能な場合は `None` を返す。
+    ///
+    /// 注: `Content-Length` の型は `u64` で、RFC 9110 Section 8.6 の
+    /// 「整数変換オーバーフロー防止 (Section 17.5)」要件に基づく。
+    /// RFC 9110 Section 17.5 (Attacks via Protocol Element Length) は
+    /// 算術オーバーフロー・DoS の一般的脅威を論じている。
+    ///
+    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.1:
+    /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
+    /// は本メソッドの責務外であり、呼び出し側で判定する。
+    ///
+    /// 詳細は委譲先 `HttpHead::content_length` を参照。
     pub fn content_length(&self) -> Option<u64> {
         HttpHead::content_length(self)
     }
 
-    /// Transfer-Encoding が chunked かどうかを判定
+    /// Transfer-Encoding が chunked かどうかを判定 (RFC 9112 Section 6.3)
     ///
-    /// Transfer-Encoding リストの最後が chunked かどうかを確認する (RFC 9112)
-    /// 複数の Transfer-Encoding ヘッダーがある場合は連結して扱う
+    /// 全 `Transfer-Encoding` ヘッダーを走査し、RFC 9110 Section 5.3 に従い
+    /// 単一のトークンリストとして扱い、最後のトークンが `chunked` かどうかを確認する。
+    /// RFC 9112 Section 6.3 #4 の "chunked transfer coding is the final encoding" に基づく。
+    ///
+    /// 例:
+    /// - `Transfer-Encoding: chunked` → `true`
+    /// - `Transfer-Encoding: gzip, chunked` → `true`
+    /// - `Transfer-Encoding: chunked, gzip` → `false`
+    ///
+    /// 詳細は委譲先 `HttpHead::is_chunked` を参照。
     pub fn is_chunked(&self) -> bool {
         HttpHead::is_chunked(self)
     }

@@ -1,6 +1,7 @@
 # 0023: Response と Request と HttpHead の RFC 根拠と委譲メソッドの doc を補強する
 
 Created: 2026-05-06
+Completed: 2026-05-07
 Model: Opus 4.7
 
 ## 概要
