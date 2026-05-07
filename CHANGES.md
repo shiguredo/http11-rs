@@ -90,6 +90,13 @@
   - `tests/helpers/mod.rs` にサーバー起動・kill ガード・curl 実行・証明書生成の共通ヘルパーを新設する
   - dev-dependencies に `rcgen` / `tempfile` / `tokio` (process feature) を追加する
   - @voluntas
+- [ADD] `examples/http11_client` に testcontainers ベースの integration test を追加する
+  - `tests/nginx_basic.rs` (GET 200 / 404 / HEAD / Server ヘッダー / HTTP/1.1 の 5 ケース) を追加する
+  - `tests/nginx_streaming.rs` (gzip 由来の chunked 受信 / 1 MiB body / `Connection: close` 終端の 3 ケース) を追加する
+  - `tests/helpers/mod.rs` に Docker 検出と nginx (`nginx:1.27-alpine`) 起動の共通ヘルパーを新設する
+  - `src/lib.rs` を新設して `parse_url` / `http_request` / `https_request` / `decompressor` を pub にし、`src/main.rs` を CLI フロントエンドに整理する (`http_request` / `https_request` のシグネチャに `request_method: &str` を追加し、HEAD / CONNECT 経路で `BodyKind::None` / `Tunnel` を正しく扱う)
+  - dev-dependencies に `testcontainers` (aws-lc-rs feature) と `tokio` を追加する
+  - @voluntas
 
 ## 2026.3.0
 
