@@ -23,6 +23,7 @@
 
 mod compressor;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -85,12 +86,24 @@ impl StreamingState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    // tracing は stderr に出す。stdout はテストハーネスが parse する
+    // `LISTENING_PORT=<port>` 出力専用にしてログとの混在を避ける
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
     let options = parse_args()?;
 
-    let addr = format!("0.0.0.0:{}", options.port);
-    let listener = TcpListener::bind(&addr).await?;
+    // `--port 0` を指定すると OS にランダム割当させられる
+    let bind_addr = format!("0.0.0.0:{}", options.port);
+    let listener = TcpListener::bind(&bind_addr).await?;
+    let local_addr = listener.local_addr()?;
+    // テストハーネスが parse する machine-readable な行を stdout に出す
+    println!("LISTENING_PORT={}", local_addr.port());
+    // 子プロセス pipe 経由で確実に届けるため flush する。
+    // 失敗するとテスト側が LISTENING_PORT を読めずタイムアウトでハングするため expect で明示的に panic する
+    std::io::stdout().flush().expect("stdout flush failed");
+    let addr = local_addr.to_string();
 
     if options.tls {
         let cert_path = options

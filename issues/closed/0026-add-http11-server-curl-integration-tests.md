@@ -1,6 +1,7 @@
 # 0026: examples/http11_server に curl ベースの integration test を追加する
 
 Created: 2026-05-07
+Completed: 2026-05-07
 Model: Opus 4.7
 
 ## 概要
@@ -103,7 +104,7 @@ CLAUDE.md ルール:
 
 ```
 examples/http11_server/tests/
-├── common/
+├── helpers/
 │   └── mod.rs              共通ヘルパー (curl 検出、サーバー起動、cert 生成)
 ├── http_basic.rs           GET / HEAD / POST / 404 の基本動作
 ├── http_compression.rs     Accept-Encoding と Content-Encoding の検証
@@ -111,9 +112,9 @@ examples/http11_server/tests/
 └── https_tls.rs            HTTPS と自己署名証明書の検証
 ```
 
-サブディレクトリ方式 (`tests/common/mod.rs`) は Cargo の慣例。各 `tests/<name>.rs` の先頭で `mod common;` で取り込む。`tests/common.rs` 単一ファイル方式は別バイナリとして扱われるため避ける。
+サブディレクトリ方式 (`tests/helpers/mod.rs`) は Cargo の慣例。各 `tests/<name>.rs` の先頭で `mod helpers;` で取り込む。`tests/helpers.rs` 単一ファイル方式は別バイナリとして扱われるため避ける。
 
-### tests/common/mod.rs の API 設計
+### tests/helpers/mod.rs の API 設計
 
 ```rust
 /// curl が PATH 上にあるか確認。無ければ panic。
@@ -167,7 +168,7 @@ curl 不在時は `ensure_curl()` が panic する。CLAUDE.md「`#[ignore]` を
 |---|---|---|
 | `examples/http11_server/src/main.rs` | 修正 | tracing を stderr に固定 / bind 後の実ポートを stdout に出力 |
 | `examples/http11_server/Cargo.toml` | 修正 | `[dev-dependencies]` セクション新設 (rcgen / tempfile / tokio) |
-| `examples/http11_server/tests/common/mod.rs` | 新設 | テストハーネス共通モジュール |
+| `examples/http11_server/tests/helpers/mod.rs` | 新設 | テストハーネス共通モジュール |
 | `examples/http11_server/tests/http_basic.rs` | 新設 | GET/HEAD/POST/404 の基本動作 (7 ケース) |
 | `examples/http11_server/tests/http_compression.rs` | 新設 | gzip/br/zstd の Content-Encoding 検証 (8 ケース) |
 | `examples/http11_server/tests/http_keep_alive.rs` | 新設 | Keep-Alive / Connection: close の挙動 (3 ケース) |
@@ -188,7 +189,7 @@ curl 不在時は `ensure_curl()` が panic する。CLAUDE.md「`#[ignore]` を
 
 - examples/http11_server に curl ベースの integration test を追加する
   - tests/http_basic.rs / tests/http_compression.rs / tests/http_keep_alive.rs / tests/https_tls.rs
-  - tests/common/mod.rs にテストハーネス共通モジュールを新設する
+  - tests/helpers/mod.rs にテストハーネス共通モジュールを新設する
   - dev-dependencies に rcgen / tempfile / tokio (process feature) を追加する
   - @voluntas
 ```
@@ -269,7 +270,7 @@ make fmt && make clippy && make check && make test
 - `examples/http11_server/src/main.rs` が bind 後に `LISTENING_PORT=<port>\n` を stdout に出力し、明示的に flush している
 - `--port 0` で起動した場合に OS 任せのポートで bind し、stdout に実ポートが出力されることを手動で確認できる
 - `examples/http11_server/Cargo.toml` に `[dev-dependencies]` セクションが追加され、rcgen / tempfile / tokio (process feature) が含まれている
-- `examples/http11_server/tests/common/mod.rs` に `ensure_curl` / `ServerHandle` (Drop で kill) / `spawn_http_server` / `spawn_https_server` / `run_curl` / `generate_self_signed` が実装されている
+- `examples/http11_server/tests/helpers/mod.rs` に `ensure_curl` / `ServerHandle` (Drop で kill) / `spawn_http_server` / `spawn_https_server` / `run_curl` / `generate_self_signed` が実装されている
 - `examples/http11_server/tests/http_basic.rs` の 7 ケースがすべて通る
 - `examples/http11_server/tests/http_compression.rs` の 8 ケースがすべて通る
 - `examples/http11_server/tests/http_keep_alive.rs` の 3 ケースがすべて通る
@@ -283,4 +284,33 @@ make fmt && make clippy && make check && make test
 
 ## 解決方法
 
-(完了時に追記)
+- `examples/http11_server/src/main.rs` を改造:
+  - `tracing_subscriber::fmt::init()` を `tracing_subscriber::fmt().with_writer(std::io::stderr).init()` に変更し、tracing を stderr に固定
+  - `TcpListener::bind` 後に `listener.local_addr()?.port()` を取得し、`println!("LISTENING_PORT={}", port)` で stdout に出力、`std::io::stdout().flush().ok()` で確実に flush
+  - 後続の `info!(addr = %addr, ...)` 用の `addr` 変数は実アドレス文字列に再代入
+- `examples/http11_server/Cargo.toml` に `[dev-dependencies]` セクションを新設:
+  - `rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs", "pem"] }`
+  - `tempfile = "3.13"`
+  - `tokio = { version = "1.52", features = ["process", "io-util", "macros", "rt", "time"] }`
+  - 各依存に用途コメントを記載
+- `examples/http11_server/tests/helpers/mod.rs` を新設:
+  - `ensure_curl()`: `curl --version` を実行し、失敗時は `panic!("curl is required for these integration tests")`
+  - `ServerHandle`: `Drop` で `start_kill()` を呼び `kill_on_drop(true)` と組み合わせて確実にプロセス終了
+  - `spawn_http_server()` / `spawn_https_server(cert, key)`: `env!("CARGO_BIN_EXE_http11_server")` で binary を起動し、`BufReader::new(stdout).lines()` から `LISTENING_PORT=<u16>` を 7 秒以内に読み取る
+  - `run_curl(args)`: `tokio::task::spawn_blocking` で `std::process::Command::new("curl")` を実行
+  - `generate_self_signed()`: `rcgen` で SAN に `DNS:localhost` と `IP:127.0.0.1` を持つ自己署名証明書を生成し、`tempfile::TempDir` に書き出して `(TempDir, cert.pem, key.pem)` を返す
+  - `find_header()` / `split_headers_body()`: curl `-i` 出力を parse する補助関数
+- `examples/http11_server/tests/http_basic.rs` を新設し 7 ケース実装:
+  - `get_root_returns_200_html` / `get_info_returns_200_json` / `get_echo_includes_request_headers` / `head_root_returns_no_body` / `post_echo_returns_request_body` / `get_unknown_returns_404` / `server_emits_date_and_server_headers`
+- `examples/http11_server/tests/http_compression.rs` を新設し 9 ケース実装:
+  - `gzip_only_returns_gzip` / `br_only_returns_br` / `zstd_only_returns_zstd` / `prefers_zstd_over_br_over_gzip` / `quality_zero_excludes_encoding` / `no_accept_encoding_no_content_encoding` / `compressed_gzip_decoded_body_matches_uncompressed` / `compressed_body_is_smaller_than_uncompressed` / `vary_accept_encoding_present`
+  - macOS のシステム curl は brotli / zstd の自動展開非対応のため、ラウンドトリップ検証は gzip のみで行い、br / zstd は Content-Length が plain より小さいことを検証する形に分割した
+- `examples/http11_server/tests/http_keep_alive.rs` を新設し 3 ケース実装:
+  - `keep_alive_two_requests_one_connection`: `curl -v --next` で 2 リクエストを送り、stderr に `Re-using existing connection` が出ることを検証
+  - `connection_close_header_terminates`: `Connection: close` 送信で `Connection: close` が返る
+  - `keep_alive_default_no_close_header`: 単発リクエストでは `Connection` ヘッダーが付かない
+- `examples/http11_server/tests/https_tls.rs` を新設し 4 ケース実装:
+  - `https_get_root_with_self_signed_cert` / `https_compression_works` / `https_keep_alive_works` / `tls_handshake_with_invalid_ca_fails`
+  - 各テスト関数で `generate_self_signed()` を呼んで cert/key を都度生成し、`spawn_https_server` を起動
+- `CHANGES.md` の `## develop` に `[ADD]` エントリを追加し、`### misc` に integration test 追加の `[ADD]` エントリを追加
+- `make fmt && make clippy && make check && make test` がすべて成功することを確認 (新規 23 ケースが pass、既存テストの回帰なし)
