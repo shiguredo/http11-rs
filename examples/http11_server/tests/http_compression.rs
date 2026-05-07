@@ -1,6 +1,11 @@
 //! Accept-Encoding に基づく自動圧縮 (gzip / br / zstd) の振る舞いを curl で検証する
 //!
 //! 圧縮対象は `/` の HTML レスポンス (圧縮で確実に元より小さくなるサイズ)。
+//!
+//! Windows のシステム curl は brotli / zstd 自動展開非対応かつ Unix 慣習の
+//! 引数が動かないため、テスト全体を `#[cfg(not(windows))]` で除外する。
+
+#![cfg(not(windows))]
 
 mod helpers;
 

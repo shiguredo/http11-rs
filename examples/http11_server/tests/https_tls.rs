@@ -1,4 +1,9 @@
 //! HTTPS / TLS の振る舞いを curl と自己署名証明書で検証する
+//!
+//! Windows のシステム curl は `-o /dev/null` 等の Unix 慣習が動かないため、
+//! テスト全体を `#[cfg(not(windows))]` で除外する。
+
+#![cfg(not(windows))]
 
 mod helpers;
 

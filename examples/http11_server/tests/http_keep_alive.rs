@@ -1,4 +1,9 @@
 //! Keep-Alive と Connection: close の挙動を curl で検証する
+//!
+//! Windows のシステム curl は `-o /dev/null` 等の Unix 慣習が動かないため、
+//! テスト全体を `#[cfg(not(windows))]` で除外する。
+
+#![cfg(not(windows))]
 
 mod helpers;
 
