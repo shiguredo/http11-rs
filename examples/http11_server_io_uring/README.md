@@ -62,15 +62,7 @@ cargo run -p http11_server_io_uring -- --cert cert.pem --key key.pem
 
 優先順位: zstd > br > gzip
 
-圧縮機能は feature フラグで個別に有効/無効化できます:
-
-```bash
-# gzip のみ有効
-cargo run -p http11_server_io_uring --no-default-features --features gzip -- --cert cert.pem --key key.pem
-
-# 圧縮なし
-cargo run -p http11_server_io_uring --no-default-features -- --cert cert.pem --key key.pem
-```
+gzip / br / zstd の 3 形式すべてが常に有効です。
 
 ## 動作確認
 

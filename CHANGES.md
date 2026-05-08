@@ -11,6 +11,10 @@
 
 ## develop
 
+- [CHANGE] `examples/http11_client`, `examples/http11_server`, `examples/http11_server_io_uring` の圧縮 feature フラグ (`br` / `gzip` / `zstd`) を撤廃し常に 3 形式すべて有効にする
+  - サンプルとしての挙動を単純化し、`cargo run -p <example>` だけで gzip / brotli / zstd の圧縮・展開が動作するようにする
+  - `Cargo.toml` から `[features]` セクションと `optional = true` を削除し、ソースコードからも `#[cfg(feature = "...")]` を全削除する
+  - @voluntas
 - [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる

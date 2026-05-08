@@ -9,12 +9,10 @@
 //! Content-Encoding ごとに別の concrete type を持つ `Decompressor` 実装を
 //! 動的に切り替えるため、enum で variant をまとめて trait を impl している。
 
+use brotli::{BrotliDecompressStream, BrotliResult, BrotliState, HeapAlloc, HuffmanCode};
 use shiguredo_http11::compression::{
     CompressionError, CompressionStatus, Decompressor, NoCompression,
 };
-
-#[cfg(feature = "br")]
-use brotli::{BrotliDecompressStream, BrotliResult, BrotliState, HeapAlloc, HuffmanCode};
 
 // ============================================================================
 // gzip 展開器 (noflate::gzip::Decoder のラップ)
@@ -37,7 +35,6 @@ use brotli::{BrotliDecompressStream, BrotliResult, BrotliState, HeapAlloc, Huffm
 /// 内部 buffer に leftover が残るが、それは次回 `decompress(&[], output)`
 /// (例: `ResponseDecoder::peek_body_decompressed` がボディ枯渇後に行う drain)
 /// で回収される。
-#[cfg(feature = "gzip")]
 pub struct GzipDecompressor {
     decoder: noflate::gzip::Decoder,
 }
@@ -48,10 +45,8 @@ pub struct GzipDecompressor {
 /// `feed` の呼び出し回数が増えるためトレードオフ。
 /// 4 KiB はテキスト系の典型圧縮率 (3〜10x) で 8 KiB 出力バッファに数回の
 /// 反復で展開しきれる程度の値として選択。
-#[cfg(feature = "gzip")]
 const GZIP_FEED_CHUNK: usize = 4096;
 
-#[cfg(feature = "gzip")]
 impl GzipDecompressor {
     pub fn new() -> Self {
         Self {
@@ -74,14 +69,12 @@ impl GzipDecompressor {
     }
 }
 
-#[cfg(feature = "gzip")]
 impl Default for GzipDecompressor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "gzip")]
 impl std::fmt::Debug for GzipDecompressor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GzipDecompressor")
@@ -91,7 +84,6 @@ impl std::fmt::Debug for GzipDecompressor {
     }
 }
 
-#[cfg(feature = "gzip")]
 impl Decompressor for GzipDecompressor {
     fn decompress(
         &mut self,
@@ -139,7 +131,6 @@ impl Decompressor for GzipDecompressor {
 // Brotli 展開器 (BrotliDecompressStream のラップ)
 // ============================================================================
 
-#[cfg(feature = "br")]
 type BrotliStateAlias = BrotliState<HeapAlloc<u8>, HeapAlloc<u32>, HeapAlloc<HuffmanCode>>;
 
 /// Brotli ストリーミング展開器
@@ -147,13 +138,11 @@ type BrotliStateAlias = BrotliState<HeapAlloc<u8>, HeapAlloc<u32>, HeapAlloc<Huf
 /// `BrotliDecompressStream` の入出力 offset / available 形式を `Decompressor`
 /// トレイトの `consumed` / `produced` 表現に変換する。
 /// `total_out` は brotli 内部の累計出力カウンタで、状態保持のため struct に持たせる。
-#[cfg(feature = "br")]
 pub struct BrotliDecompressor {
     state: BrotliStateAlias,
     total_out: usize,
 }
 
-#[cfg(feature = "br")]
 impl BrotliDecompressor {
     pub fn new() -> Self {
         Self {
@@ -167,14 +156,12 @@ impl BrotliDecompressor {
     }
 }
 
-#[cfg(feature = "br")]
 impl Default for BrotliDecompressor {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(feature = "br")]
 impl std::fmt::Debug for BrotliDecompressor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BrotliDecompressor")
@@ -183,7 +170,6 @@ impl std::fmt::Debug for BrotliDecompressor {
     }
 }
 
-#[cfg(feature = "br")]
 impl Decompressor for BrotliDecompressor {
     fn decompress(
         &mut self,
@@ -241,12 +227,10 @@ impl Decompressor for BrotliDecompressor {
 ///
 /// `zstd::stream::raw::Decoder::run_on_buffers` は (bytes_read, bytes_written,
 /// remaining) を返す。`remaining == 0` がフレーム終端の合図。
-#[cfg(feature = "zstd")]
 pub struct ZstdDecompressor {
     decoder: zstd::stream::raw::Decoder<'static>,
 }
 
-#[cfg(feature = "zstd")]
 impl ZstdDecompressor {
     pub fn new() -> Result<Self, CompressionError> {
         let decoder = zstd::stream::raw::Decoder::new()
@@ -255,14 +239,12 @@ impl ZstdDecompressor {
     }
 }
 
-#[cfg(feature = "zstd")]
 impl std::fmt::Debug for ZstdDecompressor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ZstdDecompressor").finish()
     }
 }
 
-#[cfg(feature = "zstd")]
 impl Decompressor for ZstdDecompressor {
     fn decompress(
         &mut self,
@@ -303,7 +285,6 @@ impl Decompressor for ZstdDecompressor {
 ///
 /// `None` variant は `shiguredo_http11::compression::NoCompression` をそのまま
 /// 包んでおり identity (展開なし) として動作する。
-/// 各 variant は対応する feature が有効な場合にのみ生成可能。
 ///
 /// `BrotliDecompressor` の内部 state (BrotliState) が ~2.5 KiB と大きいため、
 /// variant 間サイズ差を抑える目的で `Box` でヒープに逃がしている。
@@ -311,11 +292,8 @@ impl Decompressor for ZstdDecompressor {
 pub enum AnyDecompressor {
     /// 展開なし (identity / Content-Encoding ヘッダーなし)
     None(NoCompression),
-    #[cfg(feature = "gzip")]
     Gzip(Box<GzipDecompressor>),
-    #[cfg(feature = "br")]
     Brotli(Box<BrotliDecompressor>),
-    #[cfg(feature = "zstd")]
     Zstd(Box<ZstdDecompressor>),
 }
 
@@ -330,11 +308,8 @@ impl AnyDecompressor {
     pub fn for_encoding(encoding: &str) -> Result<Self, CompressionError> {
         match encoding.trim().to_ascii_lowercase().as_str() {
             "" | "identity" => Ok(AnyDecompressor::None(NoCompression::new())),
-            #[cfg(feature = "gzip")]
             "gzip" | "x-gzip" => Ok(AnyDecompressor::Gzip(Box::default())),
-            #[cfg(feature = "br")]
             "br" => Ok(AnyDecompressor::Brotli(Box::default())),
-            #[cfg(feature = "zstd")]
             "zstd" => Ok(AnyDecompressor::Zstd(Box::new(ZstdDecompressor::new()?))),
             other => Err(CompressionError::InvalidData(format!(
                 "unsupported Content-Encoding: {}",
@@ -352,11 +327,8 @@ impl Decompressor for AnyDecompressor {
     ) -> Result<CompressionStatus, CompressionError> {
         match self {
             AnyDecompressor::None(d) => d.decompress(input, output),
-            #[cfg(feature = "gzip")]
             AnyDecompressor::Gzip(d) => d.decompress(input, output),
-            #[cfg(feature = "br")]
             AnyDecompressor::Brotli(d) => d.decompress(input, output),
-            #[cfg(feature = "zstd")]
             AnyDecompressor::Zstd(d) => d.decompress(input, output),
         }
     }
@@ -364,11 +336,8 @@ impl Decompressor for AnyDecompressor {
     fn reset(&mut self) {
         match self {
             AnyDecompressor::None(d) => Decompressor::reset(d),
-            #[cfg(feature = "gzip")]
             AnyDecompressor::Gzip(d) => d.reset(),
-            #[cfg(feature = "br")]
             AnyDecompressor::Brotli(d) => d.reset(),
-            #[cfg(feature = "zstd")]
             AnyDecompressor::Zstd(d) => d.reset(),
         }
     }
@@ -379,39 +348,6 @@ impl Decompressor for AnyDecompressor {
 // ============================================================================
 
 /// クライアントがサポートしている展開形式を Accept-Encoding に載せる文字列で返す
-///
-/// feature の組み合わせで返り値が変わる。すべて無効なら空文字列。
 pub fn supported_encodings() -> &'static str {
-    #[cfg(all(feature = "gzip", feature = "br", feature = "zstd"))]
-    {
-        "gzip, br, zstd"
-    }
-    #[cfg(all(feature = "gzip", feature = "br", not(feature = "zstd")))]
-    {
-        "gzip, br"
-    }
-    #[cfg(all(feature = "gzip", not(feature = "br"), feature = "zstd"))]
-    {
-        "gzip, zstd"
-    }
-    #[cfg(all(not(feature = "gzip"), feature = "br", feature = "zstd"))]
-    {
-        "br, zstd"
-    }
-    #[cfg(all(feature = "gzip", not(feature = "br"), not(feature = "zstd")))]
-    {
-        "gzip"
-    }
-    #[cfg(all(not(feature = "gzip"), feature = "br", not(feature = "zstd")))]
-    {
-        "br"
-    }
-    #[cfg(all(not(feature = "gzip"), not(feature = "br"), feature = "zstd"))]
-    {
-        "zstd"
-    }
-    #[cfg(all(not(feature = "gzip"), not(feature = "br"), not(feature = "zstd")))]
-    {
-        ""
-    }
+    "gzip, br, zstd"
 }
