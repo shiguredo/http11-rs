@@ -1,6 +1,6 @@
 [package]
 name = "shiguredo_http11"
-version = "2026.4.0-canary.0"
+version = "2026.4.0-canary.1"
 edition = "2024"
 rust-version = "1.88"
 description = "HTTP/1.1 Library"
