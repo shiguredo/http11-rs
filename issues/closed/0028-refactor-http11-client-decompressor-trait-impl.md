@@ -1,6 +1,7 @@
 # 0028: examples/http11_client の Decompressor trait 実装の扱いを決める
 
 Created: 2026-05-07
+Completed: 2026-05-07
 Model: Opus 4.7
 
 ## 概要
@@ -115,3 +116,43 @@ CLAUDE.md「設計判断が必要で保留中の issue は `issues/pending/` に
 - 選択肢 A / B / C のどれを取るかが決定されている
 - 選択肢が確定したら本 issue を `issues/` 直下に戻し、実装フェーズに入る
 - 実装完了後は `issues/closed/` に移動する
+
+## 解決方法
+
+選択肢 A (trait 実装を完成させ、transport.rs を完全ストリーミング化する) を採用した。
+
+### examples/http11_client/src/decompressor.rs の書き直し
+
+- `GzipDecompressor` を `noflate::gzip::Decoder` のラッパーとして再実装
+- `BrotliDecompressor` を `BrotliDecompressStream` + `BrotliState` のラッパーとして再実装
+- `ZstdDecompressor` を `zstd::stream::raw::Decoder::run_on_buffers` のラッパーとして再実装
+- `AnyDecompressor` enum を新設 (`None` / `Gzip(Box<...>)` / `Brotli(Box<...>)` / `Zstd(Box<...>)`)
+  - `BrotliState` が ~2.5 KiB と大きいため variant サイズを抑える目的で `Box` 化
+  - `for_encoding(encoding: &str)` で Content-Encoding 文字列から動的生成
+  - `Decompressor` トレイトを enum 全体に対し impl
+- 一括展開関数 `decompress_body` は削除 (`AnyDecompressor` 経路で代替)
+
+### examples/http11_client/src/transport.rs の書き換え
+
+- `ResponseSession` ヘルパーを新設し、受信ループを整理
+- `decode_headers` 後に Content-Encoding を見て `AnyDecompressor::for_encoding` で展開器を決定
+- `peek_body()` で raw 圧縮バイトを取得し、外部に持つ `AnyDecompressor` で 8 KiB 単位にストリーミング展開
+- `decompress_chunk` / `drain_decompressor` ヘルパーで展開ループを抽象化
+- main.rs の `print_response` から `decompress_body` 呼び出しを削除 (受信時点で既に展開済み)
+
+### shiguredo_http11 本体の修正 (副次的)
+
+`peek_body_decompressed` がボディデータ枯渇時に展開器の内部 buffer を drain させない構造的制限が判明した。`noflate::gzip::Decoder` のように feed したバイトを内部 buffer に蓄積する型の `Decompressor` 実装と組み合わせるとボディ末尾でバイトを取りこぼすため、以下の変更を入れた:
+
+- `ResponseDecoder::peek_body_decompressed` および `RequestDecoder::peek_body_decompressed` を修正
+- ボディデータが None / 空でも空 input で `decompressor.decompress(&[], output)` を呼ぶ
+- `consumed == 0 && produced == 0` のときだけ `Ok(None)` を返す
+- 後方互換: `NoCompression` のような状態を持たない実装は `Continue { 0, 0 }` または `Complete { 0, 0 }` を返すため、None 判定で従来挙動と等価
+
+### テスト
+
+`examples/http11_client/tests/nginx_streaming.rs` を更新:
+
+- `chunked_response_decoded_properly`: `decompress_body` 呼び出しを削除し、`response.body_bytes()` が直接展開済みであることを検証
+- 新規 `streams_large_gzip_body`: 1 MiB クラスの gzip ボディを transport.rs (= AnyDecompressor 経路) で受信し全 byte 一致を検証
+- 新規 `peek_body_decompressed_streams_gzip`: `ResponseDecoder::with_decompressor(GzipDecompressor::new())` 経路で 8 KiB バッファに対し `peek_body_decompressed` を繰り返し呼び、1 MiB ボディが完全展開できることを検証 (ライブラリ側の drain 修正のリグレッションテスト)

@@ -6,18 +6,19 @@
 //!
 //! 圧縮対応:
 //!   Accept-Encoding ヘッダーで gzip, br, zstd を要求し、
-//!   Content-Encoding ヘッダーに基づいてレスポンスボディを展開します。
+//!   Content-Encoding ヘッダーに基づいてレスポンスボディを **ストリーミング展開** する。
+//!   展開器の本体は `src/decompressor.rs` (Decompressor トレイト実装) で、
+//!   `src/transport.rs` で peek_body() / consume_body() と組み合わせて駆動する。
 //!
 //! ストリーミング API:
 //!   このサンプルは decode() 一括 API ではなく、
 //!   decode_headers() + peek_body() / consume_body() / progress() を
-//!   使用したストリーミング API の実装例です。
-//!   実装本体は `src/transport.rs` を参照してください。
+//!   使用したストリーミング API の実装例 (`src/transport.rs` を参照)。
 
-use http11_client::decompressor::{decompress_body, supported_encodings};
+use http11_client::decompressor::supported_encodings;
 use http11_client::{http_request, https_request, parse_url};
 use shiguredo_http11::{HttpHead, Request, Response};
-use tracing::{error, info};
+use tracing::info;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
@@ -96,35 +97,10 @@ fn print_response(response: &Response) {
         info!(name, value, "Header");
     }
 
-    // Content-Encoding ヘッダーを取得
-    let content_encoding = response.get_header("Content-Encoding");
+    // ボディは transport.rs で既にストリーミング展開済み
+    let body: &[u8] = response.body_bytes().unwrap_or(&[]);
 
-    // ボディを展開（必要な場合）
-    // body == None のケースは空スライスとして扱う
-    let raw_body: &[u8] = response.body_bytes().unwrap_or(&[]);
-    let body = match content_encoding {
-        Some(encoding) if !encoding.eq_ignore_ascii_case("identity") => {
-            match decompress_body(raw_body, encoding) {
-                Ok(decompressed) => {
-                    info!(
-                        encoding,
-                        original_size = raw_body.len(),
-                        decompressed_size = decompressed.len(),
-                        "Decompressed"
-                    );
-                    decompressed
-                }
-                Err(e) => {
-                    error!(encoding, error = %e, "Decompression failed");
-                    raw_body.to_vec()
-                }
-            }
-        }
-        _ => raw_body.to_vec(),
-    };
-
-    // ボディを表示 (テキストの場合)
-    if let Ok(text) = std::str::from_utf8(&body) {
+    if let Ok(text) = std::str::from_utf8(body) {
         if text.len() > 1000 {
             info!(total_bytes = body.len(), "Body truncated");
             println!("{}...", &text[..1000]);

@@ -66,6 +66,12 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] `ResponseDecoder::peek_body_decompressed` / `RequestDecoder::peek_body_decompressed` でボディデータ枯渇後も展開器の内部 buffer を drain できるようにする
+  - body_decoder の `peek_body` が None / 空を返したときも空 input で `Decompressor::decompress` を呼ぶように変更する
+  - `consumed == 0 && produced == 0` のときだけ `Ok(None)` を返す形に統一する
+  - `noflate::gzip::Decoder` のように feed したバイトを内部 buffer に蓄積する型の `Decompressor` 実装でボディ末尾のバイトを取りこぼすバグを修正する
+  - 後方互換: `NoCompression` のような状態を持たない実装は `Continue { 0, 0 }` または `Complete { 0, 0 }` を返すため None 判定で従来挙動と等価
+  - @voluntas
 
 ### misc
 
@@ -100,6 +106,13 @@
 - CI を `ci` (全 OS) と `e2e-test` (ubuntu-24.04 のみ) の 2 job に分割し、外部依存 (curl / Docker) を持つ examples の integration test を Linux runner でのみ実行する
   - 既存 `ci` job は `cargo test --workspace --exclude http11_client --exclude http11_server` に変更し、macos / windows での Docker 不在 (testcontainers) や OS 差異による fail を回避する
   - 新規 `e2e-test` job が `cargo test -p http11_client -p http11_server` を担当する
+  - @voluntas
+- [UPDATE] `examples/http11_client` の `Decompressor` トレイト実装を完成させ、レスポンスボディをストリーミング展開する形に書き換える (issue 0028)
+  - `decompressor.rs` の `GzipDecompressor` / `BrotliDecompressor` / `ZstdDecompressor` を各 crate のストリーミング API (noflate `gzip::Decoder` / `BrotliDecompressStream` + `BrotliState` / `zstd::stream::raw::Decoder`) のラッパーとして実装する
+  - Content-Encoding ヘッダー受信後に展開器の種別を確定する用途向けに `AnyDecompressor` enum を新設する (variant サイズ差を抑えるため `Box` 経由で持つ)
+  - `transport.rs` を `peek_body()` + `AnyDecompressor::decompress` の手動連携経路に書き換え、1 GiB のボディでも 8 KiB 出力バッファでストリーミング展開できる構成にする
+  - `src/main.rs` の `print_response` から一括展開関数 `decompress_body` の呼び出しを削除する (受信時点で既に展開済み)
+  - `tests/nginx_streaming.rs` に `streams_large_gzip_body` (transport.rs 経路) と `peek_body_decompressed_streams_gzip` (ライブラリ API 経路) の 2 ケースを追加する
   - @voluntas
 
 ## 2026.3.0
