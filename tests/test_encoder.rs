@@ -347,7 +347,7 @@ fn test_encode_request_empty_host_ok() {
 #[test]
 fn test_encode_request_crlf_in_method() {
     // 不正な method は構築時に拒否される
-    for method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
+    for &method in &["GET\r\nEvil: header", "POST\r\n", "GET\nEvil", "GET\rEvil"] {
         let result = Request::new(method, "/");
         assert!(
             matches!(result, Err(EncodeError::InvalidMethod { .. })),
@@ -360,7 +360,7 @@ fn test_encode_request_crlf_in_method() {
 #[test]
 fn test_encode_request_crlf_in_uri() {
     // 不正な URI は構築時に拒否される
-    for uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
+    for &uri in &["/path\r\nEvil: header", "/\r\n", "/test\nEvil"] {
         let result = Request::new("GET", uri);
         assert!(
             matches!(result, Err(EncodeError::InvalidRequestTarget { .. })),
@@ -373,7 +373,7 @@ fn test_encode_request_crlf_in_uri() {
 #[test]
 fn test_encode_request_crlf_in_header_name() {
     // 不正なヘッダー名は構築時に拒否される
-    for name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
+    for &name in &["Evil\r\nHeader", "Evil\nHeader", "Evil\rHeader"] {
         let req = Request::new("GET", "/")
             .unwrap()
             .header("Host", "example.com")
@@ -390,7 +390,7 @@ fn test_encode_request_crlf_in_header_name() {
 #[test]
 fn test_encode_request_crlf_in_header_value() {
     // 不正なヘッダー値は構築時に拒否される
-    for value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
+    for &value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
         let req = Request::new("GET", "/")
             .unwrap()
             .header("Host", "example.com")
@@ -434,9 +434,9 @@ fn test_encode_response_crlf_in_reason_phrase() {
 #[test]
 fn test_encode_response_crlf_in_header_name() {
     // 不正なヘッダー名は構築時に拒否される
-    for name in &["Evil\r\nHeader", "Evil\nHeader"] {
+    for &name in &["Evil\r\nHeader", "Evil\nHeader"] {
         let res = Response::with_status(StatusCode::OK);
-        let result = res.header(*name, "value");
+        let result = res.header(name, "value");
         assert!(
             matches!(result, Err(EncodeError::InvalidHeaderName { .. })),
             "CRLF in response header name should be rejected at construction: {:?}",
@@ -448,9 +448,9 @@ fn test_encode_response_crlf_in_header_name() {
 #[test]
 fn test_encode_response_crlf_in_header_value() {
     // 不正なヘッダー値は構築時に拒否される
-    for value in &["evil\r\nEvil: injected", "evil\ninjected"] {
+    for &value in &["evil\r\nEvil: injected", "evil\ninjected"] {
         let res = Response::with_status(StatusCode::OK);
-        let result = res.header("X-Test", *value);
+        let result = res.header("X-Test", value);
         assert!(
             matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
             "CRLF in response header value should be rejected at construction: {:?}",

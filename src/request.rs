@@ -70,27 +70,23 @@ impl Request {
     ///
     /// version は `"HTTP/1.1"` 固定のため、`is_valid_protocol_version` は呼び出さない
     /// (固定値が常に検証を通過するため)。
-    pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError> {
-        if !is_valid_method(method) {
-            return Err(EncodeError::InvalidMethod {
-                method: method.to_string(),
-            });
+    pub fn new(method: impl Into<String>, uri: impl Into<String>) -> Result<Self, EncodeError> {
+        let method = method.into();
+        let uri = uri.into();
+        if !is_valid_method(&method) {
+            return Err(EncodeError::InvalidMethod { method });
         }
-        if !is_valid_request_target(uri) {
-            return Err(EncodeError::InvalidRequestTarget {
-                uri: uri.to_string(),
-            });
+        if !is_valid_request_target(&uri) {
+            return Err(EncodeError::InvalidRequestTarget { uri });
         }
         // is_valid_request_target は受信側互換性のため obs-text (0x80-0xFF) を許容する。
         // 送信側では新規に obs-text を生成してはならないため、ここで拒否する。
         if uri.bytes().any(|b| b >= 0x80) {
-            return Err(EncodeError::InvalidRequestTarget {
-                uri: uri.to_string(),
-            });
+            return Err(EncodeError::InvalidRequestTarget { uri });
         }
         Ok(Self {
-            method: method.to_string(),
-            uri: uri.to_string(),
+            method,
+            uri,
             version: "HTTP/1.1".to_string(),
             headers: Vec::new(),
             body: None,
@@ -114,31 +110,30 @@ impl Request {
     ///
     /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
-    pub fn with_version(method: &str, uri: &str, version: &str) -> Result<Self, EncodeError> {
-        if !is_valid_method(method) {
-            return Err(EncodeError::InvalidMethod {
-                method: method.to_string(),
-            });
+    pub fn with_version(
+        method: impl Into<String>,
+        uri: impl Into<String>,
+        version: impl Into<String>,
+    ) -> Result<Self, EncodeError> {
+        let method = method.into();
+        let uri = uri.into();
+        let version = version.into();
+        if !is_valid_method(&method) {
+            return Err(EncodeError::InvalidMethod { method });
         }
-        if !is_valid_request_target(uri) {
-            return Err(EncodeError::InvalidRequestTarget {
-                uri: uri.to_string(),
-            });
+        if !is_valid_request_target(&uri) {
+            return Err(EncodeError::InvalidRequestTarget { uri });
         }
         if uri.bytes().any(|b| b >= 0x80) {
-            return Err(EncodeError::InvalidRequestTarget {
-                uri: uri.to_string(),
-            });
+            return Err(EncodeError::InvalidRequestTarget { uri });
         }
-        if !is_valid_protocol_version(version) {
-            return Err(EncodeError::InvalidVersion {
-                version: version.to_string(),
-            });
+        if !is_valid_protocol_version(&version) {
+            return Err(EncodeError::InvalidVersion { version });
         }
         Ok(Self {
-            method: method.to_string(),
-            uri: uri.to_string(),
-            version: version.to_string(),
+            method,
+            uri,
+            version,
             headers: Vec::new(),
             body: None,
         })
@@ -215,7 +210,11 @@ impl Request {
     /// 値は RFC 9110 Section 5.5 の field-value を満たす必要がある。
     /// CR/LF/NUL は RFC 9110 Section 5.5 で「invalid and dangerous」と明示され、
     /// MUST either reject or replace と定義されているため拒否する。
-    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+    pub fn header(
+        mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
         Ok(self)
     }
@@ -224,32 +223,60 @@ impl Request {
     ///
     /// 空 `Vec` を渡した場合は「明示的な空ボディ」として扱われ、
     /// エンコード時に `Content-Length: 0` が自動付与される。
-    pub fn body(mut self, body: Vec<u8>) -> Self {
-        self.body = Some(body);
+    pub fn body(mut self, body: impl Into<Vec<u8>>) -> Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    /// ボディなしを明示 (ビルダーパターン)
+    ///
+    /// `body = None` に設定する。builder チェイン中に `body()` を呼んだ後で
+    /// ボディを取り消す場合に使用する。
+    pub fn without_body(mut self) -> Self {
+        self.body = None;
+        self
+    }
+
+    /// ボディを設定 (mutator)
+    ///
+    /// 戻り値は `&mut Self` でチェイン可能。空 `Vec` を渡した場合は
+    /// 「明示的な空ボディ」として扱われる。
+    pub fn set_body(&mut self, body: impl Into<Vec<u8>>) -> &mut Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    /// ボディをクリア (mutator)
+    ///
+    /// `body = None` に設定する。`Content-Length` の自動付与はされなくなる。
+    pub fn clear_body(&mut self) -> &mut Self {
+        self.body = None;
         self
     }
 
     /// ヘッダーを追加 (mutator)
     ///
+    /// 戻り値は `Result<&mut Self, EncodeError>` でチェイン可能。
     /// バリデーション成功後にのみ `headers` に追加される (失敗時は self 不変)。
     ///
-    /// 注: 後続 issue (`0021` の Request 版) で戻り値を `Result<&mut Self, EncodeError>`
-    /// に変更し、Response 側 (`0017` → `0021`) と同様にチェイン可能化する予定。
-    /// 本 issue は API 安定化の過渡期である。
-    pub fn add_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError> {
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName {
-                name: name.to_string(),
-            });
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
+    /// アロケーションが発生する。これは `impl Into<String>` で所有値のムーブを
+    /// 受け付けるためのトレードオフである (Response 側と同方針)。
+    pub fn add_header(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<&mut Self, EncodeError> {
+        let name = name.into();
+        let value = value.into();
+        if !is_valid_header_name(&name) {
+            return Err(EncodeError::InvalidHeaderName { name });
         }
-        if !is_valid_field_value(value) {
-            return Err(EncodeError::InvalidHeaderValue {
-                name: name.to_string(),
-                value: value.to_string(),
-            });
+        if !is_valid_field_value(&value) {
+            return Err(EncodeError::InvalidHeaderValue { name, value });
         }
-        self.headers.push((name.to_string(), value.to_string()));
-        Ok(())
+        self.headers.push((name, value));
+        Ok(self)
     }
 
     /// 指定した名前の既存ヘッダーを全削除し、新規に追加する
@@ -260,27 +287,30 @@ impl Request {
     ///
     /// バリデーションが失敗した場合は既存ヘッダーは変更されない (アトミック性の保証)。
     ///
+    /// 戻り値は `Result<&mut Self, EncodeError>` でチェイン可能。
+    ///
     /// 注: Set-Cookie のように同名複数値が意味を持つヘッダーには使ってはならない。
     /// その場合は `add_header` を使うこと (RFC 6265 など)。
     ///
-    /// 注: 後続 issue (`0021` の Request 版) で戻り値を `Result<&mut Self, EncodeError>`
-    /// に変更し、Response 側と同様にチェイン可能化する予定。
-    pub fn set_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError> {
-        // アトミック性のため、バリデーションを先に行う。
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName {
-                name: name.to_string(),
-            });
+    /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
+    /// アロケーションが発生する。アトミック性 (self の状態変更不可) は依然として保たれる
+    /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
+    pub fn set_header(
+        &mut self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Result<&mut Self, EncodeError> {
+        let name = name.into();
+        let value = value.into();
+        if !is_valid_header_name(&name) {
+            return Err(EncodeError::InvalidHeaderName { name });
         }
-        if !is_valid_field_value(value) {
-            return Err(EncodeError::InvalidHeaderValue {
-                name: name.to_string(),
-                value: value.to_string(),
-            });
+        if !is_valid_field_value(&value) {
+            return Err(EncodeError::InvalidHeaderValue { name, value });
         }
-        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name));
-        self.headers.push((name.to_string(), value.to_string()));
-        Ok(())
+        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        self.headers.push((name, value));
+        Ok(self)
     }
 
     /// HTTP メソッドを取得

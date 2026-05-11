@@ -11,6 +11,17 @@
 
 ## develop
 
+- [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
+  - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
+  - @voluntas
+- [ADD] `Request::set_body` / `Request::clear_body` / `Request::without_body` を追加する
+  - Response 側 (`[ADD] Response::set_body / Response::clear_body / Response::without_body`) と対称な mutator / builder
+  - @voluntas
+- [CHANGE] `Request::add_header` / `Request::set_header` の戻り値を `Result<&mut Self, EncodeError>` に変更しチェイン可能にする
+  - Response 側 (`[CHANGE] Response::add_header / Response::set_header`) と対称化
+  - 旧シグネチャ `Result<(), EncodeError>` 依存のコードは `?` 演算子経由ならそのまま動作する (成功値は ; で破棄される)
+  - @voluntas
 - [CHANGE] レスポンス受信側で Transfer-Encoding と Content-Length が両方含まれる場合をエラー化する
   - 旧挙動 (`resolve_body_headers_for_response`) は silent に Transfer-Encoding を優先して Content-Length を無視していたが、これにより HTTP Request Smuggling (CWE-444) / Response Splitting (CWE-113) の兆候を上位層が検知できなかった
   - RFC 9112 Section 6.3 (3) 「Such a message might indicate an attempt to perform request smuggling (Section 11.2) or response splitting (Section 11.1) and ought to be handled as an error.」と RFC 9112 Section 6.1 「the server MUST close the connection after responding to such a request to avoid the potential attacks.」に従い、リクエスト経路と対称に `Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返す
