@@ -336,16 +336,28 @@ fn test_response_te_deflate_chunked_is_chunked() {
     assert_eq!(result.1, BodyKind::Chunked);
 }
 
-/// レスポンスで Transfer-Encoding と Content-Length 両方ある場合、TE を優先
+/// レスポンスで Transfer-Encoding と Content-Length 両方ある場合はエラー
+///
+/// RFC 9112 Section 6.3 (3): "Such a message might indicate an attempt to
+/// perform request smuggling (Section 11.2) or response splitting
+/// (Section 11.1) and ought to be handled as an error."
+/// RFC 9112 Section 6.1: "the server MUST close the connection after
+/// responding to such a request to avoid the potential attacks."
+///
+/// 旧挙動では silent に TE 優先で受理していたが、smuggling / response
+/// splitting (CWE-444 / CWE-113) の兆候を上位層が検知できなくなるため、
+/// リクエスト経路と対称にエラー化する。
 #[test]
-fn test_response_te_and_cl_prefers_te() {
+fn test_response_te_and_cl_is_rejected() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
-    let result = decoder.decode_headers().unwrap().unwrap();
-    // TE が優先され、chunked フレーミング
-    assert_eq!(result.1, BodyKind::Chunked);
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "TE + CL の組合せは smuggling 兆候として reject される想定 (RFC 9112 Section 6.3)"
+    );
 }
 
 /// リクエスト Transfer-Encoding: gzip → エラー

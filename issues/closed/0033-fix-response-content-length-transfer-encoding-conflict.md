@@ -1,6 +1,7 @@
 # 0033: レスポンス受信側で Transfer-Encoding と Content-Length の同時受信をエラー化する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -53,3 +54,12 @@ RFC 9112 Section 6.3 (3) は本ケースを次のように扱う:
 - 旧挙動 (silent に TE 優先) に依存していたユーザーは `Error::InvalidData` を受け取るようになる
 - canary リリース中なので破壊的変更は許容範囲
 - 既存挙動でも上位層は smuggling を検知できなかったため、本変更は実害なしか改善のみ
+
+## 解決方法
+
+- `src/decoder/body.rs::resolve_body_headers_for_response`:
+  - TE と CL が両方含まれる場合、`Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返すよう変更 (リクエスト経路と同一エラー文言)
+  - 旧コメント (「警告ログを出すべきとあるが、本実装では無視のみ」) を撤去し、RFC 9112 §6.3 (3) と §6.1 の MUST close 文面を引用したコメントに差し替え
+- `tests/test_decoder.rs`:
+  - 旧 `test_response_te_and_cl_prefers_te` を `test_response_te_and_cl_is_rejected` に改名・期待値を反転 (TE 優先 → エラー)。RFC 引用と smuggling 兆候の根拠をコメントで明記
+- `CHANGES.md` の `## develop` 先頭に `[CHANGE]` エントリを追加した

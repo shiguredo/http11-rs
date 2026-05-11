@@ -11,6 +11,11 @@
 
 ## develop
 
+- [CHANGE] レスポンス受信側で Transfer-Encoding と Content-Length が両方含まれる場合をエラー化する
+  - 旧挙動 (`resolve_body_headers_for_response`) は silent に Transfer-Encoding を優先して Content-Length を無視していたが、これにより HTTP Request Smuggling (CWE-444) / Response Splitting (CWE-113) の兆候を上位層が検知できなかった
+  - RFC 9112 Section 6.3 (3) 「Such a message might indicate an attempt to perform request smuggling (Section 11.2) or response splitting (Section 11.1) and ought to be handled as an error.」と RFC 9112 Section 6.1 「the server MUST close the connection after responding to such a request to avoid the potential attacks.」に従い、リクエスト経路と対称に `Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返す
+  - 呼出側は接続をクローズすべき (proxy 等の上位層が判断する)
+  - @voluntas
 - [CHANGE] trailer フィールドの受理判定を RFC 9110 Section 6.5.1 のホワイトリスト方式に変更する
   - `Trailer:` ヘッダーで sender が事前申告したフィールド名のみ trailer-section で受理する。申告されていないフィールドは `Error::InvalidData("undeclared trailer field: ...")` で reject する
   - `is_prohibited_trailer_field` の禁止リストを RFC 9110 Section 6.5.1 の全カテゴリに拡充する (framing / routing / リクエスト修飾子 / 認証 / レスポンス制御 / コンテンツ形式 / 接続管理)
