@@ -1,6 +1,7 @@
 # 0032: trailer フィールドの受理判定をホワイトリスト方式に変更する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -83,3 +84,29 @@ RFC 9110 Section 6.5.1 は:
 - `Trailer:` ヘッダーで予告されていない trailer フィールドはすべて拒否される
 - 拡充カテゴリのフィールドも常に拒否される
 - canary リリース中なので破壊的変更は許容範囲
+
+## 解決方法
+
+- `src/trailer.rs::is_prohibited_trailer_field` のリストを RFC 9110 Section 6.5.1 全カテゴリに拡充した:
+  - framing: `Transfer-Encoding`, `Content-Length`
+  - routing: `Host`
+  - リクエスト修飾子: `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, `If-Range`, `Range`, `Expect`, `TE`
+  - 認証: `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate`
+  - レスポンス制御: `Cache-Control`, `Vary`, `Date`, `Expires`, `Age`, `Set-Cookie`
+  - コンテンツ形式: `Content-Encoding`, `Content-Type`, `Content-Range`
+  - 接続管理: `Connection`, `Upgrade`, `Trailer`
+- `src/decoder/body.rs::BodyDecoder` に `declared_trailers: Vec<String>` フィールドと `set_declared_trailers(declared)` メソッドを追加した。`reset()` でクリアする
+- `src/decoder/body.rs` に `collect_declared_trailers(headers)` ヘルパーを追加。`Trailer:` ヘッダー値をカンマ区切りで分解し ASCII 小文字化したリストを返す
+- `src/decoder/body.rs::process_trailers` でホワイトリスト判定を追加: 受信した trailer 名が `declared_trailers` に含まれない場合は `Error::InvalidData("undeclared trailer field: ...")` を返す。カテゴリ違反 (拡充された `is_prohibited_trailer_field`) チェックも引き続き行う
+- `src/decoder/request.rs::decode_headers` / `src/decoder/response.rs::decode_headers`: ヘッダー完了直後に `collect_declared_trailers(&self.headers)` を呼び `body_decoder.set_declared_trailers(declared)` で渡す
+- テスト:
+  - `src/trailer.rs` inline test: 拡充カテゴリ (認証 / リクエスト修飾子 / レスポンス制御 / 接続管理) の禁止判定を網羅。旧テストで `Expires` を「許可フィールド」として使っていたものを `X-Test` 等の拡張ヘッダー名に置き換え
+  - `tests/test_decoder.rs`:
+    - `test_chunked_trailer_too_many_error` / `test_chunked_trailer_line_too_long_error`: `Trailer:` ヘッダーで事前申告するよう修正
+    - 新規 `test_chunked_trailer_whitelist_accepts_declared_field`: 申告された trailer が受理されることを確認
+    - 新規 `test_chunked_trailer_whitelist_rejects_undeclared_field`: 申告されていない trailer が reject されることを確認
+    - 新規 `test_chunked_trailer_whitelist_rejects_authorization_injection`: 認証ヘッダー後付け注入による smuggling を遮断することを確認
+    - 新規 `test_chunked_trailer_whitelist_rejects_unannounced_trailers`: `Trailer:` ヘッダー無しの場合は trailer-section を一切受理しないことを確認
+  - `pbt/tests/prop_decoder/body.rs`: `prop_chunked_with_trailer_ok` / `prop_chunked_with_multiple_trailers_ok` で `Trailer:` ヘッダーを生成して事前申告するよう修正
+- `src/trailer.rs` の lib doc サンプル (`Trailer::parse("Expires, X-Test")`) を `X-Checksum, X-Test` に変更し、拡充カテゴリと一貫させた
+- `CHANGES.md` の `## develop` 先頭に `[CHANGE]` エントリを追加した

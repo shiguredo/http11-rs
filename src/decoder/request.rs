@@ -20,8 +20,9 @@ use alloc::vec::Vec;
 use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, parse_request_target_form,
-    resolve_body_headers_for_request, validate_request_target_for_method,
+    BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line, parse_header_line,
+    parse_request_target_form, resolve_body_headers_for_request,
+    validate_request_target_for_method,
 };
 use super::buffer;
 use super::head::RequestHead;
@@ -485,6 +486,14 @@ impl<D: Decompressor> RequestDecoder<D> {
                                     self.phase = DecodePhase::Tunnel;
                                 }
                             }
+
+                            // RFC 9110 Section 6.5.1 のホワイトリスト方式 trailer 受理に
+                            // 必要な「申告された trailer フィールド名リスト」を、
+                            // ヘッダーから `Trailer:` を抽出して BodyDecoder に渡す。
+                            // chunked 以外の本 body kind では trailer は来ないが、
+                            // BodyDecoder は body kind を問わず参照するため常に設定する。
+                            let declared_trailers = collect_declared_trailers(&self.headers);
+                            self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // RequestHead を構築
                             let start_line = self.start_line.take().ok_or_else(|| {
