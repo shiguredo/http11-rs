@@ -966,42 +966,105 @@ fn test_consume_body_exceeds_buffer_close_delimited_error() {
 // ========================================
 
 /// CONNECT リクエストは Content-Length / Transfer-Encoding が付いていても
-/// body として読まず、常に BodyKind::None を返す。
+/// body として読まず、常に BodyKind::Tunnel を返してトンネルモードに遷移する。
 /// ヘッダーの存在だけでは reject しない。
+///
+/// RFC 9110 Section 9.3.6:
+///   "A CONNECT request message does not have content."
+///   "the connection becomes a tunnel immediately after the header section"
 #[test]
-fn test_connect_request_no_body() {
-    // Content-Length: N > 0 が付いていても BodyKind::None
+fn test_connect_request_enters_tunnel_mode() {
+    // Content-Length: N > 0 が付いていても BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel(), "CONNECT 受信後はトンネルモード");
+    // ヘッダー終端後のバイトはトンネルデータとして取り出せる
+    assert_eq!(
+        decoder.take_remaining(),
+        b"abc",
+        "ヘッダー終端後のバイトは take_remaining で取得できる"
+    );
 
-    // Content-Length: 0 でも BodyKind::None
+    // Content-Length: 0 でも BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 0\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
+    assert!(
+        decoder.take_remaining().is_empty(),
+        "ヘッダー終端のみで後続データがない場合は空"
+    );
 
-    // Transfer-Encoding: chunked でも BodyKind::None
+    // Transfer-Encoding: chunked でも BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
 
-    // ヘッダーなし (最も一般的なケース) → BodyKind::None
+    // ヘッダーなし (最も一般的なケース) → BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.method, "CONNECT");
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
+}
+
+/// CONNECT トンネル化後の decode_headers / decode は明示的にエラーを返す。
+/// HTTP Request Smuggling 防止のため、トンネルデータを次のリクエストとして
+/// parse させないこと。
+#[test]
+fn test_connect_request_decode_headers_in_tunnel_returns_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\nGET /admin HTTP/1.1\r\nHost: internal\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(decoder.is_tunnel());
+
+    // 後続バイトに見える「GET /admin」は次のリクエストではなくトンネルデータ
+    assert!(
+        decoder.decode_headers().is_err(),
+        "トンネルモードで decode_headers を呼ぶとエラーを返す想定"
+    );
+
+    // take_remaining で生バイトとして取り出せる
+    let remaining = decoder.take_remaining();
+    assert!(
+        remaining.starts_with(b"GET /admin HTTP/1.1\r\n"),
+        "ヘッダー終端後のバイトは next request としてではなくトンネルデータとして取得できる"
+    );
+}
+
+/// reset() でトンネルモードから脱出できる (CONNECT 失敗時の復帰経路)
+#[test]
+fn test_connect_request_reset_clears_tunnel_mode() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(decoder.is_tunnel());
+
+    decoder.reset();
+    assert!(!decoder.is_tunnel(), "reset 後はトンネルモードから脱出する");
+
+    // 通常リクエストを decode できる
+    let next = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+    decoder.feed(next.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.method, "GET");
     assert_eq!(body_kind, BodyKind::None);
 }
 

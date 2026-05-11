@@ -1,6 +1,7 @@
 # 0030: RequestDecoder に CONNECT 用 tunnel API を追加する
 
 Created: 2026-05-11
+Completed: 2026-05-11
 Model: Opus 4.7
 
 ## 概要
@@ -73,3 +74,20 @@ Model: Opus 4.7
 - 以前は CONNECT リクエストで `BodyKind::None` が返っていたが、本変更後は `BodyKind::Tunnel` が返る
 - CONNECT を扱っていた既存ユーザは、`BodyKind::Tunnel` 分岐を追加する必要がある
 - canary リリース中なので破壊的変更は許容範囲
+
+## 解決方法
+
+- `src/decoder/request.rs::decode_headers`:
+  - CONNECT メソッド検出時の戻り値を `BodyKind::None` から `BodyKind::Tunnel` に変更した
+  - `BodyKind::Tunnel` 分岐の `unreachable!()` を削除し `self.phase = DecodePhase::Tunnel` に置き換えた
+  - `DecodePhase::Tunnel` 分岐を追加して `decode_headers` がトンネルモードでエラーを返すようにした (`ResponseDecoder::decode_headers` と対称)
+- `src/decoder/request.rs::decode`:
+  - `BodyKind::Tunnel` 分岐の `unreachable!()` を削除し、`InvalidData("decode() cannot be used in tunnel mode, use take_remaining() instead")` を返すように変更した
+- `src/decoder/request.rs` に以下の `pub` メソッドを追加した:
+  - `take_remaining(&mut self) -> Vec<u8>`: `ResponseDecoder::take_remaining` と同実装。pending を明示的にリセットしてから `mem::take(&mut self.buf)` する
+  - `is_tunnel(&self) -> bool`: phase が `DecodePhase::Tunnel` かを判定
+- テスト追加:
+  - `tests/test_decoder.rs::test_connect_request_enters_tunnel_mode`: 旧 `test_connect_request_no_body` を改名・全面書き換え。CL / TE / 無ヘッダーの 4 パターンで `BodyKind::Tunnel` を返すこと、`is_tunnel()` が true、ヘッダー終端後のバイト列が `take_remaining()` で取得できることを検証
+  - `tests/test_decoder.rs::test_connect_request_decode_headers_in_tunnel_returns_error`: CONNECT 後の `GET /admin` バイト列が次のリクエストとして parse されず、トンネルデータとして取得できることを検証 (HTTP Request Smuggling 防御)
+  - `tests/test_decoder.rs::test_connect_request_reset_clears_tunnel_mode`: `reset()` で Tunnel から脱出し、通常リクエストを decode できることを検証 (CONNECT 失敗時の復帰経路)
+- `CHANGES.md` の `## develop` 先頭に `[CHANGE]` エントリを追加した

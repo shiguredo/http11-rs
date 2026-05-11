@@ -11,6 +11,13 @@
 
 ## develop
 
+- [CHANGE] `RequestDecoder` に CONNECT 用 tunnel API (`is_tunnel` / `take_remaining`) を追加し、CONNECT リクエスト受信時の `BodyKind` を `None` から `Tunnel` に変更する
+  - RFC 9110 Section 9.3.6「the connection becomes a tunnel immediately after the header section」に準拠
+  - 旧挙動 (`BodyKind::None` で `Complete` 直行) では、ヘッダー終端後にクライアントが送ってきたバイト列が `decode_headers` の Complete 自動再遷移経由で「次の HTTP リクエスト」として parse され、HTTP Request Smuggling (CWE-444) 様の経路を生んでいた
+  - 新挙動では `DecodePhase::Tunnel` に遷移し、`decode_headers` / `decode` はトンネルモードでエラーを返す。ヘッダー終端後のバイト列は `take_remaining()` で取り出して transparent に転送する
+  - CONNECT 失敗時 (サーバが 4xx/5xx を返す等) は呼出側が `reset()` で復帰するか、接続をクローズする
+  - 既存の `ResponseDecoder` の `is_tunnel` / `take_remaining` (CONNECT 2xx 応答受信側) と対称な API になる
+  - @voluntas
 - [CHANGE] `examples/http11_client`, `examples/http11_server`, `examples/http11_server_io_uring` の圧縮 feature フラグ (`br` / `gzip` / `zstd`) を撤廃し常に 3 形式すべて有効にする
   - サンプルとしての挙動を単純化し、`cargo run -p <example>` だけで gzip / brotli / zstd の圧縮・展開が動作するようにする
   - `Cargo.toml` から `[features]` セクションと `optional = true` を削除し、ソースコードからも `#[cfg(feature = "...")]` を全削除する
