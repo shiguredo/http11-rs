@@ -257,6 +257,36 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.pending = 0;
     }
 
+    /// バッファの残りデータを取り出す (トンネルモード用)
+    ///
+    /// CONNECT リクエスト受信後にトンネルモードに切り替わった場合、
+    /// このメソッドでヘッダー終端以降のデータを取り出してトンネルの相手側
+    /// (バックエンドサーバ) に転送する。RFC 9110 Section 9.3.6 が要求する
+    /// 「ヘッダー終端直後からの transparent な転送」を実現するための API。
+    ///
+    /// 呼び出し後、バッファは空になる。
+    pub fn take_remaining(&mut self) -> Vec<u8> {
+        debug_assert!(
+            self.pending == 0,
+            "take_remaining called with pending mut_buf"
+        );
+        // 不変条件 "buf 空 ↔ pending == 0" を維持する。
+        // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
+        // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
+        self.pending = 0;
+        core::mem::take(&mut self.buf)
+    }
+
+    /// トンネルモードかどうかを判定
+    ///
+    /// CONNECT リクエストのヘッダーを受信した直後はトンネルモードになる。
+    /// サーバが 2xx で応答できる場合、ここから先のバイト列はトンネルデータ
+    /// として扱う。サーバが 4xx/5xx を返す場合は接続をクローズするか、
+    /// `reset()` でデコーダーをリセットして通常モードに戻す。
+    pub fn is_tunnel(&self) -> bool {
+        matches!(self.phase, DecodePhase::Tunnel)
+    }
+
     /// ボディモードを決定
     ///
     /// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
@@ -405,15 +435,29 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 }
                             }
 
-                            // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
-                            // CONNECT リクエストは content を持たないため、BodyKind::None として扱う。
-                            // Content-Length / Transfer-Encoding が付いていても即エラーにはしないが、
-                            // body として読むこともしない。ヘッダー終端でリクエスト完了とする。
-                            // RFC は CONNECT リクエスト側に TE/CL を MUST NOT とはしていない
-                            // (MUST NOT は 2xx レスポンス側の制約)。
+                            // RFC 9110 Section 9.3.6:
+                            // "A CONNECT request message does not have content."
+                            // "When a server responds with a 2xx (Successful) status code to a
+                            //  CONNECT request, the connection becomes a tunnel immediately
+                            //  after the header section, with the connection used as-is to
+                            //  convey the data of the tunnel."
+                            //
+                            // CONNECT 受信時はヘッダー終端直後の任意バイト列をトンネルデータと
+                            // して扱う必要がある。`BodyKind::None` で Complete 遷移してしまうと
+                            // 後続バイトが「次の HTTP リクエスト」として decode_headers で
+                            // parse されはじめ、HTTP Request Smuggling 経路を生む。
+                            // ResponseDecoder の 2xx 応答経路と対称に `BodyKind::Tunnel` に
+                            // 遷移させ、`take_remaining()` で transparent に転送できるようにする。
+                            //
+                            // CONNECT 失敗時 (サーバが 4xx/5xx を返す等) は呼出側で `reset()`
+                            // して通常のリクエスト処理に戻すか、接続をクローズする。
+                            //
+                            // RFC は CONNECT リクエスト側の Content-Length / Transfer-Encoding
+                            // を MUST NOT としていない (MUST NOT は 2xx レスポンス側の制約)
+                            // ため、それらヘッダーが付いていても即エラーにはしない。
                             let method = start_line_ref.split(' ').next().unwrap_or("");
                             let body_kind = if method == "CONNECT" {
-                                BodyKind::None
+                                BodyKind::Tunnel
                             } else {
                                 self.determine_body_kind(version)?
                             };
@@ -436,8 +480,9 @@ impl<D: Decompressor> RequestDecoder<D> {
                                     self.phase = DecodePhase::Complete;
                                 }
                                 BodyKind::Tunnel => {
-                                    // リクエストではトンネルモードは発生しない
-                                    unreachable!("Tunnel mode is only for CONNECT responses")
+                                    // CONNECT リクエスト: ヘッダー終端後はトンネルモード。
+                                    // 後続バイトは `take_remaining()` で取り出す。
+                                    self.phase = DecodePhase::Tunnel;
                                 }
                             }
 
@@ -492,6 +537,11 @@ impl<D: Decompressor> RequestDecoder<D> {
                     self.headers.clear();
                     self.body_decoder.reset();
                     continue;
+                }
+                DecodePhase::Tunnel => {
+                    return Err(Error::InvalidData(
+                        "decode_headers cannot be used in tunnel mode".to_string(),
+                    ));
                 }
                 _ => {
                     return Err(Error::InvalidData(
@@ -639,8 +689,10 @@ impl<D: Decompressor> RequestDecoder<D> {
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
             BodyKind::Tunnel => {
-                // リクエストではトンネルモードは発生しない
-                unreachable!("Tunnel mode is only for CONNECT responses")
+                return Err(Error::InvalidData(
+                    "decode() cannot be used in tunnel mode, use take_remaining() instead"
+                        .to_string(),
+                ));
             }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
                 // バッファからボディデータを直接消費。
