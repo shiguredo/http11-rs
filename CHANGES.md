@@ -97,6 +97,14 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] Base64 デコードを RFC 4648 Section 3.5 に従ったストリクト仕様に変更する
+  - 空白除去後の全長が 4 の倍数 (パディング含む) でない入力を `Base64Error::InvalidPadding` で reject
+  - 末尾 `=` 個数が 3 以上の入力を reject
+  - データ部分の文字数 mod 4 と `=` 個数の不整合 (mod 4 == 1 など) を reject
+  - RFC 4648 §3.3 の MUST zero に違反する末尾余剰 bit (`buf != 0`) を reject
+  - 旧実装は `trim_end_matches('=')` でパディング個数を無視し、`A` のような不完全な末尾 6 bit 群を黙って捨てるため `BasicAuth` / `DigestAuth` で同一 credential に対する複数 base64 表現が成立し canonicalization が壊れていた経路を遮断する
+  - `Base64Error` に `InvalidPadding` バリアントを追加 (`pub(crate)` のため外部 API には露出しない、`BasicAuth::parse` 経由では従来通り `AuthError::Base64DecodeError` に潰る)
+  - @voluntas
 - [FIX] `DigestAuth` で `username*` (RFC 7616 Section 3.4 / RFC 5987 ext-value) をサポートする
   - `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) のどちらか一方を必須化 (XOR)
   - 旧実装は `username` のみを必須としており、UTF-8 ユーザー名を `username*=` で送信するクライアントを reject していた
