@@ -23,6 +23,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
+
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentDispositionError {
@@ -389,21 +391,38 @@ fn is_token_char(b: u8) -> bool {
     )
 }
 
-/// 引用符付き文字列をパース (エスケープ処理)
+/// 引用符付き文字列をパース (RFC 9110 Section 5.6.4 qdtext / quoted-pair)
+///
+/// 入力は両端の DQUOTE を除いた中身 (= `qdtext / quoted-pair` の連結)。
+/// CTL (CR / LF / NUL / 他) は qdtext / quoted-pair のどちらの右辺としても許容しない。
+/// 受信側でも CR/LF を含む quoted-string を素通りさせると、上位アプリでの再エンコード経路で
+/// response splitting / log injection に至る経路を生むため厳格に reject する。
 fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
+    let bytes = s.as_bytes();
     let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
+    let mut i = 0;
 
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            // エスケープシーケンス
-            if let Some(escaped) = chars.next() {
-                result.push(escaped);
-            } else {
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            // quoted-pair: 次のバイトが HTAB / SP / VCHAR / obs-text であること
+            i += 1;
+            if i >= bytes.len() {
                 return Err(ContentDispositionError::InvalidParameter);
             }
+            let next = bytes[i];
+            if !is_quoted_pair_byte(next) {
+                return Err(ContentDispositionError::InvalidParameter);
+            }
+            result.push(next as char);
+            i += 1;
         } else {
-            result.push(c);
+            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+            if !is_qdtext_byte(b) {
+                return Err(ContentDispositionError::InvalidParameter);
+            }
+            result.push(b as char);
+            i += 1;
         }
     }
 
