@@ -1,6 +1,7 @@
 # 0038: Base64 デコードを RFC 4648 Section 3.5 strict に厳格化する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -78,3 +79,27 @@ Model: Opus 4.7
 - non-canonical base64 を以前受理していたケースは reject される
 - `Base64Error::InvalidPadding` バリアント追加 (`pub(crate)` enum のため外部 API には露出しない、`BasicAuth::parse` 等は引き続き `AuthError::Base64DecodeError` で潰す)
 - canary リリース中なので破壊的変更は許容範囲
+
+## 解決方法
+
+- `src/base64.rs::Base64Error` に `InvalidPadding` バリアントを追加した
+- `src/base64.rs::decode` を以下の手順に書き換えた:
+  1. 空白 (` ` / `\t` / `\n` / `\r`) を除去した正規化バッファ `normalized` を作る
+  2. 末尾 `=` 個数を `take_while(|&&b| b == b'=').count()` で数える
+  3. `pad_count > 2` なら `InvalidPadding`
+  4. `normalized.len() % 4 != 0` なら `InvalidPadding` (パディング含めた全長は 4 の倍数)
+  5. データ部分 `data = &normalized[..normalized.len() - pad_count]` の文字数 mod 4 と pad_count の対応を確認:
+     - `pad_count == 0` で `mod 4 == 0`
+     - `pad_count == 1` で `mod 4 == 3`
+     - `pad_count == 2` で `mod 4 == 2`
+     - それ以外は `InvalidPadding`
+  6. データ部分を 6 bit ずつ復号
+  7. 末尾の余剰 bit (`buf != 0`) は `InvalidPadding` (RFC 4648 §3.3 MUST zero)
+- ASCII 範囲外の文字 (e.g., U+00A0) は `InvalidCharacter` に分類する (旧実装と同じ挙動を維持)
+- 新規テスト追加 (`src/base64.rs` inline):
+  - `decode_rejects_unpadded_short_input`: 1 / 2 / 3 文字 (パディングなし) の入力を `InvalidPadding` で reject
+  - `decode_rejects_excess_padding`: パディング 3 / 4 個を reject
+  - `decode_rejects_mismatched_padding`: data 文字数 mod 4 と `=` 個数の不整合パターンを reject
+  - `decode_rejects_non_zero_trailing_bits`: `Zh==` のような末尾余剰 bit が非ゼロな non-canonical 入力を reject
+- 既存テスト (canonical 入力) は全件継続パス
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
