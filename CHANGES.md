@@ -97,6 +97,15 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] `Authorization` / `Content-Disposition` の quoted-string parser で quoted-pair / qdtext の文字集合を RFC 9110 Section 5.6.4 に準拠して厳格化する
+  - `quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )` の右辺と `qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text` を `validate` モジュールに `pub(crate) fn is_qdtext_byte` / `pub(crate) fn is_quoted_pair_byte` として集約
+  - `src/auth.rs::parse_auth_params` と `src/content_disposition.rs::parse_quoted_string` で受信時に CR / LF / NUL 等の CTL を含む quoted-string を reject するよう変更
+  - 上位アプリでの再エンコード経路における response splitting / log injection の経路を遮断する
+  - @voluntas
+- [FIX] `Cache-Control` ディレクティブの値で partial quote (片端 DQUOTE のみ) を reject する
+  - 旧実装 `value.trim().trim_matches('"')` は `max-age="3600` のように閉じ DQUOTE 欠落の値を許容していた
+  - RFC 9110 Section 5.6.4 quoted-string ABNF (両端 DQUOTE) に準拠して `CacheError::InvalidFormat` を返すよう変更
+  - @voluntas
 - [FIX] `MultipartParser::find_bytes` の `windows().position()` ベース実装と毎回 buffer 全体を再走査する挙動を改善し、断片入力時の O(N²·M) 再走査を回避する
   - `find_bytes` を「first-byte skip + needle 全体比較」に書き換え、定数倍を削減する (最悪計算量 O(N·M) は不変だが、boundary が `\r` で始まるケースで実用的に O(N) に近づく)
   - `MultipartParser` に `boundary_scan_offset: usize` フィールドを追加し、Initial / InPart の境界検索が `Incomplete` を返した位置から次回再開できるようにする。haystack 末尾の `needle.len() - 1` overlap のみを再走査範囲とすることで、Sans I/O 断片入力時の再走査コストを O(buffer_size) に抑える

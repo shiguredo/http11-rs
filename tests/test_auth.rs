@@ -187,3 +187,38 @@ fn test_digest_challenge_params_with_comma_ok() {
     let result = DigestChallenge::parse("Digest realm=\"test\", nonce=\"abc\"");
     assert!(result.is_ok());
 }
+
+// ========================================
+// quoted-string / quoted-pair の CTL 拒否 (RFC 9110 Section 5.6.4)
+// ========================================
+
+/// RFC 9110 §5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+/// CR / LF / NUL を escape したものは reject する
+#[test]
+fn test_auth_quoted_pair_rejects_crlf() {
+    let input = "Basic realm=\"a\\\rb\"";
+    let result = BasicAuth::parse(input);
+    assert!(
+        result.is_err(),
+        "quoted-pair で CR を escape したものは reject されるべき"
+    );
+
+    let input = "Basic realm=\"a\\\nb\"";
+    let result = BasicAuth::parse(input);
+    assert!(
+        result.is_err(),
+        "quoted-pair で LF を escape したものは reject されるべき"
+    );
+}
+
+/// RFC 9110 §5.6.4: qdtext に CR / LF を含むものは reject する
+#[test]
+fn test_auth_qdtext_rejects_crlf() {
+    let input = "Basic realm=\"a\rb\"";
+    let result = BasicAuth::parse(input);
+    assert!(result.is_err(), "qdtext に CR を含むものは reject される");
+
+    let input = "Basic realm=\"a\nb\"";
+    let result = BasicAuth::parse(input);
+    assert!(result.is_err(), "qdtext に LF を含むものは reject される");
+}

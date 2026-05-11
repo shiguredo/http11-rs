@@ -114,3 +114,40 @@ fn test_expires_to_header_value() {
     assert!(header.contains("1994"));
     assert!(header.contains("Nov"));
 }
+
+// ========================================
+// quoted-string の対称検査 (RFC 9110 Section 5.6.4)
+// ========================================
+
+/// RFC 9110 §5.6.4: quoted-string は両端 DQUOTE。partial quote は reject する
+#[test]
+fn test_cache_control_rejects_partial_open_quote() {
+    // 開き引用符のみ (`max-age="3600`)
+    let result = CacheControl::parse("max-age=\"3600");
+    assert!(
+        result.is_err(),
+        "片端 DQUOTE のみの partial quote は reject される想定"
+    );
+}
+
+#[test]
+fn test_cache_control_rejects_partial_close_quote() {
+    // 閉じ引用符のみ (`max-age=3600"`)
+    let result = CacheControl::parse("max-age=3600\"");
+    assert!(
+        result.is_err(),
+        "片端 DQUOTE のみの partial quote は reject される想定"
+    );
+}
+
+#[test]
+fn test_cache_control_accepts_both_sides_quoted() {
+    let cc = CacheControl::parse("max-age=\"3600\"").unwrap();
+    assert_eq!(cc.max_age(), Some(3600));
+}
+
+#[test]
+fn test_cache_control_accepts_unquoted() {
+    let cc = CacheControl::parse("max-age=3600").unwrap();
+    assert_eq!(cc.max_age(), Some(3600));
+}

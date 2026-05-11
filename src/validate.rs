@@ -254,6 +254,29 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
     )
 }
 
+/// qdtext バイトか確認 (RFC 9110 Section 5.6.4)
+///
+/// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+///        = 0x09 / 0x20 / 0x21 / 0x23-0x5B / 0x5D-0x7E / 0x80-0xFF
+///
+/// DQUOTE (0x22) と backslash (0x5C) は除く。
+/// CR / LF / NUL / 他の CTL (0x01-0x1F 範囲のうち HTAB 以外) は不許可。
+pub(crate) fn is_qdtext_byte(b: u8) -> bool {
+    matches!(b, 0x09 | 0x20 | 0x21 | 0x23..=0x5B | 0x5D..=0x7E | 0x80..=0xFF)
+}
+
+/// quoted-pair の右辺バイトか確認 (RFC 9110 Section 5.6.4)
+///
+/// quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+///             = "\" ( 0x09 / 0x20-0x7E / 0x80-0xFF )
+///
+/// NUL (0x00) / CR (0x0D) / LF (0x0A) / 他の CTL (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F) は不許可。
+/// 受信側でも CR / LF を含む quoted-pair を素通りさせると、上位アプリでの再エンコード経路で
+/// response splitting / log injection に至る経路を生むため厳格に reject する。
+pub(crate) fn is_quoted_pair_byte(b: u8) -> bool {
+    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
+}
+
 /// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
 ///
 /// OWS = *( SP / HTAB )

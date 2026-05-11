@@ -33,6 +33,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
+use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -752,6 +753,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             while i < bytes.len() {
                 let b = bytes[i];
                 if escaped {
+                    // RFC 9110 Section 5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+                    // CTL (CR / LF / NUL / 他) は escape の対象として許容しない。
+                    if !is_quoted_pair_byte(b) {
+                        return Err(AuthError::InvalidParameter);
+                    }
                     value.push(b as char);
                     escaped = false;
                 } else if b == b'\\' {
@@ -761,6 +767,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
                     closed = true;
                     break;
                 } else {
+                    // RFC 9110 Section 5.6.4: qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+                    // DQUOTE と backslash は別経路で処理済み。CR / LF / NUL 等の CTL を reject する。
+                    if !is_qdtext_byte(b) {
+                        return Err(AuthError::InvalidParameter);
+                    }
                     value.push(b as char);
                 }
                 i += 1;
