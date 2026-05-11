@@ -1,6 +1,11 @@
 //! HTTP ヘッダー型の定義
 
+use crate::error::EncodeError;
 use crate::status_code::StatusClass;
+use crate::validate::{
+    is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_protocol_version,
+    is_valid_reason_phrase, is_valid_request_target, is_valid_status_code,
+};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -135,16 +140,146 @@ pub trait HttpHead {
 }
 
 /// リクエストヘッダー（ボディなし）
+///
+/// `RequestDecoder::decode_headers` の戻り値として返される、デコード済みの
+/// リクエストヘッダーを表す。フィールドは非公開で、`new` / `with_version` /
+/// `header` 等のバリデート付き API 経由でのみ構築できる。
+///
+/// `#[non_exhaustive]` を付与しているため、将来のフィールド追加は非破壊的に扱える。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct RequestHead {
     /// HTTP メソッド (GET, POST, etc.)
-    pub method: String,
+    pub(crate) method: String,
     /// リクエスト URI
-    pub uri: String,
+    pub(crate) uri: String,
     /// HTTP バージョン (HTTP/1.1 等)
-    pub version: String,
+    pub(crate) version: String,
     /// ヘッダー
-    pub headers: Vec<(String, String)>,
+    pub(crate) headers: Vec<(String, String)>,
+}
+
+impl RequestHead {
+    /// 新しい `RequestHead` を HTTP/1.1 で作成する (バリデート付き)
+    ///
+    /// テスト用途や、別経路で受信したヘッダー情報から `RequestHead` を構築したい
+    /// 場合に利用する。`RequestDecoder` 経由で得た `RequestHead` には呼び出す
+    /// 必要はない。
+    pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError> {
+        Self::with_version(method, uri, "HTTP/1.1")
+    }
+
+    /// 新しい `RequestHead` をバージョン指定付きで作成する (バリデート付き)
+    pub fn with_version(method: &str, uri: &str, version: &str) -> Result<Self, EncodeError> {
+        if !is_valid_method(method) {
+            return Err(EncodeError::InvalidMethod {
+                method: method.into(),
+            });
+        }
+        if !is_valid_request_target(uri) {
+            return Err(EncodeError::InvalidRequestTarget { uri: uri.into() });
+        }
+        if !is_valid_protocol_version(version) {
+            return Err(EncodeError::InvalidVersion {
+                version: version.into(),
+            });
+        }
+        Ok(Self {
+            method: method.into(),
+            uri: uri.into(),
+            version: version.into(),
+            headers: Vec::new(),
+        })
+    }
+
+    /// ヘッダーを追加する (バリデート付き、ビルダー)
+    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+        self.add_header(name, value)?;
+        Ok(self)
+    }
+
+    /// ヘッダーを追加する (バリデート付き、可変借用)
+    pub fn add_header(&mut self, name: &str, value: &str) -> Result<&mut Self, EncodeError> {
+        if !is_valid_header_name(name) {
+            return Err(EncodeError::InvalidHeaderName { name: name.into() });
+        }
+        if !is_valid_field_value(value) {
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.into(),
+                value: value.into(),
+            });
+        }
+        self.headers.push((name.into(), value.into()));
+        Ok(self)
+    }
+
+    /// HTTP メソッドを取得
+    #[must_use]
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+
+    /// リクエスト URI を取得
+    #[must_use]
+    pub fn uri(&self) -> &str {
+        &self.uri
+    }
+
+    /// `RequestDecoder` 内部からの構築用 (バリデーションスキップ)
+    ///
+    /// `RequestDecoder::decode_headers` は start-line / ヘッダーをデコード時に
+    /// 各フィールドをバリデート済み (`is_valid_method` / `is_valid_request_target` /
+    /// `is_valid_protocol_version` / `is_valid_header_name` / `is_valid_field_value`)
+    /// であるため、ここで再検証は不要。
+    ///
+    /// 命名は標準ライブラリの unsafe 慣習 (`Vec::from_raw_parts` 等) と表面的に
+    /// 衝突するが、本関数は unsafe ではない (整合性責任が呼出側にある点だけが
+    /// 共通)。
+    #[cfg(debug_assertions)]
+    pub(crate) fn from_validated_parts(
+        method: String,
+        uri: String,
+        version: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        debug_assert!(is_valid_method(&method), "method must be valid token");
+        debug_assert!(
+            is_valid_request_target(&uri),
+            "uri must be valid request-target"
+        );
+        debug_assert!(
+            is_valid_protocol_version(&version),
+            "version must be valid HTTP-version"
+        );
+        for (name, value) in &headers {
+            debug_assert!(
+                is_valid_header_name(name),
+                "header name must be valid token"
+            );
+            debug_assert!(is_valid_field_value(value), "header value must be valid");
+        }
+        Self {
+            method,
+            uri,
+            version,
+            headers,
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn from_validated_parts(
+        method: String,
+        uri: String,
+        version: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        Self {
+            method,
+            uri,
+            version,
+            headers,
+        }
+    }
 }
 
 impl HttpHead for RequestHead {
@@ -158,16 +293,169 @@ impl HttpHead for RequestHead {
 }
 
 /// レスポンスヘッダー（ボディなし）
+///
+/// `ResponseDecoder::decode_headers` の戻り値として返される、デコード済みの
+/// レスポンスヘッダーを表す。フィールドは非公開で、`new` / `with_version` /
+/// `header` 等のバリデート付き API 経由でのみ構築できる。これにより
+/// `status_code` の不変条件 (RFC 9110 Section 15: 100..=599) が型レベルで
+/// 保証され、`status_class()` の panic 経路を塞ぐ。
+///
+/// `#[non_exhaustive]` を付与しているため、将来のフィールド追加は非破壊的に扱える。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ResponseHead {
     /// HTTP バージョン (HTTP/1.1 等)
-    pub version: String,
-    /// ステータスコード (200, 404, etc.)
-    pub status_code: u16,
+    pub(crate) version: String,
+    /// ステータスコード (100..=599)
+    pub(crate) status_code: u16,
     /// ステータスフレーズ (OK, Not Found, etc.)
-    pub reason_phrase: String,
+    pub(crate) reason_phrase: String,
     /// ヘッダー
-    pub headers: Vec<(String, String)>,
+    pub(crate) headers: Vec<(String, String)>,
+}
+
+impl ResponseHead {
+    /// 新しい `ResponseHead` を HTTP/1.1 で作成する (バリデート付き)
+    ///
+    /// テスト用途や、別経路で受信したヘッダー情報から `ResponseHead` を構築したい
+    /// 場合に利用する。`ResponseDecoder` 経由で得た `ResponseHead` には呼び出す
+    /// 必要はない。
+    ///
+    /// `reason_phrase` は空文字列を許容する (RFC 9112 Section 4 の absent 扱い)。
+    pub fn new(status_code: u16, reason_phrase: &str) -> Result<Self, EncodeError> {
+        Self::with_version("HTTP/1.1", status_code, reason_phrase)
+    }
+
+    /// 新しい `ResponseHead` をバージョン指定付きで作成する (バリデート付き)
+    pub fn with_version(
+        version: &str,
+        status_code: u16,
+        reason_phrase: &str,
+    ) -> Result<Self, EncodeError> {
+        if !is_valid_protocol_version(version) {
+            return Err(EncodeError::InvalidVersion {
+                version: version.into(),
+            });
+        }
+        if !is_valid_status_code(status_code) {
+            return Err(EncodeError::InvalidStatusCode { code: status_code });
+        }
+        // reason-phrase 空文字列は absent 扱いで許容、非空ならバリデート
+        if !reason_phrase.is_empty() && !is_valid_reason_phrase(reason_phrase) {
+            return Err(EncodeError::InvalidReasonPhrase {
+                phrase: reason_phrase.into(),
+            });
+        }
+        Ok(Self {
+            version: version.into(),
+            status_code,
+            reason_phrase: reason_phrase.into(),
+            headers: Vec::new(),
+        })
+    }
+
+    /// ヘッダーを追加する (バリデート付き、ビルダー)
+    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+        self.add_header(name, value)?;
+        Ok(self)
+    }
+
+    /// ヘッダーを追加する (バリデート付き、可変借用)
+    pub fn add_header(&mut self, name: &str, value: &str) -> Result<&mut Self, EncodeError> {
+        if !is_valid_header_name(name) {
+            return Err(EncodeError::InvalidHeaderName { name: name.into() });
+        }
+        if !is_valid_field_value(value) {
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.into(),
+                value: value.into(),
+            });
+        }
+        self.headers.push((name.into(), value.into()));
+        Ok(self)
+    }
+
+    /// ステータスコードを取得 (100..=599 が保証される)
+    #[must_use]
+    pub fn status_code(&self) -> u16 {
+        self.status_code
+    }
+
+    /// ステータスフレーズを取得 (空文字列は absent 扱い)
+    #[must_use]
+    pub fn reason_phrase(&self) -> &str {
+        &self.reason_phrase
+    }
+
+    /// ステータスコードのクラス分類を返す。
+    ///
+    /// RFC 9110 Section 15 に基づく分類。
+    ///
+    /// フィールド非公開化と `new` / `with_version` のバリデーションにより
+    /// `status_code` は 100..=599 が型レベルで保証されているため、
+    /// `StatusClass::from_status_code` は必ず `Some` を返す。
+    #[must_use]
+    pub fn status_class(&self) -> StatusClass {
+        StatusClass::from_status_code(self.status_code)
+            .expect("status_code is in 100..=599 by construction invariant")
+    }
+
+    /// `ResponseDecoder` 内部からの構築用 (バリデーションスキップ)
+    ///
+    /// `ResponseDecoder::decode_headers` は status-line / ヘッダーをデコード時に
+    /// 各フィールドをバリデート済みであるため、ここで再検証は不要。
+    ///
+    /// 命名は標準ライブラリの unsafe 慣習 (`Vec::from_raw_parts` 等) と表面的に
+    /// 衝突するが、本関数は unsafe ではない (整合性責任が呼出側にある点だけが
+    /// 共通)。
+    #[cfg(debug_assertions)]
+    pub(crate) fn from_validated_parts(
+        version: String,
+        status_code: u16,
+        reason_phrase: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        debug_assert!(
+            is_valid_protocol_version(&version),
+            "version must be valid HTTP-version"
+        );
+        debug_assert!(
+            is_valid_status_code(status_code),
+            "status_code must be in 100..=599"
+        );
+        debug_assert!(
+            reason_phrase.is_empty() || is_valid_reason_phrase(&reason_phrase),
+            "reason_phrase must be valid or empty"
+        );
+        for (name, value) in &headers {
+            debug_assert!(
+                is_valid_header_name(name),
+                "header name must be valid token"
+            );
+            debug_assert!(is_valid_field_value(value), "header value must be valid");
+        }
+        Self {
+            version,
+            status_code,
+            reason_phrase,
+            headers,
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    pub(crate) fn from_validated_parts(
+        version: String,
+        status_code: u16,
+        reason_phrase: String,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        Self {
+            version,
+            status_code,
+            reason_phrase,
+            headers,
+        }
+    }
 }
 
 impl HttpHead for ResponseHead {
@@ -177,26 +465,5 @@ impl HttpHead for ResponseHead {
 
     fn headers(&self) -> &[(String, String)] {
         &self.headers
-    }
-}
-
-impl ResponseHead {
-    /// ステータスコードのクラス分類を返す。
-    ///
-    /// RFC 9110 Section 15 に基づく分類。
-    ///
-    /// 注: `ResponseHead` の全フィールドは現在 `pub` であるため、
-    /// 構造体リテラルで不正な `status_code` を直接注入された場合に
-    /// パニックが発生する。`ResponseHead` のフィールド非公開化
-    /// (将来 issue) が完了すればこの問題は解消される。
-    /// デコーダー経由で構築された `ResponseHead` では
-    /// `status_code` は 100..=599 にバリデートされているため安全。
-    #[must_use]
-    pub fn status_class(&self) -> StatusClass {
-        // `ResponseDecoder` は status-line をデコードする際に
-        // `is_valid_status_code` (100..=599) を通している。
-        StatusClass::from_status_code(self.status_code).expect(
-            "ResponseHead::status_code must be in 100..=599 (ResponseDecoder validates at decode time)",
-        )
     }
 }

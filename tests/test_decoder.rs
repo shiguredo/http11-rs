@@ -45,7 +45,7 @@ fn test_connect_2xx_tunnel_mode() {
         );
 
         let (head, body_kind) = result.unwrap();
-        assert_eq!(head.status_code, status);
+        assert_eq!(head.status_code(), status);
         assert_eq!(
             body_kind,
             BodyKind::Tunnel,
@@ -71,7 +71,7 @@ fn test_connect_204_no_body() {
     decoder.feed(response.as_bytes()).unwrap();
 
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.status_code, 204);
+    assert_eq!(head.status_code(), 204);
     assert_eq!(body_kind, BodyKind::None);
     assert!(!decoder.is_tunnel());
 }
@@ -980,7 +980,7 @@ fn test_connect_request_enters_tunnel_mode() {
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
+    assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel(), "CONNECT 受信後はトンネルモード");
     // ヘッダー終端後のバイトはトンネルデータとして取り出せる
@@ -996,7 +996,7 @@ fn test_connect_request_enters_tunnel_mode() {
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 0\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
+    assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
     assert!(
@@ -1009,7 +1009,7 @@ fn test_connect_request_enters_tunnel_mode() {
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
+    assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
 
@@ -1018,7 +1018,7 @@ fn test_connect_request_enters_tunnel_mode() {
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
+    assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
 }
@@ -1064,7 +1064,7 @@ fn test_connect_request_reset_clears_tunnel_mode() {
     let next = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
     decoder.feed(next.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "GET");
+    assert_eq!(head.method(), "GET");
     assert_eq!(body_kind, BodyKind::None);
 }
 

@@ -16,7 +16,7 @@
 //!
 //! // ヘッダーをデコード
 //! let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-//! assert_eq!(head.method, "GET");
+//! assert_eq!(head.method(), "GET");
 //!
 //! // ボディをストリーミングで読み取り
 //! let mut body = Vec::new();

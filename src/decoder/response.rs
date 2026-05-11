@@ -539,12 +539,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             let start_line = self.start_line.take().unwrap();
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
-                            let head = ResponseHead {
-                                version: parts[0].to_string(),
+                            let head = ResponseHead::from_validated_parts(
+                                parts[0].to_string(),
                                 status_code,
-                                reason_phrase: parts.get(2).unwrap_or(&"").to_string(),
-                                headers: core::mem::take(&mut self.headers),
-                            };
+                                parts.get(2).unwrap_or(&"").to_string(),
+                                core::mem::take(&mut self.headers),
+                            );
 
                             return Ok(Some((head, body_kind)));
                         } else {

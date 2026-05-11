@@ -266,6 +266,6 @@ proptest! {
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "urn: absolute-form should succeed: {}", uri);
         let (head, _) = result.unwrap().unwrap();
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }

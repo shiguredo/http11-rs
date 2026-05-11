@@ -47,8 +47,8 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.status_code, status_code);
-        prop_assert_eq!(head.reason_phrase, "");
+        prop_assert_eq!(head.status_code(), status_code);
+        prop_assert_eq!(head.reason_phrase(), "");
     }
 }
 
@@ -664,7 +664,7 @@ proptest! {
         );
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.status_code, status_code);
+        prop_assert_eq!(head.status_code(), status_code);
         // RFC 9112 Section 6.3: 1xx, 204, 304 はボディなし
         if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
@@ -805,7 +805,7 @@ proptest! {
 
         for i in 0..count {
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
-            prop_assert_eq!(head.status_code, base_status + i as u16);
+            prop_assert_eq!(head.status_code(), base_status + i as u16);
         }
 
         // 次のメッセージがなければ Ok(None)

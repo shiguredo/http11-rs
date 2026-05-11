@@ -294,8 +294,8 @@ async fn serve_request(
     // examples は外部 crate のため `from_raw_parts` 使用不可。
     // 構築時バリデーション付きの Request::with_version 経由で再構築する。
     // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
-    let mut request = Request::with_version(&h.method, &h.uri, &h.version)?;
-    for (name, value) in &h.headers {
+    let mut request = Request::with_version(h.method(), h.uri(), h.version())?;
+    for (name, value) in h.headers() {
         request.add_header(name, value)?;
     }
     let request = if let Some(body) = state.body.take() {

@@ -11,6 +11,14 @@
 
 ## develop
 
+- [CHANGE] `RequestHead` / `ResponseHead` の全フィールドを非公開化し、構築時バリデーション付きの公開 API を追加する
+  - フィールドを `pub(crate)` に降格、`#[non_exhaustive]` を付与し、構造体リテラル構築を crate 内に限定する
+  - 公開 API: `RequestHead::new(method, uri)` / `RequestHead::with_version(method, uri, version)` / `ResponseHead::new(status_code, reason_phrase)` / `ResponseHead::with_version(version, status_code, reason_phrase)` で構築、`header(name, value)` / `add_header(name, value)` でヘッダーを追加する (すべて `Result<_, EncodeError>`)
+  - 読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / `status_code()` / `reason_phrase()` / `status_class()` を追加
+  - `ResponseHead::status_class()` の panic 経路 (`status_code: 999` のような不正値による `.expect(...)` 失敗) を塞ぐ。フィールド非公開化と `with_version` の `is_valid_status_code` バリデーションで 100..=599 不変式が型レベルで保証される
+  - decoder 内部からの構築は `pub(crate) fn from_validated_parts(...)` 経由で行う (debug ビルドで `debug_assert!` による契約検査付き、release ビルドでは検査なしで信頼)
+  - 既存ユーザーは `head.method` 等のフィールド直接アクセスを `head.method()` 等のアクセサ呼び出しに書き換える必要がある
+  - @voluntas
 - [CHANGE] `RequestDecoder` に CONNECT 用 tunnel API (`is_tunnel` / `take_remaining`) を追加し、CONNECT リクエスト受信時の `BodyKind` を `None` から `Tunnel` に変更する
   - RFC 9110 Section 9.3.6「the connection becomes a tunnel immediately after the header section」に準拠
   - 旧挙動 (`BodyKind::None` で `Complete` 直行) では、ヘッダー終端後にクライアントが送ってきたバイト列が `decode_headers` の Complete 自動再遷移経由で「次の HTTP リクエスト」として parse され、HTTP Request Smuggling (CWE-444) 様の経路を生んでいた
