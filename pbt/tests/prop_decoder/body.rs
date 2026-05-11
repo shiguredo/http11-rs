@@ -65,7 +65,10 @@ proptest! {
     #[test]
     fn prop_chunked_with_trailer_ok(
         body_content in "[a-z]{1,32}",
-        trailer_name in "[A-Za-z]{1,16}",
+        // RFC 9110 Section 6.5.1 で `Authorization` / `TE` / `Date` 等の禁止
+        // フィールドは trailer に置けないため、`X-` prefix を強制して
+        // 拒否リストと衝突しない名前のみ生成する。
+        trailer_name in "X-[A-Za-z]{0,14}",
         trailer_value in "[a-z0-9]{1,16}"
     ) {
         // トレーラーは OK
@@ -501,7 +504,11 @@ proptest! {
     #[test]
     fn prop_request_incomplete_trailer(
         body_content in "[a-z]{1,32}",
-        trailer_name in "[A-Za-z]{1,16}"
+        // 禁止フィールドと衝突しない `X-` prefix の名前のみ生成する
+        // (本テストは「不完全な trailer 行は Complete に到達しない」を確認するため、
+        // 禁止判定で reject されてもテスト本来の意図とは別軸の reject になり
+        // 結論が曖昧になるのを避ける)。
+        trailer_name in "X-[A-Za-z]{0,14}"
     ) {
         // 不完全なトレーラーは Complete に到達してはならない
         let len = body_content.len();
