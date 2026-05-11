@@ -214,6 +214,19 @@ pub struct MultipartParser {
     finished: bool,
     /// バッファ最大サイズ (デフォルト: 10MB)
     max_buffer_size: usize,
+    /// boundary 検索 (`first_delimiter` / `inner_delimiter`) の再開位置 (絶対オフセット)
+    ///
+    /// `find_bytes` で境界が見つからず `Incomplete` を返す前に「次回はどこから
+    /// 再開するか」を覚えておくためのフィールド。Sans I/O で feed が複数回に
+    /// 分かれた場合、毎回 `&self.buffer[self.pos..]` 全体を再走査すると O(N²·M)
+    /// になり、`max_buffer_size` 範囲内でも攻撃者が CPU を浪費させる経路を
+    /// 生む。本フィールドにより断片入力時の再走査を haystack 末尾から
+    /// `needle.len() - 1` 分の overlap のみに抑え、検索コストを線形化する。
+    ///
+    /// 検索開始位置は `max(self.pos, self.boundary_scan_offset)` で算出する
+    /// (pos が前進した場合は scan_offset が古いオフセットを指していても無害)。
+    /// パートを切り出して状態遷移するときに `pos` 以上にリセットする。
+    boundary_scan_offset: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -272,6 +285,7 @@ impl MultipartParser {
             state: ParserState::Initial,
             finished: false,
             max_buffer_size: 10 * 1024 * 1024,
+            boundary_scan_offset: 0,
         }
     }
 
@@ -324,10 +338,14 @@ impl MultipartParser {
         loop {
             match self.state {
                 ParserState::Initial => {
-                    // 最初の境界を探す (`buffer[pos..]` を相対位置で検索)
-                    let view = &self.buffer[self.pos..];
+                    // 最初の境界を探す。前回失敗位置 `boundary_scan_offset` から
+                    // 再開することで断片入力時の O(N²·M) 再走査を回避する。
+                    // `start` は `pos` 以上に揃える (pos が前進した場合に
+                    // scan_offset が古い値のまま残っているケースを吸収)。
+                    let start = self.pos.max(self.boundary_scan_offset);
+                    let view = &self.buffer[start..];
                     if let Some(rel_pos) = find_bytes(view, &self.first_delimiter) {
-                        let after_delim = self.pos + rel_pos + self.first_delimiter.len();
+                        let after_delim = start + rel_pos + self.first_delimiter.len();
                         // 直後 2 バイトで終端 (`--`) / 通常パート開始 (`\r\n`) を判定する。
                         // `self.buffer[after_delim..after_delim + 2]` を安全に参照できる
                         // 条件はバイト長が `after_delim + 2` 以上であること。`>=` で
@@ -337,6 +355,8 @@ impl MultipartParser {
                         if self.buffer.len() >= after_delim + 2 {
                             if &self.buffer[after_delim..after_delim + 2] == b"\r\n" {
                                 self.pos = after_delim + 2;
+                                // 状態遷移したので scan_offset を pos に揃える
+                                self.boundary_scan_offset = self.pos;
                                 self.state = ParserState::InPart;
                             } else if &self.buffer[after_delim..after_delim + 2] == b"--" {
                                 // 終了境界
@@ -350,12 +370,23 @@ impl MultipartParser {
                                 if self.buffer[self.pos..].starts_with(b"\r\n") {
                                     self.pos += 2;
                                 }
+                                // 状態遷移したので scan_offset を pos に揃える
+                                self.boundary_scan_offset = self.pos;
                                 self.state = ParserState::InPart;
                             }
                         } else {
+                            // 終端 2 バイトの判定が不能。次回 feed 後に同じ
+                            // 検索位置から再開できるよう、見つけた boundary の
+                            // 直前を覚えておく。
+                            self.boundary_scan_offset = (start + rel_pos).min(self.buffer.len());
                             return Err(MultipartError::Incomplete);
                         }
                     } else {
+                        // boundary が見つからなかった。haystack 末尾近くで
+                        // overlap が起きる可能性があるので `needle.len() - 1`
+                        // 分の overlap を残して次回再開位置を保存する。
+                        let overlap = self.first_delimiter.len().saturating_sub(1);
+                        self.boundary_scan_offset = self.buffer.len().saturating_sub(overlap);
                         return Err(MultipartError::Incomplete);
                     }
                 }
@@ -408,10 +439,13 @@ impl MultipartParser {
                             return Err(MultipartError::MissingName);
                         }
 
-                        // 次の境界を探す (body_start は絶対オフセット、相対位置で検索)
-                        let body_view = &self.buffer[body_start..];
+                        // 次の境界を探す。body_start は絶対オフセット、相対位置で検索。
+                        // 前回失敗位置 `boundary_scan_offset` から再開して断片
+                        // 入力時の O(N²·M) 再走査を回避する (body_start 以上に揃える)。
+                        let search_start = body_start.max(self.boundary_scan_offset);
+                        let body_view = &self.buffer[search_start..];
                         if let Some(body_end_rel) = find_bytes(body_view, &self.inner_delimiter) {
-                            let body_end = body_start + body_end_rel;
+                            let body_end = search_start + body_end_rel;
                             // パートのボディは所有権移転で 1 回だけコピーする
                             let body = self.buffer[body_start..body_end].to_vec();
 
@@ -429,12 +463,18 @@ impl MultipartParser {
                             } else {
                                 self.pos = after_next;
                             }
+                            // 次のパート検索は新しい開始位置から行うので scan_offset を pos に揃える
+                            self.boundary_scan_offset = self.pos;
 
                             // 累積コピー量を amortized O(N) に抑える前詰め
                             // 発動条件は `pos` が物理バッファの過半を超えたときのみ
                             if self.pos > self.buffer.len() / 2 {
-                                self.buffer.drain(..self.pos);
+                                let drained = self.pos;
+                                self.buffer.drain(..drained);
                                 self.pos = 0;
+                                // 前詰めしたので scan_offset も同じだけ前に移動
+                                self.boundary_scan_offset =
+                                    self.boundary_scan_offset.saturating_sub(drained);
                             }
 
                             return Ok(Some(Part {
@@ -444,6 +484,12 @@ impl MultipartParser {
                                 body,
                             }));
                         } else {
+                            // boundary が見つからなかった。haystack 末尾近くで
+                            // overlap が起きる可能性があるので `needle.len() - 1`
+                            // 分の overlap を残して次回再開位置を保存する。
+                            let overlap = self.inner_delimiter.len().saturating_sub(1);
+                            self.boundary_scan_offset =
+                                self.buffer.len().saturating_sub(overlap).max(body_start);
                             return Err(MultipartError::Incomplete);
                         }
                     } else {
@@ -599,6 +645,13 @@ impl MultipartBuilder {
 }
 
 /// バイト列から部分列を検索
+///
+/// 実装は「needle の先頭バイト一致点を `iter().position()` で skip し、
+/// 一致したら needle 全体を比較する」 first-byte skip 方式。最悪計算量は
+/// O(N·M) のままだが、needle が稀なバイト (multipart boundary は `\r` で
+/// 始まる) で始まるケースでは比較スキップにより定数倍を削減できる。
+///
+/// `memchr` クレートは導入しない (CLAUDE.md「依存は最小限」)。
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() {
         return Some(0);
@@ -607,9 +660,24 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         return None;
     }
 
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
+    let first = needle[0];
+    let max_start = haystack.len() - needle.len();
+    let mut i = 0;
+    while i <= max_start {
+        // 次の最初のバイト一致点までジャンプ
+        let remaining = &haystack[i..=max_start];
+        match remaining.iter().position(|&b| b == first) {
+            Some(offset) => {
+                i += offset;
+                if &haystack[i..i + needle.len()] == needle {
+                    return Some(i);
+                }
+                i += 1;
+            }
+            None => return None,
+        }
+    }
+    None
 }
 
 #[cfg(test)]

@@ -97,6 +97,12 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] `MultipartParser::find_bytes` の `windows().position()` ベース実装と毎回 buffer 全体を再走査する挙動を改善し、断片入力時の O(N²·M) 再走査を回避する
+  - `find_bytes` を「first-byte skip + needle 全体比較」に書き換え、定数倍を削減する (最悪計算量 O(N·M) は不変だが、boundary が `\r` で始まるケースで実用的に O(N) に近づく)
+  - `MultipartParser` に `boundary_scan_offset: usize` フィールドを追加し、Initial / InPart の境界検索が `Incomplete` を返した位置から次回再開できるようにする。haystack 末尾の `needle.len() - 1` overlap のみを再走査範囲とすることで、Sans I/O 断片入力時の再走査コストを O(buffer_size) に抑える
+  - `max_buffer_size` 範囲内で攻撃者が 1 バイトずつ feed して CPU を浪費させる経路 (DoS リスク) を緩和する
+  - `memchr` クレートは導入しない (CLAUDE.md「依存は最小限」)
+  - @voluntas
 - [FIX] `MultipartParser` の Initial 状態で終端境界 `--<boundary>--` がバッファ末尾ピッタリで止まったケースを正しく検出するよう off-by-one を修正する
   - `self.buffer.len() > after_delim + 2` を `>=` に変更し、`self.buffer[after_delim..after_delim + 2]` を安全に参照できる等値ケース (`after_delim + 2 == buffer.len()`) も拾うようにする
   - 旧実装では終端境界が feed の末尾に来た時点で永遠に `MultipartError::Incomplete` を返し続け、呼出側 loop の意図しないブロック (タイムアウトなしの再 feed 待ち) を起こす可能性があった

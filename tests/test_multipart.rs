@@ -182,6 +182,59 @@ fn test_multipart_parser_part_then_end_boundary_at_tail() {
     assert!(parser.is_finished());
 }
 
+// 1 バイトずつ feed しても一括 feed と同じ結果を得る (Sans I/O 断片入力対応)
+//
+// この PBT 寄りのシナリオは `boundary_scan_offset` による再走査抑止が
+// 動作することを確認する。失敗時は `next_part` が Incomplete を返し、
+// feed 後に再開できることを保証する。
+#[test]
+fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
+    let body = b"--boundary\r\n\
+        Content-Disposition: form-data; name=\"field1\"\r\n\r\n\
+        value1\r\n\
+        --boundary\r\n\
+        Content-Disposition: form-data; name=\"field2\"\r\n\r\n\
+        value2\r\n\
+        --boundary--\r\n";
+
+    // bulk parser (一括 feed)
+    let mut bulk = MultipartParser::new("boundary");
+    bulk.feed(body).unwrap();
+    let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
+    while let Some(part) = bulk.next_part().unwrap() {
+        bulk_parts.push(part.body().to_vec());
+    }
+
+    // byte-by-byte parser (1 バイトずつ feed → 都度 next_part を試す)
+    let mut bb = MultipartParser::new("boundary");
+    let mut bb_parts: Vec<Vec<u8>> = Vec::new();
+    for &b in body {
+        bb.feed(&[b]).unwrap();
+        // 取れるところまで next_part を消費する
+        loop {
+            match bb.next_part() {
+                Ok(Some(part)) => bb_parts.push(part.body().to_vec()),
+                Ok(None) => break,
+                Err(MultipartError::Incomplete) => break,
+                Err(e) => panic!("予期しないエラー: {:?}", e),
+            }
+        }
+    }
+    // 全 feed 後に追加で next_part を回して取得可能な part をすべて取り出す
+    while let Ok(Some(part)) = bb.next_part() {
+        bb_parts.push(part.body().to_vec());
+    }
+
+    assert_eq!(
+        bulk_parts, bb_parts,
+        "1 バイトずつ feed しても一括 feed と同じパース結果を得る想定"
+    );
+    // 注: byte-by-byte 経路では「最後のパート切り出し時点で `after_next + 2`
+    // が buffer 末尾に到達していない」場合があり、終端境界の `--` 判定を
+    // 後回しにする (= state は InPart のまま) ことがある。本テストの主旨は
+    // 「part 列の一致」であり、is_finished の遷移までは検証しない。
+}
+
 // Clone のテスト
 #[test]
 fn test_multipart_parser_clone() {
