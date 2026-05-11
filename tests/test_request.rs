@@ -570,3 +570,71 @@ fn test_request_body_mutators() {
         .without_body();
     assert_eq!(req.body_bytes(), None);
 }
+
+// ========================================
+// is_keep_alive の HTTP/1.1 完全一致 (issue 0040)
+// ========================================
+
+/// HTTP/1.1 で Connection ヘッダーなし → keep-alive
+#[test]
+fn test_request_is_keep_alive_http11_default() {
+    let req = Request::new("GET", "/").unwrap();
+    assert!(req.is_keep_alive(), "HTTP/1.1 はデフォルトで keep-alive");
+}
+
+/// HTTP/1.0 で Connection ヘッダーなし → keep-alive ではない
+#[test]
+fn test_request_is_keep_alive_http10_default_false() {
+    let req = Request::with_version("GET", "/", "HTTP/1.0").unwrap();
+    assert!(!req.is_keep_alive(), "HTTP/1.0 はデフォルトで非 keep-alive");
+}
+
+/// HTTP/1.1 で Connection: close → keep-alive ではない
+#[test]
+fn test_request_is_keep_alive_http11_with_close() {
+    let req = Request::new("GET", "/")
+        .unwrap()
+        .header("Connection", "close")
+        .unwrap();
+    assert!(!req.is_keep_alive());
+}
+
+/// HTTP/1.0 で Connection: keep-alive → keep-alive
+#[test]
+fn test_request_is_keep_alive_http10_with_keep_alive() {
+    let req = Request::with_version("GET", "/", "HTTP/1.0")
+        .unwrap()
+        .header("Connection", "keep-alive")
+        .unwrap();
+    assert!(req.is_keep_alive());
+}
+
+/// RTSP/1.1 / FOO/1.1 等は HTTP/1.1 と区別され、Connection ヘッダーなしでは keep-alive にならない
+///
+/// 旧実装 `version.ends_with("/1.1")` だと RTSP/1.1 で誤って true を返していた。
+/// 修正後は `version == "HTTP/1.1"` 完全一致のみ true。
+#[test]
+fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
+    let req = Request::with_version("DESCRIBE", "rtsp://example.com/m", "RTSP/1.1").unwrap();
+    assert!(
+        !req.is_keep_alive(),
+        "RTSP/1.1 はデフォルトで HTTP の keep-alive 判定対象外"
+    );
+
+    // 独自プロトコル
+    let req = Request::with_version("GET", "/", "FOO/1.1").unwrap();
+    assert!(
+        !req.is_keep_alive(),
+        "独自プロトコル FOO/1.1 もデフォルトで keep-alive 対象外"
+    );
+
+    // ただし Connection: keep-alive で明示的に指定されれば true
+    let req = Request::with_version("DESCRIBE", "rtsp://example.com/m", "RTSP/1.1")
+        .unwrap()
+        .header("Connection", "keep-alive")
+        .unwrap();
+    assert!(
+        req.is_keep_alive(),
+        "Connection: keep-alive が明示指定されれば true"
+    );
+}

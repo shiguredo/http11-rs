@@ -66,10 +66,15 @@ pub trait HttpHead {
     /// 1. `Connection` ヘッダーのいずれかに `close` トークンが存在 → `false`
     ///    (`keep-alive` が同時に存在しても `close` が優先される)
     /// 2. `Connection` ヘッダーのいずれかに `keep-alive` トークンが存在 → `true`
-    /// 3. それ以外 → `version` 文字列が `/1.1` で終わる場合のみ `true`
+    /// 3. それ以外 → `version` が `"HTTP/1.1"` 完全一致のときのみ `true`
     ///
     /// 注: HTTP/1.1 でも `Connection: close` が指定された場合は keep-alive にならない。
     /// HTTP/1.0 で `Connection: keep-alive` がない場合も keep-alive にならない。
+    /// 本メソッドは HTTP プロトコルの persistent connection を判定する。RTSP
+    /// (RFC 7826) など他プロトコルは persistent connection の意味論が異なるため、
+    /// `RTSP/1.1` 等の version 文字列に対しては `Connection` ヘッダーで明示的に
+    /// `keep-alive` が指定されない限り `false` を返す。RTSP の persistent
+    /// connection 判定は上位層の責務である。
     /// RFC 9112 Section 9.3 の HTTP/1.0 keep-alive 持続に含まれる proxy 条件
     /// (recipient is not a proxy OR message is a response) は本メソッドでは区別しない。
     /// これは上位層の責務である。
@@ -96,7 +101,10 @@ pub trait HttpHead {
         if has_keep_alive {
             return true;
         }
-        self.version().ends_with("/1.1")
+        // HTTP/1.1 完全一致のみ persistent をデフォルトとする。
+        // `ends_with("/1.1")` だと `RTSP/1.1` / `FOO/1.1` のような他プロトコルで
+        // 誤って persistent 判定する経路が生じるため厳格化する。
+        self.version() == "HTTP/1.1"
     }
 
     /// Content-Length ヘッダーの値を取得

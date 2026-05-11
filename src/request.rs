@@ -378,7 +378,7 @@ impl Request {
     /// 1. `Connection` ヘッダーのいずれかに `close` トークンが存在 → `false`
     ///    (`keep-alive` が同時に存在しても `close` が優先される)
     /// 2. `Connection` ヘッダーのいずれかに `keep-alive` トークンが存在 → `true`
-    /// 3. それ以外 → `version` 文字列が `/1.1` で終わる場合のみ `true`
+    /// 3. それ以外 → `version` が `"HTTP/1.1"` 完全一致のときのみ `true` (RTSP/1.1 等は対象外)
     ///
     /// `Connection` ヘッダーはカンマ区切りトークンリストとして扱う
     /// (RFC 9110 Section 7.6.1)。

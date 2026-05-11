@@ -116,6 +116,11 @@
   - 旧実装は `trim_end_matches('=')` でパディング個数を無視し、`A` のような不完全な末尾 6 bit 群を黙って捨てるため `BasicAuth` / `DigestAuth` で同一 credential に対する複数 base64 表現が成立し canonicalization が壊れていた経路を遮断する
   - `Base64Error` に `InvalidPadding` バリアントを追加 (`pub(crate)` のため外部 API には露出しない、`BasicAuth::parse` 経由では従来通り `AuthError::Base64DecodeError` に潰る)
   - @voluntas
+- [FIX] `HttpHead::is_keep_alive` の persistent connection 判定を `version == "HTTP/1.1"` 完全一致に変更する
+  - 旧実装 `version.ends_with("/1.1")` は `RTSP/1.1` や `FOO/1.1` 等の他プロトコル version 文字列でも persistent と誤判定する経路を持っていた
+  - 修正後は HTTP/1.1 完全一致のみデフォルト persistent と判定する。RTSP (RFC 7826) 等の persistent connection 判定は上位層の責務
+  - `Connection: keep-alive` が明示指定されれば version に関わらず引き続き true を返す
+  - @voluntas
 - [FIX] `DigestAuth` で `username*` (RFC 7616 Section 3.4 / RFC 5987 ext-value) をサポートする
   - `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) のどちらか一方を必須化 (XOR)
   - 旧実装は `username` のみを必須としており、UTF-8 ユーザー名を `username*=` で送信するクライアントを reject していた
