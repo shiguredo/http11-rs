@@ -37,6 +37,14 @@ fn test_auth_error_display() {
             "control character in credentials",
         ),
         (AuthError::InvalidCharset, "charset must be UTF-8"),
+        (
+            AuthError::ConflictingUsernameField,
+            "both username and username* present (RFC 7616 Section 3.4)",
+        ),
+        (
+            AuthError::InvalidUsernameExtValue,
+            "invalid username* ext-value",
+        ),
     ];
 
     for (error, expected) in errors {
@@ -221,4 +229,81 @@ fn test_auth_qdtext_rejects_crlf() {
     let input = "Basic realm=\"a\nb\"";
     let result = BasicAuth::parse(input);
     assert!(result.is_err(), "qdtext に LF を含むものは reject される");
+}
+
+// ========================================
+// RFC 7616 Section 3.4: DigestAuth username* テスト
+// ========================================
+
+/// `username*` で UTF-8 ユーザー名 (RFC 5987 ext-value) を受理する
+#[test]
+fn test_digest_auth_accepts_username_star_with_utf8() {
+    // `ユーザ` を UTF-8 percent-encoded した値
+    let input = "Digest username*=\"UTF-8''%E3%83%A6%E3%83%BC%E3%82%B6\", \
+                 realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let auth = DigestAuth::parse(input).expect("username* (UTF-8) は受理される想定");
+
+    // username (ASCII) は None、username_decoded で UTF-8 が取れる
+    assert_eq!(auth.username(), None);
+    assert_eq!(auth.username_decoded().as_deref(), Some("ユーザ"));
+}
+
+/// `username` (ASCII) のみは引き続き受理される
+#[test]
+fn test_digest_auth_accepts_username_ascii_only() {
+    let input = "Digest username=\"alice\", realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let auth = DigestAuth::parse(input).unwrap();
+    assert_eq!(auth.username(), Some("alice"));
+    assert_eq!(auth.username_decoded().as_deref(), Some("alice"));
+}
+
+/// `username` と `username*` が両方ある場合は ConflictingUsernameField で reject (RFC 7616 §3.4 MUST NOT)
+#[test]
+fn test_digest_auth_rejects_both_username_and_star() {
+    let input = "Digest username=\"alice\", username*=\"UTF-8''alice\", \
+                 realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let result = DigestAuth::parse(input);
+    assert!(
+        matches!(result, Err(AuthError::ConflictingUsernameField)),
+        "username と username* の両方は reject される想定。actual = {:?}",
+        result
+    );
+}
+
+/// `username` も `username*` もない場合は MissingParameter で reject
+#[test]
+fn test_digest_auth_rejects_missing_both_username_fields() {
+    let input = "Digest realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let result = DigestAuth::parse(input);
+    assert!(
+        matches!(result, Err(AuthError::MissingParameter)),
+        "username / username* のどちらも無い場合は reject 想定。actual = {:?}",
+        result
+    );
+}
+
+/// `username*` の charset が UTF-8 以外は InvalidUsernameExtValue で reject (RFC 7616 §3.4)
+#[test]
+fn test_digest_auth_rejects_username_star_non_utf8_charset() {
+    let input = "Digest username*=\"ISO-8859-1''alice\", \
+                 realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let result = DigestAuth::parse(input);
+    assert!(
+        matches!(result, Err(AuthError::InvalidUsernameExtValue)),
+        "UTF-8 以外の charset は reject 想定。actual = {:?}",
+        result
+    );
+}
+
+/// `username*` の ext-value 形式が不正 (シングルクォート欠落) は reject
+#[test]
+fn test_digest_auth_rejects_username_star_invalid_ext_value() {
+    let input = "Digest username*=\"alice\", \
+                 realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
+    let result = DigestAuth::parse(input);
+    assert!(
+        matches!(result, Err(AuthError::InvalidUsernameExtValue)),
+        "ext-value 形式不正 (シングルクォート欠落) は reject 想定。actual = {:?}",
+        result
+    );
 }

@@ -97,6 +97,14 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] `DigestAuth` で `username*` (RFC 7616 Section 3.4 / RFC 5987 ext-value) をサポートする
+  - `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) のどちらか一方を必須化 (XOR)
+  - 旧実装は `username` のみを必須としており、UTF-8 ユーザー名を `username*=` で送信するクライアントを reject していた
+  - 両方同時送信時は `AuthError::ConflictingUsernameField` (RFC 7616 §3.4 MUST NOT 違反)
+  - `username*` の ext-value 不正は `AuthError::InvalidUsernameExtValue`
+  - `DigestAuth::username_decoded()` を追加し、`username` または `username*` のいずれかから UTF-8 ユーザー名を取得できるようにした
+  - `AuthError` に `ConflictingUsernameField` / `InvalidUsernameExtValue` の 2 バリアントを追加 (enum 拡張)
+  - @voluntas
 - [FIX] `Authorization` / `Content-Disposition` の quoted-string parser で quoted-pair / qdtext の文字集合を RFC 9110 Section 5.6.4 に準拠して厳格化する
   - `quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )` の右辺と `qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text` を `validate` モジュールに `pub(crate) fn is_qdtext_byte` / `pub(crate) fn is_quoted_pair_byte` として集約
   - `src/auth.rs::parse_auth_params` と `src/content_disposition.rs::parse_quoted_string` で受信時に CR / LF / NUL 等の CTL を含む quoted-string を reject するよう変更

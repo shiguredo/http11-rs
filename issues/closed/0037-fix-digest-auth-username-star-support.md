@@ -1,6 +1,7 @@
 # 0037: DigestAuth で username* (RFC 7616 §3.4) をサポートする
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -70,6 +71,29 @@ Model: Opus 4.7
 
 ### 破壊的変更
 
-- 新エラー `AuthError::ConflictingUsernameField` の追加 (enum 拡張)
-- `DigestAuth::username()` の戻り値が `username*` のデコード結果になる場合あり (ASCII 限定だった戻り値が UTF-8 を含むようになる)
+- 新エラー `AuthError::ConflictingUsernameField` / `AuthError::InvalidUsernameExtValue` の追加 (enum 拡張、`#[non_exhaustive]` 未付与のため API 破壊)
+- `DigestAuth::username()` は ASCII のみを返すよう据え置き、UTF-8 用に `DigestAuth::username_decoded()` を新設
 - canary 中の破壊的変更として CHANGES.md に `[FIX]` で記録
+
+## 解決方法
+
+- `src/auth.rs::AuthError` に 2 バリアント追加: `ConflictingUsernameField` / `InvalidUsernameExtValue`
+- `src/auth.rs::AuthError::Display` 実装も対応追記
+- `src/auth.rs::DigestAuth::parse` を以下に変更:
+  - `username` と `username*` の XOR 判定を導入 (RFC 7616 §3.4)
+  - `username*` がある場合は parse 時に `decode_username_ext_value` で事前検証 (`username_decoded()` を infallible にするため)
+  - `realm` / `nonce` / `uri` / `response` の必須チェックは継続
+- `DigestAuth::username()` を「`username` パラメータがある場合のみその値を返す」と doc 修正 (ASCII)
+- `DigestAuth::username_decoded()` を新設: `username` or `username*` のどちらかから UTF-8 ユーザー名を返す
+- `src/auth.rs` に以下のヘルパー関数を追加:
+  - `decode_username_ext_value(input) -> Result<String, AuthError>`: RFC 5987 ext-value (`charset 'language' value`) を decode、charset は UTF-8 限定、percent-decode + attr-char 検証
+  - `is_attr_char(b) -> bool`: RFC 5987 §3.2.1 の attr-char
+- テスト追加 (`tests/test_auth.rs`):
+  - `test_digest_auth_accepts_username_star_with_utf8`: `ユーザ` を UTF-8 percent-encoded で受理
+  - `test_digest_auth_accepts_username_ascii_only`: ASCII の `username` のみは引き続き受理
+  - `test_digest_auth_rejects_both_username_and_star`: 両方同時で `ConflictingUsernameField`
+  - `test_digest_auth_rejects_missing_both_username_fields`: どちらもない場合は `MissingParameter`
+  - `test_digest_auth_rejects_username_star_non_utf8_charset`: UTF-8 以外の charset は `InvalidUsernameExtValue`
+  - `test_digest_auth_rejects_username_star_invalid_ext_value`: ext-value 形式不正は `InvalidUsernameExtValue`
+  - `test_auth_error_display`: 新バリアント 2 件の Display 表示を確認
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
