@@ -75,7 +75,7 @@ async fn fetch_with_headers(
         .expect("Host header")
         .header("User-Agent", "http11_client-test")
         .expect("User-Agent header");
-    for (name, value) in extra_headers {
+    for &(name, value) in extra_headers {
         request = request.header(name, value).expect("extra header");
     }
     let request_method = request.method().to_string();

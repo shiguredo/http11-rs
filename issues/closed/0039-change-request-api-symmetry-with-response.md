@@ -1,6 +1,7 @@
 # 0039: Request の構築・ヘッダー操作 API を Response と対称化する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -64,3 +65,28 @@ Model: Opus 4.7
 - `body` の引数型変更 (`Vec<u8>` → `impl Into<Vec<u8>>`)
 - 新規 builder `without_body` / mutator `set_body` / `clear_body` の追加
 - canary 中の破壊的変更として CHANGES.md に `[CHANGE]` / `[UPDATE]` / `[ADD]` で記録
+
+## 解決方法
+
+- `src/request.rs::Request::new` / `with_version`:
+  - 引数を `impl Into<String>` に変更し、`.into()` で正規化してからバリデーション
+- `src/request.rs::Request::header` / `add_header` / `set_header`:
+  - 引数 (`name`, `value`) を `impl Into<String>` に変更
+  - `add_header` / `set_header` の戻り値を `Result<&mut Self, EncodeError>` に変更 (チェイン可)
+  - バリデーション失敗時もアトミック性 (self の不変) を維持
+- `src/request.rs::Request::body`:
+  - 引数を `impl Into<Vec<u8>>` に変更
+- `src/request.rs::Request` に以下のメソッドを追加:
+  - `pub fn without_body(self) -> Self` (builder): `body = None`
+  - `pub fn set_body(&mut self, body: impl Into<Vec<u8>>) -> &mut Self` (mutator): body 設定
+  - `pub fn clear_body(&mut self) -> &mut Self` (mutator): body クリア
+- `tests/test_request.rs` の `for ... in &[...]` 形式を `for &... in &[...]` に変更し、`impl Into<String>` で `&&str` を受け取れないエラーを回避
+- `tests/test_encoder.rs` の同様の `for ... in &[...]` 箇所も修正
+- `src/encoder.rs` の `header(&format!(...), &format!(...))` を borrow 不要にした (clippy::needless_borrows_for_generic_args)
+- テスト追加:
+  - `test_request_add_header_chainable`: チェイン可動作
+  - `test_request_set_header_chainable`: 同上
+  - `test_request_new_accepts_string_and_str`: String / &str / 混在受理
+  - `test_request_body_accepts_vec_and_slice`: Vec<u8> / &[u8] 受理
+  - `test_request_body_mutators`: without_body / set_body / clear_body 動作
+- `CHANGES.md` の `## develop` に `[UPDATE]` / `[ADD]` / `[CHANGE]` の 3 エントリを追加した

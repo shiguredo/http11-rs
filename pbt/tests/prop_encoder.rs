@@ -410,7 +410,7 @@ proptest! {
             .unwrap()
             .header("Transfer-Encoding", "chunked")
             .unwrap()
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(
@@ -617,7 +617,7 @@ proptest! {
             .unwrap()
             .header("Transfer-Encoding", "chunked")
             .unwrap()
-            .header("Content-Length", &cl.to_string())
+            .header("Content-Length", cl.to_string())
             .unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(

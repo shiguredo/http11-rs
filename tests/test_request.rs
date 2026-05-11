@@ -18,7 +18,7 @@ fn test_request_new_rejects_empty_method() {
 
 #[test]
 fn test_request_new_rejects_method_with_crlf() {
-    for method in &["GET\r\nX: y", "GET\r", "GET\n", "POST\r\nEvil: header"] {
+    for &method in &["GET\r\nX: y", "GET\r", "GET\n", "POST\r\nEvil: header"] {
         let result = Request::new(method, "/");
         assert!(
             matches!(result, Err(EncodeError::InvalidMethod { .. })),
@@ -37,7 +37,7 @@ fn test_request_new_rejects_method_with_space() {
 #[test]
 fn test_request_new_rejects_method_with_invalid_token_chars() {
     // RFC 9110 Section 5.6.2 token に違反する文字
-    for method in &["GET/", "GET@", "GET[", "GET{", "GET\""] {
+    for &method in &["GET/", "GET@", "GET[", "GET{", "GET\""] {
         let result = Request::new(method, "/");
         assert!(
             matches!(result, Err(EncodeError::InvalidMethod { .. })),
@@ -49,7 +49,7 @@ fn test_request_new_rejects_method_with_invalid_token_chars() {
 
 #[test]
 fn test_request_new_accepts_standard_methods() {
-    for method in &[
+    for &method in &[
         "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE",
     ] {
         let result = Request::new(method, "/");
@@ -79,7 +79,7 @@ fn test_request_new_rejects_empty_uri() {
 
 #[test]
 fn test_request_new_rejects_uri_with_crlf() {
-    for uri in &[
+    for &uri in &[
         "/path\r\nEvil: header",
         "/\r\n",
         "/test\nEvil",
@@ -124,7 +124,7 @@ fn test_request_new_rejects_uri_with_control_chars() {
 #[test]
 fn test_request_new_rejects_uri_with_rfc3986_excluded_chars() {
     // RFC 3986 で除外されている文字
-    for uri in &[
+    for &uri in &[
         "/path<bad",
         "/path>bad",
         "/path|bad",
@@ -168,7 +168,7 @@ fn test_request_new_rejects_uri_with_pct_nul() {
 
 #[test]
 fn test_request_new_rejects_uri_with_invalid_percent_encoding() {
-    for uri in &["/path%xx", "/path%0", "/path%"] {
+    for &uri in &["/path%xx", "/path%0", "/path%"] {
         let result = Request::new("GET", uri);
         assert!(
             matches!(result, Err(EncodeError::InvalidRequestTarget { .. })),
@@ -190,7 +190,7 @@ fn test_request_with_version_rejects_empty_version() {
 
 #[test]
 fn test_request_with_version_rejects_invalid_format() {
-    for version in &[
+    for &version in &[
         "HTTP",
         "/1.1",
         "HTTP/",
@@ -216,7 +216,7 @@ fn test_request_with_version_rejects_version_with_space() {
 
 #[test]
 fn test_request_with_version_accepts_http_versions() {
-    for version in &["HTTP/1.1", "HTTP/1.0", "HTTP/0.9", "HTTP/2.0"] {
+    for &version in &["HTTP/1.1", "HTTP/1.0", "HTTP/0.9", "HTTP/2.0"] {
         let result = Request::with_version("GET", "/", version);
         assert!(result.is_ok(), "version {:?} should be accepted", version);
     }
@@ -224,7 +224,7 @@ fn test_request_with_version_accepts_http_versions() {
 
 #[test]
 fn test_request_with_version_accepts_rtsp_versions() {
-    for version in &["RTSP/1.0", "RTSP/2.0"] {
+    for &version in &["RTSP/1.0", "RTSP/2.0"] {
         let result = Request::with_version("GET", "rtsp://example.com/m", version);
         assert!(result.is_ok(), "version {:?} should be accepted", version);
     }
@@ -280,7 +280,7 @@ fn test_request_header_rejects_empty_name() {
 #[test]
 fn test_request_header_rejects_crlf_in_value() {
     let req = Request::new("GET", "/").unwrap();
-    for value in &["evil\r\nEvil: injected", "evil\rinjected", "evil\ninjected"] {
+    for &value in &["evil\r\nEvil: injected", "evil\rinjected", "evil\ninjected"] {
         let r = req.clone().header("X-Test", value);
         assert!(
             matches!(r, Err(EncodeError::InvalidHeaderValue { .. })),
@@ -501,4 +501,72 @@ fn test_request_body_bytes_none_by_default() {
 fn test_request_body_bytes_some_empty() {
     let req = Request::new("POST", "/").unwrap().body(Vec::new());
     assert_eq!(req.body_bytes(), Some(b"".as_slice()));
+}
+
+// ========================================
+// API 対称化テスト (Response との対称化、issue 0039)
+// ========================================
+
+/// add_header の戻り値がチェイン可能であることを確認
+#[test]
+fn test_request_add_header_chainable() {
+    let mut req = Request::new("POST", "/").unwrap();
+    let result = req
+        .add_header("Host", "example.com")
+        .and_then(|r| r.add_header("X-A", "1"))
+        .and_then(|r| r.add_header("X-B", "2"));
+    assert!(result.is_ok());
+    assert_eq!(req.get_header("X-B"), Some("2"));
+}
+
+/// set_header の戻り値がチェイン可能であることを確認
+#[test]
+fn test_request_set_header_chainable() {
+    let mut req = Request::new("GET", "/").unwrap();
+    let result = req
+        .set_header("Host", "example.com")
+        .and_then(|r| r.set_header("Host", "evil.example"));
+    assert!(result.is_ok());
+    assert_eq!(req.get_header("Host"), Some("evil.example"));
+    // 同名は 1 個のみ
+    assert_eq!(req.get_headers("Host").len(), 1);
+}
+
+/// `impl Into<String>` で String / &str の両方を受理する
+#[test]
+fn test_request_new_accepts_string_and_str() {
+    // &str
+    let _req = Request::new("GET", "/").unwrap();
+    // String
+    let _req = Request::new(String::from("GET"), String::from("/")).unwrap();
+    // 混在
+    let _req = Request::new("GET", String::from("/")).unwrap();
+}
+
+/// `impl Into<Vec<u8>>` で Vec<u8> / &[u8] の両方を受理する
+#[test]
+fn test_request_body_accepts_vec_and_slice() {
+    // Vec<u8>
+    let req = Request::new("POST", "/").unwrap().body(b"hello".to_vec());
+    assert_eq!(req.body_bytes(), Some(b"hello".as_slice()));
+    // &[u8] は impl Into<Vec<u8>> で受理される
+    let req = Request::new("POST", "/").unwrap().body(b"world".as_slice());
+    assert_eq!(req.body_bytes(), Some(b"world".as_slice()));
+}
+
+/// without_body() / set_body() / clear_body() の動作
+#[test]
+fn test_request_body_mutators() {
+    let mut req = Request::new("POST", "/").unwrap();
+    req.set_body(b"hello".to_vec());
+    assert_eq!(req.body_bytes(), Some(b"hello".as_slice()));
+
+    req.clear_body();
+    assert_eq!(req.body_bytes(), None);
+
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .body(b"hello".to_vec())
+        .without_body();
+    assert_eq!(req.body_bytes(), None);
 }

@@ -1388,8 +1388,8 @@ mod capacity_tests {
         for i in 0..50 {
             req = req
                 .header(
-                    &alloc::format!("X-Custom-{i}"),
-                    &alloc::format!("value-{i}-with-some-padding"),
+                    alloc::format!("X-Custom-{i}"),
+                    alloc::format!("value-{i}-with-some-padding"),
                 )
                 .unwrap();
         }
