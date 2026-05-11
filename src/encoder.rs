@@ -7,7 +7,7 @@ use crate::request_target::RequestTargetForm;
 use crate::response::Response;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
-    is_valid_request_target, is_valid_status_code,
+    is_valid_request_target, is_valid_status_code, trim_ows,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -597,7 +597,9 @@ fn validate_content_length_headers(
         if !name.eq_ignore_ascii_case("Content-Length") {
             continue;
         }
-        let trimmed = value.trim();
+        // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) のみ除去する。
+        // str::trim() は Unicode 空白 (NBSP 等) も除去するため使用しない。
+        let trimmed = trim_ows(value);
         // RFC 9110 Section 8.6: Content-Length = 1*DIGIT
         if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
             return Err(EncodeError::InvalidContentLengthValue {

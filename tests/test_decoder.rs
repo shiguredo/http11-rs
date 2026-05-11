@@ -854,6 +854,35 @@ fn test_response_invalid_protocol_version_error() {
     assert!(decoder.decode_headers().is_err());
 }
 
+/// Content-Length に Unicode 空白 (NBSP / 全角空白) を含むレスポンスは拒否される
+///
+/// RFC 9110 Section 5.6.3: OWS = *( SP / HTAB )
+/// `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため NBSP の UTF-8 表現
+/// `0xC2 0xA0` がヘッダー値に通り得るが、Content-Length のパースで OWS として扱うのは
+/// SP / HTAB のみ。NBSP / 全角空白を含む値は DIGIT 検査で拒否されることを担保する
+/// (HTTP Request Smuggling 経路の遮断)。
+#[test]
+fn test_response_content_length_with_nbsp_is_rejected() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: \u{A0}5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    assert!(
+        decoder.decode_headers().is_err(),
+        "NBSP を含む Content-Length は拒否される想定"
+    );
+}
+
+#[test]
+fn test_request_content_length_with_ideographic_space_is_rejected() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: \u{3000}5\r\n\r\nhello";
+    decoder.feed(request.as_bytes()).unwrap();
+    assert!(
+        decoder.decode_headers().is_err(),
+        "全角空白を含む Content-Length は拒否される想定"
+    );
+}
+
 /// 範囲外ステータスコード (600)
 #[test]
 fn test_response_status_code_out_of_range_error() {

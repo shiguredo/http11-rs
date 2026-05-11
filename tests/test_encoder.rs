@@ -623,6 +623,52 @@ fn test_encode_response_304_content_length_representation_size_ok() {
 }
 
 #[test]
+fn test_encode_response_content_length_with_nbsp_is_rejected() {
+    // RFC 9110 Section 5.6.3: OWS = *( SP / HTAB ) のみ。
+    // Unicode 空白 (NBSP = U+00A0) は obs-text 経由でヘッダー値に通り得るが、
+    // OWS としては扱わず Content-Length 値の DIGIT 検査で拒否する必要がある。
+    // HTTP Request Smuggling (CWE-444) の経路を塞ぐ意図のテスト。
+    let res = Response::with_status(StatusCode::OK)
+        .header("Content-Length", "\u{A0}5")
+        .unwrap()
+        .body(b"hello".to_vec());
+    let result = encode_response(&res);
+    assert!(
+        matches!(result, Err(EncodeError::InvalidContentLengthValue { .. })),
+        "NBSP を含む Content-Length は拒否される想定だが {result:?} だった"
+    );
+}
+
+#[test]
+fn test_encode_request_content_length_with_ideographic_space_is_rejected() {
+    // U+3000 (全角空白) も str::trim で除去される Unicode 空白だが OWS ではない
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap()
+        .header("Content-Length", "\u{3000}5")
+        .unwrap()
+        .body(b"hello".to_vec());
+    let result = encode_request(&req);
+    assert!(
+        matches!(result, Err(EncodeError::InvalidContentLengthValue { .. })),
+        "全角空白を含む Content-Length は拒否される想定だが {result:?} だった"
+    );
+}
+
+#[test]
+fn test_encode_response_content_length_with_sp_htab_is_accepted() {
+    // OWS = *( SP / HTAB ) は引き続き正しく trim される
+    let res = Response::with_status(StatusCode::OK)
+        .header("Content-Length", " \t5\t ")
+        .unwrap()
+        .body(b"hello".to_vec());
+    let encoded = encode_response(&res).expect("SP/HTAB のみの OWS は受理される想定");
+    let encoded_str = String::from_utf8_lossy(&encoded);
+    assert!(encoded_str.contains("Content-Length:  \t5\t \r\n"));
+}
+
+#[test]
 fn test_encode_response_204_no_auto_content_length_with_no_body() {
     // 204: status_has_body=false なので Content-Length 自動付与なし (body=None)
     let res = Response::with_status(StatusCode::NO_CONTENT);

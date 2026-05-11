@@ -1,6 +1,7 @@
 # 0029: Content-Length パースで Unicode 空白を OWS 扱いしないようにする
 
 Created: 2026-05-11
+Completed: 2026-05-11
 Model: Opus 4.7
 
 ## 概要
@@ -57,10 +58,18 @@ OWS の定義に従い SP / HTAB のみを除去する `trim_ows` は既に `src
 
 ### CHANGES.md
 
-`## develop` の `### misc` に以下を追記:
+`## develop` のメイン (`### misc` ではなく主要変更) に `[FIX]` として追記する。HTTP Request Smuggling 経路を塞ぐ修正のため misc には置かない。
 
-```
-- [FIX] Content-Length パースで `str::trim()` が Unicode 空白 (NBSP 等) を除去していた問題を修正する
-  - SP / HTAB のみを除去する RFC 9110 Section 5.6.3 準拠の `trim_ows` を `validate` モジュールに集約し、encoder / decoder の Content-Length 解釈を一致させる
-  - obs-text を含むヘッダー値経由の HTTP Request Smuggling (CWE-444) 経路を塞ぐ
-```
+## 解決方法
+
+- `src/validate.rs` に `pub(crate) fn trim_ows(s: &str) -> &str` を追加した。RFC 9110 Section 5.6.3 の OWS = *( SP / HTAB ) に準拠し、`char::is_whitespace` ではなくバイト単位で SP / HTAB のみを除去する
+- `src/decoder/body.rs` の private な `trim_ows` 実装を削除し、`validate::trim_ows` を import して同名関数の重複を解消した
+- `src/decoder/body.rs::parse_content_length_value` の `part.trim()` を `trim_ows(part)` に置き換えた
+- `src/encoder.rs::validate_content_length_headers` の `value.trim()` を `trim_ows(value)` に置き換え、コメントで Unicode 空白を除去しない理由を明記した
+- テスト追加:
+  - `tests/test_encoder.rs::test_encode_response_content_length_with_nbsp_is_rejected`: NBSP (U+00A0) を含む Content-Length が `EncodeError::InvalidContentLengthValue` で拒否されることを確認
+  - `tests/test_encoder.rs::test_encode_request_content_length_with_ideographic_space_is_rejected`: 全角空白 (U+3000) を含む Content-Length が拒否されることを確認
+  - `tests/test_encoder.rs::test_encode_response_content_length_with_sp_htab_is_accepted`: SP / HTAB のみで構成される従来の OWS は引き続き trim されて受理されることを担保
+  - `tests/test_decoder.rs::test_response_content_length_with_nbsp_is_rejected`: NBSP を含むレスポンス受信が `decode_headers` で拒否されることを確認
+  - `tests/test_decoder.rs::test_request_content_length_with_ideographic_space_is_rejected`: 全角空白を含むリクエスト受信が拒否されることを確認
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した

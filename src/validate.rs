@@ -253,3 +253,28 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
         b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
     )
 }
+
+/// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
+///
+/// OWS = *( SP / HTAB )
+///
+/// Rust の `str::trim()` は `char::is_whitespace` に基づき U+00A0 (NBSP) や
+/// U+2000-200A 等の Unicode 空白も除去する。`is_valid_field_value` は obs-text
+/// (0x80-0xFF) を許容するためヘッダー値にこれらのバイトが含まれ得るが、
+/// OWS として扱ってよいのは SP / HTAB のみ。本関数を使うことで encoder と
+/// decoder の Content-Length 等の解釈を一致させ HTTP Request Smuggling
+/// (CWE-444) 経路を塞ぐ。
+pub(crate) fn trim_ows(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let start = bytes
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|&b| b != b' ' && b != b'\t')
+        .map(|p| p + 1)
+        .unwrap_or(start);
+    // start..end は全て ASCII 文字 (SP/HTAB) の境界なので UTF-8 として安全
+    &s[start..end]
+}
