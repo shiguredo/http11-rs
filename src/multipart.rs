@@ -328,8 +328,13 @@ impl MultipartParser {
                     let view = &self.buffer[self.pos..];
                     if let Some(rel_pos) = find_bytes(view, &self.first_delimiter) {
                         let after_delim = self.pos + rel_pos + self.first_delimiter.len();
-                        // CRLF をスキップ
-                        if self.buffer.len() > after_delim + 2 {
+                        // 直後 2 バイトで終端 (`--`) / 通常パート開始 (`\r\n`) を判定する。
+                        // `self.buffer[after_delim..after_delim + 2]` を安全に参照できる
+                        // 条件はバイト長が `after_delim + 2` 以上であること。`>=` で
+                        // 等値も拾うことで「終端境界 `--<boundary>--` が feed 末尾
+                        // ぴったりで止まった」入力でも Incomplete に落ちず、正しく
+                        // 終端を検出できる (Sans I/O での断片入力対応)。
+                        if self.buffer.len() >= after_delim + 2 {
                             if &self.buffer[after_delim..after_delim + 2] == b"\r\n" {
                                 self.pos = after_delim + 2;
                                 self.state = ParserState::InPart;

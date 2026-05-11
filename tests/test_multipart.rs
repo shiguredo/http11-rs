@@ -140,6 +140,48 @@ fn test_multipart_parser_end_boundary_only() {
     assert!(parser.is_finished());
 }
 
+// 終了境界 `--boundary--` がバッファ末尾ピッタリ (CRLF terminator なし) で止まったケース
+//
+// RFC 2046 §5.1.1 では終端 boundary 後の CRLF は OPTIONAL (epilogue 不在時)。
+// 旧実装 (Initial 分岐 `self.buffer.len() > after_delim + 2`) では
+// `after_delim + 2 == buffer.len()` で偽になり Incomplete を返す off-by-one バグがあった。
+// 修正後は `>=` で等値ケースも拾い、正しく終端を検出する。
+#[test]
+fn test_multipart_parser_end_boundary_at_buffer_tail_without_crlf() {
+    let body = b"--boundary--";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body).unwrap();
+
+    assert!(
+        parser.next_part().unwrap().is_none(),
+        "終端境界がバッファ末尾ピッタリの場合も None を返す想定"
+    );
+    assert!(parser.is_finished());
+}
+
+// preamble なし + 通常パート + 終端境界 (CRLF terminator なし、バッファ末尾ピッタリ)
+#[test]
+fn test_multipart_parser_part_then_end_boundary_at_tail() {
+    let body =
+        b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--";
+
+    let mut parser = MultipartParser::new("boundary");
+    parser.feed(body).unwrap();
+
+    let part = parser
+        .next_part()
+        .unwrap()
+        .expect("最初のパートが取れる想定");
+    assert_eq!(part.body(), b"val");
+
+    assert!(
+        parser.next_part().unwrap().is_none(),
+        "終端境界後の None 判定が成立する想定"
+    );
+    assert!(parser.is_finished());
+}
+
 // Clone のテスト
 #[test]
 fn test_multipart_parser_clone() {

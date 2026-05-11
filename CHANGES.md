@@ -97,6 +97,11 @@
 - [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
   - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
   - @voluntas
+- [FIX] `MultipartParser` の Initial 状態で終端境界 `--<boundary>--` がバッファ末尾ピッタリで止まったケースを正しく検出するよう off-by-one を修正する
+  - `self.buffer.len() > after_delim + 2` を `>=` に変更し、`self.buffer[after_delim..after_delim + 2]` を安全に参照できる等値ケース (`after_delim + 2 == buffer.len()`) も拾うようにする
+  - 旧実装では終端境界が feed の末尾に来た時点で永遠に `MultipartError::Incomplete` を返し続け、呼出側 loop の意図しないブロック (タイムアウトなしの再 feed 待ち) を起こす可能性があった
+  - RFC 2046 Section 5.1.1 では終端境界後の CRLF は OPTIONAL なため、CRLF terminator なしで送られる正常入力でも本バグに該当していた
+  - @voluntas
 - [FIX] `ResponseDecoder::peek_body_decompressed` / `RequestDecoder::peek_body_decompressed` でボディデータ枯渇後も展開器の内部 buffer を drain できるようにする
   - body_decoder の `peek_body` が None / 空を返したときも空 input で `Decompressor::decompress` を呼ぶように変更する
   - `consumed == 0 && produced == 0` のときだけ `Ok(None)` を返す形に統一する
