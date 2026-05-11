@@ -1429,18 +1429,35 @@ pub(crate) fn resolve_body_headers_for_request(
 
 /// レスポンス用: ボディヘッダー解決
 ///
-/// RFC 9112 Section 6.3:
-/// - Transfer-Encoding と Content-Length の両方がある場合、Transfer-Encoding を優先
-///   (Content-Length は無視。ただし警告ログを出すべきとあるが、本実装では無視のみ)
-/// - chunked が最後でない場合は close-delimited
+/// RFC 9112 Section 6.3 (3):
+/// > If a message is received with both a Transfer-Encoding and a
+/// > Content-Length header field, the Transfer-Encoding overrides the
+/// > Content-Length. Such a message might indicate an attempt to perform
+/// > request smuggling (Section 11.2) or response splitting (Section 11.1)
+/// > and ought to be handled as an error.
+///
+/// RFC 9112 Section 6.1 lines 880-884:
+/// > the server MUST close the connection after responding to such a request
+/// > to avoid the potential attacks.
+///
+/// 両方が含まれるレスポンスは smuggling / response splitting (CWE-444 /
+/// CWE-113) の兆候として `Error::InvalidData` を返す。リクエスト経路
+/// (`resolve_body_headers_for_request`) と同じ扱いとし、呼出側に接続クローズ
+/// 判断の余地を渡す。
+///
+/// chunked が最後でない場合は close-delimited として扱う (TE のみ存在時)。
 pub(crate) fn resolve_body_headers_for_response(
     headers: &[(String, String)],
 ) -> Result<(TransferEncodingResult, Option<u64>), Error> {
     let te_result = parse_transfer_encoding_for_response(headers)?;
     let content_length = parse_content_length(headers)?;
 
-    // RFC 9112 Section 6.3: Transfer-Encoding がある場合は Content-Length を無視
-    // (リクエスト送信者はこの組み合わせを送るべきではないが、受信者は TE を優先)
+    if te_result != TransferEncodingResult::None && content_length.is_some() {
+        return Err(Error::InvalidData(
+            "invalid message: both Transfer-Encoding and Content-Length".to_string(),
+        ));
+    }
+
     if te_result != TransferEncodingResult::None {
         return Ok((te_result, None));
     }
