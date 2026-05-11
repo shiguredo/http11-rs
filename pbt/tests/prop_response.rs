@@ -176,9 +176,9 @@ proptest! {
             .unwrap()
             .expect("headers should be ready");
 
-        prop_assert_eq!(head.status_code, status.code());
-        prop_assert_eq!(&head.reason_phrase, status.canonical_reason());
-        prop_assert_eq!(&head.version, "HTTP/1.1");
+        prop_assert_eq!(head.status_code(), status.code());
+        prop_assert_eq!(head.reason_phrase(), status.canonical_reason());
+        prop_assert_eq!(head.version(), "HTTP/1.1");
     }
 }
 

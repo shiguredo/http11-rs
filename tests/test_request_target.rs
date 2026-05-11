@@ -115,7 +115,7 @@ fn test_mailto_absolute_form() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(raw.as_bytes()).unwrap();
     let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "mailto:user@example.com");
+    assert_eq!(head.uri(), "mailto:user@example.com");
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn test_tel_absolute_form() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(raw.as_bytes()).unwrap();
     let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "tel:+1-201-555-0123");
+    assert_eq!(head.uri(), "tel:+1-201-555-0123");
 }
 
 // ========================================

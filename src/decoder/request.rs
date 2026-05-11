@@ -492,12 +492,12 @@ impl<D: Decompressor> RequestDecoder<D> {
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
-                            let head = RequestHead {
-                                method: parts[0].to_string(),
-                                uri: parts[1].to_string(),
-                                version: parts[2].to_string(),
-                                headers: core::mem::take(&mut self.headers),
-                            };
+                            let head = RequestHead::from_validated_parts(
+                                parts[0].to_string(),
+                                parts[1].to_string(),
+                                parts[2].to_string(),
+                                core::mem::take(&mut self.headers),
+                            );
 
                             return Ok(Some((head, body_kind)));
                         } else {

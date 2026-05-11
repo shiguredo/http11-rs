@@ -21,7 +21,7 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::compression::{CompressionStatus, Decompressor, NoCompression};
-use shiguredo_http11::{BodyKind, BodyProgress, Response, ResponseDecoder, ResponseHead};
+use shiguredo_http11::{BodyKind, BodyProgress, HttpHead, Response, ResponseDecoder, ResponseHead};
 use tracing::info;
 
 use crate::decompressor::AnyDecompressor;
@@ -218,7 +218,7 @@ impl ResponseSession {
         // chained encoding に対応する場合は値をカンマで分割し各 encoding を順に
         // 適用するパイプラインを組む必要がある (本サンプルのスコープ外)。
         let encoding = head
-            .headers
+            .headers()
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("Content-Encoding"))
             .map(|(_, v)| v.as_str())
@@ -314,9 +314,9 @@ impl ResponseSession {
             _ => Some(self.body),
         };
         let mut response =
-            Response::with_version(&head.version, head.status_code, &head.reason_phrase)?;
-        for (name, value) in head.headers {
-            response.add_header(&name, &value)?;
+            Response::with_version(head.version(), head.status_code(), head.reason_phrase())?;
+        for (name, value) in head.headers() {
+            response.add_header(name, value)?;
         }
         if let Some(b) = body_field {
             response = response.body(b);

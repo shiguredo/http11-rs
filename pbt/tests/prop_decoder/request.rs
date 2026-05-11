@@ -409,8 +409,8 @@ proptest! {
         };
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.method, method);
-        prop_assert_eq!(head.uri, uri);
+        prop_assert_eq!(head.method(), method);
+        prop_assert_eq!(head.uri(), uri);
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -429,7 +429,7 @@ proptest! {
         );
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.method, method);
+        prop_assert_eq!(head.method(), method);
         prop_assert_eq!(body_kind, BodyKind::ContentLength(body_len as u64));
 
         let mut body = Vec::new();
@@ -596,7 +596,7 @@ proptest! {
 
         for i in 0..count {
             let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-            prop_assert_eq!(head.uri, format!("/{}", i));
+            prop_assert_eq!(head.uri(), format!("/{}", i));
             prop_assert!(matches!(body_kind, BodyKind::None));
         }
 
@@ -721,8 +721,8 @@ proptest! {
         let result = decoder.decode_headers().unwrap();
         prop_assert!(result.is_some());
         let (head, _) = result.unwrap();
-        prop_assert_eq!(&head.method, "OPTIONS");
-        prop_assert_eq!(&head.uri, "*");
+        prop_assert_eq!(head.method(), "OPTIONS");
+        prop_assert_eq!(head.uri(), "*");
     }
 }
 
@@ -740,8 +740,8 @@ proptest! {
         let result = decoder.decode_headers().unwrap();
         prop_assert!(result.is_some());
         let (head, _) = result.unwrap();
-        prop_assert_eq!(&head.method, "CONNECT");
-        prop_assert_eq!(&head.uri, &target);
+        prop_assert_eq!(head.method(), "CONNECT");
+        prop_assert_eq!(head.uri(), target.as_str());
     }
 }
 
@@ -760,8 +760,8 @@ proptest! {
         let result = decoder.decode_headers().unwrap();
         prop_assert!(result.is_some());
         let (head, _) = result.unwrap();
-        prop_assert_eq!(&head.method, &method);
-        prop_assert_eq!(&head.uri, &target);
+        prop_assert_eq!(head.method(), method);
+        prop_assert_eq!(head.uri(), target.as_str());
     }
 }
 
@@ -780,7 +780,7 @@ proptest! {
         let result = decoder.decode_headers().unwrap();
         prop_assert!(result.is_some());
         let (head, _) = result.unwrap();
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }
 
@@ -799,7 +799,7 @@ proptest! {
         let result = decoder.decode_headers().unwrap();
         prop_assert!(result.is_some());
         let (head, _) = result.unwrap();
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }
 

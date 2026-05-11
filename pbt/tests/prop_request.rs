@@ -136,8 +136,8 @@ proptest! {
         decoder.feed(&encoded).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&head.method, &method);
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.method(), method.as_str());
+        prop_assert_eq!(head.uri(), uri.as_str());
 
         let mut decoded_body = Vec::new();
         match body_kind {
@@ -172,7 +172,7 @@ proptest! {
         } else {
             hdrs.len() + 1  // Host
         };
-        prop_assert_eq!(head.headers.len(), expected_header_count);
+        prop_assert_eq!(head.headers().len(), expected_header_count);
     }
 }
 
@@ -205,8 +205,8 @@ proptest! {
         }
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&head.method, &method);
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.method(), method.as_str());
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }
 
@@ -239,7 +239,7 @@ proptest! {
             {
                 headers_decoded = true;
                 body_kind = kind;
-                decoded_method = head.method;
+                decoded_method = head.method().to_string();
             }
 
             if headers_decoded {
@@ -291,8 +291,8 @@ proptest! {
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-            prop_assert_eq!(&head.method, &methods[i]);
-            prop_assert_eq!(&head.uri, &uris[i]);
+            prop_assert_eq!(head.method(), methods[i].as_str());
+            prop_assert_eq!(head.uri(), uris[i].as_str());
         }
     }
 }
@@ -320,8 +320,8 @@ proptest! {
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(&head.method, &method);
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.method(), method.as_str());
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }
 

@@ -9,6 +9,29 @@ use super::{
     http_method, invalid_header_name_char, transfer_encoding_token, valid_header_name_special_char,
 };
 
+/// PBT 用に `ResponseHead` を直接構築するヘルパー
+///
+/// 本クレートは `ResponseHead` のフィールドを非公開化しており、外部からは
+/// `with_version` + `add_header` のビルダー API のみで構築できる。
+/// PBT ではトレイトメソッド (`is_keep_alive` / `is_chunked` 等) の動作を
+/// 任意の `(version, status_code, reason_phrase, headers)` 組合せで検証
+/// したいため、本ヘルパーで一括構築する。バリデーション失敗時は panic
+/// する (テストデータは生成器側で valid 範囲に収めている前提)。
+fn make_response_head(
+    version: &str,
+    status_code: u16,
+    reason_phrase: &str,
+    headers: Vec<(String, String)>,
+) -> ResponseHead {
+    let mut head = ResponseHead::with_version(version, status_code, reason_phrase)
+        .expect("テスト入力は valid な version / status_code / reason_phrase 前提");
+    for (name, value) in headers {
+        head.add_header(&name, &value)
+            .expect("テスト入力は valid な header name / value 前提");
+    }
+    head
+}
+
 // ========================================
 // ヘッダーパースエラーの PBT
 // ========================================
@@ -265,7 +288,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.status_code, 200);
+        prop_assert_eq!(head.status_code(), 200);
         prop_assert_eq!(body_kind, BodyKind::Chunked);
 
         // ボディを読み取る
@@ -465,12 +488,7 @@ proptest! {
             " ".repeat(leading_spaces),
             " ".repeat(trailing_spaces)
         );
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Transfer-Encoding".to_string(), te_value)],
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), te_value)]);
         prop_assert!(head.is_chunked());
     }
 }
@@ -489,12 +507,7 @@ proptest! {
             // "other, chunked" → 最後が chunked → true
             format!("{}, chunked", other_token)
         };
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Transfer-Encoding".to_string(), te_value)],
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), te_value)]);
         if chunked_first {
             prop_assert!(!head.is_chunked());
         } else {
@@ -509,12 +522,7 @@ proptest! {
         token in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked"))
     ) {
         // chunked 以外のトークンのみの場合は false
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Transfer-Encoding".to_string(), token)],
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), token)]);
         prop_assert!(!head.is_chunked());
     }
 }
@@ -525,12 +533,7 @@ proptest! {
         status_code in 200..600u16
     ) {
         // Transfer-Encoding ヘッダーがない場合は false
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code,
-            reason_phrase: "OK".to_string(),
-            headers: vec![],
-        };
+        let head = make_response_head("HTTP/1.1", status_code, "OK", vec![]);
         prop_assert!(!head.is_chunked());
     }
 }
@@ -570,12 +573,7 @@ proptest! {
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "close" トークンがあれば false
-        let head = ResponseHead {
-            version: version.to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Connection".to_string(), "close".to_string())],
-        };
+        let head = make_response_head(version, 200, "OK", vec![("Connection".to_string(), "close".to_string())]);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -586,12 +584,7 @@ proptest! {
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "keep-alive" トークンがあれば true
-        let head = ResponseHead {
-            version: version.to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Connection".to_string(), "keep-alive".to_string())],
-        };
+        let head = make_response_head(version, 200, "OK", vec![("Connection".to_string(), "keep-alive".to_string())]);
         prop_assert!(head.is_keep_alive());
     }
 }
@@ -602,20 +595,10 @@ proptest! {
         status_code in 200..600u16
     ) {
         // HTTP/1.1 のデフォルトは keep-alive、HTTP/1.0 のデフォルトは close
-        let head_11 = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code,
-            reason_phrase: "OK".to_string(),
-            headers: vec![],
-        };
+        let head_11 = make_response_head("HTTP/1.1", status_code, "OK", vec![]);
         prop_assert!(head_11.is_keep_alive());
 
-        let head_10 = ResponseHead {
-            version: "HTTP/1.0".to_string(),
-            status_code,
-            reason_phrase: "OK".to_string(),
-            headers: vec![],
-        };
+        let head_10 = make_response_head("HTTP/1.0", status_code, "OK", vec![]);
         prop_assert!(!head_10.is_keep_alive());
     }
 }
@@ -631,12 +614,7 @@ proptest! {
         } else {
             "close, keep-alive".to_string()
         };
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![("Connection".to_string(), conn_value)],
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Connection".to_string(), conn_value)]);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -655,12 +633,7 @@ proptest! {
         let headers: Vec<(String, String)> = (0..header_count)
             .map(|_| ("Connection".to_string(), "keep-alive".to_string()))
             .collect();
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(head.is_keep_alive());
     }
 }
@@ -676,12 +649,7 @@ proptest! {
             .collect();
         headers.push(("Connection".to_string(), "close".to_string()));
 
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -697,12 +665,7 @@ proptest! {
             headers.push(("Connection".to_string(), "keep-alive".to_string()));
         }
 
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -722,12 +685,7 @@ proptest! {
         ];
         headers[close_position] = ("Connection".to_string(), "close".to_string());
 
-        let head = ResponseHead {
-            version: version.to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head(version, 200, "OK", headers);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -742,12 +700,7 @@ proptest! {
         // デフォルト動作（HTTP/1.1 は true、HTTP/1.0 は false）
         let headers = vec![("Connection".to_string(), other_token)];
 
-        let head = ResponseHead {
-            version: version.to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head(version, 200, "OK", headers);
 
         if version == "HTTP/1.1" {
             prop_assert!(head.is_keep_alive());
@@ -769,12 +722,7 @@ proptest! {
         let headers: Vec<(String, String)> = (0..count)
             .map(|_| ("Transfer-Encoding".to_string(), "chunked".to_string()))
             .collect();
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers,
-        };
+        let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(head.is_chunked());
     }
 }
@@ -785,14 +733,9 @@ proptest! {
     fn prop_content_length_invalid_returns_none(
         invalid_value in "[a-zA-Z]{1,8}"
     ) {
-        let head = ResponseHead {
-            version: "HTTP/1.1".to_string(),
-            status_code: 200,
-            reason_phrase: "OK".to_string(),
-            headers: vec![
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![
                 ("Content-Length".to_string(), invalid_value),
-            ],
-        };
+            ]);
         prop_assert!(head.content_length().is_none());
     }
 }

@@ -291,12 +291,12 @@ async fn handle_client(
     };
 
     debug!(
-        method = %req_head.method,
-        uri = %req_head.uri,
-        version = %req_head.version,
+        method = %req_head.method(),
+        uri = %req_head.uri(),
+        version = %req_head.version(),
         "Request line"
     );
-    debug!(count = req_head.headers.len(), "Received headers");
+    debug!(count = req_head.headers().len(), "Received headers");
 
     // リクエストボディを収集
     let mut request_body = Vec::new();
@@ -342,11 +342,11 @@ async fn handle_client(
     }
 
     // アップストリームへプロキシリクエストを作成
-    let mut upstream_request = Request::new(&req_head.method, &req_head.uri)?;
+    let mut upstream_request = Request::new(req_head.method(), req_head.uri())?;
 
     // Connection ヘッダーに列挙されたヘッダー名を収集
     let connection_headers: Vec<String> = req_head
-        .headers
+        .headers()
         .iter()
         .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
         .flat_map(|(_, value)| {
@@ -361,7 +361,7 @@ async fn handle_client(
     // ヘッダーをコピー (hop-by-hop ヘッダー、Host、Content-Length は除外)
     // Content-Length は Transfer-Encoding 除外後に不整合が生じる可能性があるため除外し、
     // encoder の自動設定に任せる (RFC 9112 Section 6.3 対応)
-    for (name, value) in &req_head.headers {
+    for (name, value) in req_head.headers() {
         if name.eq_ignore_ascii_case("host") {
             continue;
         }
@@ -513,9 +513,9 @@ async fn stream_response_on_connection(
     };
 
     debug!(
-        version = %resp_head.version,
-        status_code = resp_head.status_code,
-        reason_phrase = %resp_head.reason_phrase,
+        version = %resp_head.version(),
+        status_code = resp_head.status_code(),
+        reason_phrase = %resp_head.reason_phrase(),
         "Upstream response"
     );
 
@@ -537,10 +537,11 @@ async fn stream_response_on_connection(
     // 本サンプルでは upstream が常に reason_phrase を送る前提で `Response::new` を使う。
     // 任意の upstream を受け入れる本格的な proxy では、decoder 経由で得た raw_parts を
     // そのまま再構築する経路 (本 issue では公開されていない) を将来検討する。
-    let mut response_for_headers = Response::new(resp_head.status_code, &resp_head.reason_phrase)?;
+    let mut response_for_headers =
+        Response::new(resp_head.status_code(), resp_head.reason_phrase())?;
 
     let connection_headers: Vec<String> = resp_head
-        .headers
+        .headers()
         .iter()
         .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
         .flat_map(|(_, value)| {
@@ -561,7 +562,7 @@ async fn stream_response_on_connection(
         _ => None,
     };
 
-    for (name, value) in &resp_head.headers {
+    for (name, value) in resp_head.headers() {
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
