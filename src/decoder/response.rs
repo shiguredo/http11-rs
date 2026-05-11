@@ -16,8 +16,8 @@ use alloc::vec::Vec;
 use crate::validate::{is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code};
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, find_line, parse_header_line,
-    resolve_body_headers_for_response,
+    BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, collect_declared_trailers,
+    find_line, parse_header_line, resolve_body_headers_for_response,
 };
 use super::buffer;
 use super::head::ResponseHead;
@@ -534,6 +534,13 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                     self.phase = DecodePhase::Tunnel;
                                 }
                             }
+
+                            // RFC 9110 Section 6.5.1 ホワイトリスト方式 trailer 受理用に、
+                            // ヘッダーから `Trailer:` フィールドで申告された名前を抽出して
+                            // BodyDecoder に渡す。chunked 以外の body kind では trailer は
+                            // 来ないが、BodyDecoder は body kind を問わず参照する。
+                            let declared_trailers = collect_declared_trailers(&self.headers);
+                            self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // ResponseHead を構築
                             let start_line = self.start_line.take().unwrap();

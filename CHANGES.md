@@ -11,6 +11,13 @@
 
 ## develop
 
+- [CHANGE] trailer フィールドの受理判定を RFC 9110 Section 6.5.1 のホワイトリスト方式に変更する
+  - `Trailer:` ヘッダーで sender が事前申告したフィールド名のみ trailer-section で受理する。申告されていないフィールドは `Error::InvalidData("undeclared trailer field: ...")` で reject する
+  - `is_prohibited_trailer_field` の禁止リストを RFC 9110 Section 6.5.1 の全カテゴリに拡充する (framing / routing / リクエスト修飾子 / 認証 / レスポンス制御 / コンテンツ形式 / 接続管理)
+  - 拡充された禁止フィールド例: `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate`, `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, `If-Range`, `Range`, `Expect`, `TE`, `Cache-Control`, `Vary`, `Date`, `Expires`, `Age`, `Set-Cookie`, `Connection`, `Upgrade`
+  - 旧仕様 (最小ブロックリスト方式) では `Authorization` 等の認証ヘッダーが trailer-section で素通りしていた経路を遮断する
+  - decoder の `BodyDecoder` に `declared_trailers: Vec<String>` フィールドを追加し、`decode_headers` 完了時に `Trailer:` ヘッダーから抽出した名前リストを設定する
+  - @voluntas
 - [CHANGE] `RequestHead` / `ResponseHead` の全フィールドを非公開化し、構築時バリデーション付きの公開 API を追加する
   - フィールドを `pub(crate)` に降格、`#[non_exhaustive]` を付与し、構造体リテラル構築を crate 内に限定する
   - 公開 API: `RequestHead::new(method, uri)` / `RequestHead::with_version(method, uri, version)` / `ResponseHead::new(status_code, reason_phrase)` / `ResponseHead::with_version(version, status_code, reason_phrase)` で構築、`header(name, value)` / `add_header(name, value)` でヘッダーを追加する (すべて `Result<_, EncodeError>`)

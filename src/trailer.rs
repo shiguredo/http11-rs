@@ -12,7 +12,7 @@
 //! ```rust
 //! use shiguredo_http11::trailer::Trailer;
 //!
-//! let trailer = Trailer::parse("Expires, X-Test").unwrap();
+//! let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
 //! assert_eq!(trailer.fields().len(), 2);
 //! ```
 
@@ -109,43 +109,65 @@ fn is_token_char(b: u8) -> bool {
     )
 }
 
-/// RFC 9112 Section 7.1.2: トレーラーで禁止されているフィールドかどうか
+/// RFC 9110 Section 6.5.1: トレーラーに置けないカテゴリのフィールドかどうか
 ///
-/// 禁止フィールド:
-/// - Transfer-Encoding
-/// - Content-Length
-/// - Host
-/// - Trailer
-/// - Content-Encoding
-/// - Content-Type
-/// - Content-Range
+/// RFC 9110 Section 6.5.1 は trailer section に含めてはならないフィールドとして
+/// 以下のカテゴリを規定している。本関数はそれぞれの代表的なフィールド名を
+/// 大文字小文字を区別せずに判定する。
 ///
-/// # RFC 非準拠
+/// - メッセージフレーミング: `Transfer-Encoding`, `Content-Length`
+/// - ルーティング: `Host`
+/// - リクエスト修飾子: `If-Match`, `If-None-Match`, `If-Modified-Since`,
+///   `If-Unmodified-Since`, `If-Range`, `Range`, `Expect`, `TE`
+/// - 認証: `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`,
+///   `Proxy-Authenticate`
+/// - レスポンス制御: `Cache-Control`, `Vary`, `Date`, `Expires`, `Age`,
+///   `Set-Cookie`
+/// - コンテンツ形式: `Content-Encoding`, `Content-Type`, `Content-Range`
+/// - 接続管理: `Connection`, `Upgrade`, `Trailer`
 ///
-/// RFC 9110 Section 6.5.1 は trailer section に含めてはならないフィールドとして、
-/// 以下のカテゴリを規定している:
-/// - メッセージフレーミングに関するフィールド (Transfer-Encoding, Content-Length)
-/// - ルーティングに関するフィールド (Host)
-/// - リクエスト修飾子 (条件付きリクエストのフィールド等)
-/// - 認証に関するフィールド (Authorization, WWW-Authenticate 等)
-/// - レスポンス制御に関するフィールド (Cache-Control 等)
-/// - コンテンツ形式に関するフィールド (Content-Encoding, Content-Type, Content-Range)
+/// 本関数で `true` を返すフィールドは、たとえ `Trailer:` ヘッダーで sender が
+/// 事前申告していても受理してはならない (RFC 9110 Section 6.5.1 の MUST NOT)。
 ///
-/// 本実装は最小ブロックリストであり、上記カテゴリの全フィールドを網羅していない。
-/// 特に以下のフィールドは含まれていない:
-/// - Authorization, Proxy-Authorization (認証)
-/// - WWW-Authenticate, Proxy-Authenticate (認証)
-/// - Cache-Control, Vary, Age (レスポンス制御)
-/// - If-Match, If-None-Match, If-Modified-Since, If-Unmodified-Since, If-Range (リクエスト修飾子)
-/// - Expect, Range (リクエスト修飾子)
+/// なお、本関数で `false` を返すフィールドであっても、自動的に trailer として
+/// 許可されるわけではない。`Trailer:` ヘッダーで sender が事前申告したフィールド
+/// のみが受理対象になる (ホワイトリスト方式、RFC 9110 Section 6.5.1)。
+/// 受信側のホワイトリスト判定は `decoder/body.rs::process_trailers` で行う。
 pub fn is_prohibited_trailer_field(name: &str) -> bool {
+    // framing
     name.eq_ignore_ascii_case("transfer-encoding")
         || name.eq_ignore_ascii_case("content-length")
+        // routing
         || name.eq_ignore_ascii_case("host")
-        || name.eq_ignore_ascii_case("trailer")
+        // request modifiers
+        || name.eq_ignore_ascii_case("if-match")
+        || name.eq_ignore_ascii_case("if-none-match")
+        || name.eq_ignore_ascii_case("if-modified-since")
+        || name.eq_ignore_ascii_case("if-unmodified-since")
+        || name.eq_ignore_ascii_case("if-range")
+        || name.eq_ignore_ascii_case("range")
+        || name.eq_ignore_ascii_case("expect")
+        || name.eq_ignore_ascii_case("te")
+        // authentication
+        || name.eq_ignore_ascii_case("authorization")
+        || name.eq_ignore_ascii_case("proxy-authorization")
+        || name.eq_ignore_ascii_case("www-authenticate")
+        || name.eq_ignore_ascii_case("proxy-authenticate")
+        // response controls
+        || name.eq_ignore_ascii_case("cache-control")
+        || name.eq_ignore_ascii_case("vary")
+        || name.eq_ignore_ascii_case("date")
+        || name.eq_ignore_ascii_case("expires")
+        || name.eq_ignore_ascii_case("age")
+        || name.eq_ignore_ascii_case("set-cookie")
+        // content format
         || name.eq_ignore_ascii_case("content-encoding")
         || name.eq_ignore_ascii_case("content-type")
         || name.eq_ignore_ascii_case("content-range")
+        // connection management
+        || name.eq_ignore_ascii_case("connection")
+        || name.eq_ignore_ascii_case("upgrade")
+        || name.eq_ignore_ascii_case("trailer")
 }
 
 #[cfg(test)]
@@ -154,10 +176,10 @@ mod tests {
 
     #[test]
     fn parse_fields() {
-        let trailer = Trailer::parse("Expires, X-Test").unwrap();
+        let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
         assert_eq!(
             trailer.fields(),
-            &["expires".to_string(), "x-test".to_string()]
+            &["x-checksum".to_string(), "x-test".to_string()]
         );
     }
 
@@ -175,14 +197,14 @@ mod tests {
         let trailer = Trailer::parse(",").unwrap();
         assert!(trailer.fields().is_empty());
 
-        let trailer = Trailer::parse("Expires,,X-Test").unwrap();
+        let trailer = Trailer::parse("X-Checksum,,X-Test").unwrap();
         assert_eq!(trailer.fields().len(), 2);
     }
 
     #[test]
     fn display() {
-        let trailer = Trailer::parse("Expires, X-Test").unwrap();
-        assert_eq!(trailer.to_string(), "expires, x-test");
+        let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
+        assert_eq!(trailer.to_string(), "x-checksum, x-test");
     }
 
     #[test]
@@ -249,6 +271,89 @@ mod tests {
     }
 
     #[test]
+    fn prohibited_field_authorization() {
+        // RFC 9110 Section 6.5.1 認証カテゴリ
+        let result = Trailer::parse("Authorization");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "authorization"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_proxy_authorization() {
+        let result = Trailer::parse("Proxy-Authorization");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "proxy-authorization"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_www_authenticate() {
+        let result = Trailer::parse("WWW-Authenticate");
+        assert!(matches!(
+            result,
+            Err(TrailerError::ProhibitedField(ref name)) if name == "www-authenticate"
+        ));
+    }
+
+    #[test]
+    fn prohibited_field_request_modifier() {
+        // RFC 9110 Section 6.5.1 リクエスト修飾子カテゴリ
+        for name in [
+            "If-Match",
+            "If-None-Match",
+            "If-Modified-Since",
+            "If-Unmodified-Since",
+            "If-Range",
+            "Range",
+            "Expect",
+            "TE",
+        ] {
+            let result = Trailer::parse(name);
+            assert!(
+                matches!(result, Err(TrailerError::ProhibitedField(_))),
+                "{} は禁止フィールドとして拒否されるべき",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn prohibited_field_response_control() {
+        // RFC 9110 Section 6.5.1 レスポンス制御カテゴリ
+        for name in [
+            "Cache-Control",
+            "Vary",
+            "Date",
+            "Expires",
+            "Age",
+            "Set-Cookie",
+        ] {
+            let result = Trailer::parse(name);
+            assert!(
+                matches!(result, Err(TrailerError::ProhibitedField(_))),
+                "{} は禁止フィールドとして拒否されるべき",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn prohibited_field_connection_management() {
+        // RFC 9110 Section 6.5.1 接続管理カテゴリ
+        for name in ["Connection", "Upgrade"] {
+            let result = Trailer::parse(name);
+            assert!(
+                matches!(result, Err(TrailerError::ProhibitedField(_))),
+                "{} は禁止フィールドとして拒否されるべき",
+                name
+            );
+        }
+    }
+
+    #[test]
     fn prohibited_field_in_list() {
         // 複数フィールドの中に禁止フィールドがある場合
         let result = Trailer::parse("X-Custom, Content-Length, X-Other");
@@ -260,8 +365,8 @@ mod tests {
 
     #[test]
     fn allowed_fields() {
-        // 許可されたフィールドは通る
-        let trailer = Trailer::parse("Expires, X-Checksum, X-Custom").unwrap();
+        // 許可されたフィールドは通る (拡張カテゴリのフィールドは含めない)
+        let trailer = Trailer::parse("X-Checksum, X-Custom, X-Trace-Id").unwrap();
         assert_eq!(trailer.fields().len(), 3);
     }
 
@@ -270,7 +375,14 @@ mod tests {
         assert!(is_prohibited_trailer_field("Transfer-Encoding"));
         assert!(is_prohibited_trailer_field("transfer-encoding"));
         assert!(is_prohibited_trailer_field("CONTENT-LENGTH"));
+        // RFC 9110 Section 6.5.1 カテゴリ拡充の確認
+        assert!(is_prohibited_trailer_field("Expires"));
+        assert!(is_prohibited_trailer_field("Authorization"));
+        assert!(is_prohibited_trailer_field("Cache-Control"));
+        assert!(is_prohibited_trailer_field("Range"));
+        assert!(is_prohibited_trailer_field("Connection"));
+        // 拡張ヘッダーは引き続き許可
         assert!(!is_prohibited_trailer_field("X-Custom"));
-        assert!(!is_prohibited_trailer_field("Expires"));
+        assert!(!is_prohibited_trailer_field("X-Checksum"));
     }
 }

@@ -69,10 +69,12 @@ proptest! {
         trailer_value in "[a-z0-9]{1,16}"
     ) {
         // トレーラーは OK
+        // RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーで
+        // 事前申告したフィールドのみ受理される。
         let len = body_content.len();
         let data = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: {}\r\n\r\n",
-            len, body_content, trailer_name, trailer_value
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: {}\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: {}\r\n\r\n",
+            trailer_name, len, body_content, trailer_name, trailer_value
         );
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
@@ -104,15 +106,19 @@ proptest! {
         body_content in "[a-z]{1,32}",
         trailer_count in 1..4usize
     ) {
-        // 複数のトレーラーは OK
+        // 複数のトレーラーは OK (`Trailer:` ヘッダーで事前申告したもののみ)
         let len = body_content.len();
+        let declared = (0..trailer_count)
+            .map(|i| format!("X-Trailer{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
         let trailers = (0..trailer_count)
             .map(|i| format!("X-Trailer{}: value{}", i, i))
             .collect::<Vec<_>>()
             .join("\r\n");
         let data = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}\r\n\r\n",
-            len, body_content, trailers
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: {}\r\n\r\n{:x}\r\n{}\r\n0\r\n{}\r\n\r\n",
+            declared, len, body_content, trailers
         );
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();

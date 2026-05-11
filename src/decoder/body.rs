@@ -64,6 +64,12 @@ pub(crate) struct BodyDecoder {
     body_consumed: usize,
     /// トレーラー数
     trailer_count: usize,
+    /// `Trailer:` ヘッダーで sender が事前申告した trailer フィールド名 (ASCII 小文字化済み)
+    ///
+    /// RFC 9110 Section 6.5.1 のホワイトリスト方式で利用する。本リストに含まれない
+    /// 名前の trailer フィールドは reject される。decode_headers の完了時に
+    /// `set_declared_trailers` で設定される (`Trailer:` ヘッダーがない場合は空)。
+    declared_trailers: Vec<String>,
 }
 
 impl Default for BodyDecoder {
@@ -79,6 +85,7 @@ impl BodyDecoder {
             trailers: Vec::new(),
             body_consumed: 0,
             trailer_count: 0,
+            declared_trailers: Vec::new(),
         }
     }
 
@@ -87,6 +94,15 @@ impl BodyDecoder {
         self.trailers.clear();
         self.body_consumed = 0;
         self.trailer_count = 0;
+        self.declared_trailers.clear();
+    }
+
+    /// `Trailer:` ヘッダーで申告された trailer フィールド名リストを設定する
+    ///
+    /// `decode_headers` 完了直後に呼び出される。ホワイトリスト判定で参照する。
+    /// 名前は ASCII 小文字化されたもののみを保持する。
+    pub fn set_declared_trailers(&mut self, declared: Vec<String>) {
+        self.declared_trailers = declared;
     }
 
     /// 利用可能なボディデータを覗く（ゼロコピー）
@@ -485,10 +501,27 @@ impl BodyDecoder {
                     // 不正なトレーラー行はエラーにする
                     let (name, value) = parse_header_line(&line)?;
 
-                    // RFC 9112 Section 7.1.2: 禁止フィールドチェック
+                    // RFC 9110 Section 6.5.1: framing / routing / authentication /
+                    // request modifiers / response controls / content format /
+                    // connection management のカテゴリに該当するフィールドは
+                    // trailer に置けない (`Trailer:` ヘッダーで申告されていても拒否)。
                     if is_prohibited_trailer_field(&name) {
                         return Err(Error::InvalidData(alloc::format!(
                             "prohibited trailer field: {}",
+                            name
+                        )));
+                    }
+
+                    // RFC 9110 Section 6.5.1 ホワイトリスト方式:
+                    // sender は `Trailer:` ヘッダーで事前申告したフィールド名のみ
+                    // trailer-section に置ける (MUST NOT generate a trailer field
+                    // unless ... the sender knows the recipient will accept it)。
+                    // 受信側は申告外のフィールドを reject し、認証ヘッダー等の
+                    // 後付け注入による smuggling 経路を遮断する。
+                    let name_lower = name.to_ascii_lowercase();
+                    if !self.declared_trailers.iter().any(|d| d == &name_lower) {
+                        return Err(Error::InvalidData(alloc::format!(
+                            "undeclared trailer field: {}",
                             name
                         )));
                     }
@@ -503,6 +536,31 @@ impl BodyDecoder {
         }
         Ok(advanced)
     }
+}
+
+/// ヘッダーから `Trailer:` フィールドで申告された名前リストを抽出する
+///
+/// RFC 9110 Section 6.5.1 のホワイトリスト方式 trailer 受理判定で利用する。
+/// 申告された名前は ASCII 小文字化して返す (受信した trailer 名との比較は
+/// case-insensitive 比較のため)。
+///
+/// `Trailer:` ヘッダーは複数行あり得る。各行はカンマ区切りトークンリスト。
+/// 空要素は RFC 9110 Section 5.6.1.2 に従い無視する。
+pub(crate) fn collect_declared_trailers(headers: &[(String, String)]) -> Vec<String> {
+    let mut declared = Vec::new();
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("Trailer") {
+            continue;
+        }
+        for token in value.split(',') {
+            let token = token.trim();
+            if token.is_empty() {
+                continue;
+            }
+            declared.push(token.to_ascii_lowercase());
+        }
+    }
+    declared
 }
 
 /// chunk-ext の ABNF を検証する (RFC 9112 Section 7.1.1)

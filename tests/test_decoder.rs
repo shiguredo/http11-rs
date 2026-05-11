@@ -557,8 +557,9 @@ fn test_chunked_trailer_too_many_error() {
         ..DecoderLimits::default()
     };
     let mut decoder = ResponseDecoder::with_limits(limits);
-    // 3 つのトレーラーで制限 2 を超える
-    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\
+    // RFC 9110 Section 6.5.1 ホワイトリスト方式: Trailer ヘッダーで事前申告する。
+    // 3 つのトレーラーで制限 2 を超える。
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-A, X-B, X-C\r\n\r\n\
                     0\r\nX-A: 1\r\nX-B: 2\r\nX-C: 3\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
     decoder.decode_headers().unwrap().unwrap();
@@ -577,10 +578,11 @@ fn test_chunked_trailer_line_too_long_error() {
         ..DecoderLimits::default()
     };
     let mut decoder = ResponseDecoder::with_limits(limits);
-    // トレーラー行 "X-Trailer: " + 30 文字 = 41 文字 > 30
+    // トレーラー行 "X-Trailer: " + 30 文字 = 41 文字 > 30。
+    // RFC 9110 Section 6.5.1 ホワイトリスト方式: Trailer ヘッダーで事前申告する。
     let long_value = "a".repeat(30);
     let response = format!(
-        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Trailer: {}\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Trailer\r\n\r\n0\r\nX-Trailer: {}\r\n\r\n",
         long_value
     );
     decoder.feed(response.as_bytes()).unwrap();
@@ -588,6 +590,75 @@ fn test_chunked_trailer_line_too_long_error() {
 
     let result = decoder.progress();
     assert!(result.is_err());
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーで申告されたフィールドのみ受理される
+#[test]
+fn test_chunked_trailer_whitelist_accepts_declared_field() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Checksum\r\n\r\n\
+                    0\r\nX-Checksum: abc123\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    // 進める。Complete に到達するまでループする
+    loop {
+        match decoder.progress().unwrap() {
+            shiguredo_http11::BodyProgress::Complete { trailers } => {
+                assert_eq!(trailers.len(), 1);
+                assert!(trailers[0].0.eq_ignore_ascii_case("X-Checksum"));
+                assert_eq!(trailers[0].1, "abc123");
+                break;
+            }
+            _ => continue,
+        }
+    }
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: 申告されていない trailer は拒否される
+#[test]
+fn test_chunked_trailer_whitelist_rejects_undeclared_field() {
+    let mut decoder = ResponseDecoder::new();
+    // X-Checksum を申告したが、実際の trailer-section には X-Other が来る
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Checksum\r\n\r\n\
+                    0\r\nX-Other: leaked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "申告されていない trailer フィールドは reject されるべき"
+    );
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: 認証ヘッダー後付け注入による smuggling を遮断
+#[test]
+fn test_chunked_trailer_whitelist_rejects_authorization_injection() {
+    let mut decoder = ResponseDecoder::new();
+    // 攻撃シナリオ: X-Custom を申告して通常 trailer に見せかけつつ、
+    // 実際の trailer-section に Authorization を仕込む。
+    // 認証カテゴリは `is_prohibited_trailer_field` で reject される。
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Custom\r\n\r\n\
+                    0\r\nAuthorization: Bearer attacker-token\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "Authorization は trailer に置けないため reject されるべき"
+    );
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーがない場合、trailer-section は何も受理しない
+#[test]
+fn test_chunked_trailer_whitelist_rejects_unannounced_trailers() {
+    let mut decoder = ResponseDecoder::new();
+    // Trailer ヘッダー無し → 申告なし → 任意の trailer フィールドが reject される
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\
+                    0\r\nX-Custom: value\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "Trailer ヘッダー無しの場合、trailer-section は何も受理してはならない"
+    );
 }
 
 // ========================================
