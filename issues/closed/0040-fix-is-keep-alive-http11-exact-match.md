@@ -1,6 +1,7 @@
 # 0040: HttpHead::is_keep_alive を HTTP/1.1 完全一致に変更する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -57,3 +58,17 @@ doc コメントの「version 文字列が `/1.1` で終わる場合のみ `true
 - 旧挙動 (RTSP/1.1 等で true を返していた) に依存していたユーザーは false を返すようになる
 - canary リリース中なので破壊的変更は許容範囲
 - HTTP/1.1 完全一致は本来の意図 (doc コメント) に沿った挙動
+
+## 解決方法
+
+- `src/decoder/head.rs::HttpHead::is_keep_alive`:
+  - 最終フォールバック `self.version().ends_with("/1.1")` を `self.version() == "HTTP/1.1"` に変更
+  - doc コメントを「`version == "HTTP/1.1"` 完全一致のときのみ true (RTSP/1.1 等は対象外)」に更新。RTSP の persistent connection は上位層の責務であることを明記
+- `src/request.rs` / `src/response.rs` の `is_keep_alive` 委譲メソッドの doc も同等に更新
+- テスト追加 (`tests/test_request.rs`):
+  - `test_request_is_keep_alive_http11_default`: HTTP/1.1 デフォルトで true
+  - `test_request_is_keep_alive_http10_default_false`: HTTP/1.0 デフォルトで false
+  - `test_request_is_keep_alive_http11_with_close`: Connection: close で false
+  - `test_request_is_keep_alive_http10_with_keep_alive`: HTTP/1.0 + keep-alive で true
+  - `test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default`: RTSP/1.1 / FOO/1.1 は Connection 無しで false、明示 keep-alive で true
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
