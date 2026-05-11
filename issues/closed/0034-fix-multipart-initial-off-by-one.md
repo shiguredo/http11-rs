@@ -1,6 +1,7 @@
 # 0034: MultipartParser Initial 状態の終端境界判定 off-by-one を修正する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -61,3 +62,12 @@ if self.buffer.len() > after_delim + 2 {
 ### CHANGES.md
 
 `## develop` のメインに `[FIX]` として追記する。バグ修正。
+
+## 解決方法
+
+- `src/multipart.rs::next_part` の `ParserState::Initial` 分岐で `self.buffer.len() > after_delim + 2` を `>=` に変更した。等値ケース (`after_delim + 2 == buffer.len()`) も拾うようになり、終端境界 `--<boundary>--` が feed の末尾ピッタリで止まる断片入力でも正しく `Ok(None)` (finished) を返す
+- コメントで Sans I/O での断片入力対応の意図と、参照スライス `self.buffer[after_delim..after_delim + 2]` の安全条件 (`after_delim + 2 <= buffer.len()`) を明記
+- `tests/test_multipart.rs` に 2 件追加:
+  - `test_multipart_parser_end_boundary_at_buffer_tail_without_crlf`: `--boundary--` のみ (CRLF terminator なし) を feed して `Ok(None)` (finished) を返すこと
+  - `test_multipart_parser_part_then_end_boundary_at_tail`: 通常パート + 終端境界 (CRLF terminator なし) で正しく part と finished を取れること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
