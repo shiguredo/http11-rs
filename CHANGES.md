@@ -76,6 +76,11 @@
   - `noflate::gzip::Decoder` のように feed したバイトを内部 buffer に蓄積する型の `Decompressor` 実装でボディ末尾のバイトを取りこぼすバグを修正する
   - 後方互換: `NoCompression` のような状態を持たない実装は `Continue { 0, 0 }` または `Complete { 0, 0 }` を返すため None 判定で従来挙動と等価
   - @voluntas
+- [FIX] Content-Length パースで `str::trim()` が Unicode 空白 (NBSP / 全角空白等) を OWS として除去していた問題を修正する
+  - RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠する `trim_ows` を `validate` モジュールに集約し、encoder の `validate_content_length_headers` と decoder の `parse_content_length_value` で共通利用する
+  - obs-text (0x80-0xFF) を許容する `is_valid_field_value` 経由で NBSP の UTF-8 表現 (`0xC2 0xA0`) 等がヘッダー値に到達した場合でも、encoder / decoder ともに Content-Length 値として拒否するようになり、両者の解釈不一致を原因とする HTTP Request Smuggling (CWE-444) 経路を塞ぐ
+  - 後方互換: SP / HTAB のみで構成される従来の OWS は引き続き正しく除去される
+  - @voluntas
 
 ### misc
 
