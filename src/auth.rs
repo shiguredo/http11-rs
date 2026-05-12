@@ -75,6 +75,11 @@ pub enum AuthError {
     ConflictingUsernameField,
     /// `username*` の ext-value が不正 (RFC 5987 Section 3.2.1 / RFC 7616 Section 3.4)
     InvalidUsernameExtValue,
+    /// auth-param が `MAX_AUTH_PARAMS` を超えた (RFC 9110 Section 11.2 auth-param リスト上限)
+    ///
+    /// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
+    /// 32 を上限とし、線形重複検出の CPU 消費を有限に抑える。
+    TooManyParameters,
 }
 
 impl fmt::Display for AuthError {
@@ -102,9 +107,18 @@ impl fmt::Display for AuthError {
                 )
             }
             AuthError::InvalidUsernameExtValue => write!(f, "invalid username* ext-value"),
+            AuthError::TooManyParameters => write!(f, "too many auth parameters"),
         }
     }
 }
+
+/// auth-param リストの上限 (issue 0047)
+///
+/// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
+/// 32 を上限とする。重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に
+/// 抑えるための hard cap。
+/// 将来、認証スキームの拡張で 32 を超えるパラメータが必要になれば再評価する。
+const MAX_AUTH_PARAMS: usize = 32;
 
 impl core::error::Error for AuthError {}
 
@@ -851,6 +865,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         let key = name.to_ascii_lowercase();
         if params.iter().any(|(n, _)| n == &key) {
             return Err(AuthError::DuplicateParameter);
+        }
+        // issue 0047: パラメータ数 hard cap (`MAX_AUTH_PARAMS = 32`)。
+        // 線形重複検出の CPU 消費を有限に抑える。
+        if params.len() >= MAX_AUTH_PARAMS {
+            return Err(AuthError::TooManyParameters);
         }
         params.push((key, value));
         while i < bytes.len() && is_ows(bytes[i]) {

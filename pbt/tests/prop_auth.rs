@@ -583,3 +583,42 @@ proptest! {
         prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
     }
 }
+
+// ========================================
+// auth-param の hard cap (issue 0047)
+// ========================================
+
+proptest! {
+    /// 33..=200 個のパラメータは `TooManyParameters` を返す
+    #[test]
+    fn prop_auth_challenge_too_many_params(count in 33usize..=200) {
+        let mut s = String::from("Bearer ");
+        for i in 0..count {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(&format!("p{}=\"v\"", i));
+        }
+        let result = AuthChallenge::parse(&s);
+        prop_assert!(matches!(
+            result,
+            Err(shiguredo_http11::auth::AuthError::TooManyParameters)
+        ));
+    }
+}
+
+proptest! {
+    /// 1..=32 個のパラメータは正常に parse される
+    #[test]
+    fn prop_auth_challenge_at_most_32_params_ok(count in 1usize..=32) {
+        let mut s = String::from("Bearer ");
+        for i in 0..count {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(&format!("p{}=\"v\"", i));
+        }
+        let result = AuthChallenge::parse(&s);
+        prop_assert!(result.is_ok(), "count={}: {:?}", count, result);
+    }
+}

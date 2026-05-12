@@ -11,6 +11,12 @@
 
 ## develop
 
+- [CHANGE] `parse_auth_params` と `ContentDisposition::parse` にパラメータ数 hard cap (`MAX_AUTH_PARAMS = 32` / `MAX_PARAMS = 32`) を導入する
+  - 旧実装はパラメータ数の上限がなく、`max_header_line_size = 8KB` 内で 2000 個程度のパラメータが詰め込み可能で、線形重複検出による CPU 消費の上限がなかった
+  - 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6266 Content-Disposition = 7) に十分な余裕として 32 を上限とする
+  - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
+  - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
+  - @voluntas
 - [FIX] HTTP/1.1 以外の version で `Transfer-Encoding` ヘッダーを受理しないように厳格化する
   - 旧挙動では `version == "HTTP/1.0"` の完全一致のみ拒否しており、`HTTP/0.9` / `HTTP/2.0` / `HTTP/3.0` / `RTSP/1.0` / `FOO/1.0` 等で `Transfer-Encoding: chunked` を chunked フレーミングとして読み始めていた
   - RFC 9112 Section 6.1 (TE は HTTP/1.1 のみで定義) および RFC 2326 Section 5 (RTSP では Transfer-Encoding 未定義) に従い、HTTP/1.1 完全一致以外で TE が出現した場合は `Error::InvalidData` を返す

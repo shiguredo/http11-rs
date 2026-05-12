@@ -40,6 +40,11 @@ pub enum ContentDispositionError {
     InvalidExtValue,
     /// 重複パラメータ (RFC 6266)
     DuplicateParameter(String),
+    /// パラメータ数が `MAX_PARAMS` を超えた (issue 0047)
+    ///
+    /// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とし、
+    /// 線形重複検出の CPU 消費を有限に抑える。
+    TooManyParameters,
 }
 
 impl fmt::Display for ContentDispositionError {
@@ -57,11 +62,21 @@ impl fmt::Display for ContentDispositionError {
             ContentDispositionError::DuplicateParameter(name) => {
                 write!(f, "duplicate parameter: {}", name)
             }
+            ContentDispositionError::TooManyParameters => {
+                write!(f, "too many content-disposition parameters")
+            }
         }
     }
 }
 
 impl core::error::Error for ContentDispositionError {}
+
+/// Content-Disposition のパラメータ数上限 (issue 0047)
+///
+/// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とする。
+/// 重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に抑えるための hard cap。
+/// 将来、RFC 拡張で 32 を超えるパラメータが必要になれば再評価する。
+const MAX_PARAMS: usize = 32;
 
 /// Disposition タイプ
 ///
@@ -179,6 +194,11 @@ impl ContentDisposition {
                 // 重複パラメータチェック
                 if seen_params.iter().any(|n: &String| n == &param_name) {
                     return Err(ContentDispositionError::DuplicateParameter(param_name));
+                }
+                // issue 0047: パラメータ数 hard cap (`MAX_PARAMS = 32`)。
+                // 線形重複検出の CPU 消費を有限に抑える。
+                if seen_params.len() >= MAX_PARAMS {
+                    return Err(ContentDispositionError::TooManyParameters);
                 }
                 seen_params.push(param_name.clone());
 

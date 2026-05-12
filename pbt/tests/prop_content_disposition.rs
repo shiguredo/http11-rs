@@ -374,3 +374,36 @@ proptest! {
         prop_assert!(display.contains("filename*=UTF-8''"));
     }
 }
+
+// ========================================
+// パラメータ数の hard cap (issue 0047)
+// ========================================
+
+proptest! {
+    /// 33..=200 個のパラメータは TooManyParameters を返す
+    #[test]
+    fn prop_content_disposition_too_many_params(count in 33usize..=200) {
+        let mut s = String::from("attachment");
+        for i in 0..count {
+            s.push_str(&format!("; p{}=\"v\"", i));
+        }
+        let result = shiguredo_http11::content_disposition::ContentDisposition::parse(&s);
+        prop_assert!(matches!(
+            result,
+            Err(shiguredo_http11::content_disposition::ContentDispositionError::TooManyParameters)
+        ));
+    }
+}
+
+proptest! {
+    /// 0..=32 個のパラメータは正常に parse される
+    #[test]
+    fn prop_content_disposition_at_most_32_params_ok(count in 0usize..=32) {
+        let mut s = String::from("attachment");
+        for i in 0..count {
+            s.push_str(&format!("; p{}=\"v\"", i));
+        }
+        let result = shiguredo_http11::content_disposition::ContentDisposition::parse(&s);
+        prop_assert!(result.is_ok(), "count={}: {:?}", count, result);
+    }
+}
