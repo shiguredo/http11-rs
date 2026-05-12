@@ -278,3 +278,44 @@ fn test_content_disposition_qdtext_rejects_crlf() {
     let result = ContentDisposition::parse(input);
     assert!(result.is_err(), "qdtext に LF を含むものは reject される");
 }
+
+// ========================================
+// パラメータ数の hard cap (issue 0047)
+// ========================================
+
+fn build_content_disposition(param_count: usize) -> String {
+    let mut s = String::from("attachment");
+    for i in 0..param_count {
+        // 各パラメータ名は一意 (重複検出経路を踏まないため)
+        s.push_str(&format!("; p{}=\"v\"", i));
+    }
+    s
+}
+
+#[test]
+fn test_content_disposition_32_params_accepted() {
+    let input = build_content_disposition(32);
+    let result = ContentDisposition::parse(&input);
+    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
+}
+
+#[test]
+fn test_content_disposition_33_params_rejected() {
+    let input = build_content_disposition(33);
+    let result = ContentDisposition::parse(&input);
+    assert!(
+        matches!(result, Err(ContentDispositionError::TooManyParameters)),
+        "33 個目で TooManyParameters を返す想定: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_content_disposition_100_params_rejected() {
+    let input = build_content_disposition(100);
+    let result = ContentDisposition::parse(&input);
+    assert!(matches!(
+        result,
+        Err(ContentDispositionError::TooManyParameters)
+    ));
+}

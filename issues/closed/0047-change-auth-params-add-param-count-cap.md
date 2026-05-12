@@ -1,6 +1,7 @@
 # 0047: auth-param と Content-Disposition のパラメータ数に hard cap を導入する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -137,3 +138,16 @@ if seen_params.len() >= MAX_PARAMS {
 - RFC 6266 §4 (Content-Disposition の parameters、本リポジトリ refs/ にあり)
 - RFC 7616 (Digest auth)
 - RFC 6750 (Bearer auth)
+
+## 解決方法
+
+- `src/auth.rs` に `const MAX_AUTH_PARAMS: usize = 32` と `AuthError::TooManyParameters` を追加した
+- `parse_auth_params` の重複検出後 push 直前に `params.len() >= MAX_AUTH_PARAMS` ガードを追加した
+- `src/content_disposition.rs` に `const MAX_PARAMS: usize = 32` と `ContentDispositionError::TooManyParameters` を追加した
+- `ContentDisposition::parse` の重複検出後 push 直前に `seen_params.len() >= MAX_PARAMS` ガードを追加した
+- `tests/test_auth.rs` に 32 個受理 / 33 個 reject / 100 個 reject の境界値テスト 3 件を追加した
+- `tests/test_content_disposition.rs` に 32 個受理 / 33 個 reject / 100 個 reject の境界値テスト 3 件を追加した
+- `pbt/tests/prop_auth.rs` / `pbt/tests/prop_content_disposition.rs` に 1..=32 個正常 / 33..=200 個 reject の PBT を追加した
+- 重複検出のアルゴリズム (`Vec` + `iter().any`) は変更していない (Premature Optimization 回避)
+- `DecoderLimits` は変更していない (decoder は本 parser を呼ばないため)
+- `CHANGES.md` の `## develop` に `[CHANGE]` エントリを追加した

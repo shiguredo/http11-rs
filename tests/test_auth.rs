@@ -307,3 +307,47 @@ fn test_digest_auth_rejects_username_star_invalid_ext_value() {
         result
     );
 }
+
+// ========================================
+// auth-param の hard cap (issue 0047)
+// ========================================
+
+fn build_auth_challenge(param_count: usize) -> String {
+    let mut s = String::from("Bearer ");
+    for i in 0..param_count {
+        if i > 0 {
+            s.push_str(", ");
+        }
+        // 各パラメータ名は一意 (重複検出経路を踏まないため)
+        s.push_str(&format!("p{}=\"v\"", i));
+    }
+    s
+}
+
+// 32 個ちょうどのパラメータは受理される (境界値)
+#[test]
+fn test_auth_challenge_32_params_accepted() {
+    let input = build_auth_challenge(32);
+    let result = AuthChallenge::parse(&input);
+    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
+}
+
+// 33 個目で TooManyParameters を返す (境界値)
+#[test]
+fn test_auth_challenge_33_params_rejected() {
+    let input = build_auth_challenge(33);
+    let result = AuthChallenge::parse(&input);
+    assert!(
+        matches!(result, Err(AuthError::TooManyParameters)),
+        "33 個目で TooManyParameters を返す想定: {:?}",
+        result
+    );
+}
+
+// 100 個でも同じく TooManyParameters
+#[test]
+fn test_auth_challenge_100_params_rejected() {
+    let input = build_auth_challenge(100);
+    let result = AuthChallenge::parse(&input);
+    assert!(matches!(result, Err(AuthError::TooManyParameters)));
+}
