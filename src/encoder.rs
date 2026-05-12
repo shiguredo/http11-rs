@@ -851,20 +851,12 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 impl Request {
     /// リクエストをバイト列にエンコード
     ///
-    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request ならば、
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request でも、
     /// 意味論的な RFC 違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と
-    /// Content-Length の競合等) がある場合のみパニックする。
-    /// エラーハンドリングが必要な場合は `try_encode()` を使用する。
-    /// `from_raw_parts` 経由で構築された Request が release ビルドで構文エラーを
-    /// 含む場合もパニックする (encoder のエラーメッセージは構文/意味論を区別しない)。
-    pub fn encode(&self) -> Vec<u8> {
-        encode_request(self).expect("invalid request fields or headers")
-    }
-
-    /// リクエストをバイト列にエンコード (Result 版)
+    /// Content-Length の競合等) は encode 時に検出され `Err` を返す。
     ///
     /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
-    pub fn try_encode(&self) -> Result<Vec<u8>, EncodeError> {
+    pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         encode_request(self)
     }
 }
@@ -872,20 +864,13 @@ impl Request {
 impl Response {
     /// レスポンスをバイト列にエンコード
     ///
-    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Response ならば、
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Response でも、
     /// 意味論的な RFC 違反 (Content-Length 不一致、1xx/204 への Transfer-Encoding 等)
-    /// がある場合のみパニックする。エラーハンドリングが必要な場合は `try_encode()` を使用する。
-    /// `from_raw_parts` 経由で構築された Response が release ビルドで構文エラーを
-    /// 含む場合もパニックする (encoder のエラーメッセージは構文/意味論を区別しない)。
-    pub fn encode(&self) -> Vec<u8> {
-        encode_response(self).expect("invalid header combination")
-    }
-
-    /// レスポンスをバイト列にエンコード (Result 版)
+    /// は encode 時に検出され `Err` を返す。
     ///
     /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
     /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
-    pub fn try_encode(&self) -> Result<Vec<u8>, EncodeError> {
+    pub fn encode(&self) -> Result<Vec<u8>, EncodeError> {
         encode_response(self)
     }
 }
@@ -1090,18 +1075,12 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
 impl Request {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
     ///
-    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request ならば、
-    /// 意味論的な RFC 違反 (Host 欠落、Transfer-Encoding と Content-Length の競合等) が
-    /// ある場合のみパニックする。エラーハンドリングが必要な場合は
-    /// `try_encode_headers()` を使用する。
-    pub fn encode_headers(&self) -> Vec<u8> {
-        encode_request_headers(self).expect("invalid request fields or headers")
-    }
-
-    /// ヘッダーのみをエンコード (Result 版)
+    /// 構築時バリデーションで弾かれる構文上の不正値を含まない Request でも、
+    /// 意味論的な RFC 違反 (Host 欠落、Transfer-Encoding と Content-Length の競合等) は
+    /// encode 時に検出され `Err` を返す。
     ///
     /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
-    pub fn try_encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
+    pub fn encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
         encode_request_headers(self)
     }
 }
@@ -1109,17 +1088,11 @@ impl Request {
 impl Response {
     /// ヘッダーのみをエンコード (Chunked Transfer Encoding 用)
     ///
-    /// RFC 違反のヘッダー組み合わせがある場合はパニックする。
-    /// エラーハンドリングが必要な場合は `try_encode_headers()` を使用する。
-    pub fn encode_headers(&self) -> Vec<u8> {
-        encode_response_headers(self).expect("invalid header combination")
-    }
-
-    /// ヘッダーのみをエンコード (Result 版)
+    /// RFC 違反のヘッダー組み合わせがある場合は encode 時に検出され `Err` を返す。
     ///
     /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
     /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
-    pub fn try_encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
+    pub fn encode_headers(&self) -> Result<Vec<u8>, EncodeError> {
         encode_response_headers(self)
     }
 }

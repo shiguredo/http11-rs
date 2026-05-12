@@ -748,7 +748,7 @@ proptest! {
             .header("Host", "example.com")
             .unwrap();
         let via_method = req.encode();
-        let via_free = encode_request(&req).unwrap();
+        let via_free = encode_request(&req);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -759,7 +759,7 @@ proptest! {
     fn prop_response_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase).unwrap();
         let via_method = res.encode();
-        let via_free = encode_response(&res).unwrap();
+        let via_free = encode_response(&res);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -773,7 +773,7 @@ proptest! {
             .header("Host", "example.com")
             .unwrap();
         let via_method = req.encode_headers();
-        let via_free = encode_request_headers(&req).unwrap();
+        let via_free = encode_request_headers(&req);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -790,59 +790,6 @@ proptest! {
             .header("Content-Type", "text/html")
             .unwrap();
         let via_method = res.encode_headers();
-        let via_free = encode_response_headers(&res).unwrap();
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Request::try_encode() は encode_request() と同じ結果を返す
-    #[test]
-    fn prop_request_try_encode_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri)
-            .unwrap()
-            .header("Host", "example.com")
-            .unwrap();
-        let via_method = req.try_encode();
-        let via_free = encode_request(&req);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Response::try_encode() は encode_response() と同じ結果を返す
-    #[test]
-    fn prop_response_try_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase).unwrap();
-        let via_method = res.try_encode();
-        let via_free = encode_response(&res);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Request::try_encode_headers() は encode_request_headers() と同じ結果を返す
-    #[test]
-    fn prop_request_try_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri)
-            .unwrap()
-            .header("Host", "example.com")
-            .unwrap();
-        let via_method = req.try_encode_headers();
-        let via_free = encode_request_headers(&req);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Response::try_encode_headers() は encode_response_headers() と同じ結果を返す
-    #[test]
-    fn prop_response_try_encode_headers_equals_free_function(
-        status in status_code(),
-        phrase in reason_phrase()
-    ) {
-        let res = Response::new(status, phrase).unwrap();
-        let via_method = res.try_encode_headers();
         let via_free = encode_response_headers(&res);
         prop_assert_eq!(via_method, via_free);
     }

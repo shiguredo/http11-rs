@@ -40,10 +40,11 @@ use shiguredo_http11::{Request, ResponseDecoder};
 // リクエストを作成してエンコード
 // Request::new / header は構築時バリデーション (CRLF/NUL 拒否) を行うため
 // `Result<Self, EncodeError>` を返す。
+// encode() は意味論違反 (Host 欠落等) の検出のため `Result<Vec<u8>, EncodeError>` を返す。
 let request = Request::new("GET", "/")?
     .header("Host", "example.com")?
     .header("Connection", "close")?;
-let bytes = request.encode();
+let bytes = request.encode()?;
 // bytes を送信...
 
 // レスポンスをデコード
@@ -76,7 +77,7 @@ let mut decoder = RequestDecoder::new();
 let response = Response::with_status(StatusCode::OK)
     .header("Content-Type", "text/plain")?
     .body(b"Hello, World!".to_vec());
-let bytes = response.encode();
+let bytes = response.encode()?;
 // bytes を送信...
 ```
 
@@ -149,12 +150,12 @@ let mut response = Response::with_status(StatusCode::OK)
 if !is_head {
     response = response.body(body.to_vec());
 }
-let bytes = response.encode();
+let bytes = response.encode()?;
 
 // クライアント側: HEAD レスポンスの受信
 let request = Request::new("HEAD", "/")?
     .header("Host", "example.com")?;
-let bytes = request.encode();
+let bytes = request.encode()?;
 // bytes を送信...
 
 let mut decoder = ResponseDecoder::new();
@@ -175,7 +176,7 @@ use shiguredo_http11::{Response, StatusCode, encode_chunk};
 
 let response = Response::with_status(StatusCode::OK)
     .header("Transfer-Encoding", "chunked")?;
-let headers = response.encode_headers();
+let headers = response.encode_headers()?;
 // headers を送信...
 
 // チャンクを送信

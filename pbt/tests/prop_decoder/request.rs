@@ -356,7 +356,7 @@ proptest! {
         for i in 0..count {
             let mut request = Request::new(&methods[i], &uris[i]).unwrap();
             request.add_header("Host", "localhost").unwrap();
-            let encoded = request.encode();
+            let encoded = request.encode().unwrap();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
             prop_assert_eq!(decoded.method(), methods[i].as_str());
@@ -380,7 +380,7 @@ proptest! {
         // リセット後は正常に動作
         let mut request = Request::new(&valid_method, &valid_uri).unwrap();
         request.add_header("Host", "localhost").unwrap();
-        decoder.feed(&request.encode()).unwrap();
+        decoder.feed(&request.encode().unwrap()).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
         prop_assert_eq!(decoded.method(), valid_method.as_str());
     }
@@ -464,7 +464,7 @@ proptest! {
             request = request.body(body_data.clone());
         }
 
-        let encoded = request.encode();
+        let encoded = request.encode().unwrap();
         let mut decoder = RequestDecoder::new();
         decoder.feed(&encoded).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
@@ -535,7 +535,7 @@ proptest! {
         for i in 0..count {
             let mut request = Request::new(&methods[i], &uris[i]).unwrap();
             request.add_header("Host", "localhost").unwrap();
-            all_data.extend(request.encode());
+            all_data.extend(request.encode().unwrap());
         }
         decoder.feed(&all_data).unwrap();
 
@@ -564,7 +564,7 @@ proptest! {
             let mut request = Request::new("POST", "/").unwrap();
             request.add_header("Host", "localhost").unwrap();
             let request = request.body(body_data.clone());
-            all_data.extend(request.encode());
+            all_data.extend(request.encode().unwrap());
         }
         decoder.feed(&all_data).unwrap();
 

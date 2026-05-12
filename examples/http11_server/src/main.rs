@@ -305,7 +305,7 @@ async fn serve_request(
         let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
             .header("Content-Length", "0")?
             .header("Connection", "close")?;
-        writer.write_all(&response.encode()).await?;
+        writer.write_all(&response.encode()?).await?;
         writer.flush().await?;
         return Ok(false);
     }
@@ -339,7 +339,7 @@ async fn serve_request(
         request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
 
     let response = build_response(&request, should_keep_alive)?;
-    let response_bytes = response.encode();
+    let response_bytes = response.encode()?;
     writer.write_all(&response_bytes).await?;
     writer.flush().await?;
 

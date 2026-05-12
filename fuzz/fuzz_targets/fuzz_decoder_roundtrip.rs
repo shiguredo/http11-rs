@@ -1,9 +1,9 @@
 //! Request / Response のエンコード → デコード ラウンドトリップを検証する
 //!
 //! - 任意の method, uri, ヘッダー, ボディから Request を構築し、
-//!   try_encode() → RequestDecoder でデコードした結果が一致することを確認する
+//!   encode() → RequestDecoder でデコードした結果が一致することを確認する
 //! - 任意の status_code, reason_phrase, ヘッダー, ボディから Response を構築し、
-//!   try_encode() → ResponseDecoder でデコードした結果が一致することを確認する
+//!   encode() → ResponseDecoder でデコードした結果が一致することを確認する
 
 #![no_main]
 
@@ -78,7 +78,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             request
         };
 
-        let encoded = match request.try_encode() {
+        let encoded = match request.encode() {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -152,7 +152,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             Vec::new()
         };
 
-        let encoded = match response.try_encode() {
+        let encoded = match response.encode() {
             Ok(v) => v,
             Err(_) => return,
         };

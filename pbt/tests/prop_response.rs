@@ -167,7 +167,7 @@ proptest! {
     #[test]
     fn prop_response_with_status_roundtrip(status in iana_status_code()) {
         let response = Response::with_status(status);
-        let bytes = response.try_encode().unwrap();
+        let bytes = response.encode().unwrap();
 
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&bytes).unwrap();

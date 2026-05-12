@@ -79,7 +79,7 @@ async fn fetch_with_headers(
         request = request.header(name, value).expect("extra header");
     }
     let request_method = request.method().to_string();
-    let request_bytes = request.try_encode().expect("try_encode");
+    let request_bytes = request.encode().expect("encode");
 
     tokio::task::spawn_blocking(move || http_request(&host, port, &request_method, &request_bytes))
         .await

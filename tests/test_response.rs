@@ -221,7 +221,7 @@ fn test_response_with_status_chains_with_builders() {
 fn test_response_with_status_encodable() {
     // with_status で構築した Response は encoder の二重バリデーションを通過する
     let r = Response::with_status(StatusCode::NO_CONTENT);
-    let bytes = r.try_encode().unwrap();
+    let bytes = r.encode().unwrap();
     let s = core::str::from_utf8(&bytes).unwrap();
     assert!(s.starts_with("HTTP/1.1 204 No Content\r\n"));
 }

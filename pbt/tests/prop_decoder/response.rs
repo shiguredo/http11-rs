@@ -637,7 +637,7 @@ proptest! {
             // 1xx/204/304 では status_has_body=false により Content-Length は付かないが、
             // body=Some(vec![]) でもエンコーダーは body バイトを出力しないため問題ない。
             let response = Response::new(*code, "OK").unwrap().body(Vec::new());
-            let encoded = response.encode();
+            let encoded = response.encode().unwrap();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
             prop_assert_eq!(decoded.status_code(), *code);
@@ -708,7 +708,7 @@ proptest! {
             response = response.body(body_data.clone());
         }
 
-        let encoded = response.encode();
+        let encoded = response.encode().unwrap();
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&encoded).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
@@ -773,7 +773,7 @@ proptest! {
         let mut all_data = Vec::new();
         for code in &status_codes {
             let response = Response::new(*code, "OK").unwrap().body(Vec::new());
-            all_data.extend(response.encode());
+            all_data.extend(response.encode().unwrap());
         }
         decoder.feed(&all_data).unwrap();
 

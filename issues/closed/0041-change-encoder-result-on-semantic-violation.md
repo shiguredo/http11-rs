@@ -1,6 +1,7 @@
 # 0041: Request::encode と Response::encode を Result 化して意味論違反を fail-fast にする
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -112,3 +113,10 @@ let _ = res.encode();
 - 0017 / 0025: Response / Request のフィールド非公開化。本 issue で「意味論違反は doc で panic を許容する」方針を覆す
 - 0039: `Request` の `body()` を infallible に固定する方針。本 issue ではビルダー検査を含めないため衝突なし
 - 0044 / 0045 / 0046: HRS 経路の修正。本 issue の Result 化により呼出側で smuggling 検知エラーを伝播できるようになる
+
+## 解決方法
+
+- `src/encoder.rs` の `Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` を `Result<Vec<u8>, EncodeError>` 直返しに変更し、`.expect(...)` 経路と panic 条件を述べる doc を削除した
+- 同一機能だった `Request::try_encode` / `Response::try_encode` / `Request::try_encode_headers` / `Response::try_encode_headers` を撤去した
+- 呼び出し側 (`src/lib.rs` doc 例、`README.md`、`skills/shiguredo-http11/SKILL.md`、`examples/http11_client` / `http11_server` / `http11_server_io_uring` / `http11_reverse_proxy`、`tests/test_response.rs`、`pbt/tests/prop_request.rs` / `prop_response.rs` / `prop_encoder.rs` / `prop_decoder/*.rs`、`fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`) を `?` または `.unwrap()` 経由で Result を扱う形に書き換えた
+- `CHANGES.md` の `## develop` に `[CHANGE]` エントリを追加し、issue 0017 由来「`Response::encode()` のパニック条件 ... doc を更新する」表記を削除した
