@@ -11,6 +11,12 @@
 
 ## develop
 
+- [FIX] HTTP/1.1 以外の version で `Transfer-Encoding` ヘッダーを受理しないように厳格化する
+  - 旧挙動では `version == "HTTP/1.0"` の完全一致のみ拒否しており、`HTTP/0.9` / `HTTP/2.0` / `HTTP/3.0` / `RTSP/1.0` / `FOO/1.0` 等で `Transfer-Encoding: chunked` を chunked フレーミングとして読み始めていた
+  - RFC 9112 Section 6.1 (TE は HTTP/1.1 のみで定義) および RFC 2326 Section 5 (RTSP では Transfer-Encoding 未定義) に従い、HTTP/1.1 完全一致以外で TE が出現した場合は `Error::InvalidData` を返す
+  - 0040 (`is_keep_alive` を HTTP/1.1 完全一致化) と同じ版番号判定方針に揃え、HTTP Request Smuggling (CWE-444) の足場を除去する
+  - request 経路 / response 経路の両方で対称に厳格化する
+  - @voluntas
 - [CHANGE] `ResponseDecoder` が CONNECT 2xx レスポンス受信時に `ResponseHead.headers` から `Transfer-Encoding` / `Content-Length` を除去するように変更する
   - RFC 9110 Section 9.3.6 「A client MUST ignore any Content-Length or Transfer-Encoding header fields received in a successful response to CONNECT」を物理消去で実装する
   - 旧実装は `BodyKind::Tunnel` を返す一方で `ResponseHead.headers` には CL/TE の元値が残置されており、上位アプリ (reverse proxy 等) が `head.content_length()` 経由で値を観測して下流に再生成すると HTTP Response Smuggling の足場となる経路を持っていた

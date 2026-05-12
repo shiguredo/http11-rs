@@ -239,8 +239,8 @@ fn close_delimited_decode_with_mark_eof() {
 
 /// HTTP/1.0 リクエストで Transfer-Encoding が指定された場合のエラーテスト
 ///
-/// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
-/// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする。
+/// RFC 9112 Section 6.1 / RFC 2326 Section 5: Transfer-Encoding は HTTP/1.1 でのみ定義され、
+/// HTTP/1.1 完全一致以外で出現した場合はエラーとする。
 #[test]
 fn http10_with_transfer_encoding_should_fail() {
     let mut decoder = RequestDecoder::new();
@@ -253,7 +253,7 @@ fn http10_with_transfer_encoding_should_fail() {
     let err = result.unwrap_err();
     assert!(
         err.to_string()
-            .contains("Transfer-Encoding is not defined in HTTP/1.0"),
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
         "unexpected error message: {}",
         err
     );
@@ -271,6 +271,131 @@ fn http11_with_transfer_encoding_should_succeed() {
     assert!(result.is_ok());
     let (_, body_kind) = result.unwrap().unwrap();
     assert!(matches!(body_kind, BodyKind::Chunked));
+}
+
+/// HTTP/1.1 以外の version (HTTP/0.9 / 2.0 / 3.0 / RTSP/x / FOO/1.0 / case 違い) で
+/// `Transfer-Encoding: chunked` が来たリクエストは reject する (issue 0046)
+fn assert_request_te_rejected(version: &str) {
+    let mut decoder = RequestDecoder::new();
+    let line = format!(
+        "POST / {}\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n",
+        version
+    );
+    decoder.feed(line.as_bytes()).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "version={:?} で Err を期待したが Ok を返した",
+        version
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
+        "version={:?}: unexpected error message: {}",
+        version,
+        err
+    );
+}
+
+#[test]
+fn http09_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/0.9");
+}
+
+#[test]
+fn http20_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/2.0");
+}
+
+#[test]
+fn http30_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/3.0");
+}
+
+#[test]
+fn rtsp10_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("RTSP/1.0");
+}
+
+#[test]
+fn rtsp20_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("RTSP/2.0");
+}
+
+#[test]
+fn foo10_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("FOO/1.0");
+}
+
+// version 文字列は case-sensitive (`is_valid_protocol_version` でも大文字限定)
+#[test]
+fn lower_case_http11_request_with_transfer_encoding_should_fail() {
+    // "http/1.1" は is_valid_protocol_version で reject されるため start_line パース時点で
+    // 別エラー経路に入る。本テストは「HTTP/1.1 完全一致以外」の網羅性確認のための
+    // 補助検証として、is_valid_protocol_version で reject されることだけを確認する。
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / http/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// ResponseDecoder 側でも同じく HTTP/1.1 完全一致以外で reject する (issue 0046)
+fn assert_response_te_rejected(version: &str) {
+    let mut decoder = ResponseDecoder::new();
+    let line = format!("{} 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", version);
+    decoder.feed(line.as_bytes()).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "version={:?} で Err を期待したが Ok を返した",
+        version
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
+        "version={:?}: unexpected error message: {}",
+        version,
+        err
+    );
+}
+
+#[test]
+fn http10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/1.0");
+}
+
+#[test]
+fn http09_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/0.9");
+}
+
+#[test]
+fn http20_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/2.0");
+}
+
+#[test]
+fn http30_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/3.0");
+}
+
+#[test]
+fn rtsp10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("RTSP/1.0");
+}
+
+#[test]
+fn rtsp20_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("RTSP/2.0");
+}
+
+#[test]
+fn foo10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("FOO/1.0");
 }
 
 /// リクエストターゲットにパーセントエンコーディングされた null バイト (%00) が含まれる場合のエラーテスト

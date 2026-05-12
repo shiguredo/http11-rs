@@ -290,8 +290,10 @@ impl<D: Decompressor> RequestDecoder<D> {
 
     /// ボディモードを決定
     ///
-    /// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
-    /// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする
+    /// RFC 9112 Section 6.1 (Transfer-Encoding は HTTP/1.1 のみで定義) および
+    /// RFC 2326 Section 5 (RTSP では Transfer-Encoding は未定義) に従い、
+    /// HTTP/1.1 完全一致以外で Transfer-Encoding が出現した場合は error 化する。
+    /// HTTP/1.2 が将来定義された場合は別途検討する (将来変更される可能性がある)。
     ///
     /// RFC 9112 Section 6.1: リクエストでは chunked 以外の Transfer-Encoding は拒否
     fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
@@ -299,10 +301,13 @@ impl<D: Decompressor> RequestDecoder<D> {
             resolve_body_headers_for_request(&self.headers)?;
 
         if transfer_encoding_chunked {
-            // RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていない
-            if version == "HTTP/1.0" {
+            // RFC 9112 Section 6.1 / RFC 2326 Section 5: HTTP/1.1 完全一致以外で
+            // Transfer-Encoding が出現した場合は framing fault として reject する。
+            // HRS (CWE-444) の足場となる version 偽装 (HTTP/0.9 / 2.0 / 3.0 / RTSP/x /
+            // FOO/1.0 等) を遮断する。
+            if version != "HTTP/1.1" {
                 return Err(Error::InvalidData(
-                    "Transfer-Encoding is not defined in HTTP/1.0".to_string(),
+                    "Transfer-Encoding is only defined for HTTP/1.1".to_string(),
                 ));
             }
             return Ok(BodyKind::Chunked);
