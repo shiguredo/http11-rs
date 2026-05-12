@@ -289,7 +289,10 @@ async fn serve_request(
     peer_addr: std::net::SocketAddr,
     tls: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let h = state.head.take().unwrap();
+    let h = state
+        .head
+        .take()
+        .expect("head must be present when serve_request is called");
     let body_kind = state.body_kind.take();
 
     // CONNECT は本サーバー (非 proxy) では未対応のため 501 Not Implemented を返す。
@@ -424,7 +427,10 @@ async fn handle_client(
 
             let body_complete = stream_body(
                 &mut decoder,
-                state.body_kind.as_ref().unwrap(),
+                state
+                    .body_kind
+                    .as_ref()
+                    .expect("body_kind must be set alongside head"),
                 &mut state.body,
             )?;
 
@@ -507,7 +513,10 @@ async fn handle_tls_client(
 
             let body_complete = stream_body(
                 &mut decoder,
-                state.body_kind.as_ref().unwrap(),
+                state
+                    .body_kind
+                    .as_ref()
+                    .expect("body_kind must be set alongside head"),
                 &mut state.body,
             )?;
 

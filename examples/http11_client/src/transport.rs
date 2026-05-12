@@ -235,7 +235,9 @@ impl ResponseSession {
     /// `BodyKind::None` / `BodyKind::Tunnel` 等でボディ受信不要のケースを判定
     fn body_done(&self) -> bool {
         matches!(
-            self.body_kind.as_ref().unwrap(),
+            self.body_kind
+                .as_ref()
+                .expect("body_kind must be set after try_decode_headers"),
             BodyKind::None | BodyKind::Tunnel
         )
     }

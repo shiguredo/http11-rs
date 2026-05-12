@@ -683,7 +683,13 @@ fn handle_read(
                 info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
-                let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
+                let cipher_suite = tls_conn.negotiated_cipher_suite().ok_or_else(|| {
+                    error!(
+                        peer_addr = %peer_addr,
+                        "TLS handshake succeeded but no cipher suite negotiated"
+                    );
+                    "TLS handshake succeeded but no cipher suite negotiated"
+                })?;
 
                 // tls_conn を取り出して秘密鍵を抽出
                 let conn = &mut connections[conn_id];
@@ -830,7 +836,13 @@ fn handle_write(
                 info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
-                let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
+                let cipher_suite = tls_conn.negotiated_cipher_suite().ok_or_else(|| {
+                    error!(
+                        peer_addr = %peer_addr,
+                        "TLS handshake succeeded but no cipher suite negotiated"
+                    );
+                    "TLS handshake succeeded but no cipher suite negotiated"
+                })?;
 
                 // tls_conn を取り出して秘密鍵を抽出
                 let mut tls_conn = conn.tls_conn.take().unwrap();
