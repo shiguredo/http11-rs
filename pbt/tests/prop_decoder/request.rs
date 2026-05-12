@@ -958,3 +958,44 @@ proptest! {
         prop_assert_eq!(decoder.remaining(), before.as_slice());
     }
 }
+
+// ========================================
+// HTTP/1.1 以外で Transfer-Encoding 受理を拒否 (issue 0046)
+// ========================================
+
+proptest! {
+    /// HTTP/1.1 完全一致以外のリクエストで `Transfer-Encoding: chunked` は reject される
+    #[test]
+    fn prop_request_te_rejected_for_non_http11(
+        version in prop_oneof![
+            Just("HTTP/0.9".to_string()),
+            Just("HTTP/1.0".to_string()),
+            Just("HTTP/2.0".to_string()),
+            Just("HTTP/3.0".to_string()),
+            Just("RTSP/1.0".to_string()),
+            Just("RTSP/2.0".to_string()),
+            Just("FOO/1.0".to_string()),
+        ]
+    ) {
+        let data = format!(
+            "POST / {}\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n",
+            version
+        );
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err());
+    }
+}
+
+proptest! {
+    /// HTTP/1.1 のリクエストで `Transfer-Encoding: chunked` は引き続き受理される
+    #[test]
+    fn prop_request_te_accepted_for_http11(_dummy in 0u8..1) {
+        let data = b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert!(matches!(body_kind, BodyKind::Chunked));
+    }
+}

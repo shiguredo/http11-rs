@@ -382,7 +382,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
             return Ok(BodyKind::Tunnel);
         }
 
-        // RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault。
+        // RFC 9112 Section 6.1 (Transfer-Encoding は HTTP/1.1 のみで定義) および
+        // RFC 2326 Section 5 (RTSP では Transfer-Encoding は未定義) に従い、
+        // HTTP/1.1 完全一致以外で Transfer-Encoding が出現した場合は framing fault
+        // として reject する。HRS (CWE-444) の足場となる version 偽装
+        // (HTTP/0.9 / 2.0 / 3.0 / RTSP/x / FOO/1.0 等) を遮断する。
+        // HTTP/1.2 が将来定義された場合は別途検討する (将来変更される可能性がある)。
         // item 1 で HEAD/1xx/204/304 は既に返っているため、このチェックに到達
         // するのはボディが存在しうるレスポンスのみ。
         let version = self
@@ -390,14 +395,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
             .as_ref()
             .and_then(|sl| sl.split(' ').next())
             .unwrap_or("");
-        if version == "HTTP/1.0"
+        if version != "HTTP/1.1"
             && self
                 .headers
                 .iter()
                 .any(|(name, _)| name.eq_ignore_ascii_case("Transfer-Encoding"))
         {
             return Err(Error::InvalidData(
-                "Transfer-Encoding is not defined in HTTP/1.0".to_string(),
+                "Transfer-Encoding is only defined for HTTP/1.1".to_string(),
             ));
         }
 
