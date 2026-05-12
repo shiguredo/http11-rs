@@ -17,6 +17,11 @@
   - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
   - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
   - @voluntas
+- [FIX] `examples/http11_reverse_proxy` で CONNECT メソッドを 405 Method Not Allowed で拒否するように変更する
+  - 旧実装は 501 Not Implemented を返していたが、reverse proxy がサポートしないメソッドを示すには 405 がより正確 (RFC 9110 Section 15.5.6)
+  - `Allow` ヘッダーで許可メソッド一覧を返す MUST に従い、`Allow: GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH` を付与する
+  - 任意宛先へのトンネル化 (forward proxy 機能) はサンプルのスコープ外。トンネル機能のお手本が必要な場合は別 example として独立に追加する
+  - @voluntas
 - [FIX] `examples/http11_reverse_proxy` で `--upstream` の scheme と port を尊重するよう修正する
   - 旧実装は `parse_upstream_url` が host のみ抽出し、`TcpStream::connect((host, 443))` で常に 443 への TLS 接続にハードコードしていた
   - `Scheme` enum (`Http` / `Https`) と `UpstreamStream` enum (`Plain` / `Tls`) を導入し、`create_connection` を scheme で分岐する
