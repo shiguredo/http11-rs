@@ -35,10 +35,6 @@ use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCo
 use slab::Slab;
 use tracing::{error, info};
 
-/// Keep-Alive タイムアウト (秒)
-/// TODO: io_uring でタイムアウト処理を実装する際に使用
-#[allow(dead_code)]
-const DEFAULT_KEEP_ALIVE_TIMEOUT: u64 = 60;
 /// 1 接続あたりの最大リクエスト数
 const DEFAULT_MAX_REQUESTS: u32 = 1000;
 /// 読み取りバッファサイズ
