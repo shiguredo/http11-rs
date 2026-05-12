@@ -80,6 +80,30 @@ let bytes = response.encode();
 // bytes を送信...
 ```
 
+`StatusCode` は IANA HTTP Status Code Registry の登録値を const として提供します
+(RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) / 418 (RFC 7168) /
+429 / 431 / 451 (RFC 6585 / RFC 7725) 等の主要拡張も収録)。`StatusCode::code()` /
+`StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` / `StatusCode::class()`
+でアクセスできます。
+
+`StatusClass` は RFC 9110 Section 15 の節タイトルに準拠した分類 (`Informational` /
+`Successful` / `Redirection` / `ClientError` / `ServerError`) を表す enum で、
+`response.status_class()` / `head.status_class()` から取得します。
+
+### Request / Response のミューテーター API
+
+ビルダーパターン (`header` / `body` / `omit_body` / `without_body`) に加え、
+受信済みの値を書き換えるミューテーター (`&mut self` を取り `Result<&mut Self, _>` /
+`&mut Self` を返す) も提供しています。
+
+- `add_header(name, value)` - ヘッダーを末尾に追加 (チェイン可能)
+- `set_header(name, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加 (チェイン可能)
+- `set_body(data)` / `clear_body()` - ボディの差し替え / クリア
+- `set_omit_body(bool)` - ボディ送信抑止フラグの設定 (`Response` のみ)
+
+`set_header` は Set-Cookie のように同名複数値が意味を持つヘッダーには使わず、
+その場合は `add_header` を使ってください (RFC 6265)。
+
 ### 圧縮/展開 (Content-Encoding)
 
 ライブラリ本体は圧縮/展開の実装は含みません。
@@ -174,6 +198,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - `consume_body(len)` - ボディデータを消費して `BodyProgress` を返す
 - `progress()` - 状態機械を進める (Chunked のチャンクサイズ行パース等)
 - `mark_eof()` - 接続終了を通知 (close-delimited ボディ用、ResponseDecoder のみ)
+- `is_tunnel()` / `take_remaining()` - CONNECT トンネル経路の判定と未消費バイト取得 (RequestDecoder / ResponseDecoder 両方で利用可能)
 
 #### 直接書き込み API
 
@@ -222,7 +247,9 @@ loop {
 - `ContentLength(u64)` - Content-Length による固定長
 - `Chunked` - Transfer-Encoding: chunked
 - `CloseDelimited` - 接続終了までがボディ (レスポンスのみ、RFC 9112)
-- `Tunnel` - CONNECT 2xx レスポンス後のトンネルモード (Transfer-Encoding/Content-Length は無視)
+- `Tunnel` - CONNECT トンネルモード (RFC 9110 Section 9.3.6)
+  - サーバー側 (`RequestDecoder`): CONNECT リクエスト受信時。ヘッダー終端後のバイト列は `take_remaining()` で透過転送する
+  - クライアント側 (`ResponseDecoder`): CONNECT への 2xx レスポンス受信時。Transfer-Encoding / Content-Length は無視
 - `None` - ボディなし
 
 `BodyProgress` はデコードの進捗を表します:
@@ -364,7 +391,11 @@ loop {
 
 ## サンプル
 
-サンプルは [Tokio](https://github.com/tokio-rs/tokio) と [Rustls](https://github.com/rustls/rustls) を利用しています。引数のライブラリには [noargs](https://github.com/sile/noargs) を利用しています。
+サンプルは [Tokio](https://github.com/tokio-rs/tokio) と [Rustls](https://github.com/rustls/rustls) を利用しています。引数のパースには [noargs](https://github.com/sile/noargs)、暗号バックエンドには aws-lc-rs、圧縮実装には [noflate](https://crates.io/crates/noflate) (gzip / DEFLATE)、[brotli](https://crates.io/crates/brotli)、[zstd](https://crates.io/crates/zstd) を利用しています。
+
+各サンプルは `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` を組み合わせた **ストリーミング API の実装例** になっています。一括 `decode()` API ではなく、断片入力に対応した経路で実装されています。
+
+io_uring サンプル (`examples/http11_server_io_uring`) のみワークスペースから除外されています (Linux 専用かつ追加カーネル要件があるため)。それ以外の 3 サンプルはルートの `cargo` コマンドからそのまま実行できます。
 
 ### http11_client
 
@@ -375,12 +406,17 @@ cargo run -p http11_client -- https://example.com/
 cargo run -p http11_client -- http://httpbin.org/get
 ```
 
+**位置引数:**
+
+- `<URL>`: 取得対象の URL (例: `https://example.com/`)
+
 **機能:**
 
-- HTTP/HTTPS リクエスト送信
-- レスポンス受信とボディ表示
+- HTTP/HTTPS リクエスト送信、レスポンス受信とボディ表示
 - rustls-platform-verifier による TLS 検証
-- 圧縮レスポンスの展開 (gzip, br, zstd)
+- ライブラリ提供の `Decompressor` トレイトを実装した gzip / brotli / zstd 展開器を組み込み、`peek_body()` ベースでレスポンスボディを **ストリーミング展開** (1 GiB 級のボディも 8 KiB 出力バッファで処理可能)
+- `lib.rs` (`parse_url` / `http_request` / `https_request` / `decompressor`) と `main.rs` (CLI フロントエンド) に分離
+- testcontainers + nginx を使った integration test (`tests/nginx_basic.rs` / `tests/nginx_streaming.rs`)
 
 ### http11_server
 
@@ -393,17 +429,20 @@ cargo run -p http11_server -- --port 8443 --tls --cert cert.pem --key key.pem
 
 **オプション:**
 
-- `-p, --port <PORT>`: リッスンポート (デフォルト: 8080)
-- `--tls`: HTTPS 有効化 (ポートデフォルト: 8443)
-- `--cert <PATH>`: 証明書ファイル (PEM 形式)
-- `--key <PATH>`: 秘密鍵ファイル (PEM 形式)
+- `-p, --port <PORT>`: リッスンポート (`--tls` なしで `8080`、`--tls` 付きで `8443`)
+- `--tls`: HTTPS 有効化
+- `--cert <PATH>`: 証明書ファイル (PEM 形式、`--tls` 時必須)
+- `--key <PATH>`: 秘密鍵ファイル (PEM 形式、`--tls` 時必須)
 
 **機能:**
 
+- `--port 0` で OS にランダムポートを割当させ、bind 後に `LISTENING_PORT=<port>` を stdout に出力 (integration test ハーネス前提)
+- tracing の出力先は stderr
 - HEAD リクエスト対応 (RFC 9110 Section 9.3.2)
 - Keep-Alive 対応 (タイムアウト 60 秒、最大リクエスト数 1000)
-- Accept-Encoding に基づく圧縮 (gzip, br, zstd)
+- Accept-Encoding に基づく圧縮 (`zstd` > `br` > `gzip`)
 - エンドポイント: `/` (HTML), `/info` (JSON), `/echo` (リクエスト詳細)
+- curl ベースの integration test (`tests/http_basic.rs` / `tests/http_compression.rs` / `tests/http_keep_alive.rs` / `tests/https_tls.rs`)
 
 ### http11_reverse_proxy
 
@@ -416,14 +455,14 @@ curl http://localhost:8888/
 
 **オプション:**
 
-- `-p, --port <PORT>`: リッスンポート (デフォルト: 8888)
-- `-u, --upstream <URL>`: アップストリーム URL (デフォルト: <https://example.com>)
+- `-p, --port <PORT>`: リッスンポート (デフォルト: `8888`)
+- `-u, --upstream <URL>`: アップストリーム URL (デフォルト: `https://example.com`)
 - `--debug`: デバッグログ有効化
 
 **機能:**
 
-- ストリーミング転送 (chunked, content-length, close-delimited 対応)
-- 接続プール (ホストあたり最大 10 接続)
+- ストリーミング転送 (chunked / content-length / close-delimited 対応)
+- 接続プール (ホストあたり最大 10 接続、アイドル 60 秒 / 最大生存 300 秒)
 - hop-by-hop ヘッダーの処理
 - HEAD リクエスト対応
 
@@ -431,20 +470,22 @@ curl http://localhost:8888/
 
 io_uring + kTLS を使った HTTPS サーバーの例です。Linux 専用です。
 
+ワークスペースから除外されているため、サブクレートのディレクトリへ移動するか `--manifest-path` を指定して実行する必要があります。
+
 ```bash
-cargo run -p http11_server_io_uring -- --port 8443 --cert cert.pem --key key.pem
+cargo run --manifest-path examples/http11_server_io_uring/Cargo.toml -- --cert cert.pem --key key.pem
 ```
 
 **前提条件:**
 
-- Linux カーネル 6.7 以上
-- CONFIG_TLS=y または CONFIG_TLS=m
+- Linux カーネル 6.7 以上 (io_uring setsockopt サポート)
+- `CONFIG_TLS=y` または `CONFIG_TLS=m` (`modprobe tls` でロード済み)
 
 **オプション:**
 
-- `-p, --port <PORT>`: リッスンポート (デフォルト: 8443)
-- `--cert <PATH>`: 証明書ファイル (PEM 形式)
-- `--key <PATH>`: 秘密鍵ファイル (PEM 形式)
+- `-p, --port <PORT>`: リッスンポート (デフォルト: `8443`)
+- `--cert <PATH>`: 証明書ファイル (PEM 形式、必須)
+- `--key <PATH>`: 秘密鍵ファイル (PEM 形式、必須)
 
 **機能:**
 
@@ -452,7 +493,7 @@ cargo run -p http11_server_io_uring -- --port 8443 --cert cert.pem --key key.pem
 - kTLS (Kernel TLS) によるカーネルレベル暗号化
 - HEAD リクエスト対応 (RFC 9110 Section 9.3.2)
 - Keep-Alive 対応 (最大リクエスト数 1000)
-- Accept-Encoding に基づく圧縮 (gzip, br, zstd)
+- Accept-Encoding に基づく圧縮 (`zstd` > `br` > `gzip`)
 
 ## Agent Skills
 

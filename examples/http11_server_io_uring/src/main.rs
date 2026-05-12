@@ -848,8 +848,7 @@ fn build_response(
 </html>
 "#;
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/html; charset=utf-8",
                 body_content.as_bytes(),
                 &date,
@@ -863,8 +862,7 @@ fn build_response(
                 now
             );
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "application/json",
                 body_content.as_bytes(),
                 &date,
@@ -907,8 +905,7 @@ fn build_response(
             }
 
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/plain; charset=utf-8",
                 body.as_bytes(),
                 &date,
@@ -919,8 +916,7 @@ fn build_response(
         _ => {
             let body_content = "404 Not Found\n";
             build_compressed_response(
-                404,
-                "Not Found",
+                StatusCode::NOT_FOUND,
                 "text/plain",
                 body_content.as_bytes(),
                 &date,
@@ -935,8 +931,7 @@ fn build_response(
 
 /// 圧縮対応のレスポンスを構築
 fn build_compressed_response(
-    status_code: u16,
-    reason_phrase: &str,
+    status: StatusCode,
     content_type: &str,
     body: &[u8],
     date: &str,
@@ -960,7 +955,7 @@ fn build_compressed_response(
         (body.to_vec(), None)
     };
 
-    let mut response = Response::new(status_code, reason_phrase)?
+    let mut response = Response::with_status(status)
         .header("Date", date)?
         .header("Content-Type", content_type)?
         .header("Content-Length", final_body.len().to_string())?

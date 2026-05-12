@@ -290,7 +290,26 @@ async fn serve_request(
     tls: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let h = state.head.take().unwrap();
-    let _ = state.body_kind.take();
+    let body_kind = state.body_kind.take();
+
+    // CONNECT は本サーバー (非 proxy) では未対応のため 501 Not Implemented を返す。
+    // RFC 9110 Section 9.3.6 に従い、decoder は CONNECT 受信時に Tunnel phase へ遷移し
+    // 以降の decode_headers() がエラーになるため、必ず接続を閉じる。
+    if matches!(body_kind, Some(BodyKind::Tunnel)) {
+        info!(
+            method = %h.method(),
+            peer_addr = %peer_addr,
+            tls = tls,
+            "CONNECT rejected (not implemented)"
+        );
+        let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
+            .header("Content-Length", "0")?
+            .header("Connection", "close")?;
+        writer.write_all(&response.encode()).await?;
+        writer.flush().await?;
+        return Ok(false);
+    }
+
     // examples は外部 crate のため `from_raw_parts` 使用不可。
     // 構築時バリデーション付きの Request::with_version 経由で再構築する。
     // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
@@ -543,8 +562,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
 </html>
 "#;
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/html; charset=utf-8",
                 body_content.as_bytes(),
                 &date,
@@ -558,8 +576,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
                 now
             );
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "application/json",
                 body_content.as_bytes(),
                 &date,
@@ -603,8 +620,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
             }
 
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/plain; charset=utf-8",
                 body.as_bytes(),
                 &date,
@@ -615,8 +631,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
         _ => {
             let body_content = "404 Not Found\n";
             build_compressed_response(
-                404,
-                "Not Found",
+                StatusCode::NOT_FOUND,
                 "text/plain",
                 body_content.as_bytes(),
                 &date,
@@ -631,8 +646,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
 
 /// 圧縮対応のレスポンスを構築
 fn build_compressed_response(
-    status_code: u16,
-    reason_phrase: &str,
+    status: StatusCode,
     content_type: &str,
     body: &[u8],
     date: &str,
@@ -656,7 +670,7 @@ fn build_compressed_response(
         (body.to_vec(), None)
     };
 
-    let mut response = Response::new(status_code, reason_phrase)?
+    let mut response = Response::with_status(status)
         .header("Date", date)?
         .header("Content-Type", content_type)?
         .header("Content-Length", final_body.len().to_string())?
