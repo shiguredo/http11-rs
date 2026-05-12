@@ -37,6 +37,7 @@ use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthError {
     /// 空の入力
     Empty,
@@ -607,6 +608,7 @@ impl fmt::Display for BearerChallenge {
 
 /// Authorization ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Authorization {
     Basic(BasicAuth),
     Digest(DigestAuth),
@@ -653,6 +655,7 @@ impl fmt::Display for Authorization {
 
 /// WWW-Authenticate / Proxy-Authenticate 用チャレンジ
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthChallenge {
     Basic(WwwAuthenticate),
     Digest(DigestChallenge),

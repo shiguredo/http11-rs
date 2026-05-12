@@ -31,6 +31,7 @@ use core::fmt;
 
 /// 条件付きリクエストエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ConditionalError {
     /// 空の入力
     Empty,

@@ -30,6 +30,7 @@ use core::fmt;
 
 /// Cookie パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CookieError {
     /// 空の Cookie
     Empty,

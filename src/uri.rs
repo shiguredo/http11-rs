@@ -33,6 +33,7 @@ use core::fmt;
 
 /// URI パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UriError {
     /// 空の URI
     Empty,

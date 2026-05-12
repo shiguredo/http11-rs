@@ -33,6 +33,7 @@ use core::fmt;
 
 /// Expect パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExpectError {
     /// 空の入力
     Empty,

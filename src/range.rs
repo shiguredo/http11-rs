@@ -30,6 +30,7 @@ use core::fmt;
 
 /// Range パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RangeError {
     /// 空の入力
     Empty,

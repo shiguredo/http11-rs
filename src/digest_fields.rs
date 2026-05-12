@@ -25,6 +25,7 @@ use crate::base64;
 
 /// Digest Fields パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DigestFieldsError {
     /// 空の入力
     Empty,

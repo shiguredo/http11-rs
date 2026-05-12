@@ -17,6 +17,9 @@ proptest! {
             Some(StatusClass::ClientError)   => prop_assert!((400..=499).contains(&code)),
             Some(StatusClass::ServerError)   => prop_assert!((500..=599).contains(&code)),
             None => prop_assert!(!(100..=599).contains(&code)),
+            // `#[non_exhaustive]` 付き enum を外部 crate から参照するために必要。
+            // 新規バリアントが追加された場合はテスト側でも判別ロジックを追加する。
+            Some(_) => prop_assert!(false, "StatusClass に未知のバリアントが追加された"),
         }
     }
 
