@@ -21,7 +21,7 @@ use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::compression::{CompressionStatus, Decompressor, NoCompression};
-use shiguredo_http11::{BodyKind, BodyProgress, HttpHead, Response, ResponseDecoder, ResponseHead};
+use shiguredo_http11::{BodyKind, BodyProgress, Response, ResponseDecoder, ResponseHead};
 use tracing::info;
 
 use crate::decompressor::AnyDecompressor;

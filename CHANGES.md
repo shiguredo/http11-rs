@@ -266,6 +266,11 @@
   - `src/main.rs` の `print_response` から一括展開関数 `decompress_body` の呼び出しを削除する (受信時点で既に展開済み)
   - `tests/nginx_streaming.rs` に `streams_large_gzip_body` (transport.rs 経路) と `peek_body_decompressed_streams_gzip` (ライブラリ API 経路) の 2 ケースを追加する
   - @voluntas
+- [ADD] `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` アクセサを追加する
+  - 0031 で記載していた「読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / ...」のうち `version()` / `headers()` が実装漏れで `HttpHead` トレイト経由でしか呼べない状態だった
+  - inherent method 追加により `use shiguredo_http11::HttpHead;` の import なしで `head.version()` / `head.headers()` が呼べるようになる (Request / Response 側と対称)
+  - `HttpHead` トレイト実装は変更しないため trait 経由のアクセスも引き続き可能
+  - @voluntas
 - [ADD] `examples/http11_server` に curl ベースの integration test を追加する
   - `tests/http_basic.rs` (GET / HEAD / POST / 404 の 7 ケース) を追加する
   - `tests/http_compression.rs` (gzip / br / zstd の Content-Encoding と優先順位の 9 ケース) を追加する

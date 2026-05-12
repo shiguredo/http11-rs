@@ -236,6 +236,22 @@ impl RequestHead {
         &self.uri
     }
 
+    /// HTTP プロトコルバージョンを取得 (例: `"HTTP/1.1"`)。
+    ///
+    /// RFC 9112 Section 2.3 HTTP-version。
+    #[must_use]
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// ヘッダーリストを取得。
+    ///
+    /// RFC 9110 Section 5。順序は受信順を保持する。
+    #[must_use]
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
     /// `RequestDecoder` 内部からの構築用 (バリデーションスキップ)
     ///
     /// `RequestDecoder::decode_headers` は start-line / ヘッダーをデコード時に
@@ -409,6 +425,22 @@ impl ResponseHead {
     pub fn status_class(&self) -> StatusClass {
         StatusClass::from_status_code(self.status_code)
             .expect("status_code is in 100..=599 by construction invariant")
+    }
+
+    /// HTTP プロトコルバージョンを取得 (例: `"HTTP/1.1"`)。
+    ///
+    /// RFC 9112 Section 2.3 HTTP-version。
+    #[must_use]
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// ヘッダーリストを取得。
+    ///
+    /// RFC 9110 Section 5。順序は受信順を保持する。
+    #[must_use]
+    pub fn headers(&self) -> &[(String, String)] {
+        &self.headers
     }
 
     /// `ResponseDecoder` 内部からの構築用 (バリデーションスキップ)
