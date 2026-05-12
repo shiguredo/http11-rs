@@ -1,6 +1,7 @@
 # 0051: reverse_proxy サンプルで CONNECT メソッドを 405 で拒否し接続クローズする
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -150,3 +151,11 @@ kill $PROXY_PID
 - RFC 9110 §10.2.1 (Allow ヘッダー、405 で必須)
 - RFC 9110 §15.5.6 (405 Method Not Allowed)
 - RFC 9112 §3.2.3 (authority-form request-target、`refs/rfc9112.txt`)
+
+## 解決方法
+
+- `examples/http11_reverse_proxy/src/main.rs::handle_client` の CONNECT (`BodyKind::Tunnel`) 分岐を 501 Not Implemented から 405 Method Not Allowed に変更し、`Allow: GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH` ヘッダーを追加した (RFC 9110 Section 15.5.6 / 10.2.1)
+- 既存判定は `decode_headers` 完了直後にあり、upstream 接続を確立せずに即座に 405 を返してハンドラが終了する (ハング経路はもともと閉じていた)
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
+
+備考: 既存実装は既に CONNECT を `BodyKind::Tunnel` 経路で識別して即座に reject する構造を持っていたため、本 issue で追加する処理は「ステータスコードを 501 → 405 へ、Allow ヘッダーを追加」のみとなった。issue 本文の「BodyKind::Tunnel のループに入って永久ブロック」は将来 CONNECT を別経路でハンドリングする際に再発しないよう警戒すべき経路として記載しておく。integration test 基盤の新設は本 issue のスコープから外し、既存の手動テスト手順を README に追加する範囲は将来の forward proxy example に委ねる。

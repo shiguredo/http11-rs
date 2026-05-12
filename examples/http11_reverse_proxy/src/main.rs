@@ -492,12 +492,17 @@ async fn handle_client(
     );
     debug!(count = req_head.headers().len(), "Received headers");
 
-    // CONNECT (RFC 9110 Section 9.3.6) は本サンプルでは未対応。
-    // decoder は Tunnel phase に遷移しているため後続の decode_headers() / decode() は使えない。
-    // 501 Not Implemented を返してクライアントとの接続を閉じる。
+    // CONNECT (RFC 9110 Section 9.3.6) は reverse proxy の責務外 (任意宛先への
+    // トンネル化は forward proxy 機能) として 405 Method Not Allowed で拒否する。
+    // RFC 9110 Section 15.5.6 + Section 10.2.1: 405 では `Allow` ヘッダーで
+    // 許可メソッド一覧を返す MUST。
+    // decoder は CONNECT 受信で Tunnel phase に遷移しているため後続の
+    // decode_headers() / decode() / peek_body() は使えず、本判定を抜けると
+    // ハンドラがハングする経路を持つ (issue 0051)。
     if matches!(req_body_kind, BodyKind::Tunnel) {
-        info!(method = %req_head.method(), "CONNECT rejected (not implemented)");
-        let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
+        info!(method = %req_head.method(), "CONNECT rejected with 405 Method Not Allowed");
+        let response = Response::with_status(StatusCode::METHOD_NOT_ALLOWED)
+            .header("Allow", "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH")?
             .header("Content-Length", "0")?
             .header("Connection", "close")?;
         socket.write_all(&response.encode()?).await?;
