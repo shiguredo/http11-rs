@@ -20,6 +20,13 @@
   - chunk 境界で発生する DoS 経路 (TCP セグメント結合・TLS レコード境界・chunked transfer の chunk 境界、攻撃者の細切れ feed) を遮断する
   - 同時に `tests/test_multipart.rs::test_multipart_parser_byte_by_byte_feed_matches_bulk_feed` の「is_finished の遷移は未検証」注記を削除し、byte-by-byte 経路でも `is_finished()` まで検証するよう厳格化する
   - @voluntas
+- [FIX] `MultipartParser` の `Initial` ブランチで `--<boundary>` 直後の transport-padding CRLF / close-delimiter 検証欠落を修正する
+  - 旧実装は `--<boundary>X` (X が CRLF / `--` でない任意バイト) をそのまま `InPart` 状態に遷移して有効パートとして parse していた (RFC 2046 Section 5.1.1 違反)
+  - WAF / フロントプロキシが preamble の一部と判定する一方、本実装は有効パートとして読む parser differential を生み、Content-Disposition フィルタ迂回の足場となっていた
+  - SP / HTAB を 0 個以上スキップした上で CRLF / `--` のいずれでもないバイト列を `MultipartError::InvalidPart` として reject するよう変更する
+  - 死コードだった `Initial` ブランチ末尾の `starts_with(b"\r\n")` スキップを削除する
+  - 併せて `AfterInnerDelimiter` ブランチで返していた `InvalidBoundary` を `InvalidPart` に統一する (`InvalidBoundary` は boundary 文字列自体の構文不正専用)
+  - @voluntas
 - [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
