@@ -1,6 +1,7 @@
 # 0044: HttpHead::content_length を decoder/body と整合した厳格パースに統一する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -141,3 +142,15 @@ fn content_length(&self) -> Result<Option<u64>, Error> {
 - RFC 9110 §5.6.1.2 (empty list elements MUST be ignored)
 
 すべて `refs/rfc9110.txt` で参照可能。
+
+## 解決方法
+
+- `src/decoder/head.rs::HttpHead::content_length` を `Result<Option<u64>, Error>` 戻りに変更し、実装本体を `crate::decoder::body::parse_content_length(self.headers())` に置き換えた
+- `src/request.rs::Request::content_length` / `src/response.rs::Response::content_length` の委譲メソッドも同型に統一した
+- `examples/http11_reverse_proxy/src/main.rs` で `resp_head.content_length()` を `?` 伝播に書き換えた (HEAD レスポンスの CL 転送経路で smuggling 検知エラーを呼び出し側まで上げる)
+- `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` の `expected_content_length` 参照実装を厳格パース (OWS / カンマリスト / 複数行 / mismatched 値 reject) に書き直し、`Result<Option<u64>, ()>` 戻りに合わせた
+- `pbt/tests/prop_decoder/head.rs::prop_content_length_invalid_returns_none` を `prop_content_length_invalid_returns_err` にリネームし `is_err()` で検証するよう変更した
+- `pbt/tests/prop_decoder/head.rs` に `prop_body_kind_content_length_matches_head` (BodyKind::ContentLength と head.content_length() の整合性) / `prop_no_content_length_header_returns_ok_none` を追加した
+- `pbt/tests/prop_response.rs::prop_response_content_length` の assertion を `.unwrap()` 経由に更新した
+- `tests/test_decoder.rs` 末尾に `http_head_content_length` モジュールを追加し、差分検証表 (単一値 / `+100` / `0100` / OWS / カンマ同値 / カンマ mismatched / 複数行同値 / 複数行 mismatched / 不在 / Response 経路の 2 ケース) を網羅する 11 件の単体テストを追加した
+- `CHANGES.md` の `## develop` に `[CHANGE]` エントリを追加した

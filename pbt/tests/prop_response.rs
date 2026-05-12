@@ -359,7 +359,7 @@ proptest! {
         let response = Response::new(code, "OK").unwrap()
             .header("Content-Length", len.to_string()).unwrap();
 
-        prop_assert_eq!(response.content_length(), Some(len as u64));
+        prop_assert_eq!(response.content_length().unwrap(), Some(len as u64));
     }
 }
 

@@ -1,6 +1,6 @@
 //! HTTP ヘッダー型の定義
 
-use crate::error::EncodeError;
+use crate::error::{EncodeError, Error};
 use crate::status_code::StatusClass;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_protocol_version,
@@ -110,13 +110,16 @@ pub trait HttpHead {
     /// Content-Length ヘッダーの値を取得
     /// (RFC 9110 Section 8.6 / RFC 9112 Section 6.2)
     ///
-    /// 最初の `Content-Length` ヘッダー値を `u64` としてパースして返す。
-    /// RFC 9110 Section 5.3 により複数ヘッダー行の生成は禁止されているため、
-    /// 最初の値のみを参照する。
-    /// パース不能な場合は `None` を返す。
-    fn content_length(&self) -> Option<u64> {
-        self.get_header("Content-Length")
-            .and_then(|v| v.parse::<u64>().ok())
+    /// decoder 本体の `parse_content_length` を再利用し、OWS / カンマリスト /
+    /// 複数行 / mismatched 値の解釈を decoder と統一する。
+    ///
+    /// 戻り値:
+    /// - `Ok(None)`: `Content-Length` ヘッダーが存在しない
+    /// - `Ok(Some(n))`: 単一値、または複数行で同値マージされた値
+    /// - `Err(Error::InvalidData(...))`: 構文不正、mismatched 値、OWS 違反など
+    ///   (HTTP Request Smuggling の兆候、呼出側は接続をクローズすべき)
+    fn content_length(&self) -> Result<Option<u64>, Error> {
+        crate::decoder::body::parse_content_length(self.headers())
     }
 
     /// Transfer-Encoding の最後が chunked かどうかを判定
