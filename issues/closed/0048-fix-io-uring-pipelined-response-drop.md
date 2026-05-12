@@ -1,6 +1,7 @@
 # 0048: io_uring サンプルでパイプライン 2 件目以降のレスポンスがドロップされる問題を修正する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -165,3 +166,15 @@ printf 'GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: local
 - RFC 9112 §9.6 (Connection: close 後の追加メッセージは送るべきでない)
 
 `refs/rfc9112.txt` で参照可能。
+
+## 解決方法
+
+- `examples/http11_server_io_uring/src/main.rs` の `Connection` 構造体に `pending_writes: VecDeque<(Vec<u8>, bool)>` と `current_write_should_keep_alive: bool` を追加した
+- `handle_read` の `ConnectionState::Reading` ブランチで、関数ローカル `VecDeque` を撤去し、`conn.pending_writes` に直接 push するよう変更した。`should_keep_alive == false` のレスポンスが出た時点でループを break する
+- `handle_read` 末尾の発火経路を `conn.pending_writes.pop_front()` ベースに書き換え、`submit_write` 失敗時は `push_front` で先頭を復元してから error を伝播する
+- `handle_write` の `ConnectionState::Writing` 分岐で、書き込み完了時に `pending_writes` から次エントリを取り出して連続送信するよう変更した
+- `handle_write` の `ConnectionState::Closing` 分岐で `pending_writes.clear()` を呼び、RFC 9112 Section 9.6 に従って Connection: close 後の追加メッセージを破棄する
+- `examples/http11_server_io_uring/README.md` に `openssl s_client` ベースの手動テスト手順を追記した (`nc` は TLS を喋れないため代替手段)
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
+
+io_uring + Linux 環境必須のため CI 自動化は困難で、macOS では `io-uring` クレートが compile しない。ローカル Linux 環境または CI 配線後の検証が必要。
