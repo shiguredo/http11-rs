@@ -565,6 +565,70 @@ fn submit_enable_ktls(
     Ok(())
 }
 
+/// rustls の `received_plaintext` に残っている平文を排出して decoder に feed し、
+/// 確定した Request はその場で build_response して `pending_writes` に積む。
+/// (issue 0049)
+///
+/// `dangerous_extract_secrets()` 呼び出し前に呼ぶこと。呼ばないと TLS 1.3 で
+/// Client Finished と同一 flight で来た HTTP リクエストの先頭バイトが消失する。
+///
+/// レスポンス build 時の Keep-Alive 判定は handle_read の `ConnectionState::Reading`
+/// ブランチと同一規則 (`request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS`)
+/// に揃える。`should_keep_alive == false` のレスポンスが出た時点で以降の Request の
+/// 処理は停止する (RFC 9112 Section 9.6)。
+fn drain_and_feed_leftover(
+    tls_conn: &mut ServerConnection,
+    conn: &mut Connection,
+    peer_addr: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+
+    let mut leftover = Vec::new();
+    match tls_conn.reader().read_to_end(&mut leftover) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(e) => return Err(Box::new(e)),
+    }
+
+    if leftover.is_empty() {
+        return Ok(());
+    }
+
+    info!(
+        peer_addr = %peer_addr,
+        leftover_bytes = leftover.len(),
+        "Draining TLS plaintext leftover before kTLS handoff"
+    );
+    conn.decoder.feed(&leftover)?;
+
+    let mut request_count = conn.request_count;
+    while let Some(request) = conn.decoder.decode()? {
+        request_count += 1;
+
+        info!(
+            method = %request.method(),
+            uri = %request.uri(),
+            version = %request.version(),
+            peer_addr = %peer_addr,
+            request_count,
+            "Request received (leftover drain)"
+        );
+
+        let should_keep_alive =
+            request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
+
+        let response = build_response(&request, should_keep_alive)?;
+        conn.pending_writes
+            .push_back((response.encode()?, should_keep_alive));
+
+        if !should_keep_alive {
+            break;
+        }
+    }
+    conn.request_count = request_count;
+    Ok(())
+}
+
 fn handle_read(
     ring: &mut IoUring,
     connections: &mut Slab<Connection>,
@@ -623,7 +687,25 @@ fn handle_read(
 
                 // tls_conn を取り出して秘密鍵を抽出
                 let conn = &mut connections[conn_id];
-                let tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn.tls_conn.take().unwrap();
+
+                // RFC 8446 Section 4.4.4: TLS 1.3 では Client Finished と Application Data が
+                // 同一 flight で送信される (curl / openssl s_client 等の典型挙動)。
+                // `dangerous_extract_secrets` / `tls_conn` drop 前に rustls の内部
+                // `received_plaintext` バッファを排出しないと、HTTP リクエストの先頭バイトが
+                // 復元不能で消失する (TCP は ACK 済みのため再送経路もない)。
+                // issue 0049 で本処理を追加した。
+                if let Err(e) = drain_and_feed_leftover(&mut tls_conn, conn, peer_addr) {
+                    error!(
+                        peer_addr = %peer_addr,
+                        error = %e,
+                        "Failed to drain plaintext leftover; closing connection"
+                    );
+                    drop(tls_conn);
+                    close_connection(ring, connections, conn_id)?;
+                    return Ok(());
+                }
+
                 let secrets = tls_conn
                     .dangerous_extract_secrets()
                     .map_err(|e| format!("failed to extract TLS secrets: {:?}", e))?;
@@ -751,7 +833,23 @@ fn handle_write(
                 let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
 
                 // tls_conn を取り出して秘密鍵を抽出
-                let tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn.tls_conn.take().unwrap();
+
+                // issue 0049: ハンドシェイク Write 完了経路でも、念のため rustls の
+                // received_plaintext を排出する。発火頻度は低い (Client Finished と
+                // Application Data はまだ届いていないことが多い) が、防御的措置として
+                // Read 経路と同型で扱う。
+                if let Err(e) = drain_and_feed_leftover(&mut tls_conn, conn, peer_addr) {
+                    error!(
+                        peer_addr = %peer_addr,
+                        error = %e,
+                        "Failed to drain plaintext leftover; closing connection"
+                    );
+                    drop(tls_conn);
+                    close_connection(ring, connections, conn_id)?;
+                    return Ok(());
+                }
+
                 let secrets = tls_conn
                     .dangerous_extract_secrets()
                     .map_err(|e| format!("failed to extract TLS secrets: {:?}", e))?;
@@ -830,10 +928,31 @@ fn handle_setsockopt_complete(
         conn.ktls_tx = None;
         conn.ktls_rx = None;
 
-        // HTTP リクエストの読み取りを開始
+        // issue 0049: leftover drain で `pending_writes` に Response が積まれていれば
+        // ハンドシェイク完了直後に submit_write を発行して順次送出する。
+        // キューが空なら従来通り submit_read を発行する。
         let fd = conn.fd;
-        conn.state = ConnectionState::Reading;
-        submit_read(ring, conn_id, fd, connections)?;
+        if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
+            conn.write_buf = response_bytes;
+            conn.write_offset = 0;
+            conn.current_write_should_keep_alive = should_keep_alive;
+            conn.state = if should_keep_alive {
+                ConnectionState::Writing
+            } else {
+                ConnectionState::Closing
+            };
+            if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                let conn = &mut connections[conn_id];
+                let buf = core::mem::take(&mut conn.write_buf);
+                let keep_alive = conn.current_write_should_keep_alive;
+                conn.pending_writes.push_front((buf, keep_alive));
+                conn.write_offset = 0;
+                return Err(e);
+            }
+        } else {
+            conn.state = ConnectionState::Reading;
+            submit_read(ring, conn_id, fd, connections)?;
+        }
     }
 
     Ok(())
