@@ -359,26 +359,42 @@ impl MultipartParser {
                         // ぴったりで止まった」入力でも Incomplete に落ちず、正しく
                         // 終端を検出できる (Sans I/O での断片入力対応)。
                         if self.buffer.len() >= after_delim + 2 {
-                            if &self.buffer[after_delim..after_delim + 2] == b"\r\n" {
-                                self.pos = after_delim + 2;
+                            // RFC 2046 Section 5.1.1: `dash-boundary transport-padding CRLF body-part`
+                            // または close-delimiter (`dash-boundary "--"`)。transport-padding は
+                            // `*LWSP-char` (SP / HTAB)。本実装は受信側のロバストネス原則で
+                            // SP / HTAB を寛容に受理する。
+                            // 将来 RFC 改訂で transport-padding が拡張される可能性がある。
+                            let mut padded = after_delim;
+                            while padded < self.buffer.len()
+                                && matches!(self.buffer[padded], b' ' | b'\t')
+                            {
+                                padded += 1;
+                            }
+                            if self.buffer.len() < padded + 2 {
+                                // 判定 2 バイトが不足。`pos` を進めずに次回 feed を待つ。
+                                // 再開時に同じ dash-boundary 位置から find_bytes を
+                                // 走らせ直さなくて済むよう scan_offset を更新する。
+                                self.boundary_scan_offset =
+                                    (start + rel_pos).min(self.buffer.len());
+                                return Err(MultipartError::Incomplete);
+                            }
+                            let head = &self.buffer[padded..padded + 2];
+                            if head == b"\r\n" {
+                                self.pos = padded + 2;
                                 // 状態遷移したので scan_offset を pos に揃える
                                 self.boundary_scan_offset = self.pos;
                                 self.state = ParserState::InPart;
-                            } else if &self.buffer[after_delim..after_delim + 2] == b"--" {
+                            } else if head == b"--" {
                                 // 終了境界
                                 self.state = ParserState::Finished;
                                 self.finished = true;
                                 return Ok(None);
                             } else {
-                                // CRLF 以外の場合もパートに進む
-                                self.pos = after_delim;
-                                // 先頭の CRLF があればスキップ
-                                if self.buffer[self.pos..].starts_with(b"\r\n") {
-                                    self.pos += 2;
-                                }
-                                // 状態遷移したので scan_offset を pos に揃える
-                                self.boundary_scan_offset = self.pos;
-                                self.state = ParserState::InPart;
+                                // CRLF でも `--` でもない場合は RFC 2046 §5.1.1 違反。
+                                // 旧実装は L370-371 の `starts_with(b"\r\n")` スキップを
+                                // 経由してそのまま `InPart` に遷移していたが、これは
+                                // multipart parser differential の足場になっていた。
+                                return Err(MultipartError::InvalidPart);
                             }
                         } else {
                             // 終端 2 バイトの判定が不能。次回 feed 後に同じ
@@ -528,7 +544,8 @@ impl MultipartParser {
                     } else {
                         // RFC 2046 Section 5.1.1: delimiter 直後は close-delimiter (`--`) か
                         // 次パートの transport-padding + CRLF のいずれか。それ以外は不正。
-                        return Err(MultipartError::InvalidBoundary);
+                        // `InvalidBoundary` は boundary 文字列自体の構文不正専用で使い分ける。
+                        return Err(MultipartError::InvalidPart);
                     }
                 }
                 ParserState::Finished => {

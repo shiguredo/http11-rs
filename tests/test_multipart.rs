@@ -330,7 +330,7 @@ fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
 }
 
 // inner_delimiter 直後の 2 バイトが close-delimiter / 次パート区切りのどちらでもない場合は
-// InvalidBoundary を返す
+// InvalidPart を返す
 #[test]
 fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
     let mut parser = MultipartParser::new("boundary");
@@ -345,8 +345,107 @@ fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
     parser.feed(b"xy").unwrap();
     assert!(matches!(
         parser.next_part(),
-        Err(MultipartError::InvalidBoundary)
+        Err(MultipartError::InvalidPart)
     ));
+}
+
+// ========================================
+// dash-boundary 直後の transport-padding 検証 (issue 0043, RFC 2046 Section 5.1.1)
+// ========================================
+
+// `--<boundary>X` で X が CRLF / `--` / SP / HTAB のいずれでもない場合は InvalidPart
+fn assert_invalid_after_dash_boundary(extra: &[u8]) {
+    let mut parser = MultipartParser::new("b");
+    let mut input: Vec<u8> = b"--b".to_vec();
+    input.extend_from_slice(extra);
+    input
+        .extend_from_slice(b"Content-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n");
+    parser.feed(&input).unwrap();
+    let result = parser.next_part();
+    assert!(
+        matches!(result, Err(MultipartError::InvalidPart)),
+        "extra={:?}: 期待 Err(InvalidPart) / 実際 {:?}",
+        extra,
+        result
+    );
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_cr_alone_is_rejected() {
+    assert_invalid_after_dash_boundary(b"\rContent");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_hyphen_alone_is_rejected() {
+    assert_invalid_after_dash_boundary(b"-X");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_nul_is_rejected() {
+    assert_invalid_after_dash_boundary(b"\0X");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_vchar_is_rejected() {
+    assert_invalid_after_dash_boundary(b"AX");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_digit_is_rejected() {
+    assert_invalid_after_dash_boundary(b"9X");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_ctl_is_rejected() {
+    assert_invalid_after_dash_boundary(b"\x01X");
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_followed_by_non_ascii_is_rejected() {
+    assert_invalid_after_dash_boundary(b"\x80X");
+}
+
+// SP / HTAB の transport-padding を伴う dash-boundary は寛容受理する
+#[test]
+fn test_multipart_parser_dash_boundary_with_space_padding_is_accepted() {
+    let mut parser = MultipartParser::new("b");
+    parser
+        .feed(b"--b \t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
+        .unwrap();
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}
+
+#[test]
+fn test_multipart_parser_dash_boundary_with_tab_padding_is_accepted() {
+    let mut parser = MultipartParser::new("b");
+    parser
+        .feed(b"--b\t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
+        .unwrap();
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+}
+
+// transport-padding 中で buffer が尽きたケースは Incomplete を返し、追加 feed 後に再開できる
+#[test]
+fn test_multipart_parser_dash_boundary_incomplete_during_transport_padding() {
+    let mut parser = MultipartParser::new("b");
+    parser.feed(b"--b  ").unwrap();
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::Incomplete)
+    ));
+
+    parser
+        .feed(b"\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
+        .unwrap();
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
 }
 
 // Clone のテスト

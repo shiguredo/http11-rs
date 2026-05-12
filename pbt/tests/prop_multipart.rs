@@ -343,6 +343,31 @@ proptest! {
     }
 }
 
+// `--<boundary>` の直後に CRLF / `--` / SP / HTAB 以外のバイトが続く入力は
+// `InvalidPart` で reject される (issue 0043, RFC 2046 Section 5.1.1 違反)
+proptest! {
+    #[test]
+    fn prop_multipart_dash_boundary_invalid_byte_is_rejected(
+        invalid_byte in any::<u8>().prop_filter("CRLF / `-` / SP / HTAB は除く", |b| {
+            !matches!(*b, b'\r' | b'-' | b' ' | b'\t')
+        })
+    ) {
+        let mut parser = MultipartParser::new("b");
+        let mut input: Vec<u8> = b"--b".to_vec();
+        input.push(invalid_byte);
+        // ダミーの後続データ (boundary 直後判定が走るのに十分な長さを確保)
+        input.extend_from_slice(b"XContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n");
+        parser.feed(&input).unwrap();
+        let result = parser.next_part();
+        prop_assert!(
+            matches!(result, Err(shiguredo_http11::multipart::MultipartError::InvalidPart)),
+            "invalid_byte=0x{:02x}: 期待 Err(InvalidPart) / 実際 {:?}",
+            invalid_byte,
+            result
+        );
+    }
+}
+
 // 任意の境界で chunk 分割した入力でも、bulk feed と同じパース結果を得る上に
 // 終端まで feed すれば `is_finished()` が true になる (issue 0042)
 proptest! {
