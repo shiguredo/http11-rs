@@ -1,6 +1,7 @@
 # 0057: `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` を追加し CHANGES.md 記載との乖離を解消する
 
 Created: 2026-05-13
+Completed: 2026-05-13
 Model: Opus 4.7
 
 ## 概要
@@ -117,3 +118,11 @@ inherent method と trait method は本質的に同じロジック (`&self.versi
 
 - RFC 9112 Section 2.3 (HTTP-version、`refs/rfc9112.txt`)
 - RFC 9110 Section 5 (Fields、`refs/rfc9110.txt`)
+
+## 解決方法
+
+- `src/decoder/head.rs::RequestHead` の `uri()` の直後に inherent な `version()` / `headers()` を追加した
+- `src/decoder/head.rs::ResponseHead` の `status_class()` の直後に inherent な `version()` / `headers()` を追加した
+- 両メソッドに `#[must_use]` と RFC 節番号付き doc コメントを付与した
+- `HttpHead` トレイト実装は変更しなかった (trait 経由のアクセスも引き続き動作する)
+- `CHANGES.md` の `## develop` `### misc` に `[ADD]` エントリを追加した
