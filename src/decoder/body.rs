@@ -562,7 +562,10 @@ pub(crate) fn collect_declared_trailers(headers: &[(String, String)]) -> Vec<Str
             continue;
         }
         for token in value.split(',') {
-            let token = token.trim();
+            // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+            // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+            // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+            let token = trim_ows(token);
             if token.is_empty() {
                 continue;
             }
@@ -1259,14 +1262,17 @@ pub(crate) fn parse_transfer_encoding_for_request(
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
             for token in value.split(',') {
-                let token = token.trim();
+                // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+                // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+                // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+                let token = trim_ows(token);
                 // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
                     continue;
                 }
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
-                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                let base_coding = trim_ows(token.split(';').next().unwrap_or(token));
                 // RFC 9110 Section 10.1.4: transfer-coding = token
                 if !is_valid_token(base_coding) {
                     return Err(Error::InvalidData(
@@ -1314,14 +1320,17 @@ pub(crate) fn parse_transfer_encoding_for_response(
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
             for token in value.split(',') {
-                let token = token.trim();
+                // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+                // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+                // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+                let token = trim_ows(token);
                 // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
                     continue;
                 }
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
-                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                let base_coding = trim_ows(token.split(';').next().unwrap_or(token));
                 // RFC 9110 Section 10.1.4: transfer-coding = token
                 if !is_valid_token(base_coding) {
                     return Err(Error::InvalidData(

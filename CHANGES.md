@@ -11,6 +11,12 @@
 
 ## develop
 
+- [FIX] `Transfer-Encoding` / `Trailer` の OWS 解釈で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
+  - 旧実装は `src/decoder/body.rs::parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` で `str::trim()` を使用しており、NBSP (U+00A0) / U+2028 等の Unicode 空白を除去していた
+  - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、`Transfer-Encoding: \u{00A0}chunked` のような値が decoder を通過し、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた
+  - RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠した `trim_ows` (issue 0029 で導入) に統一する
+  - 0029 (Content-Length の trim_ows 化) と同じ対策を TE / Trailer 側に適用する続編
+  - @voluntas
 - [CHANGE] `parse_auth_params` と `ContentDisposition::parse` にパラメータ数 hard cap (`MAX_AUTH_PARAMS = 32` / `MAX_PARAMS = 32`) を導入する
   - 旧実装はパラメータ数の上限がなく、`max_header_line_size = 8KB` 内で 2000 個程度のパラメータが詰め込み可能で、線形重複検出による CPU 消費の上限がなかった
   - 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6266 Content-Disposition = 7) に十分な余裕として 32 を上限とする

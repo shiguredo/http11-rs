@@ -755,3 +755,118 @@ proptest! {
         prop_assert_eq!(&consumed, &body_data);
     }
 }
+
+// ========================================
+// Unicode 空白 OWS の reject (issue 0053)
+// ========================================
+//
+// RFC 9110 Section 5.6.3 では OWS = *( SP / HTAB ) と定義されており、
+// trim_ows は SP/HTAB のみ除去する。Unicode 空白 (NBSP / U+2028 等) を
+// 含む Transfer-Encoding は token として不正と判定され reject される。
+
+/// Unicode 空白の UTF-8 表現 (NBSP / U+2028 / U+2000 / U+205F)
+fn unicode_whitespace_bytes() -> impl Strategy<Value = &'static [u8]> {
+    prop_oneof![
+        Just(&b"\xC2\xA0"[..]),     // U+00A0 NBSP
+        Just(&b"\xE2\x80\xA8"[..]), // U+2028 LINE SEPARATOR
+        Just(&b"\xE2\x80\x80"[..]), // U+2000 EN QUAD
+        Just(&b"\xE2\x81\x9F"[..]), // U+205F MEDIUM MATHEMATICAL SPACE
+    ]
+}
+
+proptest! {
+    /// 任意の Unicode 空白を前後に挿入した Transfer-Encoding: chunked は
+    /// request 経路で reject される (HRS 経路の遮断)。
+    #[test]
+    fn prop_request_te_unicode_whitespace_rejected(
+        ws in unicode_whitespace_bytes(),
+        position in 0u8..3,
+    ) {
+        let prefix = b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: ";
+        let mut payload: Vec<u8> = prefix.to_vec();
+        match position {
+            0 => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+            }
+            1 => {
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+            _ => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+        }
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err(), "Unicode 空白を含む TE は reject されるべき");
+        let err = result.unwrap_err();
+        prop_assert!(
+            matches!(&err, Error::InvalidData(_)),
+            "InvalidData を期待: {:?}", err
+        );
+    }
+}
+
+proptest! {
+    /// response 経路でも同様に reject される。
+    #[test]
+    fn prop_response_te_unicode_whitespace_rejected(
+        ws in unicode_whitespace_bytes(),
+        position in 0u8..3,
+    ) {
+        let prefix = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: ";
+        let mut payload: Vec<u8> = prefix.to_vec();
+        match position {
+            0 => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+            }
+            1 => {
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+            _ => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+        }
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err(), "Unicode 空白を含む TE は reject されるべき");
+        let err = result.unwrap_err();
+        prop_assert!(
+            matches!(&err, Error::InvalidData(_)),
+            "InvalidData を期待: {:?}", err
+        );
+    }
+}
+
+proptest! {
+    /// SP / HTAB のみで構成された OWS は引き続き受理される (リグレッション防止)。
+    #[test]
+    fn prop_request_te_ascii_ows_accepted(
+        leading in proptest::collection::vec(prop_oneof![Just(b' '), Just(b'\t')], 0..4),
+        trailing in proptest::collection::vec(prop_oneof![Just(b' '), Just(b'\t')], 0..4),
+    ) {
+        let mut payload: Vec<u8> = b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: ".to_vec();
+        payload.extend_from_slice(&leading);
+        payload.extend_from_slice(b"chunked");
+        payload.extend_from_slice(&trailing);
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Chunked);
+    }
+}
