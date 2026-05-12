@@ -1,6 +1,7 @@
 # 0056: CHANGES.md `## develop` セクションを規約順に並び替え種別タグ欠落を補完する
 
 Created: 2026-05-13
+Completed: 2026-05-13
 Model: Opus 4.7
 
 ## 概要
@@ -89,3 +90,11 @@ AGENTS.md (`CLAUDE.md`) は以下を規約として明記している:
 ## RFC 参照
 
 - 本 issue は RFC 仕様に依存しない (CHANGES.md フォーマット規約に基づく整形作業)
+
+## 解決方法
+
+- `## develop` 本セクションを `UPDATE` (2 件) → `ADD` (5 件) → `CHANGE` (16 件) → `FIX` (19 件) の順に並び替えた
+- `### misc` サブセクションを `UPDATE` (4 件) → `ADD` (2 件) → `FIX` (2 件) の順に並び替えた
+- 種別タグが欠落していた CI 分割エントリに `[UPDATE]` を付与した
+- `## 2026.3.0` 以下の既存リリース節は変更していない
+- `cargo test --workspace --all-targets` がベースラインと変わらず PASS することを確認した
