@@ -1,6 +1,7 @@
 # 0049: io_uring サンプルで kTLS 移行時に rustls の復号済み平文を取りこぼす問題を修正する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -147,3 +148,14 @@ curl -v --http1.1 --tlsv1.3 https://localhost:8443/info
 ## 補足
 
 - TCP レベルでは Client Finished + Application Data の TCP セグメントは ACK 済みのため、クライアントは再送しない。アプリ層で `received_plaintext` を排出しない限り該当バイトは復元不能
+
+## 解決方法
+
+- `examples/http11_server_io_uring/src/main.rs` に `drain_and_feed_leftover(tls_conn, conn, peer_addr)` ヘルパー関数を追加した。`tls_conn.reader().read_to_end(&mut leftover)` で `received_plaintext` を排出し、`WouldBlock` は正常扱い、その他の I/O エラーは伝播する。leftover を `conn.decoder.feed(...)` で取り込み、`decode()` ループで全 Request を build_response → `conn.pending_writes` に push する (Keep-Alive false が出たら break)
+- `handle_read` の `ConnectionState::HandshakeReading` 経路と `handle_write` の `ConnectionState::HandshakeWriting` 経路の両方で `dangerous_extract_secrets()` 直前に `drain_and_feed_leftover` を呼ぶよう変更した
+- leftover drain 失敗時は当該接続のみ `close_connection` で閉じ、サーバプロセスは継続させる
+- `handle_setsockopt_complete` を改修し、kTLS 有効化完了時に `conn.pending_writes` が非空なら `submit_write` を発行する (空なら従来通り `submit_read`)。`submit_write` 失敗時は `pending_writes.push_front` で先頭復元してから error を伝播する
+- `examples/http11_server_io_uring/README.md` に TLS 1.3 + `curl --tlsv1.3` ベースの手動テスト手順を追記した
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
+
+io_uring + kTLS + Linux 環境必須のため macOS では compile / 動作検証不可。ローカル Linux 環境または CI 配線後の検証が必要。

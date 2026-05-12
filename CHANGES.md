@@ -17,6 +17,13 @@
   - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
   - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
   - @voluntas
+- [FIX] `examples/http11_server_io_uring` で kTLS 移行時に rustls の復号済み平文を取りこぼし HTTP リクエストの先頭バイトが消失する問題を修正する
+  - 旧実装は `tls_conn.is_handshaking() == false` 確認直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` を呼んで `tls_conn` を drop していた
+  - TLS 1.3 で Client Finished と Application Data が同一 TCP read で来た場合 (curl / openssl s_client の典型的挙動)、`received_plaintext` に保持された HTTP リクエスト先頭バイトが復元不能で消失していた (TCP 再送経路もないため決定的に発生)
+  - `tls_conn.take()` 直後 / `dangerous_extract_secrets()` 直前に `tls_conn.reader().read_to_end(&mut leftover)` で平文を吸い出し、`conn.decoder.feed(&leftover)` で取り込んだ上で 0048 で導入した `pending_writes` に Response を積む
+  - HandshakeReading の Read 完了経路と HandshakeWriting の Write 完了経路の両方に同型修正を入れる
+  - エラーは当該接続のクローズで局所化し、サーバプロセスは継続させる
+  - @voluntas
 - [FIX] `examples/http11_server_io_uring` でパイプラインリクエストの 2 件目以降のレスポンスがドロップされる問題を修正する
   - 旧実装は `while let Some(request) = conn.decoder.decode()?` で複数 Request を decode して関数ローカル `VecDeque` に push していたが、`pop_front()` で 1 件目を取り出した後、残り N-1 件はスコープ終了で drop されていた
   - `Connection` 構造体に `pending_writes: VecDeque<(Vec<u8>, bool)>` と `current_write_should_keep_alive: bool` を追加し、`handle_write` 完了時に次エントリを書き出すよう変更する

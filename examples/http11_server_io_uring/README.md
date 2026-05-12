@@ -142,3 +142,16 @@ printf 'GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: local
 期待: `/a` のレスポンスに続いて `/b` のレスポンスが順序通りに返ること。
 
 issue 0048 の修正前は 1 件目のみ返り、2 件目以降は drop されていた。
+
+## 手動テスト: TLS 1.3 + kTLS の leftover drain (issue 0049)
+
+TLS 1.3 では Client Finished と Application Data (HTTP リクエスト) が同一 flight で
+送信される。kTLS 移行直前に rustls の `received_plaintext` を排出しないと、HTTP
+リクエストの先頭バイトが消失する。
+
+```sh
+# サーバ起動後、TLS 1.3 で curl を実行
+curl -v --http1.1 --tlsv1.3 https://localhost:8443/info
+```
+
+期待: 修正後は正常にレスポンスが返る。修正前は parse error / hang / 接続切断となる。
