@@ -17,6 +17,13 @@
   - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
   - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
   - @voluntas
+- [FIX] `examples/http11_reverse_proxy` で `--upstream` の scheme と port を尊重するよう修正する
+  - 旧実装は `parse_upstream_url` が host のみ抽出し、`TcpStream::connect((host, 443))` で常に 443 への TLS 接続にハードコードしていた
+  - `Scheme` enum (`Http` / `Https`) と `UpstreamStream` enum (`Plain` / `Tls`) を導入し、`create_connection` を scheme で分岐する
+  - 接続プールのキーを `(Scheme, host, port)` のタプルに変更し、`http://` と `https://` の接続が混在しないようにする
+  - IPv6 リテラル `[::1]:8443` を正しくパースする
+  - Host ヘッダー値はデフォルトポートで省略、IPv6 リテラルはブラケット表記で構築する (RFC 9110 Section 7.2)
+  - @voluntas
 - [FIX] `examples/http11_server_io_uring` で kTLS 移行時に rustls の復号済み平文を取りこぼし HTTP リクエストの先頭バイトが消失する問題を修正する
   - 旧実装は `tls_conn.is_handshaking() == false` 確認直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` を呼んで `tls_conn` を drop していた
   - TLS 1.3 で Client Finished と Application Data が同一 TCP read で来た場合 (curl / openssl s_client の典型的挙動)、`received_plaintext` に保持された HTTP リクエスト先頭バイトが復元不能で消失していた (TCP 再送経路もないため決定的に発生)

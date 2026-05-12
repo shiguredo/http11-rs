@@ -5,7 +5,9 @@
 //!   curl http://localhost:8888/
 
 use std::collections::HashMap;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 use rustls::ClientConfig;
@@ -15,12 +17,184 @@ use shiguredo_http11::{
     BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
     ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, error, info};
+
+/// upstream の scheme (issue 0050)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Scheme {
+    Http,
+    Https,
+}
+
+impl Scheme {
+    /// RFC 9110 Section 4.2.1 / 4.2.2 のデフォルトポート
+    fn default_port(self) -> u16 {
+        match self {
+            Scheme::Http => 80,
+            Scheme::Https => 443,
+        }
+    }
+}
+
+/// upstream URL から抽出した接続情報 (issue 0050)
+#[derive(Debug, Clone)]
+struct UpstreamUrl {
+    scheme: Scheme,
+    /// IPv6 リテラルは brackets を **含まない** 裸の host (例: "::1")
+    host: String,
+    port: u16,
+}
+
+impl UpstreamUrl {
+    /// 接続プールキー (issue 0050)
+    fn key(&self) -> UpstreamKey {
+        (self.scheme, self.host.clone(), self.port)
+    }
+}
+
+/// 接続プールキー: scheme / host / port のタプル (issue 0050)
+type UpstreamKey = (Scheme, String, u16);
+
+/// upstream URL をパースして scheme / host / port を抽出する (issue 0050)
+///
+/// 受理する形式:
+/// - `http://host[:port][/path][?query]`
+/// - `https://host[:port][/path][?query]`
+/// - IPv6 リテラルは `[host]` 形式 (例: `https://[::1]:8443/`)
+///
+/// path / query 部は無視する (本サンプルではクライアントの URL をそのまま転送する)。
+fn parse_upstream_url(url: &str) -> Result<UpstreamUrl, Box<dyn std::error::Error>> {
+    let (scheme, rest) = if let Some(rest) = url.strip_prefix("https://") {
+        (Scheme::Https, rest)
+    } else if let Some(rest) = url.strip_prefix("http://") {
+        (Scheme::Http, rest)
+    } else {
+        return Err(format!("upstream URL must start with http:// or https://: {}", url).into());
+    };
+
+    // authority 部 (host[:port]) を path / query 区切りより前で取り出す
+    let authority_end = rest.find(['/', '?']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    if authority.is_empty() {
+        return Err(format!("upstream URL has empty host: {}", url).into());
+    }
+
+    // IPv6 リテラルの判定
+    let (host, port_opt) = if let Some(rest) = authority.strip_prefix('[') {
+        // IPv6 リテラル: ']' まで host、その後 ':port' があれば port
+        let close = rest
+            .find(']')
+            .ok_or_else(|| format!("unterminated IPv6 literal in upstream URL: {}", url))?;
+        let host = &rest[..close];
+        let after = &rest[close + 1..];
+        if after.is_empty() {
+            (host, None)
+        } else if let Some(port_str) = after.strip_prefix(':') {
+            (host, Some(port_str))
+        } else {
+            return Err(format!(
+                "unexpected characters after IPv6 literal in upstream URL: {}",
+                url
+            )
+            .into());
+        }
+    } else if let Some(colon) = authority.rfind(':') {
+        // IPv4 / reg-name: 末尾の ':' で port を切り出す
+        (&authority[..colon], Some(&authority[colon + 1..]))
+    } else {
+        (authority, None)
+    };
+
+    if host.is_empty() {
+        return Err(format!("upstream URL has empty host: {}", url).into());
+    }
+
+    let port = match port_opt {
+        Some("") => scheme.default_port(),
+        Some(s) => s
+            .parse::<u16>()
+            .map_err(|e| format!("invalid port in upstream URL: {} ({})", url, e))?,
+        None => scheme.default_port(),
+    };
+
+    Ok(UpstreamUrl {
+        scheme,
+        host: host.to_string(),
+        port,
+    })
+}
+
+/// Host ヘッダー値を組み立てる (RFC 9110 Section 7.2、issue 0050)
+///
+/// - デフォルトポートは省略する (正書法)
+/// - IPv6 リテラルはブラケット表記で構築する
+fn format_host_header(scheme: Scheme, host: &str, port: u16) -> String {
+    let host_part = if host.contains(':') {
+        format!("[{}]", host)
+    } else {
+        host.to_string()
+    };
+    if port == scheme.default_port() {
+        host_part
+    } else {
+        format!("{}:{}", host_part, port)
+    }
+}
+
+/// upstream への接続。plaintext / TLS を保持する (issue 0050)
+///
+/// `BufWriter` で wrap することで書き込みのシステムコール回数を抑える。
+/// TLS バリアント (`rustls::ClientConnection` 内蔵) は plaintext の十数倍のサイズが
+/// あるため `Box` でヒープに退避し、enum バリアント間のサイズ差を抑える。
+enum UpstreamStream {
+    Plain(BufWriter<TcpStream>),
+    Tls(Box<BufWriter<TlsStream<TcpStream>>>),
+}
+
+impl AsyncRead for UpstreamStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamStream::Plain(s) => Pin::new(s).poll_read(cx, buf),
+            UpstreamStream::Tls(s) => Pin::new(s.as_mut()).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for UpstreamStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match self.get_mut() {
+            UpstreamStream::Plain(s) => Pin::new(s).poll_write(cx, buf),
+            UpstreamStream::Tls(s) => Pin::new(s.as_mut()).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamStream::Plain(s) => Pin::new(s).poll_flush(cx),
+            UpstreamStream::Tls(s) => Pin::new(s.as_mut()).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.get_mut() {
+            UpstreamStream::Plain(s) => Pin::new(s).poll_shutdown(cx),
+            UpstreamStream::Tls(s) => Pin::new(s.as_mut()).poll_shutdown(cx),
+        }
+    }
+}
 
 /// 接続プールの設定
 #[derive(Debug, Clone)]
@@ -45,13 +219,13 @@ impl Default for PoolConfig {
 
 /// プールされた接続
 struct PooledConnection {
-    stream: TlsStream<TcpStream>,
+    stream: UpstreamStream,
     created_at: Instant,
     last_used: Instant,
 }
 
 impl PooledConnection {
-    fn new(stream: TlsStream<TcpStream>) -> Self {
+    fn new(stream: UpstreamStream) -> Self {
         let now = Instant::now();
         Self {
             stream,
@@ -73,8 +247,11 @@ impl PooledConnection {
 
 /// 接続プール
 struct ConnectionPool {
-    /// ホストごとのアイドル接続
-    idle_connections: HashMap<String, Vec<PooledConnection>>,
+    /// scheme / host / port ごとのアイドル接続 (issue 0050)
+    ///
+    /// 旧実装は host 文字列のみをキーにしていたため、`http://a:8080/` と
+    /// `https://a:443/` のプールエントリが混在する経路があった。
+    idle_connections: HashMap<UpstreamKey, Vec<PooledConnection>>,
     config: PoolConfig,
     tls_connector: TlsConnector,
 }
@@ -89,8 +266,8 @@ impl ConnectionPool {
     }
 
     /// プールからアイドル接続を取得（ロック内で高速に実行）
-    fn try_acquire(&mut self, host: &str) -> Option<PooledConnection> {
-        if let Some(connections) = self.idle_connections.get_mut(host) {
+    fn try_acquire(&mut self, key: &UpstreamKey) -> Option<PooledConnection> {
+        if let Some(connections) = self.idle_connections.get_mut(key) {
             while let Some(mut conn) = connections.pop() {
                 if conn.is_valid(&self.config) {
                     conn.last_used = Instant::now();
@@ -108,12 +285,12 @@ impl ConnectionPool {
     }
 
     /// 接続をプールに返却
-    fn release(&mut self, host: &str, conn: PooledConnection) {
+    fn release(&mut self, key: UpstreamKey, conn: PooledConnection) {
         if !conn.is_valid(&self.config) {
             return;
         }
 
-        let connections = self.idle_connections.entry(host.to_string()).or_default();
+        let connections = self.idle_connections.entry(key).or_default();
 
         // 最大接続数を超えている場合は破棄
         if connections.len() >= self.config.max_connections_per_host {
@@ -134,21 +311,30 @@ impl ConnectionPool {
 
     /// プールの統計情報を取得
     fn stats(&self) -> (usize, usize) {
-        let hosts = self.idle_connections.len();
+        let endpoints = self.idle_connections.len();
         let connections: usize = self.idle_connections.values().map(|v| v.len()).sum();
-        (hosts, connections)
+        (endpoints, connections)
     }
 }
 
-/// 新規 TLS 接続を作成（ロック外で実行）
+/// 新規接続を作成（ロック外で実行）。scheme で plaintext / TLS を分岐する (issue 0050)。
 async fn create_connection(
+    scheme: Scheme,
     host: &str,
+    port: u16,
     tls_connector: &TlsConnector,
 ) -> Result<PooledConnection, Box<dyn std::error::Error + Send + Sync>> {
-    let server_name = ServerName::try_from(host.to_string())?;
-    let tcp_stream = TcpStream::connect((host, 443)).await?;
-    let tls_stream = tls_connector.connect(server_name, tcp_stream).await?;
-    Ok(PooledConnection::new(tls_stream))
+    let tcp_stream = TcpStream::connect((host, port)).await?;
+    let stream = match scheme {
+        Scheme::Http => UpstreamStream::Plain(BufWriter::with_capacity(65536, tcp_stream)),
+        Scheme::Https => {
+            // RFC 6066 Section 3: SNI / TLS Server Name は裸の host (ブラケット無し) を使う
+            let server_name = ServerName::try_from(host.to_string())?;
+            let tls_stream = tls_connector.connect(server_name, tcp_stream).await?;
+            UpstreamStream::Tls(Box::new(BufWriter::with_capacity(65536, tls_stream)))
+        }
+    };
+    Ok(PooledConnection::new(stream))
 }
 
 /// 共有可能な接続プール
@@ -191,7 +377,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --upstream オプション
     let upstream_url: String = noargs::opt("upstream")
         .short('u')
-        .doc("Upstream URL (default: https://example.com)")
+        .doc(concat!(
+            "Upstream URL with scheme (http or https) and optional port\n",
+            "Default: https://example.com\n",
+            "Examples: http://internal:8080, https://[::1]:8443"
+        ))
         .default("https://example.com")
         .take(&mut args)
         .then(|o| Ok::<_, &str>(o.value().to_string()))
@@ -212,8 +402,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .init();
 
-    // upstream URL からホスト名を抽出
-    let upstream_host = parse_upstream_url(&upstream_url)?;
+    // upstream URL から scheme / host / port を抽出 (issue 0050)
+    let upstream = parse_upstream_url(&upstream_url)?;
+    let upstream_host_header = format_host_header(upstream.scheme, &upstream.host, upstream.port);
+    let upstream = Arc::new(upstream);
 
     // TLS 設定を事前に作成
     let tls_config = Arc::new(ClientConfig::with_platform_verifier()?);
@@ -252,10 +444,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         let (socket, _) = listener.accept().await?;
-        let upstream_host = upstream_host.clone();
+        let upstream = upstream.clone();
+        let upstream_host_header = upstream_host_header.clone();
         let pool = pool.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, &upstream_host, pool).await {
+            if let Err(e) = handle_client(socket, &upstream, &upstream_host_header, pool).await {
                 error!(error = %e, "Client handler error");
             }
         });
@@ -264,7 +457,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn handle_client(
     mut socket: TcpStream,
-    upstream_host: &str,
+    upstream: &UpstreamUrl,
+    upstream_host_header: &str,
     pool: SharedPool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // クライアントからリクエストヘッダーを受信
@@ -386,7 +580,7 @@ async fn handle_client(
         upstream_request.add_header(name, value)?;
     }
 
-    upstream_request.add_header("Host", upstream_host)?;
+    upstream_request.add_header("Host", upstream_host_header)?;
     // Keep-Alive を使用して接続を再利用
     upstream_request.add_header("Connection", "keep-alive")?;
     // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
@@ -403,13 +597,9 @@ async fn handle_client(
     );
 
     // 接続プールから接続を取得してリクエストを送信
-    let result = stream_upstream_response_pooled(
-        &mut socket,
-        &upstream_request,
-        upstream_host,
-        pool.clone(),
-    )
-    .await;
+    let result =
+        stream_upstream_response_pooled(&mut socket, &upstream_request, upstream, pool.clone())
+            .await;
 
     // エラーの場合はログに出力
     if let Err(ref e) = result {
@@ -422,15 +612,16 @@ async fn handle_client(
 async fn stream_upstream_response_pooled(
     downstream: &mut TcpStream,
     request: &Request,
-    upstream_host: &str,
+    upstream: &UpstreamUrl,
     pool: SharedPool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start = Instant::now();
+    let key = upstream.key();
 
     // まずプールからアイドル接続を取得（ロックは短時間のみ保持）
     let (mut conn, from_pool) = {
         let mut pool_guard = pool.lock().await;
-        if let Some(conn) = pool_guard.try_acquire(upstream_host) {
+        if let Some(conn) = pool_guard.try_acquire(&key) {
             (conn, true)
         } else {
             // プールにない場合は TLS コネクタを取得してロックを解放
@@ -438,14 +629,22 @@ async fn stream_upstream_response_pooled(
             drop(pool_guard); // 明示的にロックを解放
 
             // ロック外で新規接続を作成（時間がかかる処理）
-            let conn = create_connection(upstream_host, &tls_connector).await?;
+            let conn = create_connection(
+                upstream.scheme,
+                &upstream.host,
+                upstream.port,
+                &tls_connector,
+            )
+            .await?;
             (conn, false)
         }
     };
 
     let acquire_time = start.elapsed();
     debug!(
-        upstream_host,
+        upstream_scheme = ?upstream.scheme,
+        upstream_host = %upstream.host,
+        upstream_port = upstream.port,
         acquire_time_ms = acquire_time.as_millis() as u64,
         source = if from_pool { "pool" } else { "new" },
         "Acquired connection"
@@ -464,7 +663,7 @@ async fn stream_upstream_response_pooled(
 
     if should_reuse {
         conn.last_used = Instant::now();
-        pool.lock().await.release(upstream_host, conn);
+        pool.lock().await.release(key, conn);
         debug!("connection returned to pool");
     } else {
         debug!("connection closed (not reusable)");
@@ -479,7 +678,7 @@ async fn stream_response_on_connection(
     downstream: &mut TcpStream,
     request: &Request,
     method: &str,
-    upstream: &mut TlsStream<TcpStream>,
+    upstream: &mut UpstreamStream,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     // ダウンストリームをバッファリング（64KB バッファ）
     let mut downstream = BufWriter::with_capacity(65536, downstream);
@@ -488,6 +687,8 @@ async fn stream_response_on_connection(
     let request_bytes = request.encode()?;
     debug!(bytes = request_bytes.len(), "Upstream request bytes");
     upstream.write_all(&request_bytes).await?;
+    // UpstreamStream は内部で BufWriter を保持しているため明示的に flush する必要がある。
+    upstream.flush().await?;
 
     // レスポンスヘッダーを受信
     let mut decoder = ResponseDecoder::with_limits(DecoderLimits {
@@ -747,27 +948,4 @@ fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
     }
 
     connection_headers.contains(&name_lower)
-}
-
-fn parse_upstream_url(url: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let url_str = if let Some(rest) = url.strip_prefix("https://") {
-        rest
-    } else if let Some(rest) = url.strip_prefix("http://") {
-        rest
-    } else {
-        url
-    };
-
-    let host = url_str
-        .split('/')
-        .next()
-        .ok_or("Invalid URL: no host")?
-        .split('?')
-        .next()
-        .ok_or("Invalid URL: no host")?
-        .split(':')
-        .next()
-        .ok_or("Invalid URL: no host")?;
-
-    Ok(host.to_string())
 }
