@@ -11,6 +11,10 @@
 
 ## develop
 
+- [CHANGE] `Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` の戻り型を `Result<Vec<u8>, EncodeError>` に変更する
+  - 旧 `try_encode` / `try_encode_headers` を撤去し名前を `encode` / `encode_headers` に統一する
+  - 構築時バリデーションを通っても意味論違反 (Host 欠落、TE+CL 同時、205 ボディ等) で encode が `Err` を返すため、呼出側は `?` 等で伝播する必要がある
+  - @voluntas
 - [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
@@ -92,7 +96,6 @@
   - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする
   - `status_code()` / `reason_phrase()` / `version()` / `body_bytes()` / `is_body_omitted()` の読み取り専用アクセサを追加する (getter `body_bytes` は builder `body(data)` との同名衝突を避けるため改名)
   - 構造体に `#[non_exhaustive]` を付与し、将来のフィールド追加を非破壊的に扱えるようにする
-  - `Response::encode()` のパニック条件を意味論的違反 (Content-Length 不一致等) に限定した doc に更新する
   - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
   - @voluntas
 - [CHANGE] `ResponseDecoder::set_expect_no_body` を撤去し、HEAD レスポンスの指定を `set_request_method("HEAD")` に統一する

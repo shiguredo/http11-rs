@@ -306,7 +306,7 @@ async fn handle_client(
         let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
             .header("Content-Length", "0")?
             .header("Connection", "close")?;
-        socket.write_all(&response.encode()).await?;
+        socket.write_all(&response.encode()?).await?;
         return Ok(());
     }
 
@@ -485,7 +485,7 @@ async fn stream_response_on_connection(
     let mut downstream = BufWriter::with_capacity(65536, downstream);
 
     // リクエスト送信
-    let request_bytes = request.encode();
+    let request_bytes = request.encode()?;
     debug!(bytes = request_bytes.len(), "Upstream request bytes");
     upstream.write_all(&request_bytes).await?;
 

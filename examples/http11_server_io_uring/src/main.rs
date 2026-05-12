@@ -661,7 +661,7 @@ fn handle_read(
                     request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
 
                 let response = build_response(&request, should_keep_alive)?;
-                responses.push_back((response.encode(), should_keep_alive));
+                responses.push_back((response.encode()?, should_keep_alive));
             }
 
             conn.request_count = request_count;

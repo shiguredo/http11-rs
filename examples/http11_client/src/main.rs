@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     let request_method = request.method().to_string();
-    let request_bytes = request.try_encode()?;
+    let request_bytes = request.encode()?;
 
     if scheme == "https" {
         // HTTPS

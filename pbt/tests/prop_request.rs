@@ -130,7 +130,7 @@ proptest! {
             request = request.body(body_data.clone());
         }
 
-        let encoded = request.encode();
+        let encoded = request.encode().unwrap();
 
         let mut decoder = RequestDecoder::new();
         decoder.feed(&encoded).unwrap();
@@ -196,7 +196,7 @@ proptest! {
             }
         }
 
-        let encoded = request.encode();
+        let encoded = request.encode().unwrap();
 
         // 1バイトずつ feed
         let mut decoder = RequestDecoder::new();
@@ -222,7 +222,7 @@ proptest! {
         let host_value = host_for_uri(&uri);
         request.add_header("Host", &host_value).unwrap();
         let request = request.body(body_data.clone());
-        let encoded = request.encode();
+        let encoded = request.encode().unwrap();
 
         // チャンクサイズで分割して feed し、デコード完了まで繰り返す
         let mut decoder = RequestDecoder::new();
@@ -287,7 +287,7 @@ proptest! {
             let mut request = Request::new(&methods[i], &uris[i]).unwrap();
             let host_value = host_for_uri(&uris[i]);
             request.add_header("Host", &host_value).unwrap();
-            let encoded = request.encode();
+            let encoded = request.encode().unwrap();
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
@@ -316,7 +316,7 @@ proptest! {
         let mut request = Request::new(&method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
         request.add_header("Host", &host_value).unwrap();
-        let encoded = request.encode();
+        let encoded = request.encode().unwrap();
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
 

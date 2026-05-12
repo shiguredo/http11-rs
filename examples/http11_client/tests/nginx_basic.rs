@@ -14,7 +14,7 @@ use shiguredo_http11::{HttpHead, Request};
 
 /// nginx に対して 1 リクエスト送って Response を返す共通ヘルパー
 ///
-/// 各テスト関数の重複を減らすため、ヘッダー組み立て + try_encode + spawn_blocking までを一括する。
+/// 各テスト関数の重複を減らすため、ヘッダー組み立て + encode + spawn_blocking までを一括する。
 async fn fetch(
     nginx: &helpers::NginxHandle,
     method: &str,
@@ -31,7 +31,7 @@ async fn fetch(
         .header("Connection", "close")
         .expect("Connection header");
     let request_method = request.method().to_string();
-    let request_bytes = request.try_encode().expect("try_encode");
+    let request_bytes = request.encode().expect("encode");
 
     tokio::task::spawn_blocking(move || http_request(&host, port, &request_method, &request_bytes))
         .await
