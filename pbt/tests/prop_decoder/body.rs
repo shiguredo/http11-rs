@@ -569,7 +569,7 @@ proptest! {
         // progress() でチャンクサイズ行をパースしようとするとエラー
         let result = decoder.progress();
         let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
-        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
+        prop_assert!(is_chunk_line_too_long, "ChunkLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -596,7 +596,7 @@ proptest! {
         // progress() でチャンクサイズ行をパースしようとするとエラー
         let result = decoder.progress();
         let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
-        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
+        prop_assert!(is_chunk_line_too_long, "ChunkLineTooLong を期待したが {:?} だった", result);
     }
 }
 

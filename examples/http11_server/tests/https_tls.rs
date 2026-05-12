@@ -27,21 +27,24 @@ async fn https_get_root_with_self_signed_cert() {
         "-sS",
         "-i",
         "--cacert",
-        cert.to_str().expect("cert path is utf-8"),
+        cert.to_str().expect("証明書パスが UTF-8 であるべき"),
         "--resolve",
         &resolve_arg(server.port),
         &server.https_url("/"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, body) = split_headers_body(&out.stdout);
-    let body = String::from_utf8(body).expect("response body is not utf-8");
+    let body = String::from_utf8(body).expect("レスポンスボディが UTF-8 でない");
 
-    assert!(headers.starts_with("HTTP/1.1 200"), "headers={headers}");
+    assert!(
+        headers.starts_with("HTTP/1.1 200"),
+        "ヘッダーが想定外: {headers}"
+    );
     assert!(
         body.contains("<title>shiguredo_http11 Server</title>"),
-        "unexpected body: {body}"
+        "ボディが想定外: {body}"
     );
 }
 
@@ -55,7 +58,7 @@ async fn https_compression_works() {
         "-sS",
         "-i",
         "--cacert",
-        cert.to_str().expect("cert path is utf-8"),
+        cert.to_str().expect("証明書パスが UTF-8 であるべき"),
         "--resolve",
         &resolve_arg(server.port),
         "-H",
@@ -63,7 +66,7 @@ async fn https_compression_works() {
         &server.https_url("/"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, _) = split_headers_body(&out.stdout);
     assert_eq!(find_header(&headers, "Content-Encoding"), Some("gzip"));
@@ -76,7 +79,10 @@ async fn https_keep_alive_works() {
     let server = spawn_https_server(&cert, &key).await;
 
     let url = server.https_url("/");
-    let cert_str = cert.to_str().expect("cert path is utf-8").to_string();
+    let cert_str = cert
+        .to_str()
+        .expect("証明書パスが UTF-8 であるべき")
+        .to_string();
     let resolve = resolve_arg(server.port);
     let out = run_curl([
         "-sS",
@@ -102,18 +108,18 @@ async fn https_keep_alive_works() {
         &url,
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let stdout = out.stdout_string();
     let codes: Vec<&str> = stdout.lines().map(str::trim).collect();
     assert_eq!(
         codes,
         ["200", "200"],
-        "both requests must return 200: stdout={stdout}"
+        "両リクエストとも 200 を返すべき: stdout={stdout}"
     );
     assert!(
         out.stderr.contains("Re-using existing connection"),
-        "expected curl to re-use the TLS connection: stderr={}",
+        "curl が TLS 接続を再利用することを期待: stderr={}",
         out.stderr
     );
 }
@@ -134,13 +140,13 @@ async fn tls_handshake_with_invalid_ca_fails() {
     .await;
     assert_ne!(
         out.status, 0,
-        "curl must fail with self-signed cert without --cacert: stderr={}",
+        "--cacert なしの自己署名証明書では curl は失敗するべき: stderr={}",
         out.stderr
     );
     assert!(
         out.stderr.to_lowercase().contains("certificate")
             || out.stderr.to_lowercase().contains("ssl"),
-        "expected TLS-related error in stderr: {}",
+        "stderr に TLS 関連のエラーを期待: {}",
         out.stderr
     );
 }

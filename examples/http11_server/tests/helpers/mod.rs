@@ -33,7 +33,7 @@ pub fn ensure_curl() {
         .status();
     match status {
         Ok(s) if s.success() => {}
-        _ => panic!("curl is required for these integration tests"),
+        _ => panic!("これらの結合テストは curl が必要"),
     }
 }
 
@@ -97,19 +97,19 @@ pub async fn spawn_https_server(cert_path: &Path, key_path: &Path) -> ServerHand
 
 /// 子プロセスを spawn して stdout から `LISTENING_PORT=N` を読む
 async fn spawn_with_port_read(mut cmd: Command) -> ServerHandle {
-    let mut child = cmd.spawn().expect("failed to spawn http11_server");
+    let mut child = cmd.spawn().expect("http11_server の起動に失敗");
     let stdout = child
         .stdout
         .take()
-        .expect("http11_server stdout was not captured");
+        .expect("http11_server の stdout をキャプチャできなかった");
     let mut reader = BufReader::new(stdout).lines();
 
     let port = match timeout(PORT_READ_TIMEOUT, reader.next_line()).await {
         Ok(Ok(Some(line))) => parse_listening_port(&line)
-            .unwrap_or_else(|| panic!("unexpected first stdout line from server: {line:?}")),
-        Ok(Ok(None)) => panic!("http11_server exited before printing LISTENING_PORT"),
-        Ok(Err(e)) => panic!("failed to read http11_server stdout: {e}"),
-        Err(_) => panic!("timed out waiting for LISTENING_PORT from http11_server"),
+            .unwrap_or_else(|| panic!("サーバの最初の stdout 行が想定外: {line:?}")),
+        Ok(Ok(None)) => panic!("http11_server が LISTENING_PORT を出力する前に終了した"),
+        Ok(Err(e)) => panic!("http11_server の stdout 読み取りに失敗: {e}"),
+        Err(_) => panic!("http11_server からの LISTENING_PORT 待機がタイムアウト"),
     };
 
     ServerHandle {
@@ -149,7 +149,7 @@ where
         let output = std::process::Command::new("curl")
             .args(&args)
             .output()
-            .expect("failed to execute curl");
+            .expect("curl の実行に失敗");
         CurlOutput {
             stdout: output.stdout,
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -157,7 +157,7 @@ where
         }
     })
     .await
-    .expect("curl spawn_blocking task failed")
+    .expect("curl の spawn_blocking タスクが失敗")
 }
 
 /// 自己署名証明書を一時ディレクトリに生成する
@@ -173,20 +173,20 @@ pub fn generate_self_signed() -> (TempDir, PathBuf, PathBuf) {
         SanType::DnsName(
             "localhost"
                 .try_into()
-                .expect("static SAN dns name is valid"),
+                .expect("静的な SAN DNS 名は妥当であるべき"),
         ),
         SanType::IpAddress(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
     ];
-    let key_pair = KeyPair::generate().expect("failed to generate key pair");
+    let key_pair = KeyPair::generate().expect("鍵ペアの生成に失敗");
     let cert = params
         .self_signed(&key_pair)
-        .expect("failed to self-sign cert");
+        .expect("自己署名証明書の生成に失敗");
 
-    let dir = tempfile::tempdir().expect("failed to create tempdir");
+    let dir = tempfile::tempdir().expect("一時ディレクトリの作成に失敗");
     let cert_path = dir.path().join("cert.pem");
     let key_path = dir.path().join("key.pem");
-    std::fs::write(&cert_path, cert.pem()).expect("failed to write cert.pem");
-    std::fs::write(&key_path, key_pair.serialize_pem()).expect("failed to write key.pem");
+    std::fs::write(&cert_path, cert.pem()).expect("cert.pem の書き込みに失敗");
+    std::fs::write(&key_path, key_pair.serialize_pem()).expect("key.pem の書き込みに失敗");
 
     (dir, cert_path, key_path)
 }

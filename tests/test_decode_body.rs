@@ -108,7 +108,7 @@ fn incomplete_chunked_body() {
             let len = data.len();
             match decoder.consume_body(len).unwrap() {
                 BodyProgress::Complete { .. } => {
-                    panic!("should not complete without terminating chunk")
+                    panic!("終端チャンク無しで Complete になってはならない")
                 }
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
@@ -788,7 +788,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
         .feed(b"GET http://[::1/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
         .unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "expected error for unmatched '['");
+    assert!(result.is_err(), "対応していない '[' でエラーになるべき");
     assert!(
         result
             .unwrap_err()
@@ -802,7 +802,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
         .feed(b"GET http://]::1[/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
         .unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "expected error for ']' before '['");
+    assert!(result.is_err(), "'[' より先に ']' があるとエラーになるべき");
     assert!(
         result
             .unwrap_err()
@@ -818,7 +818,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
-        "expected error for mismatched bracket count"
+        "角括弧の対応数が不一致のときはエラーになるべき"
     );
 }
 
@@ -831,7 +831,7 @@ fn absolute_form_with_valid_ipv6_should_succeed() {
         .unwrap();
 
     let result = decoder.decode_headers();
-    assert!(result.is_ok(), "expected success for valid IPv6 literal");
+    assert!(result.is_ok(), "正常な IPv6 リテラルは成功すべき");
 }
 
 // ========================================

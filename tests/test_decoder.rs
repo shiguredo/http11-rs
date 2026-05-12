@@ -121,7 +121,7 @@ fn test_non_connect_2xx_normal_body() {
         decoder.feed(response.as_bytes()).unwrap();
 
         let result = decoder.decode_headers().unwrap();
-        assert!(result.is_some(), "expected headers for {} response", method);
+        assert!(result.is_some(), "{} レスポンスでヘッダーを期待", method);
 
         let (_head, body_kind) = result.unwrap();
         assert_ne!(
@@ -1356,7 +1356,7 @@ mod direct_buffer_write {
                 assert_eq!(size, 105);
                 assert_eq!(limit, 16);
             }
-            other => panic!("expected BufferOverflow, got {:?}", other.is_ok()),
+            other => panic!("BufferOverflow を期待したが {:?} だった", other.is_ok()),
         }
         assert_eq!(decoder.remaining(), prev.as_slice());
     }
@@ -1376,7 +1376,7 @@ mod direct_buffer_write {
                 assert_eq!(size, 105);
                 assert_eq!(limit, 16);
             }
-            other => panic!("expected BufferOverflow, got {:?}", other.is_ok()),
+            other => panic!("BufferOverflow を期待したが {:?} だった", other.is_ok()),
         }
         assert_eq!(decoder.remaining(), prev.as_slice());
     }
@@ -1543,7 +1543,10 @@ mod direct_buffer_write {
         let buf = decoder.mut_buf(data.len()).unwrap();
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
-        let response = decoder.decode().unwrap().expect("response decoded");
+        let response = decoder
+            .decode()
+            .unwrap()
+            .expect("response がデコードされるべき");
         assert_eq!(response.status_code(), 200);
         assert_eq!(response.body_bytes(), Some(b"hello".as_slice()));
     }
@@ -1555,7 +1558,10 @@ mod direct_buffer_write {
         let buf = decoder.mut_buf(data.len()).unwrap();
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
-        let request = decoder.decode().unwrap().expect("request decoded");
+        let request = decoder
+            .decode()
+            .unwrap()
+            .expect("request がデコードされるべき");
         assert_eq!(request.method(), "POST");
         assert_eq!(request.body_bytes(), Some(b"hello".as_slice()));
     }
@@ -1580,13 +1586,16 @@ mod peek_body_decompressed {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
 
-        decoder.decode_headers().unwrap().expect("headers decoded");
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
 
         let mut output = vec![0u8; 32];
         let status = decoder
             .peek_body_decompressed(&mut output)
             .unwrap()
-            .expect("body data available");
+            .expect("ボディデータが取得できるべき");
         assert_eq!(status.consumed(), 5);
         assert_eq!(status.produced(), 5);
         assert_eq!(&output[..5], b"hello");
@@ -1603,13 +1612,16 @@ mod peek_body_decompressed {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
 
-        decoder.decode_headers().unwrap().expect("headers decoded");
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
 
         let mut output = vec![0u8; 32];
         let status = decoder
             .peek_body_decompressed(&mut output)
             .unwrap()
-            .expect("body data available");
+            .expect("ボディデータが取得できるべき");
         decoder.consume_body(status.consumed()).unwrap();
 
         // ボディ完了後の呼び出しは None
@@ -1725,7 +1737,10 @@ mod peek_body_decompressed {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
 
-        decoder.decode_headers().unwrap().expect("headers decoded");
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
 
         // 出力 buffer は 3 bytes (内部 buffer が複数回に分かれて drain される設定)
         let mut output = vec![0u8; 3];
@@ -1746,10 +1761,10 @@ mod peek_body_decompressed {
             }
         }
 
-        assert_eq!(total_consumed, 2, "all body bytes consumed");
+        assert_eq!(total_consumed, 2, "ボディ全バイトが消費されるべき");
         assert_eq!(
             decompressed, b"AAAAXXXX",
-            "all 8 bytes of decompressed output collected"
+            "解凍後の 8 バイトすべてが収集されるべき"
         );
     }
 
@@ -1762,13 +1777,16 @@ mod peek_body_decompressed {
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
 
-        decoder.decode_headers().unwrap().expect("headers decoded");
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
 
         // ボディがまだ届いていない → peek_body は None → decompress(&[], output) 経由で
         // NoCompression は Complete { 0, 0 } を返す → peek_body_decompressed は None を返す
         let mut output = vec![0u8; 32];
         let result = decoder.peek_body_decompressed(&mut output).unwrap();
-        assert!(result.is_none(), "no progress should yield None");
+        assert!(result.is_none(), "進展なしのときは None になるべき");
     }
 }
 

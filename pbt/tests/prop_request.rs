@@ -7,7 +7,7 @@ use shiguredo_http11::{BodyKind, BodyProgress, EncodeError, HttpHead, Request, R
 // Strategy 定義
 // ========================================
 
-// HTTP トークン文字 (RFC 7230)
+// HTTP トークン文字 (RFC 9110 Section 5.6.2)
 fn token_char() -> impl Strategy<Value = char> {
     prop_oneof![
         prop::char::range('a', 'z'),
@@ -263,7 +263,7 @@ proptest! {
             }
         }
 
-        prop_assert!(headers_decoded, "should decode headers");
+        prop_assert!(headers_decoded, "ヘッダーがデコードされるべき");
         prop_assert_eq!(&decoded_method, &method);
         prop_assert_eq!(&decoded_body, &body_data);
     }

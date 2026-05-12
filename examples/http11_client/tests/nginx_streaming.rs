@@ -68,23 +68,25 @@ async fn fetch_with_headers(
     extra_headers: &[(&str, &str)],
 ) -> shiguredo_http11::Response {
     let url = nginx.http_url(path);
-    let (_scheme, host, port, request_path) = parse_url(&url).expect("parse_url");
+    let (_scheme, host, port, request_path) = parse_url(&url).expect("URL のパースに失敗");
     let mut request = Request::new(method, &request_path)
-        .expect("Request::new")
+        .expect("Request::new に失敗")
         .header("Host", &host)
-        .expect("Host header")
+        .expect("Host ヘッダーの設定に失敗")
         .header("User-Agent", "http11_client-test")
-        .expect("User-Agent header");
+        .expect("User-Agent ヘッダーの設定に失敗");
     for &(name, value) in extra_headers {
-        request = request.header(name, value).expect("extra header");
+        request = request
+            .header(name, value)
+            .expect("追加ヘッダーの設定に失敗");
     }
     let request_method = request.method().to_string();
-    let request_bytes = request.encode().expect("encode");
+    let request_bytes = request.encode().expect("encode に失敗");
 
     tokio::task::spawn_blocking(move || http_request(&host, port, &request_method, &request_bytes))
         .await
-        .expect("spawn_blocking task")
-        .expect("http_request")
+        .expect("spawn_blocking タスクが失敗")
+        .expect("http_request が失敗")
 }
 
 #[tokio::test]
@@ -113,17 +115,17 @@ async fn chunked_response_decoded_properly() {
     assert_eq!(
         response.get_header("Content-Encoding"),
         Some("gzip"),
-        "Content-Encoding must be gzip on the wire"
+        "通信路上の Content-Encoding は gzip であるべき"
     );
     assert_eq!(
         response.get_header("Transfer-Encoding"),
         Some("chunked"),
-        "Transfer-Encoding must be chunked (gzip filter discards Content-Length)"
+        "Transfer-Encoding は chunked であるべき (gzip フィルタが Content-Length を破棄するため)"
     );
 
     // body_bytes() は transport.rs 内で AnyDecompressor によりストリーミング展開済み
-    let received = response.body_bytes().expect("body bytes present");
-    let recovered = std::str::from_utf8(received).expect("decompressed body is UTF-8");
+    let received = response.body_bytes().expect("ボディバイトを取得できるべき");
+    let recovered = std::str::from_utf8(received).expect("解凍ボディは UTF-8 であるべき");
     assert_eq!(recovered, body_text);
 }
 
@@ -142,18 +144,15 @@ async fn large_body_received_completely() {
         fetch_with_headers(&nginx, "GET", "/large.bin", &[("Connection", "close")]).await;
 
     assert_eq!(response.status_code(), 200);
-    let received = response.body_bytes().expect("body bytes present");
+    let received = response.body_bytes().expect("ボディバイトを取得できるべき");
     assert_eq!(
         received.len(),
         body.len(),
-        "received body length mismatch: got {} expected {}",
+        "受信ボディ長の不一致: 取得 {} 期待 {}",
         received.len(),
         body.len()
     );
-    assert!(
-        received == body.as_slice(),
-        "received body content mismatch"
-    );
+    assert!(received == body.as_slice(), "受信ボディの内容が一致しない");
 }
 
 #[tokio::test]
@@ -182,9 +181,9 @@ async fn connection_close_terminates_request() {
     assert_eq!(
         response.get_header("Connection"),
         Some("close"),
-        "server must override to Connection: close due to keepalive_timeout 0"
+        "keepalive_timeout 0 によりサーバは Connection: close を強制すべき"
     );
-    let body = response.body_bytes().expect("body bytes present");
+    let body = response.body_bytes().expect("ボディバイトを取得できるべき");
     assert_eq!(body, b"<html><body>hello</body></html>");
 }
 
@@ -219,25 +218,25 @@ async fn streams_large_gzip_body() {
     assert_eq!(
         response.get_header("Content-Encoding"),
         Some("gzip"),
-        "Content-Encoding must be gzip on the wire"
+        "通信路上の Content-Encoding は gzip であるべき"
     );
     assert_eq!(
         response.get_header("Transfer-Encoding"),
         Some("chunked"),
-        "Transfer-Encoding must be chunked"
+        "Transfer-Encoding は chunked であるべき"
     );
 
-    let received = response.body_bytes().expect("body bytes present");
+    let received = response.body_bytes().expect("ボディバイトを取得できるべき");
     assert_eq!(
         received.len(),
         body_text.len(),
-        "decompressed length must match: got {} expected {}",
+        "解凍後の長さは一致するべき: 取得 {} 期待 {}",
         received.len(),
         body_text.len()
     );
     assert!(
         received == body_text.as_bytes(),
-        "decompressed body content mismatch"
+        "解凍ボディの内容が一致しない"
     );
 }
 
@@ -264,7 +263,7 @@ async fn peek_body_decompressed_streams_gzip() {
     .await;
 
     let url = nginx.http_url("/big.txt");
-    let (_scheme, host, port, path) = parse_url(&url).expect("parse_url");
+    let (_scheme, host, port, path) = parse_url(&url).expect("URL のパースに失敗");
     let host_owned = host.clone();
     let path_owned = path.clone();
     let expected_len = body_text.len();
@@ -275,10 +274,10 @@ async fn peek_body_decompressed_streams_gzip() {
             path_owned, host_owned
         );
         let mut stream =
-            TcpStream::connect((host_owned.as_str(), port)).expect("TcpStream::connect");
+            TcpStream::connect((host_owned.as_str(), port)).expect("TcpStream::connect に失敗");
         stream
             .write_all(request_bytes.as_bytes())
-            .expect("write request");
+            .expect("リクエスト書き込みに失敗");
 
         let mut decoder = ResponseDecoder::with_decompressor(GzipDecompressor::new());
         decoder.set_request_method("GET");
@@ -296,9 +295,9 @@ async fn peek_body_decompressed_streams_gzip() {
             // ボディ完了済みなら I/O はもう不要。残った内部 buffer の drain だけ進める。
             if !body_complete {
                 let want = decoder.available_buf().min(READ_CHUNK);
-                assert!(want > 0, "decoder buffer full");
-                let buf = decoder.mut_buf(want).expect("mut_buf");
-                let n = stream.read(buf).expect("read");
+                assert!(want > 0, "decoder バッファが満杯");
+                let buf = decoder.mut_buf(want).expect("mut_buf に失敗");
+                let n = stream.read(buf).expect("read に失敗");
                 if n == 0 {
                     decoder.advance_buf(0);
                     decoder.mark_eof();
@@ -307,10 +306,10 @@ async fn peek_body_decompressed_streams_gzip() {
                 }
 
                 if !head_done {
-                    if decoder.decode_headers().expect("decode_headers").is_some() {
+                    if decoder.decode_headers().expect("decode_headers に失敗").is_some() {
                         head_done = true;
                     } else if n == 0 {
-                        panic!("connection closed before headers");
+                        panic!("ヘッダー受信前に接続が閉じられた");
                     } else {
                         continue;
                     }
@@ -322,7 +321,7 @@ async fn peek_body_decompressed_streams_gzip() {
             loop {
                 match decoder
                     .peek_body_decompressed(&mut output)
-                    .expect("peek_body_decompressed")
+                    .expect("peek_body_decompressed に失敗")
                 {
                     Some(status) => {
                         let produced = status.produced();
@@ -333,7 +332,7 @@ async fn peek_body_decompressed_streams_gzip() {
                         }
                         let consumed = status.consumed();
                         if consumed > 0 {
-                            match decoder.consume_body(consumed).expect("consume_body") {
+                            match decoder.consume_body(consumed).expect("consume_body に失敗") {
                                 BodyProgress::Complete { .. } => {
                                     body_complete = true;
                                 }
@@ -353,7 +352,7 @@ async fn peek_body_decompressed_streams_gzip() {
                     None => {
                         // body data 枯渇 + 内部 buffer 空。progress() を回して
                         // chunked terminator 等を進めるか、I/O に戻る
-                        match decoder.progress().expect("progress") {
+                        match decoder.progress().expect("progress に失敗") {
                             BodyProgress::Complete { .. } => break 'outer,
                             BodyProgress::Advanced => continue,
                             BodyProgress::NeedData => break,
@@ -366,18 +365,18 @@ async fn peek_body_decompressed_streams_gzip() {
         (decompressed, output_calls, max_output_chunk)
     })
     .await
-    .expect("blocking task");
+    .expect("blocking タスクが失敗");
 
-    let recovered = String::from_utf8(decompressed).expect("decompressed body is UTF-8");
+    let recovered = String::from_utf8(decompressed).expect("解凍ボディは UTF-8 であるべき");
     assert_eq!(recovered, body_text);
     assert!(
         max_output_chunk <= 8192,
-        "output chunk must not exceed buffer size: {}",
+        "出力チャンクはバッファサイズを超えてはならない: {}",
         max_output_chunk
     );
     assert!(
         output_calls > 1,
-        "streaming decompression should yield multiple output chunks (got {})",
+        "ストリーミング解凍は複数の出力チャンクを生むべき (取得 {})",
         output_calls
     );
 }

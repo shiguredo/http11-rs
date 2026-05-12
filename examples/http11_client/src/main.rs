@@ -73,11 +73,9 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let request_bytes = request.encode()?;
 
     if scheme == "https" {
-        // HTTPS
         let response = https_request(&host, port, &request_method, &request_bytes)?;
         print_response(&response);
     } else {
-        // HTTP
         let response = http_request(&host, port, &request_method, &request_bytes)?;
         print_response(&response);
     }

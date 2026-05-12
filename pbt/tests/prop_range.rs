@@ -150,7 +150,7 @@ proptest! {
 
         match range.first().unwrap() {
             RangeSpec::Suffix { length: l } => prop_assert_eq!(*l, length),
-            _ => prop_assert!(false, "expected Suffix"),
+            _ => prop_assert!(false, "Suffix を期待"),
         }
     }
 }
@@ -164,7 +164,7 @@ proptest! {
 
         match range.first().unwrap() {
             RangeSpec::FromStart { start: s } => prop_assert_eq!(*s, start),
-            _ => prop_assert!(false, "expected FromStart"),
+            _ => prop_assert!(false, "FromStart を期待"),
         }
     }
 }
@@ -228,7 +228,7 @@ proptest! {
                 prop_assert_eq!(*s, start);
                 prop_assert_eq!(*e, end);
             }
-            _ => prop_assert!(false, "expected Range"),
+            _ => prop_assert!(false, "Range を期待"),
         }
     }
 }

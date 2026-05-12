@@ -134,7 +134,7 @@ fn estimate_request_capacity(request: &Request) -> Option<usize> {
 /// オーバーフロー時は `None` を返し、呼び出し側は `Vec::new()` にフォールバックする
 fn estimate_response_capacity(response: &Response) -> Option<usize> {
     let mut total: usize = 0;
-    // Status line: VERSION SP STATUS-CODE SP REASON CRLF
+    // ステータス行: VERSION SP STATUS-CODE SP REASON CRLF
     // (固定 4: SP + SP + CRLF, 加えて status code は 3 桁固定で見積もる)
     total = total.checked_add(HttpHead::version(response).len())?;
     total = total.checked_add(3)?; // status_code 最大桁数 (validate_response_fields で 100..=599 が保証)
@@ -685,7 +685,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 
     let mut buf = allocate_encode_buffer(estimate_request_capacity(request));
 
-    // Request line: METHOD SP URI SP VERSION CRLF
+    // リクエスト行: METHOD SP URI SP VERSION CRLF
     buf.extend_from_slice(request.method().as_bytes());
     buf.push(b' ');
     buf.extend_from_slice(request.uri().as_bytes());
@@ -693,7 +693,6 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     buf.extend_from_slice(request.version().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
-    // Headers
     for (name, value) in HttpHead::headers(request) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
@@ -713,10 +712,9 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // End of headers
+    // ヘッダー終端の空行
     buf.extend_from_slice(b"\r\n");
 
-    // Body
     if let Some(body) = request.body_bytes() {
         buf.extend_from_slice(body);
     }
@@ -802,7 +800,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     let mut buf = allocate_encode_buffer(estimate_response_capacity(response));
 
-    // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
+    // ステータス行: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
     write_usize_decimal(&mut buf, response.status_code() as usize);
@@ -810,7 +808,6 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
-    // Headers
     for (name, value) in HttpHead::headers(response) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
@@ -835,10 +832,9 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         buf.extend_from_slice(b"\r\n");
     }
 
-    // End of headers
+    // ヘッダー終端の空行
     buf.extend_from_slice(b"\r\n");
 
-    // Body
     // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
     // HEAD レスポンスでは omit_body: true としてボディ送信を抑止する
     if body_will_be_encoded && let Some(body) = response.body_bytes() {
@@ -974,7 +970,7 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 
     let mut buf = Vec::new();
 
-    // Request line: METHOD SP URI SP VERSION CRLF
+    // リクエスト行: METHOD SP URI SP VERSION CRLF
     buf.extend_from_slice(request.method().as_bytes());
     buf.push(b' ');
     buf.extend_from_slice(request.uri().as_bytes());
@@ -982,7 +978,6 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
     buf.extend_from_slice(request.version().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
-    // Headers
     for (name, value) in HttpHead::headers(request) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
@@ -990,7 +985,7 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
         buf.extend_from_slice(b"\r\n");
     }
 
-    // End of headers
+    // ヘッダー終端の空行
     buf.extend_from_slice(b"\r\n");
 
     Ok(buf)
@@ -1069,7 +1064,7 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
 
     let mut buf = Vec::new();
 
-    // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
+    // ステータス行: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
     write_usize_decimal(&mut buf, response.status_code() as usize);
@@ -1077,7 +1072,6 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");
 
-    // Headers
     for (name, value) in HttpHead::headers(response) {
         buf.extend_from_slice(name.as_bytes());
         buf.extend_from_slice(b": ");
@@ -1085,7 +1079,7 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         buf.extend_from_slice(b"\r\n");
     }
 
-    // End of headers
+    // ヘッダー終端の空行
     buf.extend_from_slice(b"\r\n");
 
     Ok(buf)

@@ -244,6 +244,13 @@
 
 ### misc
 
+- [FIX] テストメッセージとコードコメントを日本語化し AGENTS.md 規約に準拠させる
+  - `pbt/tests/` および `tests/` の英語 `prop_assert!` / `assert!` メッセージを日本語に統一する
+  - `examples/http11_client/tests/` および `examples/http11_server/tests/` の `.expect(...)` / `panic!(...)` / `assert!(...)` 英語メッセージを日本語化する
+  - `src/encoder.rs` / `src/decoder/response.rs` / `src/decoder/request.rs` / `examples/http11_client/src/main.rs` の英語コードコメントを日本語化または削除する
+  - `pbt/tests/prop_request.rs` / `prop_content_type.rs` / `prop_accept.rs` の廃止 RFC 参照 (`RFC 7230`) を RFC 9110 Section 5.6.2 に更新する
+  - 機能・ログメッセージ・エラーメッセージは変更しない
+  - @voluntas
 - [UPDATE] (crate 内部) `is_valid_reason_phrase` を RFC 9112 Section 4 ABNF `1*(HTAB / SP / VCHAR / obs-text)` に厳密準拠させ、空文字列を非合法と判定する
   - decoder / encoder の呼び出し側で reason-phrase absent (空文字列) はスキップする方式に統一する
   - reverse proxy 等の経路で「decoder が受理した空 reason_phrase の Response を encoder で再送信する」ケースを RFC 9112 Section 4 に準拠したまま透過できる

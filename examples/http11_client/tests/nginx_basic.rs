@@ -21,22 +21,22 @@ async fn fetch(
     path: &str,
 ) -> shiguredo_http11::Response {
     let url = nginx.http_url(path);
-    let (_scheme, host, port, request_path) = parse_url(&url).expect("parse_url");
+    let (_scheme, host, port, request_path) = parse_url(&url).expect("URL のパースに失敗");
     let request = Request::new(method, &request_path)
-        .expect("Request::new")
+        .expect("Request::new に失敗")
         .header("Host", &host)
-        .expect("Host header")
+        .expect("Host ヘッダーの設定に失敗")
         .header("User-Agent", "http11_client-test")
-        .expect("User-Agent header")
+        .expect("User-Agent ヘッダーの設定に失敗")
         .header("Connection", "close")
-        .expect("Connection header");
+        .expect("Connection ヘッダーの設定に失敗");
     let request_method = request.method().to_string();
-    let request_bytes = request.encode().expect("encode");
+    let request_bytes = request.encode().expect("encode に失敗");
 
     tokio::task::spawn_blocking(move || http_request(&host, port, &request_method, &request_bytes))
         .await
-        .expect("spawn_blocking task")
-        .expect("http_request")
+        .expect("spawn_blocking タスクが失敗")
+        .expect("http_request が失敗")
 }
 
 #[tokio::test]

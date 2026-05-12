@@ -53,7 +53,7 @@ fn test_request_new_accepts_standard_methods() {
         "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE",
     ] {
         let result = Request::new(method, "/");
-        assert!(result.is_ok(), "method {:?} should be accepted", method);
+        assert!(result.is_ok(), "メソッド {:?} は受理されるべき", method);
     }
 }
 
@@ -218,7 +218,7 @@ fn test_request_with_version_rejects_version_with_space() {
 fn test_request_with_version_accepts_http_versions() {
     for &version in &["HTTP/1.1", "HTTP/1.0", "HTTP/0.9", "HTTP/2.0"] {
         let result = Request::with_version("GET", "/", version);
-        assert!(result.is_ok(), "version {:?} should be accepted", version);
+        assert!(result.is_ok(), "バージョン {:?} は受理されるべき", version);
     }
 }
 
@@ -226,7 +226,7 @@ fn test_request_with_version_accepts_http_versions() {
 fn test_request_with_version_accepts_rtsp_versions() {
     for &version in &["RTSP/1.0", "RTSP/2.0"] {
         let result = Request::with_version("GET", "rtsp://example.com/m", version);
-        assert!(result.is_ok(), "version {:?} should be accepted", version);
+        assert!(result.is_ok(), "バージョン {:?} は受理されるべき", version);
     }
 }
 
