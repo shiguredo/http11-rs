@@ -1758,3 +1758,119 @@ mod peek_body_decompressed {
         assert!(result.is_none(), "no progress should yield None");
     }
 }
+
+// ========================================
+// HttpHead::content_length の差分検証 (issue 0044)
+//
+// decoder/body の parse_content_length と完全に整合した厳格パースを行うことを検証する。
+// 旧実装の `.parse::<u64>().ok()` で漏れていた smuggling 経路を遮断する。
+// ========================================
+
+mod http_head_content_length {
+    use shiguredo_http11::{Error, Request, Response};
+
+    fn make_request_with_cl(values: &[&str]) -> Request {
+        let mut req = Request::new("POST", "/").unwrap();
+        req = req.header("Host", "example.com").unwrap();
+        for v in values {
+            req = req.add_header_clone("Content-Length", v);
+        }
+        req
+    }
+
+    fn make_response_with_cl(values: &[&str]) -> Response {
+        let mut res = Response::new(200, "OK").unwrap();
+        for v in values {
+            res = res.add_header_clone("Content-Length", v);
+        }
+        res
+    }
+
+    trait AddHeaderClone: Sized {
+        fn add_header_clone(self, name: &str, value: &str) -> Self;
+    }
+    impl AddHeaderClone for Request {
+        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+            self.add_header(name, value).unwrap();
+            self
+        }
+    }
+    impl AddHeaderClone for Response {
+        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+            self.add_header(name, value).unwrap();
+            self
+        }
+    }
+
+    #[test]
+    fn test_request_content_length_single_value() {
+        let req = make_request_with_cl(&["100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_plus_sign_rejected() {
+        let req = make_request_with_cl(&["+100"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_leading_zero_accepted() {
+        let req = make_request_with_cl(&["0100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_ows_trimmed() {
+        // ASCII OWS は trim 対象 (旧実装は None を返していた)
+        let req = make_request_with_cl(&[" 100 "]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_comma_same_value_merged() {
+        let req = make_request_with_cl(&["100, 100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_comma_mismatched_rejected() {
+        // 旧実装は None、新実装は smuggling 検知で Err
+        let req = make_request_with_cl(&["100, 101"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_multi_line_same_value() {
+        let req = make_request_with_cl(&["100", "100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_multi_line_mismatched_rejected() {
+        // 旧実装は最初の値 (Some(100)) を黙って返していた smuggling 経路
+        let req = make_request_with_cl(&["100", "101"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_absent() {
+        let req = Request::new("GET", "/")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
+        assert_eq!(req.content_length().unwrap(), None);
+    }
+
+    #[test]
+    fn test_response_content_length_mismatched_rejected() {
+        let res = make_response_with_cl(&["100", "101"]);
+        assert!(matches!(res.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_response_content_length_ows_trimmed() {
+        let res = make_response_with_cl(&[" 100 "]);
+        assert_eq!(res.content_length().unwrap(), Some(100));
+    }
+}

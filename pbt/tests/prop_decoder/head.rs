@@ -728,15 +728,43 @@ proptest! {
 }
 
 proptest! {
-    /// 不正な Content-Length → content_length() は None を返す
+    /// 不正な Content-Length → content_length() は Err を返す
+    /// (旧実装は `None` を黙って返していたが、smuggling 検知のため Err を返すよう変更された)
     #[test]
-    fn prop_content_length_invalid_returns_none(
+    fn prop_content_length_invalid_returns_err(
         invalid_value in "[a-zA-Z]{1,8}"
     ) {
         let head = make_response_head("HTTP/1.1", 200, "OK", vec![
                 ("Content-Length".to_string(), invalid_value),
             ]);
-        prop_assert!(head.content_length().is_none());
+        prop_assert!(head.content_length().is_err());
+    }
+}
+
+proptest! {
+    /// decoder の BodyKind::ContentLength(n) と head.content_length() の整合性
+    /// (issue 0044)
+    #[test]
+    fn prop_body_kind_content_length_matches_head(len in 0u64..1_000_000) {
+        let data = format!("POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: {}\r\n\r\n", len);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert!(matches!(body_kind, BodyKind::ContentLength(n) if n == len));
+        prop_assert_eq!(head.content_length().unwrap(), Some(len));
+    }
+}
+
+proptest! {
+    /// CL 不在のリクエストでは head.content_length() は Ok(None)
+    /// (issue 0044)
+    #[test]
+    fn prop_no_content_length_header_returns_ok_none(method in "GET|HEAD|DELETE") {
+        let data = format!("{} / HTTP/1.1\r\nHost: example.com\r\n\r\n", method);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(head.content_length().unwrap(), None);
     }
 }
 

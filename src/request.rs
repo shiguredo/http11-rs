@@ -414,7 +414,7 @@ impl Request {
     /// は本メソッドの責務外であり、呼び出し側で判定する。
     ///
     /// 詳細は委譲先 `HttpHead::content_length` を参照。
-    pub fn content_length(&self) -> Option<u64> {
+    pub fn content_length(&self) -> Result<Option<u64>, crate::Error> {
         HttpHead::content_length(self)
     }
 

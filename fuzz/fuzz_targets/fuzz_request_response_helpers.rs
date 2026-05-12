@@ -44,8 +44,55 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
         .count()
 }
 
-fn expected_content_length(headers: &[(String, String)]) -> Option<u64> {
-    header_value(headers, "Content-Length").and_then(|v| v.parse::<u64>().ok())
+/// `Request::content_length` / `Response::content_length` の参照実装。
+///
+/// decoder の `parse_content_length` (`src/decoder/body.rs`) と同じ厳格パース
+/// (OWS / カンマリスト / 複数行 / mismatched 値の reject) を再現する。
+fn expected_content_length(
+    headers: &[(String, String)],
+) -> Result<Option<u64>, ()> {
+    fn trim_ows(s: &str) -> &str {
+        s.trim_matches(|c: char| c == ' ' || c == '\t')
+    }
+    fn parse_strict_digits(s: &str) -> Result<u64, ()> {
+        let trimmed = trim_ows(s);
+        if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(());
+        }
+        trimmed.parse::<u64>().map_err(|_| ())
+    }
+    fn parse_value(value: &str) -> Result<Option<u64>, ()> {
+        let mut merged: Option<u64> = None;
+        for elem in value.split(',') {
+            let elem = trim_ows(elem);
+            if elem.is_empty() {
+                continue;
+            }
+            let n = parse_strict_digits(elem)?;
+            match merged {
+                None => merged = Some(n),
+                Some(prev) if prev != n => return Err(()),
+                Some(_) => {}
+            }
+        }
+        Ok(merged)
+    }
+
+    let mut result: Option<u64> = None;
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("Content-Length") {
+            continue;
+        }
+        let parsed = parse_value(value)?;
+        if let Some(n) = parsed {
+            match result {
+                None => result = Some(n),
+                Some(prev) if prev != n => return Err(()),
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {
@@ -112,7 +159,10 @@ fn exercise_request(input: FuzzRequest) {
     }
 
     assert_eq!(request.connection(), header_value(&headers, "Connection"));
-    assert_eq!(request.content_length(), expected_content_length(&headers));
+    assert_eq!(
+        request.content_length().map_err(|_| ()),
+        expected_content_length(&headers)
+    );
     assert_eq!(request.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         request.is_keep_alive(),
@@ -148,7 +198,10 @@ fn exercise_response(input: FuzzResponse) {
     }
 
     assert_eq!(response.connection(), header_value(&headers, "Connection"));
-    assert_eq!(response.content_length(), expected_content_length(&headers));
+    assert_eq!(
+        response.content_length().map_err(|_| ()),
+        expected_content_length(&headers)
+    );
     assert_eq!(response.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         response.is_keep_alive(),

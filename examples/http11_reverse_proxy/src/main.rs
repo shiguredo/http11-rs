@@ -568,9 +568,11 @@ async fn stream_response_on_connection(
     let use_chunked = matches!(body_kind, BodyKind::Chunked);
     let is_head = method.eq_ignore_ascii_case("HEAD");
     // HEAD の場合は元のヘッダーから Content-Length を取得 (RFC 9110 Section 9.3.2)
+    // resp_head.content_length() は smuggling 検知 (mismatched 複数行 CL 等) で
+    // Err を返すため、ここで伝播する。
     let content_length = match body_kind {
         BodyKind::ContentLength(len) => Some(len),
-        BodyKind::None if is_head => resp_head.content_length(),
+        BodyKind::None if is_head => resp_head.content_length()?,
         _ => None,
     };
 
