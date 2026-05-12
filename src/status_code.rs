@@ -291,19 +291,15 @@ impl StatusCode {
     /// 必ず分類が定まる (戻り値は `Option` ではない)。
     #[must_use]
     pub const fn class(&self) -> StatusClass {
-        // `code` は `new_const` の assert で 100..=599 が保証されている。
-        // 直接 match することで `Option` のラップ/アンラップと `unreachable!()`
-        // を避け、コンパイラの網羅性チェックも有効にできる。
-        // 注: `_` アームは `new_const` の assert により到達不能だが、
-        // `core::hint::unreachable_unchecked()` の使用は unsafe であり、
-        // 防御的コードとして残す。到達不能ではあるがデッドコードではない。
-        match self.code.get() {
-            100..=199 => StatusClass::Informational,
-            200..=299 => StatusClass::Successful,
-            300..=399 => StatusClass::Redirection,
-            400..=499 => StatusClass::ClientError,
-            500..=599 => StatusClass::ServerError,
-            _ => panic!("StatusCode constraint violation: code out of 100..=599"),
+        // `code` は `new_const` の assert で 100..=599 が保証されているため
+        // `from_status_code` は常に `Some` を返す。`const fn` 内では
+        // `Option::expect` / `unreachable!()` のいずれも const 非互換なため、
+        // match で明示的に分岐し、到達不能な `None` アームは `panic!()` に留める。
+        // Rust 2024 の const fn では `panic!()` が const 互換な唯一の
+        // フォールバック手段である。
+        match StatusClass::from_status_code(self.code.get()) {
+            Some(c) => c,
+            None => panic!("StatusCode constraint violation: code out of 100..=599"),
         }
     }
 }

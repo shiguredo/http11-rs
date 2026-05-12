@@ -1048,6 +1048,25 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
     }
 
+    // debug_assert!: encode_response 側で行っている Content-Length と実ボディ長の
+    // 一致検証を headers-only 経路でも実行し、開発中の誤用を早期に検出する。
+    // TE がない場合のみ検証 (TE がある場合は chunked 送信が前提のためスキップ)。
+    debug_assert!(
+        {
+            if response.has_header("Transfer-Encoding") {
+                true
+            } else if let Ok(Some(cl)) =
+                validate_content_length_headers(HttpHead::headers(response))
+            {
+                let body_len = response.body_bytes().map(|b| b.len() as u64).unwrap_or(0);
+                cl == body_len
+            } else {
+                true
+            }
+        },
+        "Content-Length header value does not match body length in encode_response_headers"
+    );
+
     let mut buf = Vec::new();
 
     // Status line: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF

@@ -45,6 +45,15 @@ pub enum BodyKind {
 pub enum BodyProgress {
     /// 現在のバッファでさらに処理を試行できる。
     /// 直後に peek_body() / progress() / consume_body() を続けて呼ぶこと。
+    ///
+    /// # 多段階遷移の注意
+    ///
+    /// 単一の consume_body() / progress() 呼出で複数のデコードフェーズを跨ぐ
+    /// ケースがある (例: chunked データ末尾の CRLF 消費 → 次チャンクサイズ行
+    /// パース、トレーラー開始 → 全トレーラー消費 → Complete)。この場合も戻り値は
+    /// `Advanced` であり、実際のフェーズ変化は `self.phase` (内部状態) を直接
+    /// 確認しなければ把握できない。ボディ受信完了判定には `BodyProgress` だけでなく
+    /// `DecodePhase` を併用すること (ストリーミング API の実装例を参照)。
     Advanced,
     /// バッファに処理可能なデータがなく、追加の feed() が必要。
     /// 呼び出し側はループを抜けてネットワーク I/O に戻る。

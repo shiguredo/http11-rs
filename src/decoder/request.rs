@@ -665,6 +665,14 @@ impl<D: Decompressor> RequestDecoder<D> {
     ///
     /// Chunked エンコーディングの場合、チャンクサイズ行のパースや
     /// 終端チャンクの処理を行う。
+    ///
+    /// # 多段階遷移の注意
+    ///
+    /// 単一呼出で複数のデコードフェーズを跨ぐ場合があるため、戻り値が
+    /// `Advanced` であっても `BodyProgress::Complete` に達している可能性がある。
+    /// 完了判定には戻り値だけでなく `self.phase` (内部状態) も併せて確認すること。
+    /// ストリーミング API の実装例では `matches!(self.phase, DecodePhase::Complete)`
+    /// で直接 phase を確認している。
     pub fn progress(&mut self) -> Result<BodyProgress, Error> {
         debug_assert!(self.pending == 0, "progress called with pending mut_buf");
         self.body_decoder
