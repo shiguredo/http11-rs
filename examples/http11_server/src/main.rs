@@ -246,6 +246,8 @@ fn stream_body(
             *buf = None;
             Ok(true)
         }
+        // BodyKind は `#[non_exhaustive]` のため未知のバリアントが追加された場合は
+        // 明示的に未対応として扱う (お手本としての堅牢性、AGENTS.md)。
         BodyKind::ContentLength(_) | BodyKind::Chunked => {
             let mut acc = buf.take().unwrap_or_default();
             loop {
@@ -275,6 +277,9 @@ fn stream_body(
                 }
             }
         }
+        _ => Err(shiguredo_http11::Error::InvalidData(
+            "unknown BodyKind variant".to_string(),
+        )),
     }
 }
 

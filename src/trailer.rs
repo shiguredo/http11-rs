@@ -22,6 +22,7 @@ use core::fmt;
 
 /// Trailer パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TrailerError {
     /// 空の入力
     Empty,

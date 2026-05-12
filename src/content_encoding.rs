@@ -20,6 +20,7 @@ use core::fmt;
 
 /// Content-Encoding パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentEncodingError {
     /// 空の入力
     Empty,

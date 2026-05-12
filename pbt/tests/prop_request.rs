@@ -154,6 +154,7 @@ proptest! {
             // リクエストでは CloseDelimited は使われない (RFC 9112)
             // Tunnel はレスポンスのみで発生 (CONNECT 2xx)
             BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
+            _ => prop_assert!(false, "BodyKind に未知のバリアントが追加された"),
         }
 
         let expected_body: Vec<u8> = request
@@ -257,6 +258,7 @@ proptest! {
                     // リクエストでは CloseDelimited は使われない (RFC 9112)
                     // Tunnel はレスポンスのみで発生 (CONNECT 2xx)
                     BodyKind::CloseDelimited | BodyKind::None | BodyKind::Tunnel => {}
+                    _ => prop_assert!(false, "BodyKind に未知のバリアントが追加された"),
                 }
             }
         }

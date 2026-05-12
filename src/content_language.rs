@@ -19,6 +19,7 @@ use core::fmt;
 
 /// Content-Language パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentLanguageError {
     /// 空の入力
     Empty,

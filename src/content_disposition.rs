@@ -27,6 +27,7 @@ use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentDispositionError {
     /// 空の入力
     Empty,

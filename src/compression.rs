@@ -8,6 +8,7 @@ use core::fmt;
 
 /// 圧縮/展開エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompressionError {
     /// 出力バッファが小さすぎる
     BufferTooSmall { required: usize, available: usize },
@@ -46,6 +47,7 @@ impl core::error::Error for CompressionError {}
 
 /// 処理結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompressionStatus {
     /// 処理継続中
     Continue {

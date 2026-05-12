@@ -18,6 +18,7 @@ use core::fmt;
 
 /// Content-Location パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentLocationError {
     /// 空の入力
     Empty,

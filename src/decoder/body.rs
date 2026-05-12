@@ -21,6 +21,7 @@ use super::phase::DecodePhase;
 
 /// ボディの種類
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BodyKind {
     /// Content-Length で指定された固定長
     ContentLength(u64),

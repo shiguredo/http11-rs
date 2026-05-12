@@ -11,6 +11,13 @@
 
 ## develop
 
+- [CHANGE] 公開 enum (全 Error enum 24 個 + `StatusClass` / `BodyKind` / `CompressionStatus` / `Authorization` / `AuthChallenge`) に `#[non_exhaustive]` を付与する
+  - 本リリースだけでも `EncodeError` / `AuthError` / `ContentDispositionError` に複数バリアントを追加しており、未付与のままだとバリアント追加ごとに後方互換のない変更を出し続ける構造になっていた
+  - `BodyKind` は本リリースで `Tunnel` バリアントを追加、`StatusClass` は新規導入のため、IANA レジストリ / API 拡張に備える
+  - 利用側は `match` 文末尾に `_ =>` wildcard arm を追加する必要がある
+  - `ContentCoding::Other` / `DispositionType::Unknown` のように `Other` バリアントで拡張対応済みの enum、`RequestTargetForm` / `DayOfWeek` / `SameSite` / `ETagList` / `RangeSpec` / `IfRange` のように RFC で構造的に固定された enum は付与対象外
+  - `BodyProgress` も 3 variant 固定で API として安定しているため付与対象外
+  - @voluntas
 - [FIX] `Transfer-Encoding` / `Trailer` の OWS 解釈で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
   - 旧実装は `src/decoder/body.rs::parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` で `str::trim()` を使用しており、NBSP (U+00A0) / U+2028 等の Unicode 空白を除去していた
   - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、`Transfer-Encoding: \u{00A0}chunked` のような値が decoder を通過し、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた

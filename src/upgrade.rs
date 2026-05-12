@@ -19,6 +19,7 @@ use core::fmt;
 
 /// Upgrade パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UpgradeError {
     /// 空の入力
     Empty,

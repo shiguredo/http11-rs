@@ -24,6 +24,7 @@ use core::fmt;
 
 /// HTTP-date パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DateError {
     /// 空の日付
     Empty,

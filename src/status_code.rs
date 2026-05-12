@@ -326,6 +326,7 @@ impl StatusCode {
 /// `from_status_code` の `None` は「分類不能」を表現しており、この SHOULD 勧告に
 /// 従ったフォールバック (例: `unwrap_or(StatusClass::ServerError)`) は API 利用者の責務。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum StatusClass {
     /// 1xx Informational — RFC 9110 Section 15.2
     Informational,

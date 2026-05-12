@@ -34,6 +34,7 @@ use core::fmt;
 
 /// multipart パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MultipartError {
     /// 空の入力
     Empty,

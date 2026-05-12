@@ -22,6 +22,7 @@ use core::fmt;
 
 /// Accept 系パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AcceptError {
     /// 空の入力
     Empty,

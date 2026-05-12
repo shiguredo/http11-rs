@@ -29,6 +29,7 @@ use core::fmt;
 
 /// キャッシュヘッダーパースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CacheError {
     /// 空の入力
     Empty,
