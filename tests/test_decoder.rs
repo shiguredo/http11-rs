@@ -141,35 +141,48 @@ fn test_non_connect_2xx_normal_body() {
 /// サーバーが MUST NOT に違反して送ってきても、エラーにせず無視する。
 #[test]
 fn test_connect_2xx_ignores_body_headers() {
-    // Transfer-Encoding: chunked を無視して Tunnel
+    use shiguredo_http11::HttpHead;
+    // Transfer-Encoding: chunked を無視して Tunnel + ResponseHead から TE が消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Transfer-Encoding"), None);
+    assert!(!head.is_chunked());
 
-    // Content-Length: 1000 を無視して Tunnel
+    // Content-Length: 1000 を無視して Tunnel + ResponseHead から CL が消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Content-Length"), None);
+    assert_eq!(head.content_length().unwrap(), None);
 
-    // Transfer-Encoding + Content-Length の両方があっても無視して Tunnel
+    // Transfer-Encoding + Content-Length の両方があっても Tunnel、両方とも消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Transfer-Encoding"), None);
+    assert_eq!(head.get_header("Content-Length"), None);
+    assert!(!head.is_chunked());
+    assert_eq!(head.content_length().unwrap(), None);
+
+    // CONNECT 非 2xx (例: 502) では従来通り CL が ResponseHead.headers に残る
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+    let response = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+    assert_eq!(head.get_header("Content-Length"), Some("5"));
+    assert_eq!(head.content_length().unwrap(), Some(5));
 }
 
 /// take_remaining() でヘッダー後のデータを取得
