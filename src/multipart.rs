@@ -235,6 +235,12 @@ enum ParserState {
     Initial,
     /// パート本体をパース中
     InPart,
+    /// inner_delimiter (`\r\n--<boundary>`) 直後の 2 バイト (`--` または `\r\n`) を待機中
+    ///
+    /// Part 返却後に `--` (close-delimiter) / `\r\n` (次パート区切り) のどちらが
+    /// 続くか判定できないまま buffer が尽きたケースで使う。次回 `next_part()` 呼び出し時に
+    /// 2 バイト揃ったら `Finished` か `InPart` に遷移する。
+    AfterInnerDelimiter,
     /// 終了境界を検出
     Finished,
 }
@@ -461,7 +467,13 @@ impl MultipartParser {
                                     self.pos = after_next;
                                 }
                             } else {
+                                // 2 バイト不足。次回 feed 後に判定できるよう
+                                // `AfterInnerDelimiter` に遷移して `pos` を保持する。
+                                // 旧実装はここで `state` を `InPart` のまま残し、
+                                // 次回 `next_part()` でヘッダー区切り `\r\n\r\n` を
+                                // 永久に探し続ける経路があった。
                                 self.pos = after_next;
+                                self.state = ParserState::AfterInnerDelimiter;
                             }
                             // 次のパート検索は新しい開始位置から行うので scan_offset を pos に揃える
                             self.boundary_scan_offset = self.pos;
@@ -494,6 +506,29 @@ impl MultipartParser {
                         }
                     } else {
                         return Err(MultipartError::Incomplete);
+                    }
+                }
+                ParserState::AfterInnerDelimiter => {
+                    // inner_delimiter (`\r\n--<boundary>`) 直後の 2 バイトを判定する。
+                    // `pos` は `inner_delimiter` の直後 (close-delimiter `--` または
+                    // 次パート区切り `\r\n` の先頭) を指す。
+                    if self.buffer.len() < self.pos + 2 {
+                        return Err(MultipartError::Incomplete);
+                    }
+                    let head = &self.buffer[self.pos..self.pos + 2];
+                    if head == b"--" {
+                        self.finished = true;
+                        self.state = ParserState::Finished;
+                        return Ok(None);
+                    } else if head == b"\r\n" {
+                        self.pos += 2;
+                        self.boundary_scan_offset = self.pos;
+                        self.state = ParserState::InPart;
+                        continue;
+                    } else {
+                        // RFC 2046 Section 5.1.1: delimiter 直後は close-delimiter (`--`) か
+                        // 次パートの transport-padding + CRLF のいずれか。それ以外は不正。
+                        return Err(MultipartError::InvalidBoundary);
                     }
                 }
                 ParserState::Finished => {

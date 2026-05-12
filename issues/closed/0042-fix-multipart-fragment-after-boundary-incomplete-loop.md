@@ -1,6 +1,7 @@
 # 0042: MultipartParser の inner_delimiter 直後判定を遅延し再入時の永久 Incomplete を防ぐ
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -156,3 +157,16 @@ L452-465 の修正方針:
 - RFC 7578 §4.1 (multipart/form-data、boundary delimiter)
 - RFC 2046 §5.1.1 (multipart の delimiter / dash-boundary / close-delimiter)
   - 注: `refs/` 配下に RFC 2046 はないため、別途参照する。`close-delimiter := delimiter "--"` (RFC 2046 §5.1.1) が本 issue の「`--<boundary>` 直後 2 バイト」判定の根拠
+
+## 解決方法
+
+- `src/multipart.rs` の `ParserState` に `AfterInnerDelimiter` バリアントを追加した
+- `InPart` ブランチの inner_delimiter 直後 2 バイト判定で、`buffer.len() < after_next + 2` のケースを `state = ParserState::AfterInnerDelimiter` に遷移するよう変更した
+- `next_part()` の loop に `AfterInnerDelimiter` ブランチを追加した:
+  - `b"--"` → `Finished` に遷移して `Ok(None)` を返す
+  - `b"\r\n"` → `pos += 2` で `InPart` に戻し次パートのヘッダー parse を開始する
+  - それ以外 → `MultipartError::InvalidBoundary` を返す
+- `tests/test_multipart.rs` に close-delimiter chunk-split / 次パート区切り chunk-split / 1 バイトずつ feed / 不正バイト後続の 4 テストを追加した
+- `tests/test_multipart.rs::test_multipart_parser_byte_by_byte_feed_matches_bulk_feed` の「is_finished の遷移は未検証」注記を削除し、`is_finished()` まで assertion した
+- `pbt/tests/prop_multipart.rs` に任意境界で chunk 分割するラウンドトリップ PBT (`prop_multipart_chunk_split_roundtrip`) を追加した
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した

@@ -342,3 +342,54 @@ proptest! {
         prop_assert!(part.body().is_empty());
     }
 }
+
+// 任意の境界で chunk 分割した入力でも、bulk feed と同じパース結果を得る上に
+// 終端まで feed すれば `is_finished()` が true になる (issue 0042)
+proptest! {
+    #[test]
+    fn prop_multipart_chunk_split_roundtrip(
+        name1 in valid_field_name(),
+        value1 in valid_text_value(),
+        name2 in valid_field_name(),
+        value2 in valid_text_value(),
+        split in 1usize..200,
+    ) {
+        let body = MultipartBuilder::with_boundary("boundary")
+            .text_field(&name1, &value1)
+            .text_field(&name2, &value2)
+            .build();
+
+        // bulk feed
+        let mut bulk = MultipartParser::new("boundary");
+        bulk.feed(&body).unwrap();
+        let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
+        while let Some(part) = bulk.next_part().unwrap() {
+            bulk_parts.push(part.body().to_vec());
+        }
+        prop_assert!(bulk.is_finished());
+
+        // chunk-split feed
+        let split = split.min(body.len().saturating_sub(1)).max(1);
+        let mut split_parser = MultipartParser::new("boundary");
+        split_parser.feed(&body[..split]).unwrap();
+        let mut split_parts: Vec<Vec<u8>> = Vec::new();
+        loop {
+            match split_parser.next_part() {
+                Ok(Some(part)) => split_parts.push(part.body().to_vec()),
+                Ok(None) => break,
+                Err(shiguredo_http11::multipart::MultipartError::Incomplete) => break,
+                Err(e) => prop_assert!(false, "予期しないエラー: {:?}", e),
+            }
+        }
+        split_parser.feed(&body[split..]).unwrap();
+        while let Some(part) = split_parser.next_part().unwrap() {
+            split_parts.push(part.body().to_vec());
+        }
+
+        prop_assert_eq!(&bulk_parts, &split_parts);
+        prop_assert!(
+            split_parser.is_finished(),
+            "chunk-split 経路でも close-delimiter まで feed すれば is_finished() == true"
+        );
+    }
+}
