@@ -341,7 +341,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// 2. item 2: CONNECT への 2xx (204 を除く) はトンネルモード
     /// 3. RFC 9112 Section 6.1: HTTP/1.0 + Transfer-Encoding は framing fault
     /// 4. item 3〜8: Transfer-Encoding / Content-Length 解析
-    fn determine_body_kind(&self, status_code: u16) -> Result<BodyKind, Error> {
+    fn determine_body_kind(&mut self, status_code: u16) -> Result<BodyKind, Error> {
         // RFC 9112 Section 6.3 item 1: HEAD レスポンス、1xx/204/304 はヘッダー
         // フィールドの内容に関わらずヘッダー終了で終わる。
         // "in order of precedence" により item 1 が最優先で評価される。
@@ -368,6 +368,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
             .is_some_and(|m| m == "CONNECT")
             && (200..300).contains(&status_code)
         {
+            // RFC 9110 Section 9.3.6: "A client MUST ignore any Content-Length or
+            // Transfer-Encoding header fields received in a successful response to CONNECT"
+            // MUST ignore を物理消去で実装する。`ResponseHead.headers` から両ヘッダーを
+            // 除去することで、上位アプリ (reverse proxy 等) が `head.get_header(...)` /
+            // `head.content_length()` / `head.is_chunked()` 経由で値を観測して
+            // 下流に再生成し HTTP Response Smuggling の足場とすることを防ぐ。
+            // 将来 RFC が改訂されて CONNECT 2xx の framing が変更される可能性がある。
+            self.headers.retain(|(name, _)| {
+                !name.eq_ignore_ascii_case("Transfer-Encoding")
+                    && !name.eq_ignore_ascii_case("Content-Length")
+            });
             return Ok(BodyKind::Tunnel);
         }
 

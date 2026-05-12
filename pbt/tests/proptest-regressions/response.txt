@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc ea197eec944b5e0ad204a8d91a1bfc53b93762abdd1612d8ddcd32313ddda1ee # shrinks to status_codes = [100, 300]
 cc d6e72a3117d72050073129aa5d13089740ca5c2365767697bee56d22bae406e3 # shrinks to status = 205, reason = "OK", body_data = []
+cc 92cf7e53b035dc353f5a353066a42c6487105151ca85d9f09f51561d945b600c # shrinks to status = 204, cl = 0

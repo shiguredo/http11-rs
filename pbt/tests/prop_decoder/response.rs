@@ -1217,3 +1217,60 @@ proptest! {
         prop_assert_eq!(decoder.remaining(), before.as_slice());
     }
 }
+
+// ========================================
+// CONNECT 2xx で Transfer-Encoding / Content-Length が ResponseHead から消える (issue 0045)
+// ========================================
+
+proptest! {
+    /// CONNECT への 2xx レスポンスでは Transfer-Encoding / Content-Length が
+    /// ResponseHead.headers から消去される (RFC 9110 Section 9.3.6 MUST ignore)
+    ///
+    /// RFC 9112 Section 6.3 の precedence により item 1 (1xx/204/304 はボディなし) が
+    /// item 2 (CONNECT 2xx は Tunnel) より優先されるため、204 は範囲から除外する
+    /// (CONNECT + 204 は `BodyKind::None`)。
+    #[test]
+    fn prop_connect_2xx_drops_te_cl_from_head(
+        status in prop_oneof![200u16..204, 205u16..300],
+        cl in 0u64..1_000_000,
+    ) {
+        let response = format!(
+            "HTTP/1.1 {} OK\r\nTransfer-Encoding: chunked\r\nContent-Length: {}\r\n\r\n",
+            status, cl
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+        decoder.feed(response.as_bytes()).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Tunnel);
+        prop_assert_eq!(head.get_header("Transfer-Encoding"), None);
+        prop_assert_eq!(head.get_header("Content-Length"), None);
+        prop_assert!(!head.is_chunked());
+        prop_assert_eq!(head.content_length().unwrap(), None);
+    }
+}
+
+proptest! {
+    /// CONNECT への 1xx / 3xx / 4xx / 5xx レスポンスでは
+    /// Content-Length が ResponseHead.headers に残る (Tunnel に遷移しないため)
+    #[test]
+    fn prop_connect_non_2xx_keeps_cl_in_head(
+        status in prop_oneof![300u16..400, 400u16..500, 500u16..600],
+        cl in 0u64..1_000,
+    ) {
+        let body = "x".repeat(cl as usize);
+        let response = format!(
+            "HTTP/1.1 {} Some\r\nContent-Length: {}\r\n\r\n{}",
+            status, cl, body
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+        decoder.feed(response.as_bytes()).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        // status_has_body 系のロジックは status_code 単位で判定されるため、ここでは
+        // CL がそのまま残っていることだけを検証する。
+        let _ = body_kind;
+        let cl_str = cl.to_string();
+        prop_assert_eq!(head.get_header("Content-Length"), Some(cl_str.as_str()));
+    }
+}

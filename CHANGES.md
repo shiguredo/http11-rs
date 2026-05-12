@@ -11,6 +11,11 @@
 
 ## develop
 
+- [CHANGE] `ResponseDecoder` が CONNECT 2xx レスポンス受信時に `ResponseHead.headers` から `Transfer-Encoding` / `Content-Length` を除去するように変更する
+  - RFC 9110 Section 9.3.6 「A client MUST ignore any Content-Length or Transfer-Encoding header fields received in a successful response to CONNECT」を物理消去で実装する
+  - 旧実装は `BodyKind::Tunnel` を返す一方で `ResponseHead.headers` には CL/TE の元値が残置されており、上位アプリ (reverse proxy 等) が `head.content_length()` 経由で値を観測して下流に再生成すると HTTP Response Smuggling の足場となる経路を持っていた
+  - 上位アプリが `head.get_header("Content-Length")` 等で CL/TE を取得していた経路は本変更で `None` を返すようになる
+  - @voluntas
 - [CHANGE] `HttpHead::content_length` / `Request::content_length` / `Response::content_length` の戻り型を `Result<Option<u64>, Error>` に変更する
   - 旧実装は `.parse::<u64>().ok()` で `Content-Length: 100, 101` のような mismatched 値を黙って `None` 化、複数行 mismatched 値の場合は最初の値を黙って返していた。decoder 本体の `parse_content_length` (smuggling 検知で `Err` 返却) と挙動が乖離しており、trait 越しに smuggling 検知がバイパスされる経路を持っていた
   - decoder の `parse_content_length` (`pub(crate)`) を trait 実装内で再利用し、OWS / カンマリスト / 複数行 / mismatched 値の解釈を decoder と統一する

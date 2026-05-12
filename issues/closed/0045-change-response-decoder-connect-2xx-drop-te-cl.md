@@ -1,6 +1,7 @@
 # 0045: ResponseDecoder の CONNECT 2xx で Transfer-Encoding / Content-Length を ResponseHead から除去する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -119,3 +120,10 @@ if self
 - RFC 9112 §6.3 item 2 (CONNECT 2xx → tunnel、framing 解釈に TE/CL を使わない)
 
 すべて `refs/rfc9110.txt` / `refs/rfc9112.txt` で参照可能。
+
+## 解決方法
+
+- `src/decoder/response.rs::determine_body_kind` のシグネチャを `&self` → `&mut self` に変更し、CONNECT + 2xx 判定後の `BodyKind::Tunnel` 返却直前で `self.headers.retain(...)` を呼び `Transfer-Encoding` / `Content-Length` を物理消去するよう変更した
+- `tests/test_decoder.rs::test_connect_2xx_ignores_body_headers` を拡張し、`head.get_header("Transfer-Encoding") / get_header("Content-Length") / is_chunked() / content_length()` が全て None / false を返すこと、および CONNECT 非 2xx (502) では従来通り CL が残ることを assertion 化した
+- `pbt/tests/prop_decoder/response.rs` に `prop_connect_2xx_drops_te_cl_from_head` / `prop_connect_non_2xx_keeps_cl_in_head` を追加した
+- `CHANGES.md` の `## develop` に `[CHANGE]` エントリを追加した
