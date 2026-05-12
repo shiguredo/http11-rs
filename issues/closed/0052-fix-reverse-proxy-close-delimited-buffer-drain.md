@@ -1,6 +1,7 @@
 # 0052: reverse_proxy サンプルの close-delimited 経路で decoder バッファのボディ先頭バイトを取りこぼす問題を修正する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -172,3 +173,12 @@ HTTP/1.0 200 OK\r\nServer: mock\r\n\r\nHello, World!
 
 - RFC 9112 §6.3 item 8 (close-delimited body は FIN が終端、`refs/rfc9112.txt`)
 - RFC 9112 §9.6 (Connection: close 後の挙動、`refs/rfc9112.txt`)
+
+## 解決方法
+
+- `examples/http11_reverse_proxy/src/main.rs` の close-delimited 分岐冒頭で `decoder.take_remaining()` を呼んで decoder 内部バッファのボディ先頭バイトを downstream に流すよう変更した
+- その後の「upstream から FIN まで直送するループ」は維持し、`close_delimited_bytes` の初期値を `leftover.len()` から開始する
+- 既存コメントを「decoder バッファ drain + upstream 直送」のハイブリッド構造を反映する記述に書き換え、RFC 9112 Section 6.3 item 8 の根拠を明記した
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
+
+備考: integration test 基盤は 0051 で導入を見送ったため、本 issue でもテスト追加は将来 issue (forward proxy example 等の整備) に委ねる。修正自体は `decoder.take_remaining()` の挙動 (本体側の単体テストでカバー済み) に依存しており、差分は 1 箇所のみ。

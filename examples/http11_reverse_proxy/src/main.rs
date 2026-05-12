@@ -811,16 +811,32 @@ async fn stream_response_on_connection(
     downstream.write_all(&header_bytes).await?;
     downstream.flush().await?;
 
-    // close-delimited body の場合: upstream が閉じるまでデータを転送
-    // 注: ResponseDecoder の mark_eof() API を使わずに直接ストリーミング転送する理由:
-    // - ボディをメモリに蓄積せずにリアルタイムで downstream に転送するため
-    // - 大容量レスポンスでもメモリ効率が良い
+    // close-delimited body の場合の処理 (issue 0052):
+    // 1. ヘッダー終端の直後に decoder 内部バッファに残ったボディ先頭バイトを
+    //    `take_remaining()` で取り出して downstream に流す。TCP セグメント結合や
+    //    TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するため、これを怠ると
+    //    先頭バイトが永久に消失する (close-delimited は CL も TE もないため、
+    //    欠落しても下流クライアントは「正常終了」と解釈してしまう検知不能な経路)。
+    // 2. 続いて upstream から FIN (read == 0) まで直接転送する (大容量レスポンスでも
+    //    メモリに蓄積しない)。
+    // RFC 9112 Section 6.3 item 8: Content-Length / Transfer-Encoding なしでは
+    // FIN が body 終端。
     if is_close_delimited {
-        debug!("Streaming close-delimited body until connection closes");
-        // close-delimited body はデコーダーを介さず、upstream から downstream へ
-        // そのまま転送するためスタックバッファを使う
+        debug!("Streaming close-delimited body: drain decoder leftover then read until FIN");
+
+        // 1. decoder 内部バッファに残っているボディ先頭バイトを下流に流す
+        let leftover = decoder.take_remaining();
+        let mut close_delimited_bytes = leftover.len();
+        if !leftover.is_empty() {
+            debug!(
+                bytes = leftover.len(),
+                "Drained decoder leftover body bytes"
+            );
+            downstream.write_all(&leftover).await?;
+        }
+
+        // 2. 続いて upstream から FIN まで直接転送
         let mut buf = [0u8; READ_CHUNK];
-        let mut close_delimited_bytes = 0usize;
         loop {
             let n = upstream.read(&mut buf).await?;
             if n == 0 {
