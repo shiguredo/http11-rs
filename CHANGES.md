@@ -17,6 +17,13 @@
   - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
   - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
   - @voluntas
+- [FIX] `examples/http11_reverse_proxy` の close-delimited 経路で decoder 内部バッファのボディ先頭バイトを取りこぼす問題を修正する
+  - 旧実装は `is_close_delimited` 分岐で `decoder.peek_body()` / `consume_body()` / `take_remaining()` を呼ばずに生 `upstream.read` に切り替えていた
+  - `decode_headers` はヘッダー終端 `\r\n\r\n` までしか drain しないため、TCP セグメント結合や TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するケース (短いレスポンスではほぼ毎回発生) でボディ先頭バイトが下流に届かなかった
+  - close-delimited は CL も TE もないため、欠落しても下流クライアントは「正常終了」と解釈してしまう検知不能なデータ破損経路
+  - close-delimited 分岐の冒頭で `decoder.take_remaining()` を呼んで残バイトを下流に流すよう変更する
+  - RFC 9112 Section 6.3 item 8 (close-delimited body は FIN が終端) に準拠
+  - @voluntas
 - [FIX] `examples/http11_reverse_proxy` で CONNECT メソッドを 405 Method Not Allowed で拒否するように変更する
   - 旧実装は 501 Not Implemented を返していたが、reverse proxy がサポートしないメソッドを示すには 405 がより正確 (RFC 9110 Section 15.5.6)
   - `Allow` ヘッダーで許可メソッド一覧を返す MUST に従い、`Allow: GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH` を付与する
