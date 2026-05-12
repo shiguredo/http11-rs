@@ -509,7 +509,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                 DecodePhase::Headers => {
                     if let Some(pos) = find_line(&self.buf) {
                         if pos == 0 {
-                            // Empty line - end of headers
+                            // 空行 — ヘッダーセクション終端
                             self.buf.drain(..2);
 
                             // ステータスコードを取得
@@ -571,7 +571,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
 
                             return Ok(Some((head, body_kind)));
                         } else {
-                            // Check header line size limit
+                            // ヘッダー行サイズ上限の検査
                             if pos > self.limits.max_header_line_size {
                                 return Err(Error::HeaderLineTooLong {
                                     size: pos,
@@ -579,7 +579,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 });
                             }
 
-                            // Check header count limit
+                            // ヘッダー数上限の検査
                             if self.headers.len() >= self.limits.max_headers_count {
                                 return Err(Error::TooManyHeaders {
                                     count: self.headers.len() + 1,

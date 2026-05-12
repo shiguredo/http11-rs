@@ -22,7 +22,7 @@ async fn fetch_with_accept_encoding(
     }
     args.push(server_url.to_string());
     let out = run_curl(&args).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
     split_headers_body(&out.stdout)
 }
 
@@ -104,7 +104,7 @@ async fn compressed_gzip_decoded_body_matches_uncompressed() {
     assert_eq!(gz_out.status, 0);
     assert_eq!(
         gz_out.stdout, plain_out.stdout,
-        "gzip-decoded body must equal plain body"
+        "gzip 解凍後のボディは非圧縮ボディと一致すべき"
     );
 }
 
@@ -116,20 +116,20 @@ async fn compressed_body_is_smaller_than_uncompressed() {
     // 圧縮なし時の Content-Length を取得
     let (plain_headers, _) = fetch_with_accept_encoding(&server.http_url("/"), None).await;
     let plain_len: usize = find_header(&plain_headers, "Content-Length")
-        .expect("plain response must have Content-Length")
+        .expect("非圧縮レスポンスには Content-Length があるべき")
         .parse()
-        .expect("plain Content-Length must be numeric");
+        .expect("非圧縮 Content-Length は数値であるべき");
 
     // gzip / br / zstd それぞれで Content-Length が plain より小さいことを確認
     for encoding in ["gzip", "br", "zstd"] {
         let (headers, _) = fetch_with_accept_encoding(&server.http_url("/"), Some(encoding)).await;
         let compressed_len: usize = find_header(&headers, "Content-Length")
-            .unwrap_or_else(|| panic!("{encoding} response must have Content-Length"))
+            .unwrap_or_else(|| panic!("{encoding} レスポンスには Content-Length があるべき"))
             .parse()
-            .unwrap_or_else(|_| panic!("{encoding} Content-Length must be numeric"));
+            .unwrap_or_else(|_| panic!("{encoding} の Content-Length は数値であるべき"));
         assert!(
             compressed_len < plain_len,
-            "{encoding} body ({compressed_len}) must be smaller than plain ({plain_len})"
+            "{encoding} のボディ ({compressed_len}) は非圧縮 ({plain_len}) より小さいべき"
         );
     }
 }

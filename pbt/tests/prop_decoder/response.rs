@@ -326,7 +326,7 @@ proptest! {
         let data = "x".repeat(data_size);
         let result = decoder.feed(data.as_bytes());
         let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
-        prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
+        prop_assert!(is_buffer_overflow, "BufferOverflow を期待したが {:?} だった", result);
     }
 }
 
@@ -345,7 +345,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
-        prop_assert!(is_header_line_too_long, "expected HeaderLineTooLong, got {:?}", result);
+        prop_assert!(is_header_line_too_long, "HeaderLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -367,7 +367,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
-        prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
+        prop_assert!(is_too_many_headers, "TooManyHeaders を期待したが {:?} だった", result);
     }
 }
 
@@ -386,7 +386,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
-        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
+        prop_assert!(is_body_too_large, "BodyTooLarge を期待したが {:?} だった", result);
     }
 }
 
@@ -453,7 +453,7 @@ proptest! {
             }
         }
         // ここに到達した場合は問題
-        prop_assert!(false, "expected BodyTooLarge error but consumed {} bytes", consumed);
+        prop_assert!(false, "BodyTooLarge エラーを期待したが {} バイト消費した", consumed);
     }
 }
 
@@ -959,7 +959,7 @@ proptest! {
 
         let result = decoder.decode();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
-        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
+        prop_assert!(is_body_too_large, "BodyTooLarge を期待したが {:?} だった", result);
     }
 }
 
@@ -1157,8 +1157,8 @@ proptest! {
             decoder.decode().unwrap()
         };
 
-        let by_feed = by_feed.expect("feed path produced response");
-        let by_mut_buf = by_mut_buf.expect("mut_buf path produced response");
+        let by_feed = by_feed.expect("feed 経路で response が得られなかった");
+        let by_mut_buf = by_mut_buf.expect("mut_buf 経路で response が得られなかった");
         prop_assert_eq!(by_feed.status_code(), by_mut_buf.status_code());
         prop_assert_eq!(by_feed.reason_phrase(), by_mut_buf.reason_phrase());
         prop_assert_eq!(HttpHead::headers(&by_feed), HttpHead::headers(&by_mut_buf));

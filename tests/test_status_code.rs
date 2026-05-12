@@ -256,17 +256,17 @@ fn test_status_code_from_code_roundtrip_for_all_constants() {
     // 全 const 定義について from_code(code()) が同じ StatusCode を返す
     for status in ALL_STATUS_CODES {
         let recovered =
-            StatusCode::from_code(status.code()).expect("registered code must be recoverable");
+            StatusCode::from_code(status.code()).expect("登録済みコードは復元できるべき");
         assert_eq!(
             recovered.code(),
             status.code(),
-            "from_code({}) returned a different StatusCode",
+            "from_code({}) が異なる StatusCode を返した",
             status.code()
         );
         assert_eq!(
             recovered.canonical_reason(),
             status.canonical_reason(),
-            "from_code({}) returned a StatusCode with different canonical_reason",
+            "from_code({}) が異なる canonical_reason の StatusCode を返した",
             status.code()
         );
     }

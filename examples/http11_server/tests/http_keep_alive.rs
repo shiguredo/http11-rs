@@ -34,18 +34,18 @@ async fn keep_alive_two_requests_one_connection() {
         &url,
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let stdout = out.stdout_string();
     let codes: Vec<&str> = stdout.lines().map(str::trim).collect();
     assert_eq!(
         codes,
         ["200", "200"],
-        "both requests must return 200: stdout={stdout}"
+        "両リクエストとも 200 を返すべき: stdout={stdout}"
     );
     assert!(
         out.stderr.contains("Re-using existing connection"),
-        "expected curl to re-use the connection: stderr={}",
+        "curl が接続を再利用することを期待: stderr={}",
         out.stderr
     );
 }
@@ -63,13 +63,13 @@ async fn connection_close_header_terminates() {
         &server.http_url("/"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, _body) = split_headers_body(&out.stdout);
     assert_eq!(
         find_header(&headers, "Connection"),
         Some("close"),
-        "headers={headers}"
+        "ヘッダーが想定外: {headers}"
     );
 }
 
@@ -80,12 +80,12 @@ async fn keep_alive_default_no_close_header() {
 
     // HTTP/1.1 のデフォルトは keep-alive。Connection: close ヘッダーは無い
     let out = run_curl(["-sS", "-i", &server.http_url("/")]).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, _body) = split_headers_body(&out.stdout);
     assert_eq!(
         find_header(&headers, "Connection"),
         None,
-        "Connection header must be absent on default keep-alive: headers={headers}"
+        "デフォルト keep-alive では Connection ヘッダーは無いべき: headers={headers}"
     );
 }

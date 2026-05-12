@@ -174,7 +174,7 @@ proptest! {
         let (head, _body_kind) = decoder
             .decode_headers()
             .unwrap()
-            .expect("headers should be ready");
+            .expect("ヘッダーが揃っているべき");
 
         prop_assert_eq!(head.status_code(), status.code());
         prop_assert_eq!(head.reason_phrase(), status.canonical_reason());

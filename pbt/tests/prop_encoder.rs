@@ -459,7 +459,7 @@ proptest! {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+                prop_assert!(false, "ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -484,7 +484,7 @@ proptest! {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+                prop_assert!(false, "ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -522,7 +522,7 @@ proptest! {
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -539,7 +539,7 @@ proptest! {
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -668,7 +668,7 @@ proptest! {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+                prop_assert!(false, "ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -690,7 +690,7 @@ proptest! {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+                prop_assert!(false, "ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -712,7 +712,7 @@ proptest! {
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -729,7 +729,7 @@ proptest! {
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }

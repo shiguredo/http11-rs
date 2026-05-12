@@ -145,7 +145,7 @@ proptest! {
         let data = "x".repeat(data_size);
         let result = decoder.feed(data.as_bytes());
         let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
-        prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
+        prop_assert!(is_buffer_overflow, "BufferOverflow を期待したが {:?} だった", result);
     }
 }
 
@@ -165,7 +165,7 @@ proptest! {
         } else {
             let result = decoder.feed(data.as_bytes());
             let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
-            prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
+            prop_assert!(is_buffer_overflow, "BufferOverflow を期待したが {:?} だった", result);
         }
     }
 }
@@ -185,7 +185,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
-        prop_assert!(is_header_line_too_long, "expected HeaderLineTooLong, got {:?}", result);
+        prop_assert!(is_header_line_too_long, "HeaderLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -207,7 +207,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
-        prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
+        prop_assert!(is_too_many_headers, "TooManyHeaders を期待したが {:?} だった", result);
     }
 }
 
@@ -236,7 +236,7 @@ proptest! {
         } else {
             let result = decoder.decode_headers();
             let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
-            prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
+            prop_assert!(is_too_many_headers, "TooManyHeaders を期待したが {:?} だった", result);
         }
     }
 }
@@ -630,7 +630,7 @@ proptest! {
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "token method '{}' should be accepted, got {:?}", method, result);
+        prop_assert!(result.is_ok(), "トークン形式のメソッド '{}' は受理されるべきだが {:?} だった", method, result);
     }
 
     /// 大文字メソッドが許可されることを確認
@@ -650,7 +650,7 @@ proptest! {
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "expected success for uppercase method '{}', got {:?}", method, result);
+        prop_assert!(result.is_ok(), "大文字メソッド '{}' は成功すべきだが {:?} だった", method, result);
     }
 
     /// アンダースコアとハイフンを含むメソッドが許可されることを確認
@@ -668,7 +668,7 @@ proptest! {
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\n\r\n", method);
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "expected success for method with underscore/hyphen '{}', got {:?}", method, result);
+        prop_assert!(result.is_ok(), "アンダースコア/ハイフン入りメソッド '{}' は成功すべきだが {:?} だった", method, result);
     }
 }
 
@@ -898,8 +898,8 @@ proptest! {
             decoder.decode().unwrap()
         };
 
-        let by_feed = by_feed.expect("feed path produced request");
-        let by_mut_buf = by_mut_buf.expect("mut_buf path produced request");
+        let by_feed = by_feed.expect("feed 経路で request が得られなかった");
+        let by_mut_buf = by_mut_buf.expect("mut_buf 経路で request が得られなかった");
         prop_assert_eq!(by_feed.method(), by_mut_buf.method());
         prop_assert_eq!(by_feed.uri(), by_mut_buf.uri());
         prop_assert_eq!(HttpHead::headers(&by_feed), HttpHead::headers(&by_mut_buf));

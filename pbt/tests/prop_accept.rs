@@ -7,7 +7,7 @@ use shiguredo_http11::accept::{Accept, AcceptCharset, AcceptEncoding, AcceptLang
 // Strategy 定義
 // ========================================
 
-// HTTP トークン文字 (RFC 7230) - 安全な文字のみ使用
+// HTTP トークン文字 (RFC 9110 Section 5.6.2) - 安全な文字のみ使用
 fn accept_token_string(max_len: usize) -> impl Strategy<Value = String> {
     "[a-zA-Z0-9._-]{1,8}".prop_filter_map("ensure max length", move |s| {
         if s.len() <= max_len {

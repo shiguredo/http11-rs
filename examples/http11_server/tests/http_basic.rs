@@ -15,19 +15,22 @@ async fn get_root_returns_200_html() {
     let server = spawn_http_server().await;
 
     let out = run_curl(["-sS", "-i", &server.http_url("/")]).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, body) = split_headers_body(&out.stdout);
-    let body = String::from_utf8(body).expect("response body is not utf-8");
+    let body = String::from_utf8(body).expect("レスポンスボディが UTF-8 でない");
 
-    assert!(headers.starts_with("HTTP/1.1 200"), "headers={headers}");
+    assert!(
+        headers.starts_with("HTTP/1.1 200"),
+        "ヘッダーが想定外: {headers}"
+    );
     assert_eq!(
         find_header(&headers, "Content-Type"),
         Some("text/html; charset=utf-8")
     );
     assert!(
         body.contains("<title>shiguredo_http11 Server</title>"),
-        "unexpected body: {body}"
+        "ボディが想定外: {body}"
     );
 }
 
@@ -37,21 +40,24 @@ async fn get_info_returns_200_json() {
     let server = spawn_http_server().await;
 
     let out = run_curl(["-sS", "-i", &server.http_url("/info")]).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, body) = split_headers_body(&out.stdout);
-    let body = String::from_utf8(body).expect("response body is not utf-8");
+    let body = String::from_utf8(body).expect("レスポンスボディが UTF-8 でない");
 
-    assert!(headers.starts_with("HTTP/1.1 200"), "headers={headers}");
+    assert!(
+        headers.starts_with("HTTP/1.1 200"),
+        "ヘッダーが想定外: {headers}"
+    );
     assert_eq!(
         find_header(&headers, "Content-Type"),
         Some("application/json")
     );
     assert!(
         body.contains("\"server\":\"shiguredo_http11\""),
-        "unexpected body: {body}"
+        "ボディが想定外: {body}"
     );
-    assert!(body.contains("\"timestamp\":"), "unexpected body: {body}");
+    assert!(body.contains("\"timestamp\":"), "ボディが想定外: {body}");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -66,18 +72,15 @@ async fn get_echo_includes_request_headers() {
         &server.http_url("/echo"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let body = out.stdout_string();
-    assert!(body.contains("Method: GET"), "unexpected body: {body}");
-    assert!(body.contains("URI: /echo"), "unexpected body: {body}");
-    assert!(
-        body.contains("Version: HTTP/1.1"),
-        "unexpected body: {body}"
-    );
+    assert!(body.contains("Method: GET"), "ボディが想定外: {body}");
+    assert!(body.contains("URI: /echo"), "ボディが想定外: {body}");
+    assert!(body.contains("Version: HTTP/1.1"), "ボディが想定外: {body}");
     assert!(
         body.contains("X-Test-Header: hello-from-curl"),
-        "unexpected body: {body}"
+        "ボディが想定外: {body}"
     );
 }
 
@@ -96,16 +99,16 @@ async fn head_root_returns_no_body() {
         &server.http_url("/"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let stdout = out.stdout_string();
     let mut lines = stdout.lines();
     let code = lines.next().unwrap_or("");
     let size = lines.next().unwrap_or("");
-    assert_eq!(code, "200", "status code mismatch: stdout={stdout}");
+    assert_eq!(code, "200", "ステータスコードの不一致: stdout={stdout}");
     assert_eq!(
         size, "0",
-        "size_download must be 0 for HEAD: stdout={stdout}"
+        "HEAD では size_download は 0 であるべき: stdout={stdout}"
     );
 }
 
@@ -123,12 +126,12 @@ async fn post_echo_returns_request_body() {
         &server.http_url("/echo"),
     ])
     .await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let body = out.stdout_string();
-    assert!(body.contains("Method: POST"), "unexpected body: {body}");
-    assert!(body.contains("Body (10 bytes):"), "unexpected body: {body}");
-    assert!(body.contains("hello-body"), "unexpected body: {body}");
+    assert!(body.contains("Method: POST"), "ボディが想定外: {body}");
+    assert!(body.contains("Body (10 bytes):"), "ボディが想定外: {body}");
+    assert!(body.contains("hello-body"), "ボディが想定外: {body}");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -137,13 +140,16 @@ async fn get_unknown_returns_404() {
     let server = spawn_http_server().await;
 
     let out = run_curl(["-sS", "-i", &server.http_url("/missing-path")]).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, body) = split_headers_body(&out.stdout);
-    let body = String::from_utf8(body).expect("response body is not utf-8");
+    let body = String::from_utf8(body).expect("レスポンスボディが UTF-8 でない");
 
-    assert!(headers.starts_with("HTTP/1.1 404"), "headers={headers}");
-    assert!(body.contains("404 Not Found"), "unexpected body: {body}");
+    assert!(
+        headers.starts_with("HTTP/1.1 404"),
+        "ヘッダーが想定外: {headers}"
+    );
+    assert!(body.contains("404 Not Found"), "ボディが想定外: {body}");
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -152,12 +158,12 @@ async fn server_emits_date_and_server_headers() {
     let server = spawn_http_server().await;
 
     let out = run_curl(["-sS", "-i", &server.http_url("/")]).await;
-    assert_eq!(out.status, 0, "curl failed: stderr={}", out.stderr);
+    assert_eq!(out.status, 0, "curl 実行が失敗: stderr={}", out.stderr);
 
     let (headers, _body) = split_headers_body(&out.stdout);
     assert!(
         find_header(&headers, "Date").is_some(),
-        "Date header missing: {headers}"
+        "Date ヘッダーが欠落: {headers}"
     );
     assert_eq!(
         find_header(&headers, "Server"),

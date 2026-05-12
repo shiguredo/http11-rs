@@ -7,7 +7,7 @@ use shiguredo_http11::content_type::ContentType;
 // Strategy 定義
 // ========================================
 
-// 有効なトークン文字列 (RFC 7230)
+// 有効なトークン文字列 (RFC 9110 Section 5.6.2)
 fn valid_token() -> impl Strategy<Value = String> {
     // トークン文字: !#$%&'*+-.0-9A-Z^_`a-z|~
     "[a-zA-Z0-9!#$%&'*+.^_`|~-]{1,8}".prop_map(|s| s)

@@ -46,7 +46,7 @@ pub fn ensure_docker() {
         .status();
     match status {
         Ok(s) if s.success() => {}
-        _ => panic!("Docker daemon is required for these integration tests"),
+        _ => panic!("これらの結合テストは Docker デーモンが必要"),
     }
 }
 
@@ -94,14 +94,11 @@ pub async fn spawn_nginx_with_files(conf: &str, files: &[(&str, Vec<u8>)]) -> Ng
 
 /// コンテナを起動し、host 側 port を取得して `NginxHandle` にまとめる
 async fn spawn(request: testcontainers::ContainerRequest<GenericImage>) -> NginxHandle {
-    let container = request
-        .start()
-        .await
-        .expect("nginx container failed to start");
+    let container = request.start().await.expect("nginx コンテナの起動に失敗");
     let port = container
         .get_host_port_ipv4(NGINX_INTERNAL_PORT)
         .await
-        .expect("failed to get nginx host port");
+        .expect("nginx ホストポートの取得に失敗");
     NginxHandle {
         _container: container,
         port,
