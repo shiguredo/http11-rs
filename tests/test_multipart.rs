@@ -229,10 +229,124 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
         bulk_parts, bb_parts,
         "1 バイトずつ feed しても一括 feed と同じパース結果を得る想定"
     );
-    // 注: byte-by-byte 経路では「最後のパート切り出し時点で `after_next + 2`
-    // が buffer 末尾に到達していない」場合があり、終端境界の `--` 判定を
-    // 後回しにする (= state は InPart のまま) ことがある。本テストの主旨は
-    // 「part 列の一致」であり、is_finished の遷移までは検証しない。
+    assert!(
+        bulk.is_finished(),
+        "一括 feed 経路で終端境界まで処理した後は is_finished() == true"
+    );
+    assert!(
+        bb.is_finished(),
+        "byte-by-byte 経路でも close-delimiter 末尾まで feed すれば is_finished() == true"
+    );
+}
+
+// ========================================
+// inner_delimiter 直後の chunk-split 経路 (issue 0042)
+// ========================================
+
+// close-delimiter (`--`) の手前で chunk が切れた後に `--\r\n` を補給すると
+// パートを取り出した上で is_finished() == true に遷移する
+#[test]
+fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
+    let mut parser = MultipartParser::new("boundary");
+    // inner_delimiter (\r\n--boundary) の直後まで送る。残り 2 バイト (`--`) は別 chunk。
+    parser
+        .feed(
+            b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
+        )
+        .unwrap();
+
+    let part = parser
+        .next_part()
+        .expect("inner_delimiter まで揃っていればパートが返る想定")
+        .expect("Some(Part) が返る想定");
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+
+    parser.feed(b"--\r\n").unwrap();
+    assert!(
+        matches!(parser.next_part(), Ok(None)),
+        "close-delimiter (`--`) を補給したら Ok(None) を返す想定"
+    );
+    assert!(
+        parser.is_finished(),
+        "close-delimiter を読み終えたら is_finished() == true"
+    );
+}
+
+// 次パート区切り (`\r\n`) の手前で chunk が切れた後に補給すると次パートが正しく取り出せる
+#[test]
+fn test_multipart_parser_next_part_split_after_inner_delimiter() {
+    let mut parser = MultipartParser::new("boundary");
+    parser
+        .feed(
+            b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
+        )
+        .unwrap();
+
+    let part1 = parser
+        .next_part()
+        .expect("1 つ目のパートが返る想定")
+        .expect("Some(Part) が返る想定");
+    assert_eq!(part1.name(), Some("a"));
+    assert_eq!(part1.body(), b"hello");
+
+    parser
+        .feed(b"\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\nworld\r\n--boundary--\r\n")
+        .unwrap();
+
+    let part2 = parser
+        .next_part()
+        .expect("2 つ目のパートが返る想定")
+        .expect("Some(Part) が返る想定");
+    assert_eq!(part2.name(), Some("b"));
+    assert_eq!(part2.body(), b"world");
+
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}
+
+// close-delimiter 末尾 1 バイト (`-`) だけ補給した段階では Incomplete を返し続け、
+// もう 1 バイト補給すると終端と判定する
+#[test]
+fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
+    let mut parser = MultipartParser::new("boundary");
+    parser
+        .feed(
+            b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
+        )
+        .unwrap();
+    let _ = parser.next_part().unwrap().unwrap();
+
+    parser.feed(b"-").unwrap();
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::Incomplete)
+    ));
+    assert!(!parser.is_finished());
+
+    parser.feed(b"-\r\n").unwrap();
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}
+
+// inner_delimiter 直後の 2 バイトが close-delimiter / 次パート区切りのどちらでもない場合は
+// InvalidBoundary を返す
+#[test]
+fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
+    let mut parser = MultipartParser::new("boundary");
+    parser
+        .feed(
+            b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
+        )
+        .unwrap();
+    let _ = parser.next_part().unwrap().unwrap();
+
+    // 不正な 2 バイト (`xy`) を補給
+    parser.feed(b"xy").unwrap();
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::InvalidBoundary)
+    ));
 }
 
 // Clone のテスト

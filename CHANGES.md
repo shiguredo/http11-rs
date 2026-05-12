@@ -15,6 +15,11 @@
   - 旧 `try_encode` / `try_encode_headers` を撤去し名前を `encode` / `encode_headers` に統一する
   - 構築時バリデーションを通っても意味論違反 (Host 欠落、TE+CL 同時、205 ボディ等) で encode が `Err` を返すため、呼出側は `?` 等で伝播する必要がある
   - @voluntas
+- [FIX] `MultipartParser::next_part` の `InPart` ブランチで inner_delimiter 直後 2 バイトが揃わないケースに `AfterInnerDelimiter` 状態を新設し、再入時の永久 Incomplete を防ぐ
+  - 旧実装は Part 返却後も `state = InPart` のまま `pos` を進めるだけで、後続 feed で close-delimiter (`--\r\n`) や次パート区切り (`\r\n`) しか来ない場合に `\r\n\r\n` を永久に探し続けるバグ経路を持っていた
+  - chunk 境界で発生する DoS 経路 (TCP セグメント結合・TLS レコード境界・chunked transfer の chunk 境界、攻撃者の細切れ feed) を遮断する
+  - 同時に `tests/test_multipart.rs::test_multipart_parser_byte_by_byte_feed_matches_bulk_feed` の「is_finished の遷移は未検証」注記を削除し、byte-by-byte 経路でも `is_finished()` まで検証するよう厳格化する
+  - @voluntas
 - [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
