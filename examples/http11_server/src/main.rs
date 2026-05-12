@@ -75,13 +75,6 @@ impl StreamingState {
             body: None,
         }
     }
-
-    #[allow(dead_code)]
-    fn reset(&mut self) {
-        self.head = None;
-        self.body_kind = None;
-        self.body = None;
-    }
 }
 
 #[tokio::main]

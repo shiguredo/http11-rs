@@ -286,6 +286,12 @@
   - `src/lib.rs` を新設して `parse_url` / `http_request` / `https_request` / `decompressor` を pub にし、`src/main.rs` を CLI フロントエンドに整理する (`http_request` / `https_request` のシグネチャに `request_method: &str` を追加し、HEAD / CONNECT 経路で `BodyKind::None` / `Tunnel` を正しく扱う)
   - dev-dependencies に `testcontainers` (aws-lc-rs feature) と `tokio` を追加する
   - @voluntas
+- [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の死にコードを削除する
+  - `compressor.rs` の `GzipCompressor` / `BrotliCompressor` / `ZstdCompressor` 構造体・`impl Default` / `impl Compressor` トレイト実装 (各約 200 行) を両 example から削除する。両 main.rs は自由関数 `compress_body` / `select_encoding` / `encoding_header` のみを使用しており、struct 群は呼び出し皆無の `#[allow(dead_code)]` 隠蔽コードだった
+  - 特に `BrotliCompressor::compress` は単にバッファに溜めるだけで `finish()` で一括圧縮する偽ストリーミング実装で、お手本として残すのは積極的に有害だった
+  - `examples/http11_server/src/main.rs::StreamingState::reset()` (`#[allow(dead_code)]` 付き、呼び出し皆無) を削除する
+  - `examples/http11_server_io_uring/src/main.rs::DEFAULT_KEEP_ALIVE_TIMEOUT` (未使用 const + 「TODO: io_uring でタイムアウト処理を実装する際に使用」コメント) を削除する。タイムアウト処理を実装する際は新規に const を定義する
+  - @voluntas
 - [FIX] テストメッセージとコードコメントを日本語化し AGENTS.md 規約に準拠させる
   - `pbt/tests/` および `tests/` の英語 `prop_assert!` / `assert!` メッセージを日本語に統一する
   - `examples/http11_client/tests/` および `examples/http11_server/tests/` の `.expect(...)` / `panic!(...)` / `assert!(...)` 英語メッセージを日本語化する
