@@ -1,6 +1,7 @@
 # 0050: reverse_proxy サンプルで upstream URL の scheme と port を尊重する
 
 Created: 2026-05-12
+Completed: 2026-05-12
 Model: Opus 4.7
 
 ## 概要
@@ -225,3 +226,16 @@ fn format_host_header(scheme: Scheme, host: &str, port: u16) -> String {
 
 - RFC 3986 §3.2.2 / §3.2.3 (host / port、`refs/rfc3986.txt` は本リポジトリ未収載のため別途参照)
 - RFC 9110 §4.2.1 / §4.2.2 / §7.2 (http(s) URI、Host ヘッダー、`refs/rfc9110.txt`)
+
+## 解決方法
+
+- `examples/http11_reverse_proxy/src/main.rs` に `Scheme` enum (`Http` / `Https`) と `UpstreamUrl` 構造体 (`scheme` / `host` / `port`) を追加した
+- `parse_upstream_url` の戻り値を `Result<UpstreamUrl, _>` に拡張し、scheme / port / IPv6 リテラル (`[host]:port`) / path / query を正しくパースする実装に書き換えた。scheme 不在は明示的にエラー化する
+- Host ヘッダー値を組み立てるヘルパー `format_host_header(scheme, host, port)` を追加し、デフォルトポートは省略・IPv6 リテラルはブラケット表記で構築する (RFC 9110 Section 7.2)
+- `UpstreamStream` enum (`Plain(BufWriter<TcpStream>)` / `Tls(Box<BufWriter<TlsStream<TcpStream>>>)`) を追加し、`AsyncRead` / `AsyncWrite` を delegation で実装した。TLS バリアントは `large_enum_variant` を避けるため `Box` で wrap する
+- `PooledConnection` の `stream` フィールドを `UpstreamStream` に変更した
+- `ConnectionPool` の `idle_connections` キーを `(Scheme, String, u16)` のタプル (`UpstreamKey`) に変更し、`try_acquire` / `release` のシグネチャも揃えた
+- `create_connection(scheme, host, port, tls_connector)` で scheme 分岐させ、`Scheme::Http` は plaintext、`Scheme::Https` は SNI に裸の host (ブラケット無し) を渡して TLS 接続する
+- `stream_response_on_connection` の `upstream` 引数を `&mut UpstreamStream` に変更し、`BufWriter` 内蔵のため `write_all` 後に `flush` を呼ぶよう変更した
+- `--upstream` の help text を `Examples: http://internal:8080, https://[::1]:8443` まで明記するよう更新した
+- `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
