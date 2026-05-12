@@ -126,3 +126,19 @@ kTLS 有効化後は、カーネルが TLS レコードの暗号化/復号化を
 
 - RFC 9110 (HTTP Semantics)
 - RFC 9112 (HTTP/1.1)
+
+## 手動テスト: HTTP/1.1 パイプライニング (issue 0048)
+
+`curl` はデフォルトでパイプライニングを行わないため、`printf` + `nc` で 1 TCP segment に
+複数リクエストを詰めて送る:
+
+```sh
+# サーバ起動 (TLS 無効では動かないため、TLS で接続して 1 segment に詰める)
+# 本サンプルは kTLS 必須のため、Linux 環境で実行する
+printf 'GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n' \
+  | openssl s_client -connect 127.0.0.1:8443 -quiet -ign_eof
+```
+
+期待: `/a` のレスポンスに続いて `/b` のレスポンスが順序通りに返ること。
+
+issue 0048 の修正前は 1 件目のみ返り、2 件目以降は drop されていた。

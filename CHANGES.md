@@ -17,6 +17,11 @@
   - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
   - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
   - @voluntas
+- [FIX] `examples/http11_server_io_uring` でパイプラインリクエストの 2 件目以降のレスポンスがドロップされる問題を修正する
+  - 旧実装は `while let Some(request) = conn.decoder.decode()?` で複数 Request を decode して関数ローカル `VecDeque` に push していたが、`pop_front()` で 1 件目を取り出した後、残り N-1 件はスコープ終了で drop されていた
+  - `Connection` 構造体に `pending_writes: VecDeque<(Vec<u8>, bool)>` と `current_write_should_keep_alive: bool` を追加し、`handle_write` 完了時に次エントリを書き出すよう変更する
+  - RFC 9112 Section 9.3.2「a server ... MUST send the corresponding responses in the same order that the requests were received」を満たすよう順序保証する
+  - @voluntas
 - [FIX] HTTP/1.1 以外の version で `Transfer-Encoding` ヘッダーを受理しないように厳格化する
   - 旧挙動では `version == "HTTP/1.0"` の完全一致のみ拒否しており、`HTTP/0.9` / `HTTP/2.0` / `HTTP/3.0` / `RTSP/1.0` / `FOO/1.0` 等で `Transfer-Encoding: chunked` を chunked フレーミングとして読み始めていた
   - RFC 9112 Section 6.1 (TE は HTTP/1.1 のみで定義) および RFC 2326 Section 5 (RTSP では Transfer-Encoding 未定義) に従い、HTTP/1.1 完全一致以外で TE が出現した場合は `Error::InvalidData` を返す

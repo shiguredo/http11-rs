@@ -134,6 +134,18 @@ struct Connection {
     read_buf: Vec<u8>,
     write_buf: Vec<u8>,
     write_offset: usize,
+    /// 進行中の書き込みに紐づく Keep-Alive フラグ。
+    /// `false` のときは書き込み完了後に `pending_writes` 残量に関わらず接続を閉じる
+    /// (RFC 9112 Section 9.6: Connection: close 後の追加メッセージは送らない)。
+    current_write_should_keep_alive: bool,
+    /// 未送信レスポンスキュー (issue 0048)
+    ///
+    /// パイプラインで複数の Request を 1 read で受け取ったとき、build した全レスポンスを
+    /// ここに積む。`handle_write` 完了時に `pop_front` で次エントリを取り出して
+    /// `write_buf` に流し込む。RFC 9112 Section 9.3.2「a server ... MUST send the
+    /// corresponding responses in the same order that the requests were received」を
+    /// 順序保証で満たす。
+    pending_writes: VecDeque<(Vec<u8>, bool)>,
     request_count: u32,
     peer_addr: SocketAddr,
     // kTLS 有効化用の一時バッファ (setsockopt に渡すため生存期間を保証)
@@ -155,6 +167,8 @@ impl Connection {
             read_buf: vec![0u8; READ_BUF_SIZE],
             write_buf: Vec::with_capacity(WRITE_BUF_SIZE),
             write_offset: 0,
+            current_write_should_keep_alive: true,
+            pending_writes: VecDeque::new(),
             request_count: 0,
             peer_addr,
             ulp_name: b"tls\0".to_vec(),
@@ -640,10 +654,14 @@ fn handle_read(
             let data = conn.read_buf[..bytes_read].to_vec();
             conn.decoder.feed(&data)?;
 
-            let mut responses = VecDeque::new();
             let peer_addr = conn.peer_addr;
             let mut request_count = conn.request_count;
-
+            // パイプラインで複数 Request を一度に受け取った場合、build した全レスポンスを
+            // conn.pending_writes に積み、handle_write 完了時に順次送出する (issue 0048)。
+            // `should_keep_alive == false` のレスポンスが出た時点でループを break し、
+            // 以降の Request の処理は行わない (RFC 9112 Section 9.6: Connection: close
+            // 後の追加メッセージは送らない)。decoder バッファに残った未処理データは
+            // 次の handle_write 完了時に close_connection で破棄される。
             while let Some(request) = conn.decoder.decode()? {
                 request_count += 1;
 
@@ -661,21 +679,35 @@ fn handle_read(
                     request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
 
                 let response = build_response(&request, should_keep_alive)?;
-                responses.push_back((response.encode()?, should_keep_alive));
+                conn.pending_writes
+                    .push_back((response.encode()?, should_keep_alive));
+
+                if !should_keep_alive {
+                    break;
+                }
             }
 
             conn.request_count = request_count;
 
-            if let Some((response_bytes, should_keep_alive)) = responses.pop_front() {
-                let conn = &mut connections[conn_id];
+            if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
                 conn.write_buf = response_bytes;
                 conn.write_offset = 0;
+                conn.current_write_should_keep_alive = should_keep_alive;
                 conn.state = if should_keep_alive {
                     ConnectionState::Writing
                 } else {
                     ConnectionState::Closing
                 };
-                submit_write(ring, conn_id, fd, connections)?;
+                if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                    // submission queue full 等で submit_write が失敗した場合は
+                    // pop した先頭エントリを復元してから error を伝播する。
+                    let conn = &mut connections[conn_id];
+                    let buf = core::mem::take(&mut conn.write_buf);
+                    let keep_alive = conn.current_write_should_keep_alive;
+                    conn.pending_writes.push_front((buf, keep_alive));
+                    conn.write_offset = 0;
+                    return Err(e);
+                }
             } else {
                 // リクエストがまだ完全ではない
                 submit_read(ring, conn_id, fd, connections)?;
@@ -745,12 +777,34 @@ fn handle_write(
             }
         }
         ConnectionState::Writing => {
-            // Keep-Alive: 次のリクエストを待つ
-            conn.state = ConnectionState::Reading;
-            submit_read(ring, conn_id, fd, connections)?;
+            // 進行中レスポンスが Keep-Alive なら pending_writes の次エントリを書き出すか、
+            // キューが空なら次のリクエストを待つ (issue 0048)。
+            if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
+                conn.write_buf = response_bytes;
+                conn.write_offset = 0;
+                conn.current_write_should_keep_alive = should_keep_alive;
+                conn.state = if should_keep_alive {
+                    ConnectionState::Writing
+                } else {
+                    ConnectionState::Closing
+                };
+                if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                    let conn = &mut connections[conn_id];
+                    let buf = core::mem::take(&mut conn.write_buf);
+                    let keep_alive = conn.current_write_should_keep_alive;
+                    conn.pending_writes.push_front((buf, keep_alive));
+                    conn.write_offset = 0;
+                    return Err(e);
+                }
+            } else {
+                conn.state = ConnectionState::Reading;
+                submit_read(ring, conn_id, fd, connections)?;
+            }
         }
         ConnectionState::Closing => {
-            // 接続を閉じる
+            // 接続を閉じる。RFC 9112 Section 9.6 に従い、pending_writes に残っている
+            // レスポンスは Connection: close 後に送信してはならないため破棄する。
+            conn.pending_writes.clear();
             close_connection(ring, connections, conn_id)?;
         }
         _ => {}
