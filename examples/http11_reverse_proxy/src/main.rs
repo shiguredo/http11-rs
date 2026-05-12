@@ -13,7 +13,7 @@ use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
     BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
-    ResponseDecoder, encode_response_headers,
+    ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
@@ -297,6 +297,18 @@ async fn handle_client(
         "Request line"
     );
     debug!(count = req_head.headers().len(), "Received headers");
+
+    // CONNECT (RFC 9110 Section 9.3.6) は本サンプルでは未対応。
+    // decoder は Tunnel phase に遷移しているため後続の decode_headers() / decode() は使えない。
+    // 501 Not Implemented を返してクライアントとの接続を閉じる。
+    if matches!(req_body_kind, BodyKind::Tunnel) {
+        info!(method = %req_head.method(), "CONNECT rejected (not implemented)");
+        let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
+            .header("Content-Length", "0")?
+            .header("Connection", "close")?;
+        socket.write_all(&response.encode()).await?;
+        return Ok(());
+    }
 
     // リクエストボディを収集
     let mut request_body = Vec::new();
@@ -628,10 +640,9 @@ async fn stream_response_on_connection(
                     Some(data) => {
                         let len = data.len();
                         if use_chunked {
-                            let mut chunk = format!("{:x}\r\n", len).into_bytes();
-                            chunk.extend_from_slice(data);
-                            chunk.extend_from_slice(b"\r\n");
-                            downstream.write_all(&chunk).await?;
+                            // 単一チャンクのフレーミングはライブラリの encode_chunk に委譲する
+                            // (`size\r\n<data>\r\n` 形式、RFC 9112 Section 7.1)
+                            downstream.write_all(&encode_chunk(data)).await?;
                         } else {
                             downstream.write_all(data).await?;
                         }
@@ -640,14 +651,7 @@ async fn stream_response_on_connection(
                         match decoder.consume_body(len)? {
                             BodyProgress::Complete { trailers } => {
                                 if use_chunked {
-                                    let mut end_chunk = b"0\r\n".to_vec();
-                                    for (name, value) in &trailers {
-                                        end_chunk.extend_from_slice(
-                                            format!("{}: {}\r\n", name, value).as_bytes(),
-                                        );
-                                    }
-                                    end_chunk.extend_from_slice(b"\r\n");
-                                    downstream.write_all(&end_chunk).await?;
+                                    write_last_chunk(&mut downstream, &trailers).await?;
                                 }
                                 debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
@@ -661,14 +665,7 @@ async fn stream_response_on_connection(
                         match decoder.progress()? {
                             BodyProgress::Complete { trailers } => {
                                 if use_chunked {
-                                    let mut end_chunk = b"0\r\n".to_vec();
-                                    for (name, value) in &trailers {
-                                        end_chunk.extend_from_slice(
-                                            format!("{}: {}\r\n", name, value).as_bytes(),
-                                        );
-                                    }
-                                    end_chunk.extend_from_slice(b"\r\n");
-                                    downstream.write_all(&end_chunk).await?;
+                                    write_last_chunk(&mut downstream, &trailers).await?;
                                 }
                                 debug!(total_bytes = total_body_bytes, "Body complete");
                                 break 'outer;
@@ -706,6 +703,28 @@ async fn stream_response_on_connection(
     debug!(total_bytes = total_body_bytes, "Response body streamed");
 
     Ok(can_reuse)
+}
+
+/// chunked 転送の終端 (`0\r\n<trailers>\r\n`) を downstream へ書き出す
+///
+/// trailers が空なら `encode_chunk(b"")` (= `0\r\n\r\n`) を流用する。
+/// trailers がある場合は RFC 9112 Section 7.1.2 の trailer-section を手書きする
+/// (ライブラリ側は encode_chunk に trailer を載せる API を提供していない)。
+async fn write_last_chunk(
+    downstream: &mut BufWriter<&mut TcpStream>,
+    trailers: &[(String, String)],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if trailers.is_empty() {
+        downstream.write_all(&encode_chunk(b"")).await?;
+        return Ok(());
+    }
+    let mut end_chunk = b"0\r\n".to_vec();
+    for (name, value) in trailers {
+        end_chunk.extend_from_slice(format!("{}: {}\r\n", name, value).as_bytes());
+    }
+    end_chunk.extend_from_slice(b"\r\n");
+    downstream.write_all(&end_chunk).await?;
+    Ok(())
 }
 
 fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
