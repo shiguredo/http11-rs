@@ -280,10 +280,22 @@ impl SetCookie {
                         }
                     }
                     "domain" => {
-                        // RFC 6265 Section 5.2.3: 先頭の "." を除去し、小文字に変換する
+                        // RFC 6265 Section 4.1.1:
+                        //   domain-value = <subdomain> (RFC 1034 Section 3.5 + RFC 1123 Section 2.1)
+                        //   = LDH (letter / digit / hyphen) を含む label を "." で連結したもの。
+                        // RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3:
+                        //   先頭の "." を 1 つだけ除去し、小文字に変換する。
+                        // RFC 6265bis Section 6.3 (IDNA Dependency):
+                        //   Domain attribute は全 label が punycode (LDH) でなければならず、
+                        //   非 LDH を含む値は reject すべき (SHOULD)。
+                        // 上記を統合し、strip 後の値が「LDH と "." のみで構成され、空でなく、
+                        // 再び "." で始まらない」ことを検証する。これにより
+                        // parse -> to_string -> parse の fixed-point 性も同時に担保される
+                        // (`Display` が値をそのまま吐くため、validity が閉じた集合なら再 parse でも
+                        // 同じ値が得られる)。
                         let d = attr_value.strip_prefix('.').unwrap_or(attr_value);
-                        if d.is_empty() {
-                            // RFC 6265 Section 5.2.3: 空の場合は無視すべき (SHOULD)
+                        if d.is_empty() || d.starts_with('.') || !is_valid_domain_value(d) {
+                            // 空 / leading dot 複数 / 非 LDH は無視する
                         } else {
                             set_cookie.domain = Some(d.to_ascii_lowercase());
                         }
@@ -499,6 +511,17 @@ fn is_valid_cookie_name(s: &str) -> bool {
 /// RFC 6265 Section 4.1.1
 fn is_valid_cookie_value(s: &str) -> bool {
     s.bytes().all(is_cookie_octet)
+}
+
+/// 有効な domain-value かどうか
+///
+/// RFC 6265 Section 4.1.1 は `domain-value = <subdomain>` と定義し、`<subdomain>` は
+/// RFC 1034 Section 3.5 + RFC 1123 Section 2.1 の構文に従う。すなわち letter / digit /
+/// hyphen を含む label を "." で連結した形である。RFC 6265bis Section 6.3 は IDN を
+/// punycode (LDH) で表現することを要求しているため、本実装も LDH + "." のみを許容する。
+fn is_valid_domain_value(s: &str) -> bool {
+    s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
 }
 
 /// トークン文字 (RFC 9110)

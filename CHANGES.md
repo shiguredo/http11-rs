@@ -11,6 +11,12 @@
 
 ## develop
 
+- [CHANGE] `SetCookie::parse` の `Domain` 属性を RFC 1034 subdomain 構文 (LDH + dot) 準拠で厳格化する
+  - `Domain=..` / `Domain=...` / `Domain=..foo` のような leading dot 複数の入力を `None` 扱いに変更する (旧 `Some(".")` / `Some("..")` / `Some(".foo")`)
+  - `Domain=foo bar` / `Domain=foo\0bar` / `Domain=. foo` / `Domain=日本.example` のような非 LDH 文字 (空白・NUL・制御文字・非 ASCII) を含む入力も `None` 扱いに変更する
+  - 旧実装は RFC 6265 Section 5.2.3 の strip 規則 (先頭 dot を 1 つ削除) を素直に実装し strip 後の値の validity を検証していなかったため、`Domain=..` が `Some(".")`、`Domain=. foo` が `Some(" foo")` (leading space) で保存され、`Display` 出力を再 parse すると別値に縮退して `parse -> to_string -> parse` の roundtrip が破綻していた (fuzz_cookie の 2 系統の crash)
+  - RFC 6265 Section 4.1.1 の `domain-value = <subdomain>` (RFC 1034 Section 3.5 + RFC 1123 Section 2.1) と RFC 6265bis Section 6.3 (IDN は punycode = LDH 必須) に従い、strip 後の値が LDH + dot のみで構成されていることを検証する。RFC 6265 の strip 規則自体 (1 つだけ strip) は変更しない
+  - @voluntas
 - [FIX] `Authorization` / `Content-Disposition` の quoted-string パースで obs-text を含む UTF-8 値の Latin-1 mojibake を修正する
   - 旧実装は入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push していたため、UTF-8 マルチバイトシーケンスが `U+0080..=U+00FF` にマップされ Display 出力で別バイトに展開、ラウンドトリップで mojibake していた
   - char 単位走査に書き換え、入力 `&str` の UTF-8 不変条件を保つ
