@@ -351,3 +351,86 @@ fn test_auth_challenge_100_params_rejected() {
     let result = AuthChallenge::parse(&input);
     assert!(matches!(result, Err(AuthError::TooManyParameters)));
 }
+
+// ========================================
+// obs-text / UTF-8 multi-byte char の opaque 保持 (issue 0059)
+// ========================================
+
+use shiguredo_http11::auth::WwwAuthenticate;
+
+// `Basic realm="..."` の realm に obs-text を含む UTF-8 char が含まれても、
+// `parse -> to_string -> parse` で mojibake せず元の値が保持されることを検証する。
+fn assert_basic_realm_roundtrip(realm: &str) {
+    let input = format!("Basic realm=\"{}\"", realm);
+    let parsed = WwwAuthenticate::parse(&input)
+        .unwrap_or_else(|e| panic!("parse failed for {:?}: {:?}", realm, e));
+    assert_eq!(parsed.realm(), realm);
+
+    let displayed = parsed.to_string();
+    let reparsed = WwwAuthenticate::parse(&displayed)
+        .unwrap_or_else(|e| panic!("reparse failed for {:?}: {:?}", displayed, e));
+    assert_eq!(reparsed.realm(), realm);
+}
+
+// BMP 内の 2 バイト UTF-8 (`U+00E9` = `é`)
+#[test]
+fn test_basic_realm_obs_text_bmp_2byte() {
+    assert_basic_realm_roundtrip("réalm");
+}
+
+// 3 バイト UTF-8 (`U+65E5` = `日`)
+#[test]
+fn test_basic_realm_obs_text_bmp_3byte() {
+    assert_basic_realm_roundtrip("日本語領域");
+}
+
+// BMP 末尾 (`U+D7FF`)
+#[test]
+fn test_basic_realm_obs_text_bmp_end() {
+    let realm = format!("a{}b", '\u{D7FF}');
+    assert_basic_realm_roundtrip(&realm);
+}
+
+// surrogate 直後 (`U+E000`)
+#[test]
+fn test_basic_realm_obs_text_supplementary_start() {
+    let realm = format!("a{}b", '\u{E000}');
+    assert_basic_realm_roundtrip(&realm);
+}
+
+// 4 バイト UTF-8 最大 (`U+10FFFF`)
+#[test]
+fn test_basic_realm_obs_text_max_scalar() {
+    let realm = format!("a{}b", '\u{10FFFF}');
+    assert_basic_realm_roundtrip(&realm);
+}
+
+// CR / LF / NUL を含む quoted-string は引き続き reject される (issue 0036 のリグレッション防止)
+#[test]
+fn test_basic_realm_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("Basic realm=\"a{}b\"", c);
+        let result = WwwAuthenticate::parse(&input);
+        assert!(
+            matches!(result, Err(AuthError::InvalidParameter)),
+            "char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
+}
+
+// quoted-pair (`\` + char) でも CR / LF / NUL は reject される
+#[test]
+fn test_basic_realm_quoted_pair_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("Basic realm=\"a\\{}b\"", c);
+        let result = WwwAuthenticate::parse(&input);
+        assert!(
+            matches!(result, Err(AuthError::InvalidParameter)),
+            "quoted-pair char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
+}

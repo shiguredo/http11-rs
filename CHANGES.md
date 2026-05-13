@@ -11,6 +11,13 @@
 
 ## develop
 
+- [FIX] `Authorization` / `Content-Disposition` の quoted-string パースで obs-text を含む UTF-8 値の Latin-1 mojibake を修正する
+  - 旧実装は入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push していたため、UTF-8 マルチバイトシーケンスが `U+0080..=U+00FF` にマップされ Display 出力で別バイトに展開、ラウンドトリップで mojibake していた
+  - char 単位走査に書き換え、入力 `&str` の UTF-8 不変条件を保つ
+  - obs-text は RFC 9110 Section 5.5 の「recipient SHOULD treat obs-text as opaque data」に従い opaque な char として保持する (reject しない)。CR / LF / NUL の reject は char 版ヘルパー `is_qdtext_char` / `is_quoted_pair_char` で等価に維持する
+  - issue 0036 で導入した `is_qdtext_byte` / `is_quoted_pair_byte` (`pub(crate)`、2026.4.0 リリース済) を char 版に置き換え本体を削除する
+  - @voluntas
+
 ### misc
 
 - [ADD] fuzz target `fuzz_pipelined` を追加する

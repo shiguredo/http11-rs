@@ -1,6 +1,7 @@
 # 0059 fix quoted-string パーサーの Latin-1 mojibake を修正する
 
 Created: 2026-05-13
+Completed: 2026-05-13
 Model: Opus 4.7
 
 ## 概要
@@ -301,3 +302,24 @@ fn qdtext_char() -> impl Strategy<Value = char> {
 - RFC 8187 Section 3.2 (ext-value): 送信側で非 ASCII を扱う際の RFC 規定 (本 issue 受信側のスコープ外)
 - RFC 6266 Appendix D (Advice on Generating Content-Disposition Header Fields): 「Include a `filename*` parameter where the desired filename cannot be expressed faithfully using the `filename` form」(送信側に向けた助言)。Section 4.3 の recipient 向け SHOULD (`SHOULD pick "filename*"`) と併せて参照
 - 関連先行 issue: `issues/closed/0036-fix-quoted-string-quoted-pair-ctl-rejection.md` (CR / LF / NUL reject 経路を `is_qdtext_byte` / `is_quoted_pair_byte` で導入、本 issue は同経路を char 版に移植)
+
+## 解決方法
+
+1. `src/validate.rs` に char 版ヘルパー `is_qdtext_char` / `is_quoted_pair_char` を新設し、旧 byte 版 `is_qdtext_byte` / `is_quoted_pair_byte` を削除した。Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として受理する。
+2. `src/auth.rs::parse_auth_params` の quoted-string 経路を `&input[i..]` の `chars()` 走査ベースに書き換え、`len_utf8()` で消費バイト数を外側 `i` に反映するようにした。
+3. `src/content_disposition.rs::parse_quoted_string` を `chars()` ベースに書き換え、char をそのまま `String` に push するようにした。
+4. `src/decoder/request.rs:376-384` のコメントを「RFC 3986 で US-ASCII 限定」根拠に書き換えた (reject ロジック本体は維持)。
+5. `fuzz/fuzz_targets/fuzz_auth.rs` に `DigestChallenge` / `DigestAuth` の Display reparse 前後の equal 比較を追加した。
+6. `fuzz/corpus/fuzz_content_disposition/regression-0059` を新設 (issue 記載の 56 バイト hex 列)。
+7. PBT: `pbt/tests/prop_content_disposition.rs::qdtext_char` を Unicode scalar 拡張に置換、`pbt/tests/prop_auth.rs` に `qdtext_char` / `qdtext_realm` strategy と `WwwAuthenticate` / `DigestChallenge` の obs-text ラウンドトリップを追加した。
+8. 単体テスト: `tests/test_content_disposition.rs` と `tests/test_auth.rs` に BMP 内 2 バイト / 3 バイト UTF-8 / `U+D7FF` / `U+E000` / `U+10FFFF` を含む値のラウンドトリップと、CR / LF / NUL の reject (qdtext / quoted-pair 両方) を追加した。`test_content_disposition_regression_0059` で issue 記載の hex 列が `aDDDDDDdttach]ment;}/\\;\<U+B8E3><U+98E3>;` として正しくパースされラウンドトリップで mojibake しないことを検証した (issue 文中の `U+9D63` は誤記、実際は `\xe9\xa3\xa3` = `U+98E3`)。
+9. `AGENTS.md` の `### RFC について` 節に「char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する」を追記した。
+10. `CHANGES.md` `## develop` の `### misc` の上に `[FIX]` エントリを追加した。
+
+### 検証
+
+- `make fmt && make clippy && make check && make test`: pass
+- `cargo +nightly fuzz run fuzz_content_disposition fuzz/corpus/fuzz_content_disposition/regression-0059`: assertion 失敗せず終了
+- `cargo +nightly fuzz run fuzz_content_disposition -- -max_total_time=60`: 4816950 runs / 61 秒 crash 無し
+- `cargo +nightly fuzz run fuzz_auth fuzz/corpus/fuzz_auth/ -- -runs=0`: corpus 10763 files 一括 replay で crash 無し
+- `cargo +nightly fuzz run fuzz_auth -- -max_total_time=60`: 9958917 runs / 61 秒 crash 無し

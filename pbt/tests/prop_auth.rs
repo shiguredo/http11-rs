@@ -35,6 +35,29 @@ fn param_value() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9._-]{1,32}".prop_map(|s| s)
 }
 
+// quoted-string の qdtext として許容される char (obs-text の Unicode scalar 拡張を含む)
+//
+// RFC 9110 Section 5.6.4 の qdtext ABNF (オクテット表現) を、char 単位走査の本実装に
+// 合わせて Unicode scalar に拡張解釈する (issue 0059)。
+fn qdtext_char() -> impl Strategy<Value = char> {
+    prop_oneof![
+        Just('\t'),
+        Just(' '),
+        Just('!'),
+        prop::char::range('#', '['), // 0x23-0x5B (DQUOTE と backslash を除く)
+        prop::char::range(']', '~'), // 0x5D-0x7E
+        // obs-text を Unicode scalar として opaque 保持する範囲。surrogate (`U+D800..=U+DFFF`)
+        // は char 型で構築不能なので、shrink バイアスを surrogate 跨ぎで歪めないため二分割する。
+        prop::char::range('\u{80}', '\u{D7FF}'),
+        prop::char::range('\u{E000}', '\u{10FFFF}'),
+    ]
+}
+
+// quoted-string で囲まれた realm 値 (obs-text 含む)
+fn qdtext_realm() -> impl Strategy<Value = String> {
+    proptest::collection::vec(qdtext_char(), 1..16).prop_map(|chars| chars.into_iter().collect())
+}
+
 // スキーム名のランダムケーシング ("Basic" -> "basic", "BASIC", "bAsIc" など)
 fn randomize_case(scheme: &'static str) -> impl Strategy<Value = String> {
     proptest::collection::vec(proptest::bool::ANY, scheme.len()).prop_map(move |bools| {
@@ -581,6 +604,45 @@ proptest! {
 
         prop_assert_eq!(reparsed.realm(), realm.as_str());
         prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
+    }
+}
+
+// ========================================
+// obs-text Unicode scalar 拡張のラウンドトリップ (issue 0059)
+// ========================================
+
+// WwwAuthenticate (Basic realm=...) に obs-text を含む UTF-8 char が含まれても
+// `parse -> to_string -> parse` のラウンドトリップで一致する。
+proptest! {
+    #[test]
+    fn prop_www_authenticate_obs_text_roundtrip(realm in qdtext_realm()) {
+        let input = format!("Basic realm=\"{}\"", realm);
+        let parsed = WwwAuthenticate::parse(&input).unwrap();
+        prop_assert_eq!(parsed.realm(), realm.as_str());
+
+        let displayed = parsed.to_string();
+        let reparsed = WwwAuthenticate::parse(&displayed).unwrap();
+        prop_assert_eq!(reparsed.realm(), realm.as_str());
+    }
+}
+
+// DigestChallenge の realm / nonce に obs-text を含む UTF-8 char が含まれても
+// ラウンドトリップで一致する。
+proptest! {
+    #[test]
+    fn prop_digest_challenge_obs_text_roundtrip(
+        realm in qdtext_realm(),
+        nonce in qdtext_realm(),
+    ) {
+        let input = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
+        let parsed = DigestChallenge::parse(&input).unwrap();
+        prop_assert_eq!(parsed.realm(), Some(realm.as_str()));
+        prop_assert_eq!(parsed.nonce(), Some(nonce.as_str()));
+
+        let displayed = parsed.to_header_value();
+        let reparsed = DigestChallenge::parse(&displayed).unwrap();
+        prop_assert_eq!(reparsed.realm(), Some(realm.as_str()));
+        prop_assert_eq!(reparsed.nonce(), Some(nonce.as_str()));
     }
 }
 

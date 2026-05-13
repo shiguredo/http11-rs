@@ -319,3 +319,103 @@ fn test_content_disposition_100_params_rejected() {
         Err(ContentDispositionError::TooManyParameters)
     ));
 }
+
+// ========================================
+// obs-text / UTF-8 multi-byte char の opaque 保持 (issue 0059)
+// ========================================
+
+// `parse -> to_string -> parse` のラウンドトリップで mojibake せず元の値が保持されることを検証する。
+fn assert_filename_roundtrip(filename: &str) {
+    let input = format!("attachment; filename=\"{}\"", filename);
+    let cd = ContentDisposition::parse(&input).unwrap_or_else(|e| {
+        panic!("parse failed for {:?}: {:?}", filename, e);
+    });
+    assert_eq!(cd.filename(), Some(filename));
+
+    let displayed = cd.to_string();
+    let reparsed = ContentDisposition::parse(&displayed).unwrap_or_else(|e| {
+        panic!("reparse failed for displayed {:?}: {:?}", displayed, e);
+    });
+    assert_eq!(reparsed.filename(), Some(filename));
+}
+
+// BMP 内の 2 バイト UTF-8 (`U+00E9` = `é`)
+#[test]
+fn test_content_disposition_filename_obs_text_bmp_2byte() {
+    assert_filename_roundtrip("résumé.txt");
+}
+
+// 3 バイト UTF-8 (`U+65E5` = `日`)
+#[test]
+fn test_content_disposition_filename_obs_text_bmp_3byte() {
+    assert_filename_roundtrip("日本語.txt");
+}
+
+// BMP 末尾 (`U+D7FF`)
+#[test]
+fn test_content_disposition_filename_obs_text_bmp_end() {
+    let filename: String = format!("a{}b", '\u{D7FF}');
+    assert_filename_roundtrip(&filename);
+}
+
+// surrogate 直後 (`U+E000`)
+#[test]
+fn test_content_disposition_filename_obs_text_supplementary_start() {
+    let filename: String = format!("a{}b", '\u{E000}');
+    assert_filename_roundtrip(&filename);
+}
+
+// 4 バイト UTF-8 最大 (`U+10FFFF`)
+#[test]
+fn test_content_disposition_filename_obs_text_max_scalar() {
+    let filename: String = format!("a{}b", '\u{10FFFF}');
+    assert_filename_roundtrip(&filename);
+}
+
+// issue 0059 で報告された Latin-1 mojibake 入力。`\xeb\xa3\xa3` と `\xe9\xa3\xa3` は
+// それぞれ UTF-8 として valid な 3 バイトシーケンス (`U+B8E3` / `U+98E3`)。
+#[test]
+fn test_content_disposition_regression_0059() {
+    let input =
+        b"inlnie;filename=\"aDDDDDDdttach]ment;}\\/\\\\\\\\;\\\\\\\xeb\xa3\xa3\xe9\xa3\xa3\\;\"";
+    let s = core::str::from_utf8(input).expect("valid UTF-8");
+    let cd = ContentDisposition::parse(s).expect("parse should succeed");
+
+    let expected = "aDDDDDDdttach]ment;}/\\\\;\\\u{B8E3}\u{98E3};";
+    assert_eq!(cd.filename(), Some(expected));
+
+    // ラウンドトリップで mojibake しないこと
+    let displayed = cd.to_string();
+    let reparsed = ContentDisposition::parse(&displayed).expect("reparse should succeed");
+    assert_eq!(reparsed.filename(), Some(expected));
+}
+
+// CR / LF / NUL は引き続き reject される (issue 0036 のリグレッション防止)
+#[test]
+fn test_content_disposition_filename_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("attachment; filename=\"a{}b\"", c);
+        let result = ContentDisposition::parse(&input);
+        assert!(
+            matches!(result, Err(ContentDispositionError::InvalidParameter)),
+            "char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
+}
+
+// quoted-pair (`\` + char) でも CR / LF / NUL は reject される
+#[test]
+fn test_content_disposition_filename_quoted_pair_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("attachment; filename=\"a\\{}b\"", c);
+        let result = ContentDisposition::parse(&input);
+        assert!(
+            matches!(result, Err(ContentDispositionError::InvalidParameter)),
+            "quoted-pair char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
+}

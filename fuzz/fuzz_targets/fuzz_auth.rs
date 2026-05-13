@@ -49,8 +49,25 @@ fuzz_target!(|data: &[u8]| {
             let _ = auth.uri();
             let _ = auth.response();
 
+            // Display ラウンドトリップ
             let displayed = auth.to_header_value();
-            let _ = DigestAuth::parse(&displayed);
+            if let Ok(reparsed) = DigestAuth::parse(&displayed) {
+                assert_eq!(auth.username(), reparsed.username());
+                assert_eq!(auth.username_decoded(), reparsed.username_decoded());
+                assert_eq!(auth.realm(), reparsed.realm());
+                assert_eq!(auth.nonce(), reparsed.nonce());
+                assert_eq!(auth.uri(), reparsed.uri());
+                assert_eq!(auth.response(), reparsed.response());
+                for name in [
+                    "opaque",
+                    "cnonce",
+                    "nc",
+                    "qop",
+                    "algorithm",
+                ] {
+                    assert_eq!(auth.param(name), reparsed.param(name));
+                }
+            }
         }
 
         // DigestChallenge パース
@@ -58,8 +75,22 @@ fuzz_target!(|data: &[u8]| {
             let _ = challenge.realm();
             let _ = challenge.nonce();
 
+            // Display ラウンドトリップ
             let displayed = challenge.to_header_value();
-            let _ = DigestChallenge::parse(&displayed);
+            if let Ok(reparsed) = DigestChallenge::parse(&displayed) {
+                assert_eq!(challenge.realm(), reparsed.realm());
+                assert_eq!(challenge.nonce(), reparsed.nonce());
+                for name in [
+                    "opaque",
+                    "domain",
+                    "qop",
+                    "algorithm",
+                    "userhash",
+                    "stale",
+                ] {
+                    assert_eq!(challenge.param(name), reparsed.param(name));
+                }
+            }
         }
 
         // BearerToken パース

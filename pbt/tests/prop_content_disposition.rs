@@ -12,7 +12,10 @@ fn disposition_type_str() -> impl Strategy<Value = &'static str> {
     prop_oneof![Just("inline"), Just("attachment"), Just("form-data"),]
 }
 
-// 引用符内で使える文字 (qdtext)
+// 引用符内で使える文字 (qdtext + obs-text の Unicode scalar 拡張)
+//
+// RFC 9110 Section 5.6.4 の qdtext ABNF (オクテット表現) を、char 単位走査の本実装に
+// 合わせて Unicode scalar に拡張解釈する (issue 0059)。
 fn qdtext_char() -> impl Strategy<Value = char> {
     prop_oneof![
         Just('\t'),
@@ -20,6 +23,11 @@ fn qdtext_char() -> impl Strategy<Value = char> {
         Just('!'),
         prop::char::range('#', '['), // 0x23-0x5B (引用符とバックスラッシュを除く)
         prop::char::range(']', '~'), // 0x5D-0x7E
+        // obs-text を Unicode scalar として opaque 保持する範囲。
+        // surrogate (`U+D800..=U+DFFF`) は char 型で構築不能なので、
+        // shrink バイアスを surrogate 跨ぎで歪めないため二分割する。
+        prop::char::range('\u{80}', '\u{D7FF}'),
+        prop::char::range('\u{E000}', '\u{10FFFF}'),
     ]
 }
 
