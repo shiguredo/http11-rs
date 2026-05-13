@@ -93,7 +93,7 @@ let bytes = response.encode()?;
 
 ### Request / Response のミューテーター API
 
-ビルダーパターン (`header` / `body` / `omit_body` / `without_body`) に加え、
+ビルダーパターン (`header` / `body` / `without_body`、および `Response` の `omit_body`) に加え、
 受信済みの値を書き換えるミューテーター (`&mut self` を取り `Result<&mut Self, _>` /
 `&mut Self` を返す) も提供しています。
 

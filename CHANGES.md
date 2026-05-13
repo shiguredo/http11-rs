@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.4.0
+
+**リリース日**: 2026-05-13
+
 - [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
