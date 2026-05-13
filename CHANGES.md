@@ -11,6 +11,27 @@
 
 ## develop
 
+### misc
+
+- [ADD] fuzz target `fuzz_pipelined` を追加する
+  - Keep-Alive 接続を想定し `RequestDecoder` / `ResponseDecoder` の `reset()` + `take_remaining()` を組み合わせた連続デコードのパニック安全性を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_uri_resolve` を追加する
+  - `Uri::resolve` の base と reference 両方を任意入力にする (既存 `fuzz_uri` は reference が `/test` 固定だった)
+  - `normalize` の冪等性 (RFC 3986 Section 6.2.2) も併せて検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_mark_eof` を追加する
+  - `ResponseDecoder::mark_eof` と `is_close_delimited` の状態遷移、`BodyKind::CloseDelimited` のパスを検証する
+  - @voluntas
+- [UPDATE] `fuzz_decoder_request` / `fuzz_decoder_response` を強化する
+  - `feed_unchecked` / `progress` / `take_remaining` / `is_tunnel` / `available_buf` / `remaining` のアクセサを網羅
+  - `fuzz_decoder_response` に `set_request_method("CONNECT")` の Tunnel モード経路、`mark_eof` / `is_close_delimited` のパスを追加
+  - @voluntas
+- [UPDATE] 既存 fuzz target の `if let` 二段ネストを `let ... && let ...` 形式に統一する
+  - 対象: `fuzz_content_encoding` / `fuzz_content_language` / `fuzz_content_location` / `fuzz_expect` / `fuzz_host` / `fuzz_trailer` / `fuzz_upgrade`
+  - `cargo clippy -- -D warnings` の `collapsible_if` 警告を解消する
+  - @voluntas
+
 ## 2026.4.0
 
 **リリース日**: 2026-05-13

@@ -106,10 +106,8 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                 BodyKind::None | BodyKind::Tunnel => {}
                 _ => {}
             }
-            let expected_body: Vec<u8> = request
-                .body_bytes()
-                .map(<[u8]>::to_vec)
-                .unwrap_or_default();
+            let expected_body: Vec<u8> =
+                request.body_bytes().map(<[u8]>::to_vec).unwrap_or_default();
             assert_eq!(decoded_body, expected_body);
         }
     }

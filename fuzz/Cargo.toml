@@ -230,3 +230,24 @@ path = "fuzz_targets/fuzz_encode_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_pipelined"
+path = "fuzz_targets/fuzz_pipelined.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_uri_resolve"
+path = "fuzz_targets/fuzz_uri_resolve.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_mark_eof"
+path = "fuzz_targets/fuzz_mark_eof.rs"
+test = false
+doc = false
+bench = false

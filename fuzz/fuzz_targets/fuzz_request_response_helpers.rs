@@ -48,9 +48,7 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
 ///
 /// decoder の `parse_content_length` (`src/decoder/body.rs`) と同じ厳格パース
 /// (OWS / カンマリスト / 複数行 / mismatched 値の reject) を再現する。
-fn expected_content_length(
-    headers: &[(String, String)],
-) -> Result<Option<u64>, ()> {
+fn expected_content_length(headers: &[(String, String)]) -> Result<Option<u64>, ()> {
     fn trim_ows(s: &str) -> &str {
         s.trim_matches(|c: char| c == ' ' || c == '\t')
     }
