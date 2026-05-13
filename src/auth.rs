@@ -33,7 +33,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
-use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
+use crate::validate::{is_qdtext_char, is_quoted_pair_char};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -818,39 +818,45 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         }
 
         let value = if bytes[i] == b'"' {
+            // 開く DQUOTE をスキップしてサブスライスから char 単位で走査する。
+            // bytes[i] == b'"' は ASCII (1 バイト) なので i+1 は valid な char 境界。
             i += 1;
+            let inner = &input[i..];
+            let mut iter = inner.chars();
             let mut value = String::new();
-            let mut escaped = false;
+            // 走査した value 部分と閉じ DQUOTE が占めるバイト数。
+            // 外側 i に反映して quoted-string 全体を消費させる。
+            let mut consumed: usize = 0;
             let mut closed = false;
-            while i < bytes.len() {
-                let b = bytes[i];
-                if escaped {
-                    // RFC 9110 Section 5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
-                    // CTL (CR / LF / NUL / 他) は escape の対象として許容しない。
-                    if !is_quoted_pair_byte(b) {
-                        return Err(AuthError::InvalidParameter);
-                    }
-                    value.push(b as char);
-                    escaped = false;
-                } else if b == b'\\' {
-                    escaped = true;
-                } else if b == b'"' {
-                    i += 1;
+            while let Some(c) = iter.next() {
+                if c == '"' {
+                    consumed += 1; // 閉じ DQUOTE は ASCII 1 バイト
                     closed = true;
                     break;
+                } else if c == '\\' {
+                    consumed += 1; // バックスラッシュは ASCII 1 バイト
+                    let next_c = iter.next().ok_or(AuthError::InvalidParameter)?;
+                    // RFC 9110 Section 5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+                    // CTL (CR / LF / NUL / 他) は escape の対象として許容しない。
+                    if !is_quoted_pair_char(next_c) {
+                        return Err(AuthError::InvalidParameter);
+                    }
+                    consumed += next_c.len_utf8();
+                    value.push(next_c);
                 } else {
                     // RFC 9110 Section 5.6.4: qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
                     // DQUOTE と backslash は別経路で処理済み。CR / LF / NUL 等の CTL を reject する。
-                    if !is_qdtext_byte(b) {
+                    if !is_qdtext_char(c) {
                         return Err(AuthError::InvalidParameter);
                     }
-                    value.push(b as char);
+                    consumed += c.len_utf8();
+                    value.push(c);
                 }
-                i += 1;
             }
-            if escaped || !closed {
+            if !closed {
                 return Err(AuthError::InvalidParameter);
             }
+            i += consumed;
             value
         } else {
             let value_start = i;

@@ -23,7 +23,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
+use crate::validate::{is_qdtext_char, is_quoted_pair_char};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -419,31 +419,25 @@ fn is_token_char(b: u8) -> bool {
 /// 受信側でも CR/LF を含む quoted-string を素通りさせると、上位アプリでの再エンコード経路で
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
 fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
-    let bytes = s.as_bytes();
     let mut result = String::with_capacity(s.len());
-    let mut i = 0;
+    let mut iter = s.chars();
 
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'\\' {
-            // quoted-pair: 次のバイトが HTAB / SP / VCHAR / obs-text であること
-            i += 1;
-            if i >= bytes.len() {
+    while let Some(c) = iter.next() {
+        if c == '\\' {
+            // quoted-pair: 次の char が HTAB / SP / VCHAR / obs-text (Unicode scalar 拡張) であること
+            let next = iter
+                .next()
+                .ok_or(ContentDispositionError::InvalidParameter)?;
+            if !is_quoted_pair_char(next) {
                 return Err(ContentDispositionError::InvalidParameter);
             }
-            let next = bytes[i];
-            if !is_quoted_pair_byte(next) {
-                return Err(ContentDispositionError::InvalidParameter);
-            }
-            result.push(next as char);
-            i += 1;
+            result.push(next);
         } else {
-            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
-            if !is_qdtext_byte(b) {
+            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text (Unicode scalar 拡張)
+            if !is_qdtext_char(c) {
                 return Err(ContentDispositionError::InvalidParameter);
             }
-            result.push(b as char);
-            i += 1;
+            result.push(c);
         }
     }
 

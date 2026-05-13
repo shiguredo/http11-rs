@@ -254,27 +254,36 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
     )
 }
 
-/// qdtext バイトか確認 (RFC 9110 Section 5.6.4)
+/// qdtext char か確認 (RFC 9110 Section 5.6.4)
 ///
-/// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
-///        = 0x09 / 0x20 / 0x21 / 0x23-0x5B / 0x5D-0x7E / 0x80-0xFF
+/// ABNF (bytes): qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+///                obs-text = %x80-FF (RFC 9110 Section 5.5)
 ///
-/// DQUOTE (0x22) と backslash (0x5C) は除く。
-/// CR / LF / NUL / 他の CTL (0x01-0x1F 範囲のうち HTAB 以外) は不許可。
-pub(crate) fn is_qdtext_byte(b: u8) -> bool {
-    matches!(b, 0x09 | 0x20 | 0x21 | 0x23..=0x5B | 0x5D..=0x7E | 0x80..=0xFF)
+/// 本実装は valid UTF-8 `&str` を char 単位で走査するため、
+/// ABNF のオクテット表現を Unicode scalar に拡張解釈し、obs-text の
+/// オクテット範囲 (`U+0080..=U+00FF`) を超える Unicode scalar
+/// (`U+0100..=U+10FFFF`、surrogate `U+D800..=U+DFFF` は char 型で構築不能)
+/// も opaque char としてそのまま受理する。RFC 9110 Section 5.5 の
+/// 「recipient SHOULD treat ... obs-text ... as opaque data」を
+/// char 単位に拡張解釈したもの。
+///
+/// DQUOTE (`"`) と backslash (`\`) は除く。
+/// CR / LF / NUL / 他の CTL (`U+0001..=U+001F` のうち HTAB 以外、`U+007F`) は不許可。
+pub(crate) fn is_qdtext_char(c: char) -> bool {
+    matches!(c, '\t' | ' ' | '!' | '#'..='[' | ']'..='~') || c as u32 >= 0x80
 }
 
-/// quoted-pair の右辺バイトか確認 (RFC 9110 Section 5.6.4)
+/// quoted-pair の右辺 char か確認 (RFC 9110 Section 5.6.4)
 ///
-/// quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
-///             = "\" ( 0x09 / 0x20-0x7E / 0x80-0xFF )
+/// ABNF (bytes): quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+///                VCHAR = %x21-7E, obs-text = %x80-FF (RFC 9110 Section 5.5)
 ///
-/// NUL (0x00) / CR (0x0D) / LF (0x0A) / 他の CTL (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F) は不許可。
+/// `is_qdtext_char` と同じく Unicode scalar 単位に拡張解釈する。
+/// NUL (`U+0000`) / CR (`U+000D`) / LF (`U+000A`) / 他の CTL は不許可。
 /// 受信側でも CR / LF を含む quoted-pair を素通りさせると、上位アプリでの再エンコード経路で
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
-pub(crate) fn is_quoted_pair_byte(b: u8) -> bool {
-    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
+pub(crate) fn is_quoted_pair_char(c: char) -> bool {
+    matches!(c, '\t' | ' '..='~') || c as u32 >= 0x80
 }
 
 /// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)

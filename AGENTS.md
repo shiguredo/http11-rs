@@ -189,5 +189,6 @@ cargo llvm-cov report
 - obs-text (0x80-FF) は opaque data として保持すること (RFC 9110 Section 5.5)
   - 対象は quoted-string / reason-phrase / field-value など obs-text を許容する全経路
   - 受信時は `char_indices()` ベースで走査し UTF-8 不変条件を保つこと (1 バイトずつ `as char` で String に push する経路は Latin-1 mojibake の原因になるため禁止)
+  - char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する (ABNF のオクテット表現を Unicode scalar に拡張解釈する)
   - CR / LF / NUL は引き続き reject する (RFC 9110 Section 5.5)
   - 送信側は US-ASCII を推奨、非 ASCII は RFC 8187 ext-value を使うこと
