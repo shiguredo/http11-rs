@@ -186,7 +186,8 @@ cargo llvm-cov report
   - RFC 7231 は廃止されて RFC 9112 になってる
 - RFC を確認する際は refs/ 以下を利用すること
 - サンプルは RFC に準拠していること
-- quoted-string パーサーは obs-text (0x80-FF) を受け付けないこと
-  - RFC 9110 Section 5.5 / 5.6.4 で obs-text は deprecated
-  - 非 ASCII パラメータは RFC 8187 ext-value (filename* 等) を使うこと
-  - 受信時に見つけたら InvalidParameter 相当のエラーで reject すること
+- obs-text (0x80-FF) は opaque data として保持すること (RFC 9110 Section 5.5)
+  - 対象は quoted-string / reason-phrase / field-value など obs-text を許容する全経路
+  - 受信時は `char_indices()` ベースで走査し UTF-8 不変条件を保つこと (1 バイトずつ `as char` で String に push する経路は Latin-1 mojibake の原因になるため禁止)
+  - CR / LF / NUL は引き続き reject する (RFC 9110 Section 5.5)
+  - 送信側は US-ASCII を推奨、非 ASCII は RFC 8187 ext-value を使うこと
