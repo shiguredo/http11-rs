@@ -30,6 +30,11 @@
 - [ADD] fuzz target `fuzz_mark_eof` を追加する
   - `ResponseDecoder::mark_eof` と `is_close_delimited` の状態遷移、`BodyKind::CloseDelimited` のパスを検証する
   - @voluntas
+- [ADD] fuzz target `fuzz_streaming_encoder` を追加する
+  - `RequestEncoder` / `ResponseEncoder` のストリーミング API (`compress_body` / `finish` / `reset`) の panic 安全性と API 契約を検証する
+  - 既存 `fuzz_encode_request` / `fuzz_encode_response` はバッチ API (`encode_request` / `encode_response`) のみで、`NoCompression` 経由のストリーミング経路は未到達だった
+  - `consumed <= input.len()` / `produced <= output.len()` の不変条件、`finish` 後の `AlreadyFinished` 復帰、`reset` 後の再利用可能性を検証する
+  - @voluntas
 - [UPDATE] `fuzz_decoder_request` / `fuzz_decoder_response` を強化する
   - `feed_unchecked` / `progress` / `take_remaining` / `is_tunnel` / `available_buf` / `remaining` のアクセサを網羅
   - `fuzz_decoder_response` に `set_request_method("CONNECT")` の Tunnel モード経路、`mark_eof` / `is_close_delimited` のパスを追加
