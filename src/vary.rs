@@ -19,6 +19,7 @@ use core::fmt;
 
 /// Vary パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VaryError {
     /// 空の入力
     Empty,

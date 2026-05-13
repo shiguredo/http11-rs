@@ -29,6 +29,7 @@ use core::fmt;
 
 /// Content-Type パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentTypeError {
     /// 空の Content-Type
     Empty,

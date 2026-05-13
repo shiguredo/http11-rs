@@ -233,3 +233,89 @@ fn test_content_disposition_parameter_case_insensitive() {
     let cd = ContentDisposition::parse("form-data; NAME=\"field\"").unwrap();
     assert_eq!(cd.name(), Some("field"));
 }
+
+// ========================================
+// quoted-string / quoted-pair の CTL 拒否 (RFC 9110 Section 5.6.4)
+// ========================================
+
+/// RFC 9110 §5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+/// CR / LF / NUL 等の CTL は escape の対象として許容しない
+#[test]
+fn test_content_disposition_quoted_pair_rejects_crlf() {
+    // `\<CR>` を含む quoted-pair は reject される
+    let input = "attachment; filename=\"a\\\rb\"";
+    let result = ContentDisposition::parse(input);
+    assert!(
+        result.is_err(),
+        "quoted-pair で CR を escape したものは reject されるべき"
+    );
+
+    let input = "attachment; filename=\"a\\\nb\"";
+    let result = ContentDisposition::parse(input);
+    assert!(
+        result.is_err(),
+        "quoted-pair で LF を escape したものは reject されるべき"
+    );
+
+    let input = "attachment; filename=\"a\\\0b\"";
+    let result = ContentDisposition::parse(input);
+    assert!(
+        result.is_err(),
+        "quoted-pair で NUL を escape したものは reject されるべき"
+    );
+}
+
+/// RFC 9110 §5.6.4: qdtext は HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// CR / LF / NUL は qdtext として許容しない (escape されていない場合も同じ)
+#[test]
+fn test_content_disposition_qdtext_rejects_crlf() {
+    // 生 CR を含む値は reject される (escape なし)
+    let input = "attachment; filename=\"a\rb\"";
+    let result = ContentDisposition::parse(input);
+    assert!(result.is_err(), "qdtext に CR を含むものは reject される");
+
+    let input = "attachment; filename=\"a\nb\"";
+    let result = ContentDisposition::parse(input);
+    assert!(result.is_err(), "qdtext に LF を含むものは reject される");
+}
+
+// ========================================
+// パラメータ数の hard cap (issue 0047)
+// ========================================
+
+fn build_content_disposition(param_count: usize) -> String {
+    let mut s = String::from("attachment");
+    for i in 0..param_count {
+        // 各パラメータ名は一意 (重複検出経路を踏まないため)
+        s.push_str(&format!("; p{}=\"v\"", i));
+    }
+    s
+}
+
+#[test]
+fn test_content_disposition_32_params_accepted() {
+    let input = build_content_disposition(32);
+    let result = ContentDisposition::parse(&input);
+    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
+}
+
+#[test]
+fn test_content_disposition_33_params_rejected() {
+    let input = build_content_disposition(33);
+    let result = ContentDisposition::parse(&input);
+    assert!(
+        matches!(result, Err(ContentDispositionError::TooManyParameters)),
+        "33 個目で TooManyParameters を返す想定: {:?}",
+        result
+    );
+}
+
+#[test]
+fn test_content_disposition_100_params_rejected() {
+    let input = build_content_disposition(100);
+    let result = ContentDisposition::parse(&input);
+    assert!(matches!(
+        result,
+        Err(ContentDispositionError::TooManyParameters)
+    ));
+}

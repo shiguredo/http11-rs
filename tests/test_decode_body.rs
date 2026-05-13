@@ -108,7 +108,7 @@ fn incomplete_chunked_body() {
             let len = data.len();
             match decoder.consume_body(len).unwrap() {
                 BodyProgress::Complete { .. } => {
-                    panic!("should not complete without terminating chunk")
+                    panic!("終端チャンク無しで Complete になってはならない")
                 }
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
@@ -234,13 +234,13 @@ fn close_delimited_decode_with_mark_eof() {
 
     // 再度 decode() を呼ぶと Response が返る
     let response = decoder.decode().unwrap().unwrap();
-    assert_eq!(response.body.as_deref(), Some(&b"body data"[..]));
+    assert_eq!(response.body_bytes(), Some(&b"body data"[..]));
 }
 
 /// HTTP/1.0 リクエストで Transfer-Encoding が指定された場合のエラーテスト
 ///
-/// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
-/// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする。
+/// RFC 9112 Section 6.1 / RFC 2326 Section 5: Transfer-Encoding は HTTP/1.1 でのみ定義され、
+/// HTTP/1.1 完全一致以外で出現した場合はエラーとする。
 #[test]
 fn http10_with_transfer_encoding_should_fail() {
     let mut decoder = RequestDecoder::new();
@@ -253,7 +253,7 @@ fn http10_with_transfer_encoding_should_fail() {
     let err = result.unwrap_err();
     assert!(
         err.to_string()
-            .contains("Transfer-Encoding is not defined in HTTP/1.0"),
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
         "unexpected error message: {}",
         err
     );
@@ -271,6 +271,259 @@ fn http11_with_transfer_encoding_should_succeed() {
     assert!(result.is_ok());
     let (_, body_kind) = result.unwrap().unwrap();
     assert!(matches!(body_kind, BodyKind::Chunked));
+}
+
+/// HTTP/1.1 以外の version (HTTP/0.9 / 2.0 / 3.0 / RTSP/x / FOO/1.0 / case 違い) で
+/// `Transfer-Encoding: chunked` が来たリクエストは reject する (issue 0046)
+fn assert_request_te_rejected(version: &str) {
+    let mut decoder = RequestDecoder::new();
+    let line = format!(
+        "POST / {}\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n",
+        version
+    );
+    decoder.feed(line.as_bytes()).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "version={:?} で Err を期待したが Ok を返した",
+        version
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
+        "version={:?}: unexpected error message: {}",
+        version,
+        err
+    );
+}
+
+#[test]
+fn http09_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/0.9");
+}
+
+#[test]
+fn http20_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/2.0");
+}
+
+#[test]
+fn http30_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("HTTP/3.0");
+}
+
+#[test]
+fn rtsp10_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("RTSP/1.0");
+}
+
+#[test]
+fn rtsp20_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("RTSP/2.0");
+}
+
+#[test]
+fn foo10_request_with_transfer_encoding_should_fail() {
+    assert_request_te_rejected("FOO/1.0");
+}
+
+// version 文字列は case-sensitive (`is_valid_protocol_version` でも大文字限定)
+#[test]
+fn lower_case_http11_request_with_transfer_encoding_should_fail() {
+    // "http/1.1" は is_valid_protocol_version で reject されるため start_line パース時点で
+    // 別エラー経路に入る。本テストは「HTTP/1.1 完全一致以外」の網羅性確認のための
+    // 補助検証として、is_valid_protocol_version で reject されることだけを確認する。
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / http/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers();
+    assert!(result.is_err());
+}
+
+/// ResponseDecoder 側でも同じく HTTP/1.1 完全一致以外で reject する (issue 0046)
+fn assert_response_te_rejected(version: &str) {
+    let mut decoder = ResponseDecoder::new();
+    let line = format!("{} 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", version);
+    decoder.feed(line.as_bytes()).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "version={:?} で Err を期待したが Ok を返した",
+        version
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Transfer-Encoding is only defined for HTTP/1.1"),
+        "version={:?}: unexpected error message: {}",
+        version,
+        err
+    );
+}
+
+#[test]
+fn http10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/1.0");
+}
+
+#[test]
+fn http09_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/0.9");
+}
+
+#[test]
+fn http20_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/2.0");
+}
+
+#[test]
+fn http30_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("HTTP/3.0");
+}
+
+#[test]
+fn rtsp10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("RTSP/1.0");
+}
+
+#[test]
+fn rtsp20_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("RTSP/2.0");
+}
+
+#[test]
+fn foo10_response_with_transfer_encoding_should_fail() {
+    assert_response_te_rejected("FOO/1.0");
+}
+
+/// Transfer-Encoding 値の OWS 解釈で Unicode 空白を許容してしまうと前段プロキシ
+/// (ASCII OWS のみ) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場
+/// となる。RFC 9110 Section 5.6.3 (OWS = *( SP / HTAB )) に準拠して SP / HTAB
+/// のみ許容することを確認する (issue 0053)。
+fn assert_request_te_rejected_with_unicode_whitespace(payload: &[u8]) {
+    let mut decoder = RequestDecoder::new();
+    decoder.feed(payload).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "Unicode 空白を含む Transfer-Encoding は Err を期待したが Ok を返した"
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("invalid Transfer-Encoding: not a valid token"),
+        "想定外のエラーメッセージ: {}",
+        err
+    );
+}
+
+#[test]
+fn request_te_with_leading_nbsp_should_fail() {
+    // NBSP (U+00A0) は UTF-8 で 0xC2 0xA0。先頭に置くと str::trim() なら除去されるが
+    // trim_ows では除去されない (token として不正と判定される)。
+    assert_request_te_rejected_with_unicode_whitespace(
+        b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: \xC2\xA0chunked\r\n\r\n",
+    );
+}
+
+#[test]
+fn request_te_with_trailing_nbsp_should_fail() {
+    assert_request_te_rejected_with_unicode_whitespace(
+        b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\xC2\xA0\r\n\r\n",
+    );
+}
+
+#[test]
+fn request_te_with_line_separator_should_fail() {
+    // U+2028 (LINE SEPARATOR) は UTF-8 で 0xE2 0x80 0xA8。
+    assert_request_te_rejected_with_unicode_whitespace(
+        b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: \xE2\x80\xA8chunked\r\n\r\n",
+    );
+}
+
+#[test]
+fn request_te_with_htab_should_succeed() {
+    // HTAB (0x09) は OWS として許可される (リグレッション防止)。
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: \tchunked\t\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(result.1, BodyKind::Chunked));
+}
+
+#[test]
+fn request_te_with_empty_list_element_should_succeed() {
+    // 空リスト要素 (RFC 9110 Section 5.6.1.2) は無視されるべき (リグレッション防止)。
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding:  ,chunked\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(result.1, BodyKind::Chunked));
+}
+
+fn assert_response_te_rejected_with_unicode_whitespace(payload: &[u8]) {
+    let mut decoder = ResponseDecoder::new();
+    decoder.feed(payload).unwrap();
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "Unicode 空白を含む Transfer-Encoding は Err を期待したが Ok を返した"
+    );
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("invalid Transfer-Encoding: not a valid token"),
+        "想定外のエラーメッセージ: {}",
+        err
+    );
+}
+
+#[test]
+fn response_te_with_leading_nbsp_should_fail() {
+    assert_response_te_rejected_with_unicode_whitespace(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: \xC2\xA0chunked\r\n\r\n",
+    );
+}
+
+#[test]
+fn response_te_with_trailing_nbsp_should_fail() {
+    assert_response_te_rejected_with_unicode_whitespace(
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\xC2\xA0\r\n\r\n",
+    );
+}
+
+#[test]
+fn response_te_with_htab_should_succeed() {
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: \tchunked\t\r\n\r\n")
+        .unwrap();
+    let result = decoder.decode_headers().unwrap().unwrap();
+    assert!(matches!(result.1, BodyKind::Chunked));
+}
+
+/// Trailer 申告の OWS 解釈で Unicode 空白を除去してしまうと、申告名と
+/// trailer-section の照合が前段プロキシと食い違い、認証フィールド等が
+/// trailer-section 経由で素通りする経路の足場になる (issue 0053)。
+#[test]
+fn trailer_declared_with_nbsp_should_not_match_section_name() {
+    // Trailer: \xC2\xA0X-Test を申告すると、trim_ows では NBSP が除去されず
+    // declared には NBSP 込みの名前が入る。後続 trailer-section の `X-Test:` は
+    // undeclared と判定されて reject される。issue 0032 (Trailer ホワイトリスト) の挙動。
+    let mut decoder = ResponseDecoder::new();
+    let response =
+        b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: \xC2\xA0X-Test\r\n\r\n\
+                     0\r\nX-Test: value\r\n\r\n";
+    decoder.feed(response).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "NBSP 込み申告と trailer-section の照合は Err を期待したが Ok を返した"
+    );
 }
 
 /// リクエストターゲットにパーセントエンコーディングされた null バイト (%00) が含まれる場合のエラーテスト
@@ -535,7 +788,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
         .feed(b"GET http://[::1/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
         .unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "expected error for unmatched '['");
+    assert!(result.is_err(), "対応していない '[' でエラーになるべき");
     assert!(
         result
             .unwrap_err()
@@ -549,7 +802,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
         .feed(b"GET http://]::1[/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
         .unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "expected error for ']' before '['");
+    assert!(result.is_err(), "'[' より先に ']' があるとエラーになるべき");
     assert!(
         result
             .unwrap_err()
@@ -565,7 +818,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
-        "expected error for mismatched bracket count"
+        "角括弧の対応数が不一致のときはエラーになるべき"
     );
 }
 
@@ -578,7 +831,7 @@ fn absolute_form_with_valid_ipv6_should_succeed() {
         .unwrap();
 
     let result = decoder.decode_headers();
-    assert!(result.is_ok(), "expected success for valid IPv6 literal");
+    assert!(result.is_ok(), "正常な IPv6 リテラルは成功すべき");
 }
 
 // ========================================

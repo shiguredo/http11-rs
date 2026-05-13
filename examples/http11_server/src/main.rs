@@ -23,13 +23,17 @@
 
 mod compressor;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use shiguredo_http11::{BodyKind, BodyProgress, Request, RequestDecoder, RequestHead, Response};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder, RequestHead, Response,
+    StatusCode,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_rustls::TlsAcceptor;
@@ -71,23 +75,28 @@ impl StreamingState {
             body: None,
         }
     }
-
-    #[allow(dead_code)]
-    fn reset(&mut self) {
-        self.head = None;
-        self.body_kind = None;
-        self.body = None;
-    }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    // tracing は stderr に出す。stdout はテストハーネスが parse する
+    // `LISTENING_PORT=<port>` 出力専用にしてログとの混在を避ける
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
     let options = parse_args()?;
 
-    let addr = format!("0.0.0.0:{}", options.port);
-    let listener = TcpListener::bind(&addr).await?;
+    // `--port 0` を指定すると OS にランダム割当させられる
+    let bind_addr = format!("0.0.0.0:{}", options.port);
+    let listener = TcpListener::bind(&bind_addr).await?;
+    let local_addr = listener.local_addr()?;
+    // テストハーネスが parse する machine-readable な行を stdout に出す
+    println!("LISTENING_PORT={}", local_addr.port());
+    // 子プロセス pipe 経由で確実に届けるため flush する。
+    // 失敗するとテスト側が LISTENING_PORT を読めずタイムアウトでハングするため expect で明示的に panic する
+    std::io::stdout().flush().expect("stdout flush failed");
+    let addr = local_addr.to_string();
 
     if options.tls {
         let cert_path = options
@@ -230,6 +239,8 @@ fn stream_body(
             *buf = None;
             Ok(true)
         }
+        // BodyKind は `#[non_exhaustive]` のため未知のバリアントが追加された場合は
+        // 明示的に未対応として扱う (お手本としての堅牢性、AGENTS.md)。
         BodyKind::ContentLength(_) | BodyKind::Chunked => {
             let mut acc = buf.take().unwrap_or_default();
             loop {
@@ -259,6 +270,9 @@ fn stream_body(
                 }
             }
         }
+        _ => Err(shiguredo_http11::Error::InvalidData(
+            "unknown BodyKind variant".to_string(),
+        )),
     }
 }
 
@@ -273,22 +287,49 @@ async fn serve_request(
     peer_addr: std::net::SocketAddr,
     tls: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let h = state.head.take().unwrap();
-    let _ = state.body_kind.take();
-    let request = Request {
-        method: h.method,
-        uri: h.uri,
-        version: h.version,
-        headers: h.headers,
-        body: state.body.take(),
+    let h = state
+        .head
+        .take()
+        .expect("head must be present when serve_request is called");
+    let body_kind = state.body_kind.take();
+
+    // CONNECT は本サーバー (非 proxy) では未対応のため 501 Not Implemented を返す。
+    // RFC 9110 Section 9.3.6 に従い、decoder は CONNECT 受信時に Tunnel phase へ遷移し
+    // 以降の decode_headers() がエラーになるため、必ず接続を閉じる。
+    if matches!(body_kind, Some(BodyKind::Tunnel)) {
+        info!(
+            method = %h.method(),
+            peer_addr = %peer_addr,
+            tls = tls,
+            "CONNECT rejected (not implemented)"
+        );
+        let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
+            .header("Content-Length", "0")?
+            .header("Connection", "close")?;
+        writer.write_all(&response.encode()?).await?;
+        writer.flush().await?;
+        return Ok(false);
+    }
+
+    // examples は外部 crate のため `from_raw_parts` 使用不可。
+    // 構築時バリデーション付きの Request::with_version 経由で再構築する。
+    // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
+    let mut request = Request::with_version(h.method(), h.uri(), h.version())?;
+    for (name, value) in h.headers() {
+        request.add_header(name, value)?;
+    }
+    let request = if let Some(body) = state.body.take() {
+        request.body(body)
+    } else {
+        request
     };
 
     conn_state.request_count += 1;
 
     info!(
-        method = %request.method,
-        uri = %request.uri,
-        version = %request.version,
+        method = %request.method(),
+        uri = %request.uri(),
+        version = %request.version(),
         peer_addr = %peer_addr,
         tls = tls,
         request_count = conn_state.request_count,
@@ -298,8 +339,8 @@ async fn serve_request(
     let should_keep_alive =
         request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
 
-    let response = build_response(&request, should_keep_alive);
-    let response_bytes = response.encode();
+    let response = build_response(&request, should_keep_alive)?;
+    let response_bytes = response.encode()?;
     writer.write_all(&response_bytes).await?;
     writer.flush().await?;
 
@@ -384,7 +425,10 @@ async fn handle_client(
 
             let body_complete = stream_body(
                 &mut decoder,
-                state.body_kind.as_ref().unwrap(),
+                state
+                    .body_kind
+                    .as_ref()
+                    .expect("body_kind must be set alongside head"),
                 &mut state.body,
             )?;
 
@@ -467,7 +511,10 @@ async fn handle_tls_client(
 
             let body_complete = stream_body(
                 &mut decoder,
-                state.body_kind.as_ref().unwrap(),
+                state
+                    .body_kind
+                    .as_ref()
+                    .expect("body_kind must be set alongside head"),
                 &mut state.body,
             )?;
 
@@ -486,7 +533,7 @@ async fn handle_tls_client(
     Ok(())
 }
 
-fn build_response(request: &Request, should_keep_alive: bool) -> Response {
+fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response, EncodeError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -496,18 +543,17 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Response {
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+    let is_head = request.method().eq_ignore_ascii_case("HEAD");
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
-    let accept_encoding = request
-        .headers
+    let accept_encoding = HttpHead::headers(request)
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
 
-    let response = match request.uri.as_str() {
+    let response = match request.uri() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
 <html>
@@ -523,14 +569,13 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Response {
 </html>
 "#;
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/html; charset=utf-8",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
         "/info" => {
             let body_content = format!(
@@ -538,40 +583,39 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Response {
                 now
             );
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "application/json",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
         "/echo" => {
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             // (実際の GET レスポンスはリクエストに依存するため)
             if is_head {
-                return add_connection_headers(
-                    Response::new(200, "OK")
-                        .header("Date", &date)
-                        .header("Content-Type", "text/plain; charset=utf-8")
-                        .header("Content-Length", "0")
-                        .header("Server", "shiguredo_http11/0.1.0")
-                        .omit_body(true),
-                    should_keep_alive,
-                );
+                let head_response = Response::with_status(StatusCode::OK)
+                    .header("Date", &date)?
+                    .header("Content-Type", "text/plain; charset=utf-8")?
+                    .header("Content-Length", "0")?
+                    .header("Server", "shiguredo_http11/0.1.0")?
+                    .omit_body(true);
+                return add_connection_headers(head_response, should_keep_alive);
             }
 
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
-                request.method, request.uri, request.version
+                request.method(),
+                request.uri(),
+                request.version()
             );
 
-            for (name, value) in &request.headers {
+            for (name, value) in HttpHead::headers(request) {
                 body.push_str(&format!("  {}: {}\n", name, value));
             }
 
-            if let Some(req_body) = request.body.as_deref()
+            if let Some(req_body) = request.body_bytes()
                 && !req_body.is_empty()
             {
                 body.push_str(&format!("\nBody ({} bytes):\n", req_body.len()));
@@ -583,26 +627,24 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Response {
             }
 
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/plain; charset=utf-8",
                 body.as_bytes(),
                 &date,
                 false,
                 encoding,
-            )
+            )?
         }
         _ => {
             let body_content = "404 Not Found\n";
             build_compressed_response(
-                404,
-                "Not Found",
+                StatusCode::NOT_FOUND,
                 "text/plain",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
     };
 
@@ -611,14 +653,13 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Response {
 
 /// 圧縮対応のレスポンスを構築
 fn build_compressed_response(
-    status_code: u16,
-    reason_phrase: &str,
+    status: StatusCode,
     content_type: &str,
     body: &[u8],
     date: &str,
     is_head: bool,
     encoding: Option<&str>,
-) -> Response {
+) -> Result<Response, EncodeError> {
     // 圧縮を試みる
     let (final_body, content_encoding) = if let Some(enc) = encoding {
         match compress_body(body, enc) {
@@ -636,18 +677,18 @@ fn build_compressed_response(
         (body.to_vec(), None)
     };
 
-    let mut response = Response::new(status_code, reason_phrase)
-        .header("Date", date)
-        .header("Content-Type", content_type)
-        .header("Content-Length", &final_body.len().to_string())
-        .header("Server", "shiguredo_http11/0.1.0")
-        .header("Vary", "Accept-Encoding");
+    let mut response = Response::with_status(status)
+        .header("Date", date)?
+        .header("Content-Type", content_type)?
+        .header("Content-Length", final_body.len().to_string())?
+        .header("Server", "shiguredo_http11/0.1.0")?
+        .header("Vary", "Accept-Encoding")?;
 
     if let Some(enc) = content_encoding {
-        response = response.header("Content-Encoding", enc);
+        response = response.header("Content-Encoding", enc)?;
     }
 
-    response.body(final_body).omit_body(is_head)
+    Ok(response.body(final_body).omit_body(is_head))
 }
 
 /// RFC 9112 準拠で Connection ヘッダーを設定する
@@ -655,9 +696,12 @@ fn build_compressed_response(
 /// HTTP/1.1 では keep-alive がデフォルトのため:
 /// - keep-alive 継続: ヘッダー不要
 /// - 接続終了: Connection: close を追加
-fn add_connection_headers(response: Response, should_keep_alive: bool) -> Response {
+fn add_connection_headers(
+    response: Response,
+    should_keep_alive: bool,
+) -> Result<Response, EncodeError> {
     if should_keep_alive {
-        response
+        Ok(response)
     } else {
         response.header("Connection", "close")
     }

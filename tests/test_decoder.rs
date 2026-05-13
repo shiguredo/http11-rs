@@ -22,9 +22,13 @@ use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, RequestDecoder, Re
 
 /// CONNECT + 2xx レスポンスでトンネルモードになることを確認。
 /// Content-Length が付いていても無視して Tunnel を返す (MUST ignore)。
+///
+/// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+/// item 1 (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より
+/// 優先されるため、CONNECT + 204 は `BodyKind::None` になる。
 #[test]
 fn test_connect_2xx_tunnel_mode() {
-    for status in [200, 201, 202, 204, 299] {
+    for status in [200, 201, 202, 299] {
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
@@ -41,7 +45,7 @@ fn test_connect_2xx_tunnel_mode() {
         );
 
         let (head, body_kind) = result.unwrap();
-        assert_eq!(head.status_code, status);
+        assert_eq!(head.status_code(), status);
         assert_eq!(
             body_kind,
             BodyKind::Tunnel,
@@ -50,6 +54,26 @@ fn test_connect_2xx_tunnel_mode() {
         );
         assert!(decoder.is_tunnel());
     }
+}
+
+/// CONNECT + 204 No Content は `BodyKind::None` になることを確認。
+///
+/// RFC 9112 Section 6.3 の "in order of precedence" により item 1
+/// (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より優先される。
+/// このため CONNECT + 204 はトンネルモードに切り替わらず、ヘッダー終了で
+/// メッセージが完了する。
+#[test]
+fn test_connect_204_no_body() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+
+    let response = "HTTP/1.1 204 No Content\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.status_code(), 204);
+    assert_eq!(body_kind, BodyKind::None);
+    assert!(!decoder.is_tunnel());
 }
 
 /// CONNECT + 非 2xx レスポンスはトンネルモードにならず、通常のボディ判定に従う。
@@ -97,7 +121,7 @@ fn test_non_connect_2xx_normal_body() {
         decoder.feed(response.as_bytes()).unwrap();
 
         let result = decoder.decode_headers().unwrap();
-        assert!(result.is_some(), "expected headers for {} response", method);
+        assert!(result.is_some(), "{} レスポンスでヘッダーを期待", method);
 
         let (_head, body_kind) = result.unwrap();
         assert_ne!(
@@ -117,35 +141,48 @@ fn test_non_connect_2xx_normal_body() {
 /// サーバーが MUST NOT に違反して送ってきても、エラーにせず無視する。
 #[test]
 fn test_connect_2xx_ignores_body_headers() {
-    // Transfer-Encoding: chunked を無視して Tunnel
+    use shiguredo_http11::HttpHead;
+    // Transfer-Encoding: chunked を無視して Tunnel + ResponseHead から TE が消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Transfer-Encoding"), None);
+    assert!(!head.is_chunked());
 
-    // Content-Length: 1000 を無視して Tunnel
+    // Content-Length: 1000 を無視して Tunnel + ResponseHead から CL が消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Content-Length"), None);
+    assert_eq!(head.content_length().unwrap(), None);
 
-    // Transfer-Encoding + Content-Length の両方があっても無視して Tunnel
+    // Transfer-Encoding + Content-Length の両方があっても Tunnel、両方とも消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
-    assert_eq!(
-        decoder.decode_headers().unwrap().unwrap().1,
-        BodyKind::Tunnel
-    );
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert_eq!(head.get_header("Transfer-Encoding"), None);
+    assert_eq!(head.get_header("Content-Length"), None);
+    assert!(!head.is_chunked());
+    assert_eq!(head.content_length().unwrap(), None);
+
+    // CONNECT 非 2xx (例: 502) では従来通り CL が ResponseHead.headers に残る
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+    let response = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(5));
+    assert_eq!(head.get_header("Content-Length"), Some("5"));
+    assert_eq!(head.content_length().unwrap(), Some(5));
 }
 
 /// take_remaining() でヘッダー後のデータを取得
@@ -233,7 +270,7 @@ fn test_304_ignores_invalid_te() {
 #[test]
 fn test_head_ignores_invalid_te() {
     let mut decoder = ResponseDecoder::new();
-    decoder.set_expect_no_body(true); // HEAD リクエストへのレスポンス
+    decoder.set_request_method("HEAD"); // HEAD リクエストへのレスポンス
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
@@ -245,7 +282,7 @@ fn test_head_ignores_invalid_te() {
 #[test]
 fn test_head_ignores_invalid_cl() {
     let mut decoder = ResponseDecoder::new();
-    decoder.set_expect_no_body(true);
+    decoder.set_request_method("HEAD");
     // 通常は異なる値はエラーだが、HEAD では無視
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nContent-Length: 200\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
@@ -312,16 +349,28 @@ fn test_response_te_deflate_chunked_is_chunked() {
     assert_eq!(result.1, BodyKind::Chunked);
 }
 
-/// レスポンスで Transfer-Encoding と Content-Length 両方ある場合、TE を優先
+/// レスポンスで Transfer-Encoding と Content-Length 両方ある場合はエラー
+///
+/// RFC 9112 Section 6.3 (3): "Such a message might indicate an attempt to
+/// perform request smuggling (Section 11.2) or response splitting
+/// (Section 11.1) and ought to be handled as an error."
+/// RFC 9112 Section 6.1: "the server MUST close the connection after
+/// responding to such a request to avoid the potential attacks."
+///
+/// 旧挙動では silent に TE 優先で受理していたが、smuggling / response
+/// splitting (CWE-444 / CWE-113) の兆候を上位層が検知できなくなるため、
+/// リクエスト経路と対称にエラー化する。
 #[test]
-fn test_response_te_and_cl_prefers_te() {
+fn test_response_te_and_cl_is_rejected() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
-    let result = decoder.decode_headers().unwrap().unwrap();
-    // TE が優先され、chunked フレーミング
-    assert_eq!(result.1, BodyKind::Chunked);
+    let result = decoder.decode_headers();
+    assert!(
+        result.is_err(),
+        "TE + CL の組合せは smuggling 兆候として reject される想定 (RFC 9112 Section 6.3)"
+    );
 }
 
 /// リクエスト Transfer-Encoding: gzip → エラー
@@ -533,8 +582,9 @@ fn test_chunked_trailer_too_many_error() {
         ..DecoderLimits::default()
     };
     let mut decoder = ResponseDecoder::with_limits(limits);
-    // 3 つのトレーラーで制限 2 を超える
-    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\
+    // RFC 9110 Section 6.5.1 ホワイトリスト方式: Trailer ヘッダーで事前申告する。
+    // 3 つのトレーラーで制限 2 を超える。
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-A, X-B, X-C\r\n\r\n\
                     0\r\nX-A: 1\r\nX-B: 2\r\nX-C: 3\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
     decoder.decode_headers().unwrap().unwrap();
@@ -553,10 +603,11 @@ fn test_chunked_trailer_line_too_long_error() {
         ..DecoderLimits::default()
     };
     let mut decoder = ResponseDecoder::with_limits(limits);
-    // トレーラー行 "X-Trailer: " + 30 文字 = 41 文字 > 30
+    // トレーラー行 "X-Trailer: " + 30 文字 = 41 文字 > 30。
+    // RFC 9110 Section 6.5.1 ホワイトリスト方式: Trailer ヘッダーで事前申告する。
     let long_value = "a".repeat(30);
     let response = format!(
-        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n0\r\nX-Trailer: {}\r\n\r\n",
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Trailer\r\n\r\n0\r\nX-Trailer: {}\r\n\r\n",
         long_value
     );
     decoder.feed(response.as_bytes()).unwrap();
@@ -564,6 +615,75 @@ fn test_chunked_trailer_line_too_long_error() {
 
     let result = decoder.progress();
     assert!(result.is_err());
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーで申告されたフィールドのみ受理される
+#[test]
+fn test_chunked_trailer_whitelist_accepts_declared_field() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Checksum\r\n\r\n\
+                    0\r\nX-Checksum: abc123\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    // 進める。Complete に到達するまでループする
+    loop {
+        match decoder.progress().unwrap() {
+            shiguredo_http11::BodyProgress::Complete { trailers } => {
+                assert_eq!(trailers.len(), 1);
+                assert!(trailers[0].0.eq_ignore_ascii_case("X-Checksum"));
+                assert_eq!(trailers[0].1, "abc123");
+                break;
+            }
+            _ => continue,
+        }
+    }
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: 申告されていない trailer は拒否される
+#[test]
+fn test_chunked_trailer_whitelist_rejects_undeclared_field() {
+    let mut decoder = ResponseDecoder::new();
+    // X-Checksum を申告したが、実際の trailer-section には X-Other が来る
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Checksum\r\n\r\n\
+                    0\r\nX-Other: leaked\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "申告されていない trailer フィールドは reject されるべき"
+    );
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: 認証ヘッダー後付け注入による smuggling を遮断
+#[test]
+fn test_chunked_trailer_whitelist_rejects_authorization_injection() {
+    let mut decoder = ResponseDecoder::new();
+    // 攻撃シナリオ: X-Custom を申告して通常 trailer に見せかけつつ、
+    // 実際の trailer-section に Authorization を仕込む。
+    // 認証カテゴリは `is_prohibited_trailer_field` で reject される。
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: X-Custom\r\n\r\n\
+                    0\r\nAuthorization: Bearer attacker-token\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "Authorization は trailer に置けないため reject されるべき"
+    );
+}
+
+/// RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーがない場合、trailer-section は何も受理しない
+#[test]
+fn test_chunked_trailer_whitelist_rejects_unannounced_trailers() {
+    let mut decoder = ResponseDecoder::new();
+    // Trailer ヘッダー無し → 申告なし → 任意の trailer フィールドが reject される
+    let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n\
+                    0\r\nX-Custom: value\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(
+        decoder.progress().is_err(),
+        "Trailer ヘッダー無しの場合、trailer-section は何も受理してはならない"
+    );
 }
 
 // ========================================
@@ -830,6 +950,35 @@ fn test_response_invalid_protocol_version_error() {
     assert!(decoder.decode_headers().is_err());
 }
 
+/// Content-Length に Unicode 空白 (NBSP / 全角空白) を含むレスポンスは拒否される
+///
+/// RFC 9110 Section 5.6.3: OWS = *( SP / HTAB )
+/// `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため NBSP の UTF-8 表現
+/// `0xC2 0xA0` がヘッダー値に通り得るが、Content-Length のパースで OWS として扱うのは
+/// SP / HTAB のみ。NBSP / 全角空白を含む値は DIGIT 検査で拒否されることを担保する
+/// (HTTP Request Smuggling 経路の遮断)。
+#[test]
+fn test_response_content_length_with_nbsp_is_rejected() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: \u{A0}5\r\n\r\nhello";
+    decoder.feed(response.as_bytes()).unwrap();
+    assert!(
+        decoder.decode_headers().is_err(),
+        "NBSP を含む Content-Length は拒否される想定"
+    );
+}
+
+#[test]
+fn test_request_content_length_with_ideographic_space_is_rejected() {
+    let mut decoder = RequestDecoder::new();
+    let request = "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: \u{3000}5\r\n\r\nhello";
+    decoder.feed(request.as_bytes()).unwrap();
+    assert!(
+        decoder.decode_headers().is_err(),
+        "全角空白を含む Content-Length は拒否される想定"
+    );
+}
+
 /// 範囲外ステータスコード (600)
 #[test]
 fn test_response_status_code_out_of_range_error() {
@@ -913,42 +1062,105 @@ fn test_consume_body_exceeds_buffer_close_delimited_error() {
 // ========================================
 
 /// CONNECT リクエストは Content-Length / Transfer-Encoding が付いていても
-/// body として読まず、常に BodyKind::None を返す。
+/// body として読まず、常に BodyKind::Tunnel を返してトンネルモードに遷移する。
 /// ヘッダーの存在だけでは reject しない。
+///
+/// RFC 9110 Section 9.3.6:
+///   "A CONNECT request message does not have content."
+///   "the connection becomes a tunnel immediately after the header section"
 #[test]
-fn test_connect_request_no_body() {
-    // Content-Length: N > 0 が付いていても BodyKind::None
+fn test_connect_request_enters_tunnel_mode() {
+    // Content-Length: N > 0 が付いていても BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(head.method(), "CONNECT");
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel(), "CONNECT 受信後はトンネルモード");
+    // ヘッダー終端後のバイトはトンネルデータとして取り出せる
+    assert_eq!(
+        decoder.take_remaining(),
+        b"abc",
+        "ヘッダー終端後のバイトは take_remaining で取得できる"
+    );
 
-    // Content-Length: 0 でも BodyKind::None
+    // Content-Length: 0 でも BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 0\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(head.method(), "CONNECT");
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
+    assert!(
+        decoder.take_remaining().is_empty(),
+        "ヘッダー終端のみで後続データがない場合は空"
+    );
 
-    // Transfer-Encoding: chunked でも BodyKind::None
+    // Transfer-Encoding: chunked でも BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
-    assert_eq!(body_kind, BodyKind::None);
+    assert_eq!(head.method(), "CONNECT");
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
 
-    // ヘッダーなし (最も一般的なケース) → BodyKind::None
+    // ヘッダーなし (最も一般的なケース) → BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
     decoder.feed(request.as_bytes()).unwrap();
     let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.method, "CONNECT");
+    assert_eq!(head.method(), "CONNECT");
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
+}
+
+/// CONNECT トンネル化後の decode_headers / decode は明示的にエラーを返す。
+/// HTTP Request Smuggling 防止のため、トンネルデータを次のリクエストとして
+/// parse させないこと。
+#[test]
+fn test_connect_request_decode_headers_in_tunnel_returns_error() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\nGET /admin HTTP/1.1\r\nHost: internal\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(decoder.is_tunnel());
+
+    // 後続バイトに見える「GET /admin」は次のリクエストではなくトンネルデータ
+    assert!(
+        decoder.decode_headers().is_err(),
+        "トンネルモードで decode_headers を呼ぶとエラーを返す想定"
+    );
+
+    // take_remaining で生バイトとして取り出せる
+    let remaining = decoder.take_remaining();
+    assert!(
+        remaining.starts_with(b"GET /admin HTTP/1.1\r\n"),
+        "ヘッダー終端後のバイトは next request としてではなくトンネルデータとして取得できる"
+    );
+}
+
+/// reset() でトンネルモードから脱出できる (CONNECT 失敗時の復帰経路)
+#[test]
+fn test_connect_request_reset_clears_tunnel_mode() {
+    let mut decoder = RequestDecoder::new();
+    let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+    decoder.decode_headers().unwrap().unwrap();
+    assert!(decoder.is_tunnel());
+
+    decoder.reset();
+    assert!(!decoder.is_tunnel(), "reset 後はトンネルモードから脱出する");
+
+    // 通常リクエストを decode できる
+    let next = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
+    decoder.feed(next.as_bytes()).unwrap();
+    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(head.method(), "GET");
     assert_eq!(body_kind, BodyKind::None);
 }
 
@@ -1144,7 +1356,7 @@ mod direct_buffer_write {
                 assert_eq!(size, 105);
                 assert_eq!(limit, 16);
             }
-            other => panic!("expected BufferOverflow, got {:?}", other.is_ok()),
+            other => panic!("BufferOverflow を期待したが {:?} だった", other.is_ok()),
         }
         assert_eq!(decoder.remaining(), prev.as_slice());
     }
@@ -1164,7 +1376,7 @@ mod direct_buffer_write {
                 assert_eq!(size, 105);
                 assert_eq!(limit, 16);
             }
-            other => panic!("expected BufferOverflow, got {:?}", other.is_ok()),
+            other => panic!("BufferOverflow を期待したが {:?} だった", other.is_ok()),
         }
         assert_eq!(decoder.remaining(), prev.as_slice());
     }
@@ -1331,9 +1543,12 @@ mod direct_buffer_write {
         let buf = decoder.mut_buf(data.len()).unwrap();
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
-        let response = decoder.decode().unwrap().expect("response decoded");
-        assert_eq!(response.status_code, 200);
-        assert_eq!(response.body.as_deref(), Some(b"hello".as_slice()));
+        let response = decoder
+            .decode()
+            .unwrap()
+            .expect("response がデコードされるべき");
+        assert_eq!(response.status_code(), 200);
+        assert_eq!(response.body_bytes(), Some(b"hello".as_slice()));
     }
 
     #[test]
@@ -1343,8 +1558,350 @@ mod direct_buffer_write {
         let buf = decoder.mut_buf(data.len()).unwrap();
         buf.copy_from_slice(data);
         decoder.advance_buf(data.len());
-        let request = decoder.decode().unwrap().expect("request decoded");
-        assert_eq!(request.method, "POST");
-        assert_eq!(request.body.as_deref(), Some(b"hello".as_slice()));
+        let request = decoder
+            .decode()
+            .unwrap()
+            .expect("request がデコードされるべき");
+        assert_eq!(request.method(), "POST");
+        assert_eq!(request.body_bytes(), Some(b"hello".as_slice()));
+    }
+}
+
+// ========================================
+// peek_body_decompressed のテスト
+// ========================================
+
+mod peek_body_decompressed {
+    use super::*;
+    use shiguredo_http11::compression::{
+        CompressionError, CompressionStatus, Decompressor, NoCompression,
+    };
+
+    /// `NoCompression` 経由でボディ受信中: ボディデータがある間は `Some` を返す
+    #[test]
+    fn no_compression_returns_some_during_body() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
+
+        let mut output = vec![0u8; 32];
+        let status = decoder
+            .peek_body_decompressed(&mut output)
+            .unwrap()
+            .expect("ボディデータが取得できるべき");
+        assert_eq!(status.consumed(), 5);
+        assert_eq!(status.produced(), 5);
+        assert_eq!(&output[..5], b"hello");
+        decoder.consume_body(status.consumed()).unwrap();
+    }
+
+    /// `NoCompression` 経由でボディ完了後: `None` に収束する
+    /// (`Complete { 0, 0 }` が返るので新しい peek_body_decompressed の判定で None になる)
+    #[test]
+    fn no_compression_returns_none_after_body_complete() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
+
+        let mut output = vec![0u8; 32];
+        let status = decoder
+            .peek_body_decompressed(&mut output)
+            .unwrap()
+            .expect("ボディデータが取得できるべき");
+        decoder.consume_body(status.consumed()).unwrap();
+
+        // ボディ完了後の呼び出しは None
+        let next = decoder.peek_body_decompressed(&mut output).unwrap();
+        assert!(next.is_none());
+    }
+
+    /// 内部 buffer 蓄積型の Decompressor 実装でも、ボディ枯渇後に drain できる
+    /// (peek_body_decompressed が `decompress(&[], output)` を呼ぶ振る舞いの検証)
+    #[test]
+    fn drain_internal_buffer_after_body_exhausted() {
+        /// テスト用 stub: feed 時に `produce_per_byte` 倍の出力を内部 buffer に蓄積する
+        struct BufferingDecompressor {
+            buffered: Vec<u8>,
+            produce_per_byte: usize,
+            finished: bool,
+        }
+
+        impl Decompressor for BufferingDecompressor {
+            fn decompress(
+                &mut self,
+                input: &[u8],
+                output: &mut [u8],
+            ) -> Result<CompressionStatus, CompressionError> {
+                // 内部 buffer に蓄積されたバイトを優先的に drain
+                if !self.buffered.is_empty() {
+                    let n = self.buffered.len().min(output.len());
+                    output[..n].copy_from_slice(&self.buffered[..n]);
+                    self.buffered.drain(..n);
+
+                    if !self.buffered.is_empty() {
+                        return Ok(CompressionStatus::OutputFull {
+                            consumed: 0,
+                            produced: n,
+                        });
+                    }
+                    if self.finished {
+                        return Ok(CompressionStatus::Complete {
+                            consumed: 0,
+                            produced: n,
+                        });
+                    }
+                    return Ok(CompressionStatus::Continue {
+                        consumed: 0,
+                        produced: n,
+                    });
+                }
+
+                // 入力を全消費して内部 buffer に蓄積 (noflate 風の振る舞い)
+                if !input.is_empty() {
+                    for &b in input {
+                        for _ in 0..self.produce_per_byte {
+                            self.buffered.push(b);
+                        }
+                    }
+                    // ストリーム終端を 'X' バイトで表現する単純な擬似プロトコル
+                    if input.contains(&b'X') {
+                        self.finished = true;
+                    }
+
+                    let n = self.buffered.len().min(output.len());
+                    output[..n].copy_from_slice(&self.buffered[..n]);
+                    self.buffered.drain(..n);
+
+                    if !self.buffered.is_empty() {
+                        return Ok(CompressionStatus::OutputFull {
+                            consumed: input.len(),
+                            produced: n,
+                        });
+                    }
+                    if self.finished {
+                        return Ok(CompressionStatus::Complete {
+                            consumed: input.len(),
+                            produced: n,
+                        });
+                    }
+                    return Ok(CompressionStatus::Continue {
+                        consumed: input.len(),
+                        produced: n,
+                    });
+                }
+
+                // empty input かつ buffered 空: 進展なし
+                if self.finished {
+                    Ok(CompressionStatus::Complete {
+                        consumed: 0,
+                        produced: 0,
+                    })
+                } else {
+                    Ok(CompressionStatus::Continue {
+                        consumed: 0,
+                        produced: 0,
+                    })
+                }
+            }
+
+            fn reset(&mut self) {
+                self.buffered.clear();
+                self.finished = false;
+            }
+        }
+
+        let mut decoder = ResponseDecoder::with_decompressor(BufferingDecompressor {
+            buffered: Vec::new(),
+            produce_per_byte: 4, // 1 byte 入力 → 4 bytes 出力
+            finished: false,
+        });
+
+        // body は 2 bytes ('A', 'X')。X でストリーム終端。
+        // 期待される展開後出力: AAAAXXXX (8 bytes)
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nAX";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
+
+        // 出力 buffer は 3 bytes (内部 buffer が複数回に分かれて drain される設定)
+        let mut output = vec![0u8; 3];
+        let mut decompressed = Vec::new();
+        let mut total_consumed = 0;
+
+        for _ in 0..16 {
+            // 安全上限
+            match decoder.peek_body_decompressed(&mut output).unwrap() {
+                Some(status) => {
+                    decompressed.extend_from_slice(&output[..status.produced()]);
+                    if status.consumed() > 0 {
+                        decoder.consume_body(status.consumed()).unwrap();
+                        total_consumed += status.consumed();
+                    }
+                }
+                None => break,
+            }
+        }
+
+        assert_eq!(total_consumed, 2, "ボディ全バイトが消費されるべき");
+        assert_eq!(
+            decompressed, b"AAAAXXXX",
+            "解凍後の 8 バイトすべてが収集されるべき"
+        );
+    }
+
+    /// 進展なしのときに None を返す (`Continue { 0, 0 }` のケース)
+    #[test]
+    fn returns_none_when_no_progress() {
+        let mut decoder = ResponseDecoder::with_decompressor(NoCompression::new());
+        let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\n";
+        let buf = decoder.mut_buf(data.len()).unwrap();
+        buf.copy_from_slice(data);
+        decoder.advance_buf(data.len());
+
+        decoder
+            .decode_headers()
+            .unwrap()
+            .expect("ヘッダーがデコードされるべき");
+
+        // ボディがまだ届いていない → peek_body は None → decompress(&[], output) 経由で
+        // NoCompression は Complete { 0, 0 } を返す → peek_body_decompressed は None を返す
+        let mut output = vec![0u8; 32];
+        let result = decoder.peek_body_decompressed(&mut output).unwrap();
+        assert!(result.is_none(), "進展なしのときは None になるべき");
+    }
+}
+
+// ========================================
+// HttpHead::content_length の差分検証 (issue 0044)
+//
+// decoder/body の parse_content_length と完全に整合した厳格パースを行うことを検証する。
+// 旧実装の `.parse::<u64>().ok()` で漏れていた smuggling 経路を遮断する。
+// ========================================
+
+mod http_head_content_length {
+    use shiguredo_http11::{Error, Request, Response};
+
+    fn make_request_with_cl(values: &[&str]) -> Request {
+        let mut req = Request::new("POST", "/").unwrap();
+        req = req.header("Host", "example.com").unwrap();
+        for v in values {
+            req = req.add_header_clone("Content-Length", v);
+        }
+        req
+    }
+
+    fn make_response_with_cl(values: &[&str]) -> Response {
+        let mut res = Response::new(200, "OK").unwrap();
+        for v in values {
+            res = res.add_header_clone("Content-Length", v);
+        }
+        res
+    }
+
+    trait AddHeaderClone: Sized {
+        fn add_header_clone(self, name: &str, value: &str) -> Self;
+    }
+    impl AddHeaderClone for Request {
+        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+            self.add_header(name, value).unwrap();
+            self
+        }
+    }
+    impl AddHeaderClone for Response {
+        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+            self.add_header(name, value).unwrap();
+            self
+        }
+    }
+
+    #[test]
+    fn test_request_content_length_single_value() {
+        let req = make_request_with_cl(&["100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_plus_sign_rejected() {
+        let req = make_request_with_cl(&["+100"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_leading_zero_accepted() {
+        let req = make_request_with_cl(&["0100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_ows_trimmed() {
+        // ASCII OWS は trim 対象 (旧実装は None を返していた)
+        let req = make_request_with_cl(&[" 100 "]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_comma_same_value_merged() {
+        let req = make_request_with_cl(&["100, 100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_comma_mismatched_rejected() {
+        // 旧実装は None、新実装は smuggling 検知で Err
+        let req = make_request_with_cl(&["100, 101"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_multi_line_same_value() {
+        let req = make_request_with_cl(&["100", "100"]);
+        assert_eq!(req.content_length().unwrap(), Some(100));
+    }
+
+    #[test]
+    fn test_request_content_length_multi_line_mismatched_rejected() {
+        // 旧実装は最初の値 (Some(100)) を黙って返していた smuggling 経路
+        let req = make_request_with_cl(&["100", "101"]);
+        assert!(matches!(req.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_request_content_length_absent() {
+        let req = Request::new("GET", "/")
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
+        assert_eq!(req.content_length().unwrap(), None);
+    }
+
+    #[test]
+    fn test_response_content_length_mismatched_rejected() {
+        let res = make_response_with_cl(&["100", "101"]);
+        assert!(matches!(res.content_length(), Err(Error::InvalidData(_))));
+    }
+
+    #[test]
+    fn test_response_content_length_ows_trimmed() {
+        let res = make_response_with_cl(&[" 100 "]);
+        assert_eq!(res.content_length().unwrap(), Some(100));
     }
 }

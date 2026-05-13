@@ -26,19 +26,25 @@ tracing = "0.1"
 # ログのフォーマットとサブスクライバ
 tracing-subscriber = "0.3"
 
-# Brotli 圧縮展開 (オプション)
-brotli = { version = "8.0", optional = true }
-# gzip / DEFLATE 圧縮展開 (オプション)
-noflate = { version = "0.1", optional = true }
-# Zstd 圧縮展開 (オプション)
-zstd = { version = "0.13", optional = true }
+# Brotli 圧縮展開
+brotli = "8.0"
+# gzip / DEFLATE 圧縮展開
+noflate = "0.1"
+# Zstd 圧縮展開
+zstd = "0.13"
 
-[features]
-# デフォルトで全圧縮形式を有効化
-default = ["br", "gzip", "zstd"]
-# Brotli 圧縮展開を有効化
-br = ["dep:brotli"]
-# gzip 圧縮展開を有効化
-gzip = ["dep:noflate"]
-# Zstd 圧縮展開を有効化
-zstd = ["dep:zstd"]
+[dev-dependencies]
+# Docker コンテナ起動 (実 nginx 相手の integration test)
+testcontainers = { version = "0.27", default-features = false, features = [
+  # 暗号バックエンド (AGENTS.md: 暗号ライブラリは aws-lc-rs)
+  "aws-lc-rs",
+] }
+# 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
+tokio = { version = "1.52", features = [
+  # tokio::test マクロ
+  "macros",
+  # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
+  "rt-multi-thread",
+  # タイムアウト
+  "time",
+] }

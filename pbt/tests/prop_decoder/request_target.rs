@@ -65,7 +65,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "GET with origin-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "GET + origin-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 
@@ -75,7 +75,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "GET with origin-form?query should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "GET + origin-form?query は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 
@@ -85,7 +85,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "POST with origin-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "POST + origin-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 }
@@ -101,7 +101,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "GET with absolute-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "GET + absolute-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 }
@@ -117,7 +117,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "CONNECT with authority-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "CONNECT + authority-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 
@@ -127,7 +127,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "GET with authority-form should fail: {}", uri);
+        prop_assert!(result.is_err(), "GET + authority-form は失敗すべき: {}", uri);
     }
 
     #[test]
@@ -136,7 +136,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "POST with authority-form should fail: {}", uri);
+        prop_assert!(result.is_err(), "POST + authority-form は失敗すべき: {}", uri);
     }
 }
 
@@ -155,7 +155,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "request-target with fragment should fail: {}", uri);
+        prop_assert!(result.is_err(), "fragment を含む request-target は失敗すべき: {}", uri);
     }
 
     #[test]
@@ -168,7 +168,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "absolute-form with fragment should fail: {}", uri_with_fragment);
+        prop_assert!(result.is_err(), "fragment を含む absolute-form は失敗すべき: {}", uri_with_fragment);
     }
 }
 
@@ -183,7 +183,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "CONNECT with origin-form should fail: {}", uri);
+        prop_assert!(result.is_err(), "CONNECT + origin-form は失敗すべき: {}", uri);
     }
 
     #[test]
@@ -192,7 +192,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "CONNECT with absolute-form should fail: {}", uri);
+        prop_assert!(result.is_err(), "CONNECT + absolute-form は失敗すべき: {}", uri);
     }
 }
 
@@ -207,7 +207,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "OPTIONS with origin-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "OPTIONS + origin-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 
@@ -217,7 +217,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "OPTIONS with absolute-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "OPTIONS + absolute-form は成功すべき: {}", uri);
         prop_assert!(result.unwrap().is_some());
     }
 
@@ -227,7 +227,7 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(request_line.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_err(), "OPTIONS with authority-form should fail: {}", uri);
+        prop_assert!(result.is_err(), "OPTIONS + authority-form は失敗すべき: {}", uri);
     }
 }
 
@@ -264,8 +264,8 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(raw.as_bytes()).unwrap();
         let result = decoder.decode_headers();
-        prop_assert!(result.is_ok(), "urn: absolute-form should succeed: {}", uri);
+        prop_assert!(result.is_ok(), "urn: の absolute-form は成功すべき: {}", uri);
         let (head, _) = result.unwrap().unwrap();
-        prop_assert_eq!(&head.uri, &uri);
+        prop_assert_eq!(head.uri(), uri.as_str());
     }
 }

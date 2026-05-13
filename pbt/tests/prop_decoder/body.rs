@@ -65,14 +65,19 @@ proptest! {
     #[test]
     fn prop_chunked_with_trailer_ok(
         body_content in "[a-z]{1,32}",
-        trailer_name in "[A-Za-z]{1,16}",
+        // RFC 9110 Section 6.5.1 で `Authorization` / `TE` / `Date` 等の禁止
+        // フィールドは trailer に置けないため、`X-` prefix を強制して
+        // 拒否リストと衝突しない名前のみ生成する。
+        trailer_name in "X-[A-Za-z]{0,14}",
         trailer_value in "[a-z0-9]{1,16}"
     ) {
         // トレーラーは OK
+        // RFC 9110 Section 6.5.1 ホワイトリスト方式: `Trailer:` ヘッダーで
+        // 事前申告したフィールドのみ受理される。
         let len = body_content.len();
         let data = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: {}\r\n\r\n",
-            len, body_content, trailer_name, trailer_value
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: {}\r\n\r\n{:x}\r\n{}\r\n0\r\n{}: {}\r\n\r\n",
+            trailer_name, len, body_content, trailer_name, trailer_value
         );
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
@@ -104,15 +109,19 @@ proptest! {
         body_content in "[a-z]{1,32}",
         trailer_count in 1..4usize
     ) {
-        // 複数のトレーラーは OK
+        // 複数のトレーラーは OK (`Trailer:` ヘッダーで事前申告したもののみ)
         let len = body_content.len();
+        let declared = (0..trailer_count)
+            .map(|i| format!("X-Trailer{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
         let trailers = (0..trailer_count)
             .map(|i| format!("X-Trailer{}: value{}", i, i))
             .collect::<Vec<_>>()
             .join("\r\n");
         let data = format!(
-            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n{}\r\n\r\n",
-            len, body_content, trailers
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: {}\r\n\r\n{:x}\r\n{}\r\n0\r\n{}\r\n\r\n",
+            declared, len, body_content, trailers
         );
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
@@ -341,11 +350,11 @@ proptest! {
 
         // 1 回目のデコード
         let response1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response1.body.as_deref().map(<[u8]>::len), Some(body1_len));
+        prop_assert_eq!(response1.body_bytes().map(<[u8]>::len), Some(body1_len));
 
         // 2 回目のデコード
         let response2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response2.body.as_deref().map(<[u8]>::len), Some(body2_len));
+        prop_assert_eq!(response2.body_bytes().map(<[u8]>::len), Some(body2_len));
     }
 }
 
@@ -376,10 +385,10 @@ proptest! {
         decoder.feed(req2.as_bytes()).unwrap();
 
         let request1 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request1.body.as_deref().map(<[u8]>::len), Some(body1_len));
+        prop_assert_eq!(request1.body_bytes().map(<[u8]>::len), Some(body1_len));
 
         let request2 = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request2.body.as_deref().map(<[u8]>::len), Some(body2_len));
+        prop_assert_eq!(request2.body_bytes().map(<[u8]>::len), Some(body2_len));
     }
 }
 
@@ -412,7 +421,7 @@ proptest! {
         // decode() を連続して呼ぶ
         for body_data in &bodies {
             let response = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -447,7 +456,7 @@ proptest! {
         // decode() を連続して呼ぶ
         for body_data in &bodies {
             let request = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -495,7 +504,11 @@ proptest! {
     #[test]
     fn prop_request_incomplete_trailer(
         body_content in "[a-z]{1,32}",
-        trailer_name in "[A-Za-z]{1,16}"
+        // 禁止フィールドと衝突しない `X-` prefix の名前のみ生成する
+        // (本テストは「不完全な trailer 行は Complete に到達しない」を確認するため、
+        // 禁止判定で reject されてもテスト本来の意図とは別軸の reject になり
+        // 結論が曖昧になるのを避ける)。
+        trailer_name in "X-[A-Za-z]{0,14}"
     ) {
         // 不完全なトレーラーは Complete に到達してはならない
         let len = body_content.len();
@@ -556,7 +569,7 @@ proptest! {
         // progress() でチャンクサイズ行をパースしようとするとエラー
         let result = decoder.progress();
         let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
-        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
+        prop_assert!(is_chunk_line_too_long, "ChunkLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -583,7 +596,7 @@ proptest! {
         // progress() でチャンクサイズ行をパースしようとするとエラー
         let result = decoder.progress();
         let is_chunk_line_too_long = matches!(result, Err(Error::ChunkLineTooLong { .. }));
-        prop_assert!(is_chunk_line_too_long, "expected ChunkLineTooLong, got {:?}", result);
+        prop_assert!(is_chunk_line_too_long, "ChunkLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -612,8 +625,8 @@ proptest! {
         let request = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(request.body.as_deref(), Some(expected_body.as_slice()));
-        prop_assert_eq!(&request.method, "POST");
+        prop_assert_eq!(request.body_bytes(), Some(expected_body.as_slice()));
+        prop_assert_eq!(request.method(), "POST");
     }
 }
 
@@ -638,8 +651,8 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
-        prop_assert_eq!(response.status_code, 200);
+        prop_assert_eq!(response.body_bytes(), Some(expected_body.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
     }
 }
 
@@ -663,8 +676,8 @@ proptest! {
         let mut decoder = RequestDecoder::new();
         decoder.feed(&full).unwrap();
         let request = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(request.body.as_deref(), Some(body_data.as_slice()));
-        prop_assert_eq!(&request.method, "POST");
+        prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
+        prop_assert_eq!(request.method(), "POST");
     }
 }
 
@@ -684,8 +697,8 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&full).unwrap();
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
-        prop_assert_eq!(response.status_code, 200);
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
     }
 }
 
@@ -740,5 +753,120 @@ proptest! {
         }
 
         prop_assert_eq!(&consumed, &body_data);
+    }
+}
+
+// ========================================
+// Unicode 空白 OWS の reject (issue 0053)
+// ========================================
+//
+// RFC 9110 Section 5.6.3 では OWS = *( SP / HTAB ) と定義されており、
+// trim_ows は SP/HTAB のみ除去する。Unicode 空白 (NBSP / U+2028 等) を
+// 含む Transfer-Encoding は token として不正と判定され reject される。
+
+/// Unicode 空白の UTF-8 表現 (NBSP / U+2028 / U+2000 / U+205F)
+fn unicode_whitespace_bytes() -> impl Strategy<Value = &'static [u8]> {
+    prop_oneof![
+        Just(&b"\xC2\xA0"[..]),     // U+00A0 NBSP
+        Just(&b"\xE2\x80\xA8"[..]), // U+2028 LINE SEPARATOR
+        Just(&b"\xE2\x80\x80"[..]), // U+2000 EN QUAD
+        Just(&b"\xE2\x81\x9F"[..]), // U+205F MEDIUM MATHEMATICAL SPACE
+    ]
+}
+
+proptest! {
+    /// 任意の Unicode 空白を前後に挿入した Transfer-Encoding: chunked は
+    /// request 経路で reject される (HRS 経路の遮断)。
+    #[test]
+    fn prop_request_te_unicode_whitespace_rejected(
+        ws in unicode_whitespace_bytes(),
+        position in 0u8..3,
+    ) {
+        let prefix = b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: ";
+        let mut payload: Vec<u8> = prefix.to_vec();
+        match position {
+            0 => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+            }
+            1 => {
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+            _ => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+        }
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err(), "Unicode 空白を含む TE は reject されるべき");
+        let err = result.unwrap_err();
+        prop_assert!(
+            matches!(&err, Error::InvalidData(_)),
+            "InvalidData を期待: {:?}", err
+        );
+    }
+}
+
+proptest! {
+    /// response 経路でも同様に reject される。
+    #[test]
+    fn prop_response_te_unicode_whitespace_rejected(
+        ws in unicode_whitespace_bytes(),
+        position in 0u8..3,
+    ) {
+        let prefix = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: ";
+        let mut payload: Vec<u8> = prefix.to_vec();
+        match position {
+            0 => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+            }
+            1 => {
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+            _ => {
+                payload.extend_from_slice(ws);
+                payload.extend_from_slice(b"chunked");
+                payload.extend_from_slice(ws);
+            }
+        }
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err(), "Unicode 空白を含む TE は reject されるべき");
+        let err = result.unwrap_err();
+        prop_assert!(
+            matches!(&err, Error::InvalidData(_)),
+            "InvalidData を期待: {:?}", err
+        );
+    }
+}
+
+proptest! {
+    /// SP / HTAB のみで構成された OWS は引き続き受理される (リグレッション防止)。
+    #[test]
+    fn prop_request_te_ascii_ows_accepted(
+        leading in proptest::collection::vec(prop_oneof![Just(b' '), Just(b'\t')], 0..4),
+        trailing in proptest::collection::vec(prop_oneof![Just(b' '), Just(b'\t')], 0..4),
+    ) {
+        let mut payload: Vec<u8> = b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: ".to_vec();
+        payload.extend_from_slice(&leading);
+        payload.extend_from_slice(b"chunked");
+        payload.extend_from_slice(&trailing);
+        payload.extend_from_slice(b"\r\n\r\n");
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(&payload).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Chunked);
     }
 }

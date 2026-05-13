@@ -20,8 +20,9 @@ use alloc::vec::Vec;
 use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, find_line, parse_header_line, parse_request_target_form,
-    resolve_body_headers_for_request, validate_request_target_for_method,
+    BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line, parse_header_line,
+    parse_request_target_form, resolve_body_headers_for_request,
+    validate_request_target_for_method,
 };
 use super::buffer;
 use super::head::RequestHead;
@@ -257,10 +258,42 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.pending = 0;
     }
 
+    /// バッファの残りデータを取り出す (トンネルモード用)
+    ///
+    /// CONNECT リクエスト受信後にトンネルモードに切り替わった場合、
+    /// このメソッドでヘッダー終端以降のデータを取り出してトンネルの相手側
+    /// (バックエンドサーバ) に転送する。RFC 9110 Section 9.3.6 が要求する
+    /// 「ヘッダー終端直後からの transparent な転送」を実現するための API。
+    ///
+    /// 呼び出し後、バッファは空になる。
+    pub fn take_remaining(&mut self) -> Vec<u8> {
+        debug_assert!(
+            self.pending == 0,
+            "take_remaining called with pending mut_buf"
+        );
+        // 不変条件 "buf 空 ↔ pending == 0" を維持する。
+        // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
+        // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
+        self.pending = 0;
+        core::mem::take(&mut self.buf)
+    }
+
+    /// トンネルモードかどうかを判定
+    ///
+    /// CONNECT リクエストのヘッダーを受信した直後はトンネルモードになる。
+    /// サーバが 2xx で応答できる場合、ここから先のバイト列はトンネルデータ
+    /// として扱う。サーバが 4xx/5xx を返す場合は接続をクローズするか、
+    /// `reset()` でデコーダーをリセットして通常モードに戻す。
+    pub fn is_tunnel(&self) -> bool {
+        matches!(self.phase, DecodePhase::Tunnel)
+    }
+
     /// ボディモードを決定
     ///
-    /// RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていないため、
-    /// HTTP/1.0 リクエストで Transfer-Encoding が指定されている場合はエラーとする
+    /// RFC 9112 Section 6.1 (Transfer-Encoding は HTTP/1.1 のみで定義) および
+    /// RFC 2326 Section 5 (RTSP では Transfer-Encoding は未定義) に従い、
+    /// HTTP/1.1 完全一致以外で Transfer-Encoding が出現した場合は error 化する。
+    /// HTTP/1.2 が将来定義された場合は別途検討する (将来変更される可能性がある)。
     ///
     /// RFC 9112 Section 6.1: リクエストでは chunked 以外の Transfer-Encoding は拒否
     fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
@@ -268,10 +301,13 @@ impl<D: Decompressor> RequestDecoder<D> {
             resolve_body_headers_for_request(&self.headers)?;
 
         if transfer_encoding_chunked {
-            // RFC 9112 Section 6: HTTP/1.0 では Transfer-Encoding は定義されていない
-            if version == "HTTP/1.0" {
+            // RFC 9112 Section 6.1 / RFC 2326 Section 5: HTTP/1.1 完全一致以外で
+            // Transfer-Encoding が出現した場合は framing fault として reject する。
+            // HRS (CWE-444) の足場となる version 偽装 (HTTP/0.9 / 2.0 / 3.0 / RTSP/x /
+            // FOO/1.0 等) を遮断する。
+            if version != "HTTP/1.1" {
                 return Err(Error::InvalidData(
-                    "Transfer-Encoding is not defined in HTTP/1.0".to_string(),
+                    "Transfer-Encoding is only defined for HTTP/1.1".to_string(),
                 ));
             }
             return Ok(BodyKind::Chunked);
@@ -337,6 +373,16 @@ impl<D: Decompressor> RequestDecoder<D> {
                             ));
                         }
 
+                        // 送信側ポリシーとの一貫性のため、decoder 側でも obs-text (0x80-0xFF) を拒否する。
+                        // is_valid_request_target は受信側互換性のため obs-text を許容するが、
+                        // 構築された Request は送信されることを前提とするため、ここで早期に拒否する。
+                        // 注: validate.rs 側の obs-text 許容撤去は別 issue で対応する暫定措置である。
+                        if parts[1].bytes().any(|b| b >= 0x80) {
+                            return Err(Error::InvalidData(
+                                "invalid request-target: non-ASCII characters".to_string(),
+                            ));
+                        }
+
                         // request-target の形式判定と検証 (RFC 9112 Section 3.2)
                         let request_target_form = parse_request_target_form(parts[1])?;
                         validate_request_target_for_method(parts[0], &request_target_form)?;
@@ -357,7 +403,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                 DecodePhase::Headers => {
                     if let Some(pos) = find_line(&self.buf) {
                         if pos == 0 {
-                            // Empty line - end of headers
+                            // 空行 — ヘッダーセクション終端
                             self.buf.drain(..2);
 
                             // RFC 9112 Section 3.2: HTTP/1.1 リクエストでは Host ヘッダーが必須
@@ -395,15 +441,29 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 }
                             }
 
-                            // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
-                            // CONNECT リクエストは content を持たないため、BodyKind::None として扱う。
-                            // Content-Length / Transfer-Encoding が付いていても即エラーにはしないが、
-                            // body として読むこともしない。ヘッダー終端でリクエスト完了とする。
-                            // RFC は CONNECT リクエスト側に TE/CL を MUST NOT とはしていない
-                            // (MUST NOT は 2xx レスポンス側の制約)。
+                            // RFC 9110 Section 9.3.6:
+                            // "A CONNECT request message does not have content."
+                            // "When a server responds with a 2xx (Successful) status code to a
+                            //  CONNECT request, the connection becomes a tunnel immediately
+                            //  after the header section, with the connection used as-is to
+                            //  convey the data of the tunnel."
+                            //
+                            // CONNECT 受信時はヘッダー終端直後の任意バイト列をトンネルデータと
+                            // して扱う必要がある。`BodyKind::None` で Complete 遷移してしまうと
+                            // 後続バイトが「次の HTTP リクエスト」として decode_headers で
+                            // parse されはじめ、HTTP Request Smuggling 経路を生む。
+                            // ResponseDecoder の 2xx 応答経路と対称に `BodyKind::Tunnel` に
+                            // 遷移させ、`take_remaining()` で transparent に転送できるようにする。
+                            //
+                            // CONNECT 失敗時 (サーバが 4xx/5xx を返す等) は呼出側で `reset()`
+                            // して通常のリクエスト処理に戻すか、接続をクローズする。
+                            //
+                            // RFC は CONNECT リクエスト側の Content-Length / Transfer-Encoding
+                            // を MUST NOT としていない (MUST NOT は 2xx レスポンス側の制約)
+                            // ため、それらヘッダーが付いていても即エラーにはしない。
                             let method = start_line_ref.split(' ').next().unwrap_or("");
                             let body_kind = if method == "CONNECT" {
-                                BodyKind::None
+                                BodyKind::Tunnel
                             } else {
                                 self.determine_body_kind(version)?
                             };
@@ -426,10 +486,19 @@ impl<D: Decompressor> RequestDecoder<D> {
                                     self.phase = DecodePhase::Complete;
                                 }
                                 BodyKind::Tunnel => {
-                                    // リクエストではトンネルモードは発生しない
-                                    unreachable!("Tunnel mode is only for CONNECT responses")
+                                    // CONNECT リクエスト: ヘッダー終端後はトンネルモード。
+                                    // 後続バイトは `take_remaining()` で取り出す。
+                                    self.phase = DecodePhase::Tunnel;
                                 }
                             }
+
+                            // RFC 9110 Section 6.5.1 のホワイトリスト方式 trailer 受理に
+                            // 必要な「申告された trailer フィールド名リスト」を、
+                            // ヘッダーから `Trailer:` を抽出して BodyDecoder に渡す。
+                            // chunked 以外の本 body kind では trailer は来ないが、
+                            // BodyDecoder は body kind を問わず参照するため常に設定する。
+                            let declared_trailers = collect_declared_trailers(&self.headers);
+                            self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // RequestHead を構築
                             let start_line = self.start_line.take().ok_or_else(|| {
@@ -437,16 +506,16 @@ impl<D: Decompressor> RequestDecoder<D> {
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
-                            let head = RequestHead {
-                                method: parts[0].to_string(),
-                                uri: parts[1].to_string(),
-                                version: parts[2].to_string(),
-                                headers: core::mem::take(&mut self.headers),
-                            };
+                            let head = RequestHead::from_validated_parts(
+                                parts[0].to_string(),
+                                parts[1].to_string(),
+                                parts[2].to_string(),
+                                core::mem::take(&mut self.headers),
+                            );
 
                             return Ok(Some((head, body_kind)));
                         } else {
-                            // Check header line size limit
+                            // ヘッダー行サイズ上限の検査
                             if pos > self.limits.max_header_line_size {
                                 return Err(Error::HeaderLineTooLong {
                                     size: pos,
@@ -454,7 +523,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 });
                             }
 
-                            // Check header count limit
+                            // ヘッダー数上限の検査
                             if self.headers.len() >= self.limits.max_headers_count {
                                 return Err(Error::TooManyHeaders {
                                     count: self.headers.len() + 1,
@@ -483,6 +552,11 @@ impl<D: Decompressor> RequestDecoder<D> {
                     self.body_decoder.reset();
                     continue;
                 }
+                DecodePhase::Tunnel => {
+                    return Err(Error::InvalidData(
+                        "decode_headers cannot be used in tunnel mode".to_string(),
+                    ));
+                }
                 _ => {
                     return Err(Error::InvalidData(
                         "decode_headers called during body decoding".to_string(),
@@ -506,14 +580,17 @@ impl<D: Decompressor> RequestDecoder<D> {
     ///
     /// `decode_headers()` 成功後に呼ぶ。
     /// 利用可能なボディデータを展開して output に書き込む。
+    /// ボディデータが枯渇しても展開器の内部 buffer に未 drain のバイトが
+    /// 残っている場合があるため、その場合は空 input で展開器を駆動して
+    /// 残りを drain する。
     ///
     /// # 引数
     /// - `output`: 展開データを書き込む出力バッファ
     ///
     /// # 戻り値
     /// - `Ok(Some(status))`: 展開成功。`status.produced()` バイトが output に書き込まれた。
-    ///   `status.consumed()` バイトを `consume_body()` で消費する必要がある。
-    /// - `Ok(None)`: 利用可能なボディデータがない
+    ///   `status.consumed()` バイトを `consume_body()` で消費する必要がある (0 のときは不要)。
+    /// - `Ok(None)`: 利用可能なボディデータがなく、展開器の内部 buffer も空
     /// - `Err(e)`: 展開エラー
     ///
     /// # 使い方
@@ -523,7 +600,9 @@ impl<D: Decompressor> RequestDecoder<D> {
     /// while let Some(status) = decoder.peek_body_decompressed(&mut output)? {
     ///     // output[..status.produced()] に展開済みデータ
     ///     process(&output[..status.produced()]);
-    ///     decoder.consume_body(status.consumed())?;
+    ///     if status.consumed() > 0 {
+    ///         decoder.consume_body(status.consumed())?;
+    ///     }
     /// }
     /// ```
     pub fn peek_body_decompressed(
@@ -534,13 +613,34 @@ impl<D: Decompressor> RequestDecoder<D> {
             self.pending == 0,
             "peek_body_decompressed called with pending mut_buf"
         );
-        let input = match self.body_decoder.peek_body(&self.buf, &self.phase) {
-            Some(data) if !data.is_empty() => data,
-            _ => return Ok(None),
-        };
-
+        // ボディデータがあればそれを、なければ空 input を渡して展開器内部の
+        // 未 drain バイトを取り出す。
+        // 例: noflate::gzip::Decoder のように feed したバイトを内部 buffer に
+        //     蓄積する型の Decompressor 実装では、ボディ末尾の chunk を feed
+        //     した後でも内部 buffer に展開済みバイトが残ることがある。
+        let input = self
+            .body_decoder
+            .peek_body(&self.buf, &self.phase)
+            .unwrap_or(&[]);
         let status = self.decompressor.decompress(input, output)?;
-        Ok(Some(status))
+
+        // 進展なし & 待機すべき状態でなければ None を返す。
+        // - Continue { 0, 0 }: 入力も出力もない、より多くのボディデータが必要
+        // - Complete { 0, 0 }: 終端到達後の重複呼び出し
+        // どちらも呼び出し側がループを抜けるべきタイミング。
+        // 一方 OutputFull { 0, 0 } は「output buffer が小さすぎる」back-pressure
+        // のシグナルなので Some で返し、呼び出し側に通知する。
+        match status {
+            CompressionStatus::Continue {
+                consumed: 0,
+                produced: 0,
+            }
+            | CompressionStatus::Complete {
+                consumed: 0,
+                produced: 0,
+            } => Ok(None),
+            _ => Ok(Some(status)),
+        }
     }
 
     /// ボディデータを消費
@@ -565,6 +665,14 @@ impl<D: Decompressor> RequestDecoder<D> {
     ///
     /// Chunked エンコーディングの場合、チャンクサイズ行のパースや
     /// 終端チャンクの処理を行う。
+    ///
+    /// # 多段階遷移の注意
+    ///
+    /// 単一呼出で複数のデコードフェーズを跨ぐ場合があるため、戻り値が
+    /// `Advanced` であっても `BodyProgress::Complete` に達している可能性がある。
+    /// 完了判定には戻り値だけでなく `self.phase` (内部状態) も併せて確認すること。
+    /// ストリーミング API の実装例では `matches!(self.phase, DecodePhase::Complete)`
+    /// で直接 phase を確認している。
     pub fn progress(&mut self) -> Result<BodyProgress, Error> {
         debug_assert!(self.pending == 0, "progress called with pending mut_buf");
         self.body_decoder
@@ -603,8 +711,10 @@ impl<D: Decompressor> RequestDecoder<D> {
         let body_kind = *self.decoded_body_kind.as_ref().unwrap();
         match body_kind {
             BodyKind::Tunnel => {
-                // リクエストではトンネルモードは発生しない
-                unreachable!("Tunnel mode is only for CONNECT responses")
+                return Err(Error::InvalidData(
+                    "decode() cannot be used in tunnel mode, use take_remaining() instead"
+                        .to_string(),
+                ));
             }
             BodyKind::ContentLength(_) | BodyKind::Chunked => loop {
                 // バッファからボディデータを直接消費。
@@ -650,12 +760,12 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.decoded_body.clear();
         self.body_decoder.reset();
 
-        Ok(Some(Request {
-            method: head.method,
-            uri: head.uri,
-            version: head.version,
-            headers: head.headers,
+        Ok(Some(Request::from_raw_parts(
+            head.method,
+            head.uri,
+            head.version,
+            head.headers,
             body,
-        }))
+        )))
     }
 }

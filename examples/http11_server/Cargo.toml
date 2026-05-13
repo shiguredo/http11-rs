@@ -43,19 +43,33 @@ tracing = "0.1"
 # ログのフォーマットとサブスクライバ
 tracing-subscriber = "0.3"
 
-# Brotli 圧縮 (オプション)
-brotli = { version = "8.0", optional = true }
-# gzip / DEFLATE 圧縮 (オプション)
-noflate = { version = "0.1", optional = true }
-# Zstd 圧縮 (オプション)
-zstd = { version = "0.13", optional = true }
+# Brotli 圧縮
+brotli = "8.0"
+# gzip / DEFLATE 圧縮
+noflate = "0.1"
+# Zstd 圧縮
+zstd = "0.13"
 
-[features]
-# デフォルトで全圧縮形式を有効化
-default = ["br", "gzip", "zstd"]
-# Brotli 圧縮を有効化
-br = ["dep:brotli"]
-# gzip 圧縮を有効化
-gzip = ["dep:noflate"]
-# Zstd 圧縮を有効化
-zstd = ["dep:zstd"]
+[dev-dependencies]
+# 自己署名証明書を実行時生成 (fixture cert の期限切れを回避)
+rcgen = { version = "0.13", default-features = false, features = [
+  # 暗号バックエンド (AGENTS.md ルール)
+  "aws_lc_rs",
+  # PEM シリアライズ
+  "pem",
+] }
+# テスト用の一時ディレクトリ (証明書ファイルの置き場)
+tempfile = "3.13"
+# 子プロセスの非同期管理 + stdout 行読み (tests でのみ追加 feature が必要)
+tokio = { version = "1.52", features = [
+  # 子プロセスの非同期管理
+  "process",
+  # AsyncBufReadExt::lines() を使う
+  "io-util",
+  # tokio::test マクロ
+  "macros",
+  # current-thread ランタイム
+  "rt",
+  # タイムアウト
+  "time",
+] }

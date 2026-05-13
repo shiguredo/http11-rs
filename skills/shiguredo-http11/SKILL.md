@@ -21,7 +21,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## バージョン情報
 
 - crate 名: `shiguredo_http11`
-- バージョン: 2026.2.0
+- バージョン: 2026.3.0
 - Rust Edition: 2024
 - 最小 Rust バージョン: 1.88
 - ライセンス: Apache-2.0
@@ -32,21 +32,23 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `Request` | HTTP リクエスト | `new()`, `with_version()`, `header()`, `body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_keep_alive()`, `is_chunked()` |
-| `Response` | HTTP レスポンス | `new()`, `with_version()`, `header()`, `body()`, `omit_body()`, `encode()`, `try_encode()`, `encode_headers()`, `try_encode_headers()`, `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_keep_alive()` |
-| `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `with_compressor()` |
-| `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `with_compressor()` |
+| `Request` | HTTP リクエスト | `new()` (Result), `with_version()` (Result), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `method()`, `uri()`, `version()`, `encode()` (Result), `encode_headers()` (Result), `is_keep_alive()`, `is_chunked()` |
+| `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result, builder), `add_header()` (Result, mutator, チェイン可), `set_header()` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `omit_body()` (builder), `set_omit_body()` (mutator), `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()` (Result), `encode_headers()` (Result), `status_class()`, `is_keep_alive()` |
+| `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `class()`, `from_code(u16)` (未登録コードは `None`) |
+| `StatusClass` | RFC 9110 Section 15 のクラス分類 enum | `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`, `from_status_code(u16)` (範囲外は `None`) |
+| `RequestEncoder<C>` | 圧縮対応リクエストエンコーダー | `new()`, `with_compressor()`, `compress_body()`, `finish()`, `reset()` |
+| `ResponseEncoder<C>` | 圧縮対応レスポンスエンコーダー | `new()`, `with_compressor()`, `compress_body()`, `finish()`, `reset()` |
 
-`encode()` と `encode_headers()` は RFC 違反時にパニックする。エラーハンドリングが必要なら `try_encode()` / `try_encode_headers()` を使う。
+`encode()` / `encode_headers()` は意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合、1xx/204/205 へのボディ等) を `Result<Vec<u8>, EncodeError>` で返す。構築時バリデーションを通過した値でも encode 時に検出されるため、呼び出し側は `?` 等で伝播する。
 
 ### デコード用 (受信側)
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
-| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_expect_no_body()`, `set_request_method()` |
+| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
+| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
-| `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `is_success()`, `is_redirect()`, `is_client_error()`, `is_server_error()`, `is_informational()`) |
+| `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `status_class()`) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
 | `request_target::RequestTargetForm` | request-target 形式 (encoder/decoder で共通) | `Origin`, `Absolute`, `Authority`, `Asterisk` |
 
@@ -102,7 +104,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 `CompressionStatus` には `consumed()`, `produced()`, `is_complete()`, `is_output_full()` ヘルパーがある。
 
-ライブラリ本体は圧縮実装を含まないため、利用者が `flate2`, `brotli`, `zstd` などを使って実装する。
+ライブラリ本体は圧縮実装を含まないため、利用者が `noflate` / `flate2` (gzip), `brotli`, `zstd` などを使って実装する。サンプル (`examples/`) は `noflate` ベースで実装されている。
 
 ## ヘッダーパースモジュール
 
@@ -139,10 +141,12 @@ use shiguredo_http11::{Request, ResponseDecoder};
 use std::io::Read;
 
 // リクエスト作成
-let request = Request::new("GET", "/")
-    .header("Host", "example.com")
-    .header("Connection", "close");
-let bytes = request.encode();
+// Request::new / with_version / header / add_header / set_header は
+// 構築時バリデーション (CRLF/NUL 拒否) を行う Result<_, EncodeError> を返す
+let request = Request::new("GET", "/")?
+    .header("Host", "example.com")?
+    .header("Connection", "close")?;
+let bytes = request.encode()?;
 // bytes をネットワークに送信...
 
 // レスポンスデコード: 内部バッファに直接 read してコピーを排除
@@ -162,7 +166,7 @@ loop {
     }
     decoder.advance_buf(n);
     if let Some(response) = decoder.decode()? {
-        println!("Status: {}", response.status_code);
+        println!("Status: {}", response.status_code());
         break;
     }
 }
@@ -171,7 +175,7 @@ loop {
 ### サーバー実装
 
 ```rust
-use shiguredo_http11::{RequestDecoder, Response};
+use shiguredo_http11::{RequestDecoder, Response, StatusCode};
 use std::io::Read;
 
 // リクエストデコード: 内部バッファに直接 read してコピーを排除
@@ -195,10 +199,14 @@ let request = loop {
 };
 
 // レスポンス作成
-let response = Response::new(200, "OK")
-    .header("Content-Type", "text/plain")
+// IANA 登録済みステータスコードは `Response::with_status(StatusCode::OK)` で
+// infallible に構築できる (canonical reason phrase が自動付与される)。
+// カスタムバージョンや任意の reason phrase が必要な場合は
+// `Response::new` / `with_version` を使う (Result<_, EncodeError> を返す)。
+let response = Response::with_status(StatusCode::OK)
+    .header("Content-Type", "text/plain")?
     .body(b"Hello, World!".to_vec());
-let bytes = response.encode();
+let bytes = response.encode()?;
 // bytes をネットワークに送信...
 ```
 
@@ -207,23 +215,23 @@ let bytes = response.encode();
 HEAD リクエストへのレスポンスは GET と同じヘッダーを返すがボディは送信しない (RFC 9110 Section 9.3.2)。
 
 ```rust
-use shiguredo_http11::{Request, Response, ResponseDecoder};
+use shiguredo_http11::{Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: Response::omit_body() でボディ送信を抑止
-let is_head = request.method.eq_ignore_ascii_case("HEAD");
+let is_head = request.method().eq_ignore_ascii_case("HEAD");
 let body = b"Hello, World!";
-let mut response = Response::new(200, "OK")
-    .header("Content-Type", "text/plain")
-    .header("Content-Length", &body.len().to_string())
+let mut response = Response::with_status(StatusCode::OK)
+    .header("Content-Type", "text/plain")?
+    .header("Content-Length", &body.len().to_string())?
     .omit_body(is_head);
 if !is_head {
     response = response.body(body.to_vec());
 }
-let bytes = response.encode();
+let bytes = response.encode()?;
 
-// クライアント側: ResponseDecoder::set_expect_no_body() でボディなしを通知
+// クライアント側: ResponseDecoder::set_request_method("HEAD") でボディなしを通知
 let mut decoder = ResponseDecoder::new();
-decoder.set_expect_no_body(true);
+decoder.set_request_method("HEAD");
 ```
 
 ### CONNECT トンネルの処理
@@ -348,13 +356,13 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 ### Chunked Transfer Encoding
 
 ```rust
-use shiguredo_http11::{Response, encode_chunk};
+use shiguredo_http11::{Response, StatusCode, encode_chunk};
 
-let response = Response::new(200, "OK")
-    .header("Transfer-Encoding", "chunked");
+let response = Response::with_status(StatusCode::OK)
+    .header("Transfer-Encoding", "chunked")?;
 
 // ヘッダーを送信
-let headers = response.encode_headers();
+let headers = response.encode_headers()?;
 send(&headers);
 
 // チャンクを順次送信
@@ -363,15 +371,15 @@ send(&encode_chunk(b"World!"));
 send(&encode_chunk(b"")); // 終端チャンク
 ```
 
-### Result 版エンコード API
+### エンコード時のエラー処理
 
-`encode()` / `encode_headers()` は RFC 違反でパニックする。エラーハンドリングが必要な場合は `try_encode()` / `try_encode_headers()` を使う。
+`encode()` / `encode_headers()` は構築時バリデーション後の意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合等) を `Result<Vec<u8>, EncodeError>` で返す。
 
 ```rust
 use shiguredo_http11::{Request, EncodeError};
 
-let request = Request::new("GET", "/");  // Host ヘッダーなし
-match request.try_encode() {
+let request = Request::new("GET", "/")?;  // Host ヘッダーなし
+match request.encode() {
     Ok(bytes) => { /* 送信 */ }
     Err(EncodeError::MissingHostHeader) => {
         // Host ヘッダーがない (HTTP/1.1 必須)

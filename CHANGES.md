@@ -11,7 +11,300 @@
 
 ## develop
 
+## 2026.4.0
+
+**リリース日**: 2026-05-13
+
+- [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
+  - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
+  - @voluntas
+- [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
+  - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる
+  - @voluntas
+- [ADD] `Request::set_body` / `Request::clear_body` / `Request::without_body` を追加する
+  - Response 側 (`[ADD] Response::set_body / Response::clear_body / Response::without_body`) と対称な mutator / builder
+  - @voluntas
+- [ADD] `Response::set_body` / `Response::clear_body` / `Response::without_body` を追加する
+  - @voluntas
+- [ADD] `Response::set_omit_body` を追加する
+  - @voluntas
+- [ADD] `StatusCode` 型を導入し IANA HTTP Status Code Registry の status code を const 値として提供する
+  - `Response::with_status(StatusCode::OK)` 等で infallible に Response を構築できる (HTTP/1.1 固定、canonical reason phrase が自動付与される)
+  - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する
+  - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` でアクセス可能 (`Copy` / `Eq` / `Hash` 派生、IANA 未登録コードは `None`)
+  - @voluntas
+- [ADD] `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` アクセサを追加する
+  - 0031 で記載していた「読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / ...」のうち `version()` / `headers()` が実装漏れで `HttpHead` トレイト経由でしか呼べない状態だった
+  - inherent method 追加により `use shiguredo_http11::HttpHead;` の import なしで `head.version()` / `head.headers()` が呼べるようになる (Request / Response 側と対称)
+  - `HttpHead` トレイト実装は変更しないため trait 経由のアクセスも引き続き可能
+  - @voluntas
+- [ADD] `examples/http11_server` に `--port 0` 対応と `LISTENING_PORT=<port>` の stdout 出力を追加する
+  - `--port 0` で OS にランダムポートを割当させ、bind 後に実ポートを stdout に出力する
+  - 併せて tracing の出力先を stdout から stderr に変更する (stdout は LISTENING_PORT 出力専用)
+  - integration test (curl ベース) のテストハーネス前提として導入する
+  - @voluntas
+- [CHANGE] 公開 enum (全 Error enum 24 個 + `StatusClass` / `BodyKind` / `CompressionStatus` / `Authorization` / `AuthChallenge`) に `#[non_exhaustive]` を付与する
+  - 本リリースだけでも `EncodeError` / `AuthError` / `ContentDispositionError` に複数バリアントを追加しており、未付与のままだとバリアント追加ごとに後方互換のない変更を出し続ける構造になっていた
+  - `BodyKind` は本リリースで `Tunnel` バリアントを追加、`StatusClass` は新規導入のため、IANA レジストリ / API 拡張に備える
+  - 利用側は `match` 文末尾に `_ =>` wildcard arm を追加する必要がある
+  - `ContentCoding::Other` / `DispositionType::Unknown` のように `Other` バリアントで拡張対応済みの enum、`RequestTargetForm` / `DayOfWeek` / `SameSite` / `ETagList` / `RangeSpec` / `IfRange` のように RFC で構造的に固定された enum は付与対象外
+  - `BodyProgress` も 3 variant 固定で API として安定しているため付与対象外
+  - @voluntas
+- [CHANGE] `parse_auth_params` と `ContentDisposition::parse` にパラメータ数 hard cap (`MAX_AUTH_PARAMS = 32` / `MAX_PARAMS = 32`) を導入する
+  - 旧実装はパラメータ数の上限がなく、`max_header_line_size = 8KB` 内で 2000 個程度のパラメータが詰め込み可能で、線形重複検出による CPU 消費の上限がなかった
+  - 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6266 Content-Disposition = 7) に十分な余裕として 32 を上限とする
+  - 上限超過時は `AuthError::TooManyParameters` / `ContentDispositionError::TooManyParameters` を返す
+  - 重複検出のアルゴリズム自体 (`Vec` + `iter().any`) は変更しない (Premature Optimization 回避、AGENTS.md 方針)
+  - @voluntas
+- [CHANGE] `ResponseDecoder` が CONNECT 2xx レスポンス受信時に `ResponseHead.headers` から `Transfer-Encoding` / `Content-Length` を除去するように変更する
+  - RFC 9110 Section 9.3.6 「A client MUST ignore any Content-Length or Transfer-Encoding header fields received in a successful response to CONNECT」を物理消去で実装する
+  - 旧実装は `BodyKind::Tunnel` を返す一方で `ResponseHead.headers` には CL/TE の元値が残置されており、上位アプリ (reverse proxy 等) が `head.content_length()` 経由で値を観測して下流に再生成すると HTTP Response Smuggling の足場となる経路を持っていた
+  - 上位アプリが `head.get_header("Content-Length")` 等で CL/TE を取得していた経路は本変更で `None` を返すようになる
+  - @voluntas
+- [CHANGE] `HttpHead::content_length` / `Request::content_length` / `Response::content_length` の戻り型を `Result<Option<u64>, Error>` に変更する
+  - 旧実装は `.parse::<u64>().ok()` で `Content-Length: 100, 101` のような mismatched 値を黙って `None` 化、複数行 mismatched 値の場合は最初の値を黙って返していた。decoder 本体の `parse_content_length` (smuggling 検知で `Err` 返却) と挙動が乖離しており、trait 越しに smuggling 検知がバイパスされる経路を持っていた
+  - decoder の `parse_content_length` (`pub(crate)`) を trait 実装内で再利用し、OWS / カンマリスト / 複数行 / mismatched 値の解釈を decoder と統一する
+  - 呼出側は `?` 等で smuggling 検知エラーを伝播する必要がある
+  - @voluntas
+- [CHANGE] `Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` の戻り型を `Result<Vec<u8>, EncodeError>` に変更する
+  - 旧 `try_encode` / `try_encode_headers` を撤去し名前を `encode` / `encode_headers` に統一する
+  - 構築時バリデーションを通っても意味論違反 (Host 欠落、TE+CL 同時、205 ボディ等) で encode が `Err` を返すため、呼出側は `?` 等で伝播する必要がある
+  - @voluntas
+- [CHANGE] `Request::add_header` / `Request::set_header` の戻り値を `Result<&mut Self, EncodeError>` に変更しチェイン可能にする
+  - Response 側 (`[CHANGE] Response::add_header / Response::set_header`) と対称化
+  - 旧シグネチャ `Result<(), EncodeError>` 依存のコードは `?` 演算子経由ならそのまま動作する (成功値は ; で破棄される)
+  - @voluntas
+- [CHANGE] レスポンス受信側で Transfer-Encoding と Content-Length が両方含まれる場合をエラー化する
+  - 旧挙動 (`resolve_body_headers_for_response`) は silent に Transfer-Encoding を優先して Content-Length を無視していたが、これにより HTTP Request Smuggling (CWE-444) / Response Splitting (CWE-113) の兆候を上位層が検知できなかった
+  - RFC 9112 Section 6.3 (3) 「Such a message might indicate an attempt to perform request smuggling (Section 11.2) or response splitting (Section 11.1) and ought to be handled as an error.」と RFC 9112 Section 6.1 「the server MUST close the connection after responding to such a request to avoid the potential attacks.」に従い、リクエスト経路と対称に `Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返す
+  - 呼出側は接続をクローズすべき (proxy 等の上位層が判断する)
+  - @voluntas
+- [CHANGE] trailer フィールドの受理判定を RFC 9110 Section 6.5.1 のホワイトリスト方式に変更する
+  - `Trailer:` ヘッダーで sender が事前申告したフィールド名のみ trailer-section で受理する。申告されていないフィールドは `Error::InvalidData("undeclared trailer field: ...")` で reject する
+  - `is_prohibited_trailer_field` の禁止リストを RFC 9110 Section 6.5.1 の全カテゴリに拡充する (framing / routing / リクエスト修飾子 / 認証 / レスポンス制御 / コンテンツ形式 / 接続管理)
+  - 拡充された禁止フィールド例: `Authorization`, `Proxy-Authorization`, `WWW-Authenticate`, `Proxy-Authenticate`, `If-Match`, `If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since`, `If-Range`, `Range`, `Expect`, `TE`, `Cache-Control`, `Vary`, `Date`, `Expires`, `Age`, `Set-Cookie`, `Connection`, `Upgrade`
+  - 旧仕様 (最小ブロックリスト方式) では `Authorization` 等の認証ヘッダーが trailer-section で素通りしていた経路を遮断する
+  - decoder の `BodyDecoder` に `declared_trailers: Vec<String>` フィールドを追加し、`decode_headers` 完了時に `Trailer:` ヘッダーから抽出した名前リストを設定する
+  - @voluntas
+- [CHANGE] `RequestHead` / `ResponseHead` の全フィールドを非公開化し、構築時バリデーション付きの公開 API を追加する
+  - フィールドを `pub(crate)` に降格、`#[non_exhaustive]` を付与し、構造体リテラル構築を crate 内に限定する
+  - 公開 API: `RequestHead::new(method, uri)` / `RequestHead::with_version(method, uri, version)` / `ResponseHead::new(status_code, reason_phrase)` / `ResponseHead::with_version(version, status_code, reason_phrase)` で構築、`header(name, value)` / `add_header(name, value)` でヘッダーを追加する (すべて `Result<_, EncodeError>`)
+  - 読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / `status_code()` / `reason_phrase()` / `status_class()` を追加
+  - `ResponseHead::status_class()` の panic 経路 (`status_code: 999` のような不正値による `.expect(...)` 失敗) を塞ぐ。フィールド非公開化と `with_version` の `is_valid_status_code` バリデーションで 100..=599 不変式が型レベルで保証される
+  - decoder 内部からの構築は `pub(crate) fn from_validated_parts(...)` 経由で行う (debug ビルドで `debug_assert!` による契約検査付き、release ビルドでは検査なしで信頼)
+  - 既存ユーザーは `head.method` 等のフィールド直接アクセスを `head.method()` 等のアクセサ呼び出しに書き換える必要がある
+  - @voluntas
+- [CHANGE] `RequestDecoder` に CONNECT 用 tunnel API (`is_tunnel` / `take_remaining`) を追加し、CONNECT リクエスト受信時の `BodyKind` を `None` から `Tunnel` に変更する
+  - RFC 9110 Section 9.3.6「the connection becomes a tunnel immediately after the header section」に準拠
+  - 旧挙動 (`BodyKind::None` で `Complete` 直行) では、ヘッダー終端後にクライアントが送ってきたバイト列が `decode_headers` の Complete 自動再遷移経由で「次の HTTP リクエスト」として parse され、HTTP Request Smuggling (CWE-444) 様の経路を生んでいた
+  - 新挙動では `DecodePhase::Tunnel` に遷移し、`decode_headers` / `decode` はトンネルモードでエラーを返す。ヘッダー終端後のバイト列は `take_remaining()` で取り出して transparent に転送する
+  - CONNECT 失敗時 (サーバが 4xx/5xx を返す等) は呼出側が `reset()` で復帰するか、接続をクローズする
+  - 既存の `ResponseDecoder` の `is_tunnel` / `take_remaining` (CONNECT 2xx 応答受信側) と対称な API になる
+  - @voluntas
+- [CHANGE] `examples/http11_client`, `examples/http11_server`, `examples/http11_server_io_uring` の圧縮 feature フラグ (`br` / `gzip` / `zstd`) を撤廃し常に 3 形式すべて有効にする
+  - サンプルとしての挙動を単純化し、`cargo run -p <example>` だけで gzip / brotli / zstd の圧縮・展開が動作するようにする
+  - `Cargo.toml` から `[features]` セクションと `optional = true` を削除し、ソースコードからも `#[cfg(feature = "...")]` を全削除する
+  - @voluntas
+- [CHANGE] `Response::add_header` / `Response::set_header` の戻り値を `Result<&mut Self, EncodeError>` に変更しチェイン可能にする
+  - @voluntas
+- [CHANGE] `Request` の全フィールドを非公開化し、構築時バリデーションを追加する
+  - 構築は `Request::new` / `Request::with_version` が `Result<Self, EncodeError>` を返す形に変更する
+  - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
+  - `set_header` を新設し、同名ヘッダー (case-insensitive) の上書きを可能にする
+  - method を RFC 9110 Section 9.1 token として、URI を既存の `is_valid_request_target` (制御文字/RFC 3986 除外文字/%00 拒否 + obs-text 非含有) でバリデートする
+  - HTTP Request Smuggling (CWE-444) 防御を強化する
+  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする (`debug_assert!` 付き)
+  - `method()` / `uri()` / `version()` / `body_bytes()` の読み取り専用アクセサを追加する
+  - 構造体に `#[non_exhaustive]` を付与し、将来のフィールド追加を非破壊的に扱えるようにする
+  - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
+  - decoder が obs-text (0x80-0xFF) を含む request-target を拒否するよう変更する (送信側と一貫したポリシーを decoder にも適用)
+  - @voluntas
+- [CHANGE] `Response` の全フィールドを非公開化し、構築時バリデーションを追加する
+  - 構築は `Response::new` / `Response::with_version` が `Result<Self, EncodeError>` を返す形に変更する
+  - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
+  - `set_header` を新設し、同名ヘッダー (case-insensitive) の上書きを可能にする
+  - `pub(crate) fn from_raw_parts` を新設し、デコーダー内部からの検証済み構築を可能にする
+  - `status_code()` / `reason_phrase()` / `version()` / `body_bytes()` / `is_body_omitted()` の読み取り専用アクセサを追加する (getter `body_bytes` は builder `body(data)` との同名衝突を避けるため改名)
+  - 構造体に `#[non_exhaustive]` を付与し、将来のフィールド追加を非破壊的に扱えるようにする
+  - `encoder.rs` 内部の全フィールド直接アクセスをアクセサ経由に書き換える
+  - @voluntas
+- [CHANGE] `ResponseDecoder::set_expect_no_body` を撤去し、HEAD レスポンスの指定を `set_request_method("HEAD")` に統一する
+  - `expect_no_body` フィールドと `request_method` フィールドの二重化を解消し、`request_method` 一本に集約する
+  - `determine_body_kind` の判定順序を RFC 9112 Section 6.3 の優先順位に合わせる (CONNECT + 204 の挙動が Tunnel → None に変わる)
+  - @voluntas
+- [CHANGE] `Response` と `ResponseHead` の `is_informational` / `is_success` / `is_redirect` / `is_client_error` / `is_server_error` を撤去し、`StatusClass` enum と `status_class()` メソッドに統合する
+  - 5 個の bool メソッドが網羅性を型で保証できなかった問題を解消する
+  - バリアント名は RFC 9110 Section 15 の節タイトルに準拠する: `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`
+  - `StatusCode::class()` を追加し、IANA 登録済み code から直接 `StatusClass` を取得できるようにする
+  - 利用側は `response.is_success()` を `matches!(response.status_class(), StatusClass::Successful)` 等に書き換える
+  - @voluntas
+- [FIX] `Transfer-Encoding` / `Trailer` の OWS 解釈で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
+  - 旧実装は `src/decoder/body.rs::parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` で `str::trim()` を使用しており、NBSP (U+00A0) / U+2028 等の Unicode 空白を除去していた
+  - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、`Transfer-Encoding: \u{00A0}chunked` のような値が decoder を通過し、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた
+  - RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠した `trim_ows` (issue 0029 で導入) に統一する
+  - 0029 (Content-Length の trim_ows 化) と同じ対策を TE / Trailer 側に適用する続編
+  - @voluntas
+- [FIX] `examples/http11_reverse_proxy` の close-delimited 経路で decoder 内部バッファのボディ先頭バイトを取りこぼす問題を修正する
+  - 旧実装は `is_close_delimited` 分岐で `decoder.peek_body()` / `consume_body()` / `take_remaining()` を呼ばずに生 `upstream.read` に切り替えていた
+  - `decode_headers` はヘッダー終端 `\r\n\r\n` までしか drain しないため、TCP セグメント結合や TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するケース (短いレスポンスではほぼ毎回発生) でボディ先頭バイトが下流に届かなかった
+  - close-delimited は CL も TE もないため、欠落しても下流クライアントは「正常終了」と解釈してしまう検知不能なデータ破損経路
+  - close-delimited 分岐の冒頭で `decoder.take_remaining()` を呼んで残バイトを下流に流すよう変更する
+  - RFC 9112 Section 6.3 item 8 (close-delimited body は FIN が終端) に準拠
+  - @voluntas
+- [FIX] `examples/http11_reverse_proxy` で CONNECT メソッドを 405 Method Not Allowed で拒否するように変更する
+  - 旧実装は 501 Not Implemented を返していたが、reverse proxy がサポートしないメソッドを示すには 405 がより正確 (RFC 9110 Section 15.5.6)
+  - `Allow` ヘッダーで許可メソッド一覧を返す MUST に従い、`Allow: GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH` を付与する
+  - 任意宛先へのトンネル化 (forward proxy 機能) はサンプルのスコープ外。トンネル機能のお手本が必要な場合は別 example として独立に追加する
+  - @voluntas
+- [FIX] `examples/http11_reverse_proxy` で `--upstream` の scheme と port を尊重するよう修正する
+  - 旧実装は `parse_upstream_url` が host のみ抽出し、`TcpStream::connect((host, 443))` で常に 443 への TLS 接続にハードコードしていた
+  - `Scheme` enum (`Http` / `Https`) と `UpstreamStream` enum (`Plain` / `Tls`) を導入し、`create_connection` を scheme で分岐する
+  - 接続プールのキーを `(Scheme, host, port)` のタプルに変更し、`http://` と `https://` の接続が混在しないようにする
+  - IPv6 リテラル `[::1]:8443` を正しくパースする
+  - Host ヘッダー値はデフォルトポートで省略、IPv6 リテラルはブラケット表記で構築する (RFC 9110 Section 7.2)
+  - @voluntas
+- [FIX] `examples/http11_server_io_uring` で kTLS 移行時に rustls の復号済み平文を取りこぼし HTTP リクエストの先頭バイトが消失する問題を修正する
+  - 旧実装は `tls_conn.is_handshaking() == false` 確認直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` を呼んで `tls_conn` を drop していた
+  - TLS 1.3 で Client Finished と Application Data が同一 TCP read で来た場合 (curl / openssl s_client の典型的挙動)、`received_plaintext` に保持された HTTP リクエスト先頭バイトが復元不能で消失していた (TCP 再送経路もないため決定的に発生)
+  - `tls_conn.take()` 直後 / `dangerous_extract_secrets()` 直前に `tls_conn.reader().read_to_end(&mut leftover)` で平文を吸い出し、`conn.decoder.feed(&leftover)` で取り込んだ上で 0048 で導入した `pending_writes` に Response を積む
+  - HandshakeReading の Read 完了経路と HandshakeWriting の Write 完了経路の両方に同型修正を入れる
+  - エラーは当該接続のクローズで局所化し、サーバプロセスは継続させる
+  - @voluntas
+- [FIX] `examples/http11_server_io_uring` でパイプラインリクエストの 2 件目以降のレスポンスがドロップされる問題を修正する
+  - 旧実装は `while let Some(request) = conn.decoder.decode()?` で複数 Request を decode して関数ローカル `VecDeque` に push していたが、`pop_front()` で 1 件目を取り出した後、残り N-1 件はスコープ終了で drop されていた
+  - `Connection` 構造体に `pending_writes: VecDeque<(Vec<u8>, bool)>` と `current_write_should_keep_alive: bool` を追加し、`handle_write` 完了時に次エントリを書き出すよう変更する
+  - RFC 9112 Section 9.3.2「a server ... MUST send the corresponding responses in the same order that the requests were received」を満たすよう順序保証する
+  - @voluntas
+- [FIX] HTTP/1.1 以外の version で `Transfer-Encoding` ヘッダーを受理しないように厳格化する
+  - 旧挙動では `version == "HTTP/1.0"` の完全一致のみ拒否しており、`HTTP/0.9` / `HTTP/2.0` / `HTTP/3.0` / `RTSP/1.0` / `FOO/1.0` 等で `Transfer-Encoding: chunked` を chunked フレーミングとして読み始めていた
+  - RFC 9112 Section 6.1 (TE は HTTP/1.1 のみで定義) および RFC 2326 Section 5 (RTSP では Transfer-Encoding 未定義) に従い、HTTP/1.1 完全一致以外で TE が出現した場合は `Error::InvalidData` を返す
+  - 0040 (`is_keep_alive` を HTTP/1.1 完全一致化) と同じ版番号判定方針に揃え、HTTP Request Smuggling (CWE-444) の足場を除去する
+  - request 経路 / response 経路の両方で対称に厳格化する
+  - @voluntas
+- [FIX] `MultipartParser::next_part` の `InPart` ブランチで inner_delimiter 直後 2 バイトが揃わないケースに `AfterInnerDelimiter` 状態を新設し、再入時の永久 Incomplete を防ぐ
+  - 旧実装は Part 返却後も `state = InPart` のまま `pos` を進めるだけで、後続 feed で close-delimiter (`--\r\n`) や次パート区切り (`\r\n`) しか来ない場合に `\r\n\r\n` を永久に探し続けるバグ経路を持っていた
+  - chunk 境界で発生する DoS 経路 (TCP セグメント結合・TLS レコード境界・chunked transfer の chunk 境界、攻撃者の細切れ feed) を遮断する
+  - 同時に `tests/test_multipart.rs::test_multipart_parser_byte_by_byte_feed_matches_bulk_feed` の「is_finished の遷移は未検証」注記を削除し、byte-by-byte 経路でも `is_finished()` まで検証するよう厳格化する
+  - @voluntas
+- [FIX] `MultipartParser` の `Initial` ブランチで `--<boundary>` 直後の transport-padding CRLF / close-delimiter 検証欠落を修正する
+  - 旧実装は `--<boundary>X` (X が CRLF / `--` でない任意バイト) をそのまま `InPart` 状態に遷移して有効パートとして parse していた (RFC 2046 Section 5.1.1 違反)
+  - WAF / フロントプロキシが preamble の一部と判定する一方、本実装は有効パートとして読む parser differential を生み、Content-Disposition フィルタ迂回の足場となっていた
+  - SP / HTAB を 0 個以上スキップした上で CRLF / `--` のいずれでもないバイト列を `MultipartError::InvalidPart` として reject するよう変更する
+  - 死コードだった `Initial` ブランチ末尾の `starts_with(b"\r\n")` スキップを削除する
+  - 併せて `AfterInnerDelimiter` ブランチで返していた `InvalidBoundary` を `InvalidPart` に統一する (`InvalidBoundary` は boundary 文字列自体の構文不正専用)
+  - @voluntas
+- [FIX] `decode_headers()` の Complete 遷移時と `decode()` 完了時に `request_method` をクリアする
+  - CONNECT 4xx レスポンス後に後続の 2xx レスポンスが誤って Tunnel 判定される Keep-Alive 状態漏れバグを修正する
+  - @voluntas
+- [FIX] Base64 デコードを RFC 4648 Section 3.5 に従ったストリクト仕様に変更する
+  - 空白除去後の全長が 4 の倍数 (パディング含む) でない入力を `Base64Error::InvalidPadding` で reject
+  - 末尾 `=` 個数が 3 以上の入力を reject
+  - データ部分の文字数 mod 4 と `=` 個数の不整合 (mod 4 == 1 など) を reject
+  - RFC 4648 §3.3 の MUST zero に違反する末尾余剰 bit (`buf != 0`) を reject
+  - 旧実装は `trim_end_matches('=')` でパディング個数を無視し、`A` のような不完全な末尾 6 bit 群を黙って捨てるため `BasicAuth` / `DigestAuth` で同一 credential に対する複数 base64 表現が成立し canonicalization が壊れていた経路を遮断する
+  - `Base64Error` に `InvalidPadding` バリアントを追加 (`pub(crate)` のため外部 API には露出しない、`BasicAuth::parse` 経由では従来通り `AuthError::Base64DecodeError` に潰る)
+  - @voluntas
+- [FIX] `HttpHead::is_keep_alive` の persistent connection 判定を `version == "HTTP/1.1"` 完全一致に変更する
+  - 旧実装 `version.ends_with("/1.1")` は `RTSP/1.1` や `FOO/1.1` 等の他プロトコル version 文字列でも persistent と誤判定する経路を持っていた
+  - 修正後は HTTP/1.1 完全一致のみデフォルト persistent と判定する。RTSP (RFC 7826) 等の persistent connection 判定は上位層の責務
+  - `Connection: keep-alive` が明示指定されれば version に関わらず引き続き true を返す
+  - @voluntas
+- [FIX] `DigestAuth` で `username*` (RFC 7616 Section 3.4 / RFC 5987 ext-value) をサポートする
+  - `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) のどちらか一方を必須化 (XOR)
+  - 旧実装は `username` のみを必須としており、UTF-8 ユーザー名を `username*=` で送信するクライアントを reject していた
+  - 両方同時送信時は `AuthError::ConflictingUsernameField` (RFC 7616 §3.4 MUST NOT 違反)
+  - `username*` の ext-value 不正は `AuthError::InvalidUsernameExtValue`
+  - `DigestAuth::username_decoded()` を追加し、`username` または `username*` のいずれかから UTF-8 ユーザー名を取得できるようにした
+  - `AuthError` に `ConflictingUsernameField` / `InvalidUsernameExtValue` の 2 バリアントを追加 (enum 拡張)
+  - @voluntas
+- [FIX] `Authorization` / `Content-Disposition` の quoted-string parser で quoted-pair / qdtext の文字集合を RFC 9110 Section 5.6.4 に準拠して厳格化する
+  - `quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )` の右辺と `qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text` を `validate` モジュールに `pub(crate) fn is_qdtext_byte` / `pub(crate) fn is_quoted_pair_byte` として集約
+  - `src/auth.rs::parse_auth_params` と `src/content_disposition.rs::parse_quoted_string` で受信時に CR / LF / NUL 等の CTL を含む quoted-string を reject するよう変更
+  - 上位アプリでの再エンコード経路における response splitting / log injection の経路を遮断する
+  - @voluntas
+- [FIX] `Cache-Control` ディレクティブの値で partial quote (片端 DQUOTE のみ) を reject する
+  - 旧実装 `value.trim().trim_matches('"')` は `max-age="3600` のように閉じ DQUOTE 欠落の値を許容していた
+  - RFC 9110 Section 5.6.4 quoted-string ABNF (両端 DQUOTE) に準拠して `CacheError::InvalidFormat` を返すよう変更
+  - @voluntas
+- [FIX] `MultipartParser::find_bytes` の `windows().position()` ベース実装と毎回 buffer 全体を再走査する挙動を改善し、断片入力時の O(N²·M) 再走査を回避する
+  - `find_bytes` を「first-byte skip + needle 全体比較」に書き換え、定数倍を削減する (最悪計算量 O(N·M) は不変だが、boundary が `\r` で始まるケースで実用的に O(N) に近づく)
+  - `MultipartParser` に `boundary_scan_offset: usize` フィールドを追加し、Initial / InPart の境界検索が `Incomplete` を返した位置から次回再開できるようにする。haystack 末尾の `needle.len() - 1` overlap のみを再走査範囲とすることで、Sans I/O 断片入力時の再走査コストを O(buffer_size) に抑える
+  - `max_buffer_size` 範囲内で攻撃者が 1 バイトずつ feed して CPU を浪費させる経路 (DoS リスク) を緩和する
+  - `memchr` クレートは導入しない (CLAUDE.md「依存は最小限」)
+  - @voluntas
+- [FIX] `MultipartParser` の Initial 状態で終端境界 `--<boundary>--` がバッファ末尾ピッタリで止まったケースを正しく検出するよう off-by-one を修正する
+  - `self.buffer.len() > after_delim + 2` を `>=` に変更し、`self.buffer[after_delim..after_delim + 2]` を安全に参照できる等値ケース (`after_delim + 2 == buffer.len()`) も拾うようにする
+  - 旧実装では終端境界が feed の末尾に来た時点で永遠に `MultipartError::Incomplete` を返し続け、呼出側 loop の意図しないブロック (タイムアウトなしの再 feed 待ち) を起こす可能性があった
+  - RFC 2046 Section 5.1.1 では終端境界後の CRLF は OPTIONAL なため、CRLF terminator なしで送られる正常入力でも本バグに該当していた
+  - @voluntas
+- [FIX] `ResponseDecoder::peek_body_decompressed` / `RequestDecoder::peek_body_decompressed` でボディデータ枯渇後も展開器の内部 buffer を drain できるようにする
+  - body_decoder の `peek_body` が None / 空を返したときも空 input で `Decompressor::decompress` を呼ぶように変更する
+  - `consumed == 0 && produced == 0` のときだけ `Ok(None)` を返す形に統一する
+  - `noflate::gzip::Decoder` のように feed したバイトを内部 buffer に蓄積する型の `Decompressor` 実装でボディ末尾のバイトを取りこぼすバグを修正する
+  - 後方互換: `NoCompression` のような状態を持たない実装は `Continue { 0, 0 }` または `Complete { 0, 0 }` を返すため None 判定で従来挙動と等価
+  - @voluntas
+- [FIX] Content-Length パースで `str::trim()` が Unicode 空白 (NBSP / 全角空白等) を OWS として除去していた問題を修正する
+  - RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠する `trim_ows` を `validate` モジュールに集約し、encoder の `validate_content_length_headers` と decoder の `parse_content_length_value` で共通利用する
+  - obs-text (0x80-0xFF) を許容する `is_valid_field_value` 経由で NBSP の UTF-8 表現 (`0xC2 0xA0`) 等がヘッダー値に到達した場合でも、encoder / decoder ともに Content-Length 値として拒否するようになり、両者の解釈不一致を原因とする HTTP Request Smuggling (CWE-444) 経路を塞ぐ
+  - 後方互換: SP / HTAB のみで構成される従来の OWS は引き続き正しく除去される
+  - @voluntas
+
 ### misc
+
+- [UPDATE] (crate 内部) `is_valid_reason_phrase` を RFC 9112 Section 4 ABNF `1*(HTAB / SP / VCHAR / obs-text)` に厳密準拠させ、空文字列を非合法と判定する
+  - decoder / encoder の呼び出し側で reason-phrase absent (空文字列) はスキップする方式に統一する
+  - reverse proxy 等の経路で「decoder が受理した空 reason_phrase の Response を encoder で再送信する」ケースを RFC 9112 Section 4 に準拠したまま透過できる
+  - @voluntas
+- [UPDATE] `Response`、`Request`、`HttpHead` の委譲メソッドの doc に RFC 節番号を明記する
+  - 対象メソッド: `omit_body` / `is_body_omitted` / `is_keep_alive` / `is_chunked` / `content_length` / `connection`
+  - `is_keep_alive` の doc に判定ロジックの全体像 (`close` 優先、version フォールバック) を明記し、RFC 9112 Section 9.6 (close option) の参照を追加する
+  - `content_length` の doc に「最初のヘッダー値のみを返す」挙動と RFC 9110 Section 17.5 の整数変換オーバーフロー防止要件を明記する
+  - `connection` の doc に「そのままの &str で返し、トークン分割は行わない」挙動を明記する
+  - `omit_body` フィールドに RFC 9110 Section 9.3.2 / Section 6.4.1 の参照を追加し、1xx/204/304 はエンコーダーが自動抑止するため不要であることも明記する
+  - @voluntas
+- [UPDATE] CI を `ci` (全 OS) と `e2e-test` (ubuntu-24.04 のみ) の 2 job に分割し、外部依存 (curl / Docker) を持つ examples の integration test を Linux runner でのみ実行する
+  - 既存 `ci` job は `cargo test --workspace --exclude http11_client --exclude http11_server` に変更し、macos / windows での Docker 不在 (testcontainers) や OS 差異による fail を回避する
+  - 新規 `e2e-test` job が `cargo test -p http11_client -p http11_server` を担当する
+  - @voluntas
+- [UPDATE] `examples/http11_client` の `Decompressor` トレイト実装を完成させ、レスポンスボディをストリーミング展開する形に書き換える (issue 0028)
+  - `decompressor.rs` の `GzipDecompressor` / `BrotliDecompressor` / `ZstdDecompressor` を各 crate のストリーミング API (noflate `gzip::Decoder` / `BrotliDecompressStream` + `BrotliState` / `zstd::stream::raw::Decoder`) のラッパーとして実装する
+  - Content-Encoding ヘッダー受信後に展開器の種別を確定する用途向けに `AnyDecompressor` enum を新設する (variant サイズ差を抑えるため `Box` 経由で持つ)
+  - `transport.rs` を `peek_body()` + `AnyDecompressor::decompress` の手動連携経路に書き換え、1 GiB のボディでも 8 KiB 出力バッファでストリーミング展開できる構成にする
+  - `src/main.rs` の `print_response` から一括展開関数 `decompress_body` の呼び出しを削除する (受信時点で既に展開済み)
+  - `tests/nginx_streaming.rs` に `streams_large_gzip_body` (transport.rs 経路) と `peek_body_decompressed_streams_gzip` (ライブラリ API 経路) の 2 ケースを追加する
+  - @voluntas
+- [ADD] `examples/http11_server` に curl ベースの integration test を追加する
+  - `tests/http_basic.rs` (GET / HEAD / POST / 404 の 7 ケース) を追加する
+  - `tests/http_compression.rs` (gzip / br / zstd の Content-Encoding と優先順位の 9 ケース) を追加する
+  - `tests/http_keep_alive.rs` (Keep-Alive と Connection: close の 3 ケース) を追加する
+  - `tests/https_tls.rs` (rcgen で生成した自己署名証明書による HTTPS の 4 ケース) を追加する
+  - `tests/helpers/mod.rs` にサーバー起動・kill ガード・curl 実行・証明書生成の共通ヘルパーを新設する
+  - dev-dependencies に `rcgen` / `tempfile` / `tokio` (process feature) を追加する
+  - @voluntas
+- [ADD] `examples/http11_client` に testcontainers ベースの integration test を追加する
+  - `tests/nginx_basic.rs` (GET 200 / 404 / HEAD / Server ヘッダー / HTTP/1.1 の 5 ケース) を追加する
+  - `tests/nginx_streaming.rs` (gzip 由来の chunked 受信 / 1 MiB body / `Connection: close` 終端の 3 ケース) を追加する
+  - `tests/helpers/mod.rs` に Docker 検出と nginx (`nginx:1.27-alpine`) 起動の共通ヘルパーを新設する
+  - `src/lib.rs` を新設して `parse_url` / `http_request` / `https_request` / `decompressor` を pub にし、`src/main.rs` を CLI フロントエンドに整理する (`http_request` / `https_request` のシグネチャに `request_method: &str` を追加し、HEAD / CONNECT 経路で `BodyKind::None` / `Tunnel` を正しく扱う)
+  - dev-dependencies に `testcontainers` (aws-lc-rs feature) と `tokio` を追加する
+  - @voluntas
+- [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の死にコードを削除する
+  - `compressor.rs` の `GzipCompressor` / `BrotliCompressor` / `ZstdCompressor` 構造体・`impl Default` / `impl Compressor` トレイト実装 (各約 200 行) を両 example から削除する。両 main.rs は自由関数 `compress_body` / `select_encoding` / `encoding_header` のみを使用しており、struct 群は呼び出し皆無の `#[allow(dead_code)]` 隠蔽コードだった
+  - 特に `BrotliCompressor::compress` は単にバッファに溜めるだけで `finish()` で一括圧縮する偽ストリーミング実装で、お手本として残すのは積極的に有害だった
+  - `examples/http11_server/src/main.rs::StreamingState::reset()` (`#[allow(dead_code)]` 付き、呼び出し皆無) を削除する
+  - `examples/http11_server_io_uring/src/main.rs::DEFAULT_KEEP_ALIVE_TIMEOUT` (未使用 const + 「TODO: io_uring でタイムアウト処理を実装する際に使用」コメント) を削除する。タイムアウト処理を実装する際は新規に const を定義する
+  - @voluntas
+- [FIX] テストメッセージとコードコメントを日本語化し AGENTS.md 規約に準拠させる
+  - `pbt/tests/` および `tests/` の英語 `prop_assert!` / `assert!` メッセージを日本語に統一する
+  - `examples/http11_client/tests/` および `examples/http11_server/tests/` の `.expect(...)` / `panic!(...)` / `assert!(...)` 英語メッセージを日本語化する
+  - `src/encoder.rs` / `src/decoder/response.rs` / `src/decoder/request.rs` / `examples/http11_client/src/main.rs` の英語コードコメントを日本語化または削除する
+  - `pbt/tests/prop_request.rs` / `prop_content_type.rs` / `prop_accept.rs` の廃止 RFC 参照 (`RFC 7230`) を RFC 9110 Section 5.6.2 に更新する
+  - 機能・ログメッセージ・エラーメッセージは変更しない
+  - @voluntas
+- [FIX] `HttpHead::is_keep_alive` の doc 内の誤った RFC 節番号 (Section 9.1 → Section 9.3 / Section 7.6.1) を修正する
+  - @voluntas
 
 ## 2026.3.0
 

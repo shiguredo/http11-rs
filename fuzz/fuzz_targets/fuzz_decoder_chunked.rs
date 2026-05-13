@@ -10,8 +10,8 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, Request, RequestDecoder, Response, ResponseDecoder, encode_chunk,
-    encode_chunks, encode_request_headers, encode_response_headers,
+    BodyKind, BodyProgress, Request, RequestDecoder, Response, ResponseDecoder, StatusCode,
+    encode_chunk, encode_chunks, encode_request_headers, encode_response_headers,
 };
 
 #[derive(Arbitrary, Debug)]
@@ -197,8 +197,10 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
 }
 
 fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
-    let mut request = Request::new("POST", "/");
-    request.add_header("Transfer-Encoding", "chunked");
+    let mut request = Request::new("POST", "/").unwrap();
+    request
+        .add_header("Transfer-Encoding", "chunked")
+        .unwrap();
     let mut encoded = match encode_request_headers(&request) {
         Ok(v) => v,
         Err(_) => return,
@@ -211,8 +213,8 @@ fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
 }
 
 fn exercise_response(body: &[u8], expected: &[u8], split_size: usize) {
-    let mut response = Response::new(200, "OK");
-    response.add_header("Transfer-Encoding", "chunked");
+    let mut response = Response::with_status(StatusCode::OK);
+    response.add_header("Transfer-Encoding", "chunked").unwrap();
     let mut encoded = match encode_response_headers(&response) {
         Ok(v) => v,
         Err(_) => return,

@@ -20,7 +20,7 @@ fn test_asterisk_form_with_options_succeeds() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_ok(), "OPTIONS with asterisk-form should succeed");
+    assert!(result.is_ok(), "OPTIONS + asterisk-form は成功すべき");
     assert!(result.unwrap().is_some());
 }
 
@@ -30,7 +30,7 @@ fn test_asterisk_form_with_get_fails() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "GET with asterisk-form should fail");
+    assert!(result.is_err(), "GET + asterisk-form は失敗すべき");
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn test_asterisk_form_with_post_fails() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "POST with asterisk-form should fail");
+    assert!(result.is_err(), "POST + asterisk-form は失敗すべき");
 }
 
 // ========================================
@@ -52,7 +52,7 @@ fn test_invalid_path_character_space() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with space should fail");
+    assert!(result.is_err(), "空白を含むパスは失敗すべき");
 }
 
 #[test]
@@ -61,7 +61,7 @@ fn test_invalid_path_character_backslash() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with backslash should fail");
+    assert!(result.is_err(), "バックスラッシュを含むパスは失敗すべき");
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn test_invalid_path_character_angle_bracket() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "path with angle bracket should fail");
+    assert!(result.is_err(), "山括弧を含むパスは失敗すべき");
 }
 
 // ========================================
@@ -83,7 +83,10 @@ fn test_valid_percent_encoding() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_ok(), "valid percent-encoding should succeed");
+    assert!(
+        result.is_ok(),
+        "正常なパーセントエンコーディングは成功すべき"
+    );
     assert!(result.unwrap().is_some());
 }
 
@@ -93,7 +96,10 @@ fn test_invalid_percent_encoding_incomplete() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "incomplete percent-encoding should fail");
+    assert!(
+        result.is_err(),
+        "不完全なパーセントエンコーディングは失敗すべき"
+    );
 }
 
 #[test]
@@ -102,7 +108,10 @@ fn test_invalid_percent_encoding_non_hex() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(request_line.as_bytes()).unwrap();
     let result = decoder.decode_headers();
-    assert!(result.is_err(), "non-hex percent-encoding should fail");
+    assert!(
+        result.is_err(),
+        "16 進でないパーセントエンコーディングは失敗すべき"
+    );
 }
 
 // ========================================
@@ -115,7 +124,7 @@ fn test_mailto_absolute_form() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(raw.as_bytes()).unwrap();
     let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "mailto:user@example.com");
+    assert_eq!(head.uri(), "mailto:user@example.com");
 }
 
 #[test]
@@ -124,7 +133,7 @@ fn test_tel_absolute_form() {
     let mut decoder = RequestDecoder::new();
     decoder.feed(raw.as_bytes()).unwrap();
     let (head, _) = decoder.decode_headers().unwrap().unwrap();
-    assert_eq!(head.uri, "tel:+1-201-555-0123");
+    assert_eq!(head.uri(), "tel:+1-201-555-0123");
 }
 
 // ========================================

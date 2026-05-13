@@ -12,7 +12,7 @@ use crate::request_target::RequestTargetForm;
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
     is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
-    is_valid_field_value, is_valid_header_name, is_valid_token,
+    is_valid_field_value, is_valid_header_name, is_valid_token, trim_ows,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -21,6 +21,7 @@ use super::phase::DecodePhase;
 
 /// ボディの種類
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BodyKind {
     /// Content-Length で指定された固定長
     ContentLength(u64),
@@ -45,6 +46,15 @@ pub enum BodyKind {
 pub enum BodyProgress {
     /// 現在のバッファでさらに処理を試行できる。
     /// 直後に peek_body() / progress() / consume_body() を続けて呼ぶこと。
+    ///
+    /// # 多段階遷移の注意
+    ///
+    /// 単一の consume_body() / progress() 呼出で複数のデコードフェーズを跨ぐ
+    /// ケースがある (例: chunked データ末尾の CRLF 消費 → 次チャンクサイズ行
+    /// パース、トレーラー開始 → 全トレーラー消費 → Complete)。この場合も戻り値は
+    /// `Advanced` であり、実際のフェーズ変化は `self.phase` (内部状態) を直接
+    /// 確認しなければ把握できない。ボディ受信完了判定には `BodyProgress` だけでなく
+    /// `DecodePhase` を併用すること (ストリーミング API の実装例を参照)。
     Advanced,
     /// バッファに処理可能なデータがなく、追加の feed() が必要。
     /// 呼び出し側はループを抜けてネットワーク I/O に戻る。
@@ -64,6 +74,12 @@ pub(crate) struct BodyDecoder {
     body_consumed: usize,
     /// トレーラー数
     trailer_count: usize,
+    /// `Trailer:` ヘッダーで sender が事前申告した trailer フィールド名 (ASCII 小文字化済み)
+    ///
+    /// RFC 9110 Section 6.5.1 のホワイトリスト方式で利用する。本リストに含まれない
+    /// 名前の trailer フィールドは reject される。decode_headers の完了時に
+    /// `set_declared_trailers` で設定される (`Trailer:` ヘッダーがない場合は空)。
+    declared_trailers: Vec<String>,
 }
 
 impl Default for BodyDecoder {
@@ -79,6 +95,7 @@ impl BodyDecoder {
             trailers: Vec::new(),
             body_consumed: 0,
             trailer_count: 0,
+            declared_trailers: Vec::new(),
         }
     }
 
@@ -87,6 +104,15 @@ impl BodyDecoder {
         self.trailers.clear();
         self.body_consumed = 0;
         self.trailer_count = 0;
+        self.declared_trailers.clear();
+    }
+
+    /// `Trailer:` ヘッダーで申告された trailer フィールド名リストを設定する
+    ///
+    /// `decode_headers` 完了直後に呼び出される。ホワイトリスト判定で参照する。
+    /// 名前は ASCII 小文字化されたもののみを保持する。
+    pub fn set_declared_trailers(&mut self, declared: Vec<String>) {
+        self.declared_trailers = declared;
     }
 
     /// 利用可能なボディデータを覗く（ゼロコピー）
@@ -485,10 +511,27 @@ impl BodyDecoder {
                     // 不正なトレーラー行はエラーにする
                     let (name, value) = parse_header_line(&line)?;
 
-                    // RFC 9112 Section 7.1.2: 禁止フィールドチェック
+                    // RFC 9110 Section 6.5.1: framing / routing / authentication /
+                    // request modifiers / response controls / content format /
+                    // connection management のカテゴリに該当するフィールドは
+                    // trailer に置けない (`Trailer:` ヘッダーで申告されていても拒否)。
                     if is_prohibited_trailer_field(&name) {
                         return Err(Error::InvalidData(alloc::format!(
                             "prohibited trailer field: {}",
+                            name
+                        )));
+                    }
+
+                    // RFC 9110 Section 6.5.1 ホワイトリスト方式:
+                    // sender は `Trailer:` ヘッダーで事前申告したフィールド名のみ
+                    // trailer-section に置ける (MUST NOT generate a trailer field
+                    // unless ... the sender knows the recipient will accept it)。
+                    // 受信側は申告外のフィールドを reject し、認証ヘッダー等の
+                    // 後付け注入による smuggling 経路を遮断する。
+                    let name_lower = name.to_ascii_lowercase();
+                    if !self.declared_trailers.iter().any(|d| d == &name_lower) {
+                        return Err(Error::InvalidData(alloc::format!(
+                            "undeclared trailer field: {}",
                             name
                         )));
                     }
@@ -503,6 +546,34 @@ impl BodyDecoder {
         }
         Ok(advanced)
     }
+}
+
+/// ヘッダーから `Trailer:` フィールドで申告された名前リストを抽出する
+///
+/// RFC 9110 Section 6.5.1 のホワイトリスト方式 trailer 受理判定で利用する。
+/// 申告された名前は ASCII 小文字化して返す (受信した trailer 名との比較は
+/// case-insensitive 比較のため)。
+///
+/// `Trailer:` ヘッダーは複数行あり得る。各行はカンマ区切りトークンリスト。
+/// 空要素は RFC 9110 Section 5.6.1.2 に従い無視する。
+pub(crate) fn collect_declared_trailers(headers: &[(String, String)]) -> Vec<String> {
+    let mut declared = Vec::new();
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("Trailer") {
+            continue;
+        }
+        for token in value.split(',') {
+            // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+            // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+            // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+            let token = trim_ows(token);
+            if token.is_empty() {
+                continue;
+            }
+            declared.push(token.to_ascii_lowercase());
+        }
+    }
+    declared
 }
 
 /// chunk-ext の ABNF を検証する (RFC 9112 Section 7.1.1)
@@ -659,29 +730,6 @@ fn is_qdtext(b: u8) -> bool {
 /// CRLF で終わる行を探す
 pub(crate) fn find_line(buf: &[u8]) -> Option<usize> {
     buf.windows(2).position(|w| w == b"\r\n")
-}
-
-/// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
-///
-/// OWS = *( SP / HTAB )
-/// Rust の str::trim() は Unicode 空白全般を除去するため使用しない
-fn trim_ows(s: &str) -> &str {
-    let bytes = s.as_bytes();
-    let start = bytes
-        .iter()
-        .position(|&b| b != b' ' && b != b'\t')
-        .unwrap_or(bytes.len());
-    let end = bytes
-        .iter()
-        .rposition(|&b| b != b' ' && b != b'\t')
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    if start >= end {
-        ""
-    } else {
-        // SP/HTAB は ASCII なので UTF-8 境界は安全
-        &s[start..end]
-    }
 }
 
 /// ヘッダー行をパース
@@ -1215,14 +1263,17 @@ pub(crate) fn parse_transfer_encoding_for_request(
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
             for token in value.split(',') {
-                let token = token.trim();
+                // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+                // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+                // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+                let token = trim_ows(token);
                 // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
                     continue;
                 }
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
-                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                let base_coding = trim_ows(token.split(';').next().unwrap_or(token));
                 // RFC 9110 Section 10.1.4: transfer-coding = token
                 if !is_valid_token(base_coding) {
                     return Err(Error::InvalidData(
@@ -1270,14 +1321,17 @@ pub(crate) fn parse_transfer_encoding_for_response(
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
             for token in value.split(',') {
-                let token = token.trim();
+                // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
+                // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
+                // との解釈不一致による HTTP Request Smuggling (CWE-444) の足場となる。
+                let token = trim_ows(token);
                 // RFC 9110 Section 5.6.1.2: 受信者は空リスト要素を無視する (MUST)
                 if token.is_empty() {
                     continue;
                 }
 
                 // RFC 9112 Section 7.1: chunked のパラメータは定義されていない
-                let base_coding = token.split(';').next().unwrap_or(token).trim();
+                let base_coding = trim_ows(token.split(';').next().unwrap_or(token));
                 // RFC 9110 Section 10.1.4: transfer-coding = token
                 if !is_valid_token(base_coding) {
                     return Err(Error::InvalidData(
@@ -1343,7 +1397,7 @@ fn parse_content_length_value(input: &str) -> Result<u64, Error> {
     let mut result: Option<u64> = None;
 
     for part in input.split(',') {
-        let part = part.trim();
+        let part = trim_ows(part);
         if part.is_empty() {
             return Err(Error::InvalidData(
                 "invalid Content-Length: empty value in list".to_string(),
@@ -1394,18 +1448,35 @@ pub(crate) fn resolve_body_headers_for_request(
 
 /// レスポンス用: ボディヘッダー解決
 ///
-/// RFC 9112 Section 6.3:
-/// - Transfer-Encoding と Content-Length の両方がある場合、Transfer-Encoding を優先
-///   (Content-Length は無視。ただし警告ログを出すべきとあるが、本実装では無視のみ)
-/// - chunked が最後でない場合は close-delimited
+/// RFC 9112 Section 6.3 (3):
+/// > If a message is received with both a Transfer-Encoding and a
+/// > Content-Length header field, the Transfer-Encoding overrides the
+/// > Content-Length. Such a message might indicate an attempt to perform
+/// > request smuggling (Section 11.2) or response splitting (Section 11.1)
+/// > and ought to be handled as an error.
+///
+/// RFC 9112 Section 6.1 lines 880-884:
+/// > the server MUST close the connection after responding to such a request
+/// > to avoid the potential attacks.
+///
+/// 両方が含まれるレスポンスは smuggling / response splitting (CWE-444 /
+/// CWE-113) の兆候として `Error::InvalidData` を返す。リクエスト経路
+/// (`resolve_body_headers_for_request`) と同じ扱いとし、呼出側に接続クローズ
+/// 判断の余地を渡す。
+///
+/// chunked が最後でない場合は close-delimited として扱う (TE のみ存在時)。
 pub(crate) fn resolve_body_headers_for_response(
     headers: &[(String, String)],
 ) -> Result<(TransferEncodingResult, Option<u64>), Error> {
     let te_result = parse_transfer_encoding_for_response(headers)?;
     let content_length = parse_content_length(headers)?;
 
-    // RFC 9112 Section 6.3: Transfer-Encoding がある場合は Content-Length を無視
-    // (リクエスト送信者はこの組み合わせを送るべきではないが、受信者は TE を優先)
+    if te_result != TransferEncodingResult::None && content_length.is_some() {
+        return Err(Error::InvalidData(
+            "invalid message: both Transfer-Encoding and Content-Length".to_string(),
+        ));
+    }
+
     if te_result != TransferEncodingResult::None {
         return Ok((te_result, None));
     }

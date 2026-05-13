@@ -23,8 +23,11 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
+
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ContentDispositionError {
     /// 空の入力
     Empty,
@@ -38,6 +41,11 @@ pub enum ContentDispositionError {
     InvalidExtValue,
     /// 重複パラメータ (RFC 6266)
     DuplicateParameter(String),
+    /// パラメータ数が `MAX_PARAMS` を超えた (issue 0047)
+    ///
+    /// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とし、
+    /// 線形重複検出の CPU 消費を有限に抑える。
+    TooManyParameters,
 }
 
 impl fmt::Display for ContentDispositionError {
@@ -55,11 +63,21 @@ impl fmt::Display for ContentDispositionError {
             ContentDispositionError::DuplicateParameter(name) => {
                 write!(f, "duplicate parameter: {}", name)
             }
+            ContentDispositionError::TooManyParameters => {
+                write!(f, "too many content-disposition parameters")
+            }
         }
     }
 }
 
 impl core::error::Error for ContentDispositionError {}
+
+/// Content-Disposition のパラメータ数上限 (issue 0047)
+///
+/// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とする。
+/// 重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に抑えるための hard cap。
+/// 将来、RFC 拡張で 32 を超えるパラメータが必要になれば再評価する。
+const MAX_PARAMS: usize = 32;
 
 /// Disposition タイプ
 ///
@@ -177,6 +195,11 @@ impl ContentDisposition {
                 // 重複パラメータチェック
                 if seen_params.iter().any(|n: &String| n == &param_name) {
                     return Err(ContentDispositionError::DuplicateParameter(param_name));
+                }
+                // issue 0047: パラメータ数 hard cap (`MAX_PARAMS = 32`)。
+                // 線形重複検出の CPU 消費を有限に抑える。
+                if seen_params.len() >= MAX_PARAMS {
+                    return Err(ContentDispositionError::TooManyParameters);
                 }
                 seen_params.push(param_name.clone());
 
@@ -389,21 +412,38 @@ fn is_token_char(b: u8) -> bool {
     )
 }
 
-/// 引用符付き文字列をパース (エスケープ処理)
+/// 引用符付き文字列をパース (RFC 9110 Section 5.6.4 qdtext / quoted-pair)
+///
+/// 入力は両端の DQUOTE を除いた中身 (= `qdtext / quoted-pair` の連結)。
+/// CTL (CR / LF / NUL / 他) は qdtext / quoted-pair のどちらの右辺としても許容しない。
+/// 受信側でも CR/LF を含む quoted-string を素通りさせると、上位アプリでの再エンコード経路で
+/// response splitting / log injection に至る経路を生むため厳格に reject する。
 fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
+    let bytes = s.as_bytes();
     let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars();
+    let mut i = 0;
 
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            // エスケープシーケンス
-            if let Some(escaped) = chars.next() {
-                result.push(escaped);
-            } else {
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            // quoted-pair: 次のバイトが HTAB / SP / VCHAR / obs-text であること
+            i += 1;
+            if i >= bytes.len() {
                 return Err(ContentDispositionError::InvalidParameter);
             }
+            let next = bytes[i];
+            if !is_quoted_pair_byte(next) {
+                return Err(ContentDispositionError::InvalidParameter);
+            }
+            result.push(next as char);
+            i += 1;
         } else {
-            result.push(c);
+            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+            if !is_qdtext_byte(b) {
+                return Err(ContentDispositionError::InvalidParameter);
+            }
+            result.push(b as char);
+            i += 1;
         }
     }
 

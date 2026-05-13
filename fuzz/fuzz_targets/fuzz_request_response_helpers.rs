@@ -3,15 +3,14 @@
 //! - 任意の method, uri, version, ヘッダー, ボディから Request を構築し、
 //!   get_header, get_headers, has_header, connection, content_length,
 //!   is_chunked, is_keep_alive の各メソッドが期待値と一致することを確認する
-//! - 同様に Response を構築し、上記に加えて is_success, is_redirect,
-//!   is_client_error, is_server_error, is_informational の
-//!   ステータスコード分類メソッドの整合性を検証する
+//! - 同様に Response を構築し、上記に加えて status_class() による
+//!   ステータスコード分類の整合性を検証する
 
 #![no_main]
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Request, Response};
+use shiguredo_http11::{Request, Response, StatusClass};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzRequest {
@@ -45,8 +44,55 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
         .count()
 }
 
-fn expected_content_length(headers: &[(String, String)]) -> Option<u64> {
-    header_value(headers, "Content-Length").and_then(|v| v.parse::<u64>().ok())
+/// `Request::content_length` / `Response::content_length` の参照実装。
+///
+/// decoder の `parse_content_length` (`src/decoder/body.rs`) と同じ厳格パース
+/// (OWS / カンマリスト / 複数行 / mismatched 値の reject) を再現する。
+fn expected_content_length(
+    headers: &[(String, String)],
+) -> Result<Option<u64>, ()> {
+    fn trim_ows(s: &str) -> &str {
+        s.trim_matches(|c: char| c == ' ' || c == '\t')
+    }
+    fn parse_strict_digits(s: &str) -> Result<u64, ()> {
+        let trimmed = trim_ows(s);
+        if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(());
+        }
+        trimmed.parse::<u64>().map_err(|_| ())
+    }
+    fn parse_value(value: &str) -> Result<Option<u64>, ()> {
+        let mut merged: Option<u64> = None;
+        for elem in value.split(',') {
+            let elem = trim_ows(elem);
+            if elem.is_empty() {
+                continue;
+            }
+            let n = parse_strict_digits(elem)?;
+            match merged {
+                None => merged = Some(n),
+                Some(prev) if prev != n => return Err(()),
+                Some(_) => {}
+            }
+        }
+        Ok(merged)
+    }
+
+    let mut result: Option<u64> = None;
+    for (name, value) in headers {
+        if !name.eq_ignore_ascii_case("Content-Length") {
+            continue;
+        }
+        let parsed = parse_value(value)?;
+        if let Some(n) = parsed {
+            match result {
+                None => result = Some(n),
+                Some(prev) if prev != n => return Err(()),
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(result)
 }
 
 fn expected_chunked(headers: &[(String, String)]) -> bool {
@@ -93,11 +139,15 @@ fn exercise_request(input: FuzzRequest) {
         headers,
         body,
     } = input;
-    let mut request = Request::with_version(&method, &uri, &version);
+    let Ok(mut request) = Request::with_version(&method, &uri, &version) else {
+        return;
+    };
     for (name, value) in &headers {
-        request.add_header(name, value);
+        if request.add_header(name, value).is_err() {
+            return;
+        }
     }
-    request.body = Some(body);
+    let request = request.body(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(request.get_header(name), header_value(&headers, name));
@@ -109,7 +159,10 @@ fn exercise_request(input: FuzzRequest) {
     }
 
     assert_eq!(request.connection(), header_value(&headers, "Connection"));
-    assert_eq!(request.content_length(), expected_content_length(&headers));
+    assert_eq!(
+        request.content_length().map_err(|_| ()),
+        expected_content_length(&headers)
+    );
     assert_eq!(request.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         request.is_keep_alive(),
@@ -125,11 +178,15 @@ fn exercise_response(input: FuzzResponse) {
         headers,
         body,
     } = input;
-    let mut response = Response::with_version(&version, status_code, &reason_phrase);
+    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+        return;
+    };
     for (name, value) in &headers {
-        response.add_header(name, value);
+        if response.add_header(name, value).is_err() {
+            return;
+        }
     }
-    response.body = Some(body);
+    let response = response.body(body);
 
     for name in ["Connection", "Content-Length", "Transfer-Encoding"] {
         assert_eq!(response.get_header(name), header_value(&headers, name));
@@ -141,25 +198,36 @@ fn exercise_response(input: FuzzResponse) {
     }
 
     assert_eq!(response.connection(), header_value(&headers, "Connection"));
-    assert_eq!(response.content_length(), expected_content_length(&headers));
+    assert_eq!(
+        response.content_length().map_err(|_| ()),
+        expected_content_length(&headers)
+    );
     assert_eq!(response.is_chunked(), expected_chunked(&headers));
     assert_eq!(
         response.is_keep_alive(),
         expected_keep_alive(&version, &headers)
     );
 
-    assert_eq!(response.is_success(), (200..300).contains(&status_code));
-    assert_eq!(response.is_redirect(), (300..400).contains(&status_code));
+    // Response::with_version はバリデーションを通すため、
+    // 到達した時点で status_code は 100..=599 に閉じ込められている。
     assert_eq!(
-        response.is_client_error(),
+        response.status_class() == StatusClass::Successful,
+        (200..300).contains(&status_code)
+    );
+    assert_eq!(
+        response.status_class() == StatusClass::Redirection,
+        (300..400).contains(&status_code)
+    );
+    assert_eq!(
+        response.status_class() == StatusClass::ClientError,
         (400..500).contains(&status_code)
     );
     assert_eq!(
-        response.is_server_error(),
+        response.status_class() == StatusClass::ServerError,
         (500..600).contains(&status_code)
     );
     assert_eq!(
-        response.is_informational(),
+        response.status_class() == StatusClass::Informational,
         (100..200).contains(&status_code)
     );
 }

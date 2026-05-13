@@ -62,15 +62,7 @@ cargo run -p http11_server_io_uring -- --cert cert.pem --key key.pem
 
 優先順位: zstd > br > gzip
 
-圧縮機能は feature フラグで個別に有効/無効化できます:
-
-```bash
-# gzip のみ有効
-cargo run -p http11_server_io_uring --no-default-features --features gzip -- --cert cert.pem --key key.pem
-
-# 圧縮なし
-cargo run -p http11_server_io_uring --no-default-features -- --cert cert.pem --key key.pem
-```
+gzip / br / zstd の 3 形式すべてが常に有効です。
 
 ## 動作確認
 
@@ -110,7 +102,6 @@ kTLS 有効化後は、カーネルが TLS レコードの暗号化/復号化を
 
 | 定数 | 値 | 説明 |
 |------|-----|------|
-| `DEFAULT_KEEP_ALIVE_TIMEOUT` | 60秒 | Keep-Alive タイムアウト |
 | `DEFAULT_MAX_REQUESTS` | 1000 | 1 接続あたりの最大リクエスト数 |
 | `READ_BUF_SIZE` | 8KB | 読み取りバッファサイズ |
 | `WRITE_BUF_SIZE` | 64KB | 書き込みバッファサイズ |
@@ -134,3 +125,32 @@ kTLS 有効化後は、カーネルが TLS レコードの暗号化/復号化を
 
 - RFC 9110 (HTTP Semantics)
 - RFC 9112 (HTTP/1.1)
+
+## 手動テスト: HTTP/1.1 パイプライニング (issue 0048)
+
+`curl` はデフォルトでパイプライニングを行わないため、`printf` + `nc` で 1 TCP segment に
+複数リクエストを詰めて送る:
+
+```sh
+# サーバ起動 (TLS 無効では動かないため、TLS で接続して 1 segment に詰める)
+# 本サンプルは kTLS 必須のため、Linux 環境で実行する
+printf 'GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: localhost\r\n\r\n' \
+  | openssl s_client -connect 127.0.0.1:8443 -quiet -ign_eof
+```
+
+期待: `/a` のレスポンスに続いて `/b` のレスポンスが順序通りに返ること。
+
+issue 0048 の修正前は 1 件目のみ返り、2 件目以降は drop されていた。
+
+## 手動テスト: TLS 1.3 + kTLS の leftover drain (issue 0049)
+
+TLS 1.3 では Client Finished と Application Data (HTTP リクエスト) が同一 flight で
+送信される。kTLS 移行直前に rustls の `received_plaintext` を排出しないと、HTTP
+リクエストの先頭バイトが消失する。
+
+```sh
+# サーバ起動後、TLS 1.3 で curl を実行
+curl -v --http1.1 --tlsv1.3 https://localhost:8443/info
+```
+
+期待: 修正後は正常にレスポンスが返る。修正前は parse error / hang / 接続切断となる。

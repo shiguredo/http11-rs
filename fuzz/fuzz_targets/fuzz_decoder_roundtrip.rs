@@ -1,9 +1,9 @@
 //! Request / Response のエンコード → デコード ラウンドトリップを検証する
 //!
 //! - 任意の method, uri, ヘッダー, ボディから Request を構築し、
-//!   try_encode() → RequestDecoder でデコードした結果が一致することを確認する
+//!   encode() → RequestDecoder でデコードした結果が一致することを確認する
 //! - 任意の status_code, reason_phrase, ヘッダー, ボディから Response を構築し、
-//!   try_encode() → ResponseDecoder でデコードした結果が一致することを確認する
+//!   encode() → ResponseDecoder でデコードした結果が一致することを確認する
 
 #![no_main]
 
@@ -62,17 +62,23 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             .cloned()
             .collect();
 
-        let mut request = Request::new(&fuzz_req.method, &fuzz_req.uri);
+        let Ok(mut request) = Request::new(&fuzz_req.method, &fuzz_req.uri) else {
+            return;
+        };
         for (name, value) in &valid_headers {
-            request.add_header(name, value);
+            if request.add_header(name, value).is_err() {
+                return;
+            }
         }
 
         // ボディがある場合のみ設定
-        if !fuzz_req.body.is_empty() {
-            request.body = Some(fuzz_req.body.clone());
-        }
+        let request = if !fuzz_req.body.is_empty() {
+            request.body(fuzz_req.body.clone())
+        } else {
+            request
+        };
 
-        let encoded = match request.try_encode() {
+        let encoded = match request.encode() {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -99,7 +105,11 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
             }
-            assert_eq!(decoded_body, request.body.unwrap_or_default());
+            let expected_body: Vec<u8> = request
+                .body_bytes()
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default();
+            assert_eq!(decoded_body, expected_body);
         }
     }
 
@@ -116,9 +126,14 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             .cloned()
             .collect();
 
-        let mut response = Response::new(fuzz_resp.status_code, &fuzz_resp.reason_phrase);
+        let mut response = match Response::new(fuzz_resp.status_code, &fuzz_resp.reason_phrase) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
         for (name, value) in &valid_headers {
-            response.add_header(name, value);
+            if response.add_header(name, value).is_err() {
+                return;
+            }
         }
 
         // 1xx, 204, 304 以外の場合のみボディを設定
@@ -126,11 +141,18 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             || fuzz_resp.status_code == 204
             || fuzz_resp.status_code == 304);
 
-        if has_body && !fuzz_resp.body.is_empty() {
-            response.body = Some(fuzz_resp.body.clone());
+        let response_body = fuzz_resp.body.clone();
+        if has_body && !response_body.is_empty() {
+            response = response.body(response_body.clone());
         }
 
-        let encoded = match response.try_encode() {
+        let expected_body = if has_body && !response_body.is_empty() {
+            response_body
+        } else {
+            Vec::new()
+        };
+
+        let encoded = match response.encode() {
             Ok(v) => v,
             Err(_) => return,
         };
@@ -158,7 +180,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                     }
                     BodyKind::None | BodyKind::Tunnel => {}
                 }
-                assert_eq!(decoded_body, response.body.unwrap_or_default());
+                assert_eq!(decoded_body, expected_body);
             }
         }
     }

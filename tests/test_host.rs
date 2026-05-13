@@ -91,7 +91,7 @@ fn test_host_with_sub_delims() {
     for delim in sub_delims {
         let input = format!("example{}test.com", delim);
         let result = Host::parse(&input);
-        assert!(result.is_ok(), "Failed for delim: {}", delim);
+        assert!(result.is_ok(), "区切り文字 {} で失敗", delim);
     }
 }
 

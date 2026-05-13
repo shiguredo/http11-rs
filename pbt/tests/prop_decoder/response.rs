@@ -1,7 +1,9 @@
 //! ResponseDecoder のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, BodyProgress, DecoderLimits, Error, Response, ResponseDecoder};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, DecoderLimits, Error, HttpHead, Response, ResponseDecoder, StatusClass,
+};
 
 use super::{body, reason_phrase, status_code};
 
@@ -45,8 +47,8 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.status_code, status_code);
-        prop_assert_eq!(head.reason_phrase, "");
+        prop_assert_eq!(head.status_code(), status_code);
+        prop_assert_eq!(head.reason_phrase(), "");
     }
 }
 
@@ -62,7 +64,7 @@ proptest! {
         // HEAD レスポンスは Content-Length があってもボディなし
         let data = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", content_length);
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
@@ -77,7 +79,7 @@ proptest! {
         // HEAD レスポンスは Transfer-Encoding があってもボディなし
         let data = format!("HTTP/1.1 {} OK\r\nTransfer-Encoding: chunked\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
@@ -141,7 +143,7 @@ proptest! {
         let mut decoder = ResponseDecoder::new();
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert!(head.is_informational());
+        prop_assert_eq!(head.status_class(), StatusClass::Informational);
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -158,7 +160,7 @@ proptest! {
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
         // 204 は特別扱い
         if code != 204 {
-            prop_assert!(head.is_success());
+            prop_assert_eq!(head.status_class(), StatusClass::Successful);
         }
     }
 }
@@ -324,7 +326,7 @@ proptest! {
         let data = "x".repeat(data_size);
         let result = decoder.feed(data.as_bytes());
         let is_buffer_overflow = matches!(result, Err(Error::BufferOverflow { .. }));
-        prop_assert!(is_buffer_overflow, "expected BufferOverflow, got {:?}", result);
+        prop_assert!(is_buffer_overflow, "BufferOverflow を期待したが {:?} だった", result);
     }
 }
 
@@ -343,7 +345,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
-        prop_assert!(is_header_line_too_long, "expected HeaderLineTooLong, got {:?}", result);
+        prop_assert!(is_header_line_too_long, "HeaderLineTooLong を期待したが {:?} だった", result);
     }
 }
 
@@ -365,7 +367,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
-        prop_assert!(is_too_many_headers, "expected TooManyHeaders, got {:?}", result);
+        prop_assert!(is_too_many_headers, "TooManyHeaders を期待したが {:?} だった", result);
     }
 }
 
@@ -384,7 +386,7 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let result = decoder.decode_headers();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
-        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
+        prop_assert!(is_body_too_large, "BodyTooLarge を期待したが {:?} だった", result);
     }
 }
 
@@ -451,7 +453,7 @@ proptest! {
             }
         }
         // ここに到達した場合は問題
-        prop_assert!(false, "expected BodyTooLarge error but consumed {} bytes", consumed);
+        prop_assert!(false, "BodyTooLarge エラーを期待したが {} バイト消費した", consumed);
     }
 }
 
@@ -517,22 +519,74 @@ proptest! {
 
 proptest! {
     #[test]
-    fn prop_response_decoder_reset_expect_no_body(
+    fn prop_response_decoder_reset_request_method(
         // 204, 304 はボディなしなので除外 (2xx のうちボディがあるステータスコードのみ)
         status_code in prop_oneof![200u16..=203, 205u16..=299]
     ) {
         let mut decoder = ResponseDecoder::new();
-        decoder.set_expect_no_body(true);
+        decoder.set_request_method("HEAD");
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 100\r\n\r\n", status_code);
         decoder.feed(data.as_bytes()).unwrap();
         let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind, BodyKind::None);
         decoder.reset();
-        // reset 後は expect_no_body がクリアされる
+        // reset 後は request_method がクリアされる
         let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
         decoder.feed(data2.as_bytes()).unwrap();
         let (_, body_kind2) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(body_kind2, BodyKind::ContentLength(5));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_head_request_method_cleared_on_decode_headers_complete(
+        // 200..=299 のうちボディがあるステータスコード (204 は status_has_body=false で除外)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
+    ) {
+        // set_request_method("HEAD") + 空ボディレスポンスを decode_headers() で
+        // 処理した後、続けて通常のレスポンスを decode_headers() で処理した場合に
+        // request_method が Complete 遷移時にクリアされていることを検証する。
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("HEAD");
+        let data1 = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
+        decoder.feed(data1.as_bytes()).unwrap();
+        let (_, body_kind1) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind1, BodyKind::None);
+
+        // 次のレスポンスを供給する。Complete 遷移時に request_method がクリア
+        // されていれば、Content-Length: 5 が正しく解釈されるはず。
+        let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
+        decoder.feed(data2.as_bytes()).unwrap();
+        let (_, body_kind2) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind2, BodyKind::ContentLength(5));
+    }
+}
+
+proptest! {
+    #[test]
+    fn prop_head_request_method_cleared_on_decode_complete(
+        // 200..=299 のうちボディがあるステータスコード (204 は status_has_body=false で除外)
+        status_code in prop_oneof![200u16..=203, 205u16..=299]
+    ) {
+        // set_request_method("HEAD") + 空ボディレスポンスを decode() で処理した後、
+        // 続けて通常のレスポンスを decode() で処理した場合に request_method が
+        // decode() 完了時にクリアされていることを検証する。
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("HEAD");
+        let data1 = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
+        decoder.feed(data1.as_bytes()).unwrap();
+        let resp1 = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(resp1.status_code(), status_code);
+        // HEAD レスポンスはボディなし扱い
+        prop_assert!(resp1.body_bytes().is_none());
+
+        // 次のレスポンスを供給する。decode() 完了時に request_method がクリア
+        // されていれば、Content-Length: 5 が正しく解釈されてボディが取れるはず。
+        let data2 = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", status_code);
+        decoder.feed(data2.as_bytes()).unwrap();
+        let resp2 = decoder.decode().unwrap().unwrap();
+        prop_assert_eq!(resp2.body_bytes(), Some(&b"hello"[..]));
     }
 }
 
@@ -582,11 +636,11 @@ proptest! {
             // 明示的に空ボディを指定して Content-Length: 0 を確保する。
             // 1xx/204/304 では status_has_body=false により Content-Length は付かないが、
             // body=Some(vec![]) でもエンコーダーは body バイトを出力しないため問題ない。
-            let response = Response::new(*code, "OK").body(Vec::new());
-            let encoded = response.encode();
+            let response = Response::new(*code, "OK").unwrap().body(Vec::new());
+            let encoded = response.encode().unwrap();
             decoder.feed(&encoded).unwrap();
             let decoded = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(decoded.status_code, *code);
+            prop_assert_eq!(decoded.status_code(), *code);
             decoder.reset();
         }
     }
@@ -610,7 +664,7 @@ proptest! {
         );
         decoder.feed(data.as_bytes()).unwrap();
         let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.status_code, status_code);
+        prop_assert_eq!(head.status_code(), status_code);
         // RFC 9112 Section 6.3: 1xx, 204, 304 はボディなし
         if (100..200).contains(&status_code) || status_code == 204 || status_code == 304 {
             prop_assert_eq!(body_kind, BodyKind::None);
@@ -631,7 +685,7 @@ proptest! {
         reason in reason_phrase(),
         body_data in body()
     ) {
-        let mut response = Response::new(status, &reason);
+        let mut response = Response::new(status, &reason).unwrap();
 
         // RFC 9110: 1xx/204/205/304 はエンコーダー側でボディ生成を禁止
         // (デコーダー側では 205 はメッセージ長決定規則に従うが、ラウンドトリップテストでは
@@ -654,15 +708,15 @@ proptest! {
             response = response.body(body_data.clone());
         }
 
-        let encoded = response.encode();
+        let encoded = response.encode().unwrap();
         let mut decoder = ResponseDecoder::new();
         decoder.feed(&encoded).unwrap();
         let decoded = decoder.decode().unwrap().unwrap();
 
-        prop_assert_eq!(decoded.status_code, status);
+        prop_assert_eq!(decoded.status_code(), status);
         if !status_forbids_body {
             // 空ボディも .body(vec![]) で明示しているため、デコーダーは Some(vec![]) を返す。
-            prop_assert_eq!(decoded.body.as_deref(), Some(body_data.as_slice()));
+            prop_assert_eq!(decoded.body_bytes(), Some(body_data.as_slice()));
         }
     }
 }
@@ -718,15 +772,15 @@ proptest! {
         // 明示的に空ボディを指定する。
         let mut all_data = Vec::new();
         for code in &status_codes {
-            let response = Response::new(*code, "OK").body(Vec::new());
-            all_data.extend(response.encode());
+            let response = Response::new(*code, "OK").unwrap().body(Vec::new());
+            all_data.extend(response.encode().unwrap());
         }
         decoder.feed(&all_data).unwrap();
 
         // decode() を連続して呼ぶ（reset() なし）
         for code in &status_codes {
             let response = decoder.decode().unwrap().unwrap();
-            prop_assert_eq!(response.status_code, *code);
+            prop_assert_eq!(response.status_code(), *code);
         }
     }
 }
@@ -751,7 +805,7 @@ proptest! {
 
         for i in 0..count {
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
-            prop_assert_eq!(head.status_code, base_status + i as u16);
+            prop_assert_eq!(head.status_code(), base_status + i as u16);
         }
 
         // 次のメッセージがなければ Ok(None)
@@ -764,9 +818,14 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// CONNECT + 2xx の全ステータスコードでトンネルモードになることを確認
+    /// CONNECT + 2xx (204 を除く) の全ステータスコードでトンネルモードになることを確認
+    ///
+    /// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+    /// item 1 (1xx/204/304 はボディなし) が item 2 (CONNECT 2xx はトンネル) より
+    /// 優先されるため、CONNECT + 204 は `BodyKind::None` になる。
     #[test]
     fn prop_connect_all_2xx_tunnel(status in 200u16..300u16) {
+        prop_assume!(status != 204);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
@@ -857,8 +916,8 @@ proptest! {
         // mark_eof() 後に decode() で取得可能
         decoder.mark_eof();
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.status_code, 200);
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.status_code(), 200);
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }
 
@@ -900,7 +959,7 @@ proptest! {
 
         let result = decoder.decode();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
-        prop_assert!(is_body_too_large, "expected BodyTooLarge, got {:?}", result);
+        prop_assert!(is_body_too_large, "BodyTooLarge を期待したが {:?} だった", result);
     }
 }
 
@@ -909,9 +968,13 @@ proptest! {
 // ========================================
 
 proptest! {
-    /// CONNECT 2xx 後に decode() → エラー
+    /// CONNECT 2xx (204 を除く) 後に decode() → エラー
+    ///
+    /// 204 は除外する: RFC 9112 Section 6.3 の "in order of precedence" により
+    /// CONNECT + 204 は `BodyKind::None` になり、`decode()` はエラーにならない。
     #[test]
     fn prop_response_decode_tunnel_error(status in 200u16..300) {
+        prop_assume!(status != 204);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("CONNECT");
 
@@ -1000,7 +1063,7 @@ proptest! {
         let response = decoder.decode().unwrap().unwrap();
 
         let expected_body: Vec<u8> = chunks.into_iter().flatten().collect();
-        prop_assert_eq!(response.body.as_deref(), Some(expected_body.as_slice()));
+        prop_assert_eq!(response.body_bytes(), Some(expected_body.as_slice()));
     }
 }
 
@@ -1025,7 +1088,7 @@ proptest! {
         prop_assert!(!decoder.is_close_delimited());
 
         let response = decoder.decode().unwrap().unwrap();
-        prop_assert_eq!(response.body.as_deref(), Some(body_data.as_slice()));
+        prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }
 
@@ -1094,12 +1157,12 @@ proptest! {
             decoder.decode().unwrap()
         };
 
-        let by_feed = by_feed.expect("feed path produced response");
-        let by_mut_buf = by_mut_buf.expect("mut_buf path produced response");
-        prop_assert_eq!(by_feed.status_code, by_mut_buf.status_code);
-        prop_assert_eq!(&by_feed.reason_phrase, &by_mut_buf.reason_phrase);
-        prop_assert_eq!(&by_feed.headers, &by_mut_buf.headers);
-        prop_assert_eq!(&by_feed.body, &by_mut_buf.body);
+        let by_feed = by_feed.expect("feed 経路で response が得られなかった");
+        let by_mut_buf = by_mut_buf.expect("mut_buf 経路で response が得られなかった");
+        prop_assert_eq!(by_feed.status_code(), by_mut_buf.status_code());
+        prop_assert_eq!(by_feed.reason_phrase(), by_mut_buf.reason_phrase());
+        prop_assert_eq!(HttpHead::headers(&by_feed), HttpHead::headers(&by_mut_buf));
+        prop_assert_eq!(by_feed.body_bytes(), by_mut_buf.body_bytes());
     }
 }
 
@@ -1152,5 +1215,103 @@ proptest! {
         let _ = decoder.mut_buf(write_len).unwrap();
         decoder.advance_buf(0);
         prop_assert_eq!(decoder.remaining(), before.as_slice());
+    }
+}
+
+// ========================================
+// CONNECT 2xx で Transfer-Encoding / Content-Length が ResponseHead から消える (issue 0045)
+// ========================================
+
+proptest! {
+    /// CONNECT への 2xx レスポンスでは Transfer-Encoding / Content-Length が
+    /// ResponseHead.headers から消去される (RFC 9110 Section 9.3.6 MUST ignore)
+    ///
+    /// RFC 9112 Section 6.3 の precedence により item 1 (1xx/204/304 はボディなし) が
+    /// item 2 (CONNECT 2xx は Tunnel) より優先されるため、204 は範囲から除外する
+    /// (CONNECT + 204 は `BodyKind::None`)。
+    #[test]
+    fn prop_connect_2xx_drops_te_cl_from_head(
+        status in prop_oneof![200u16..204, 205u16..300],
+        cl in 0u64..1_000_000,
+    ) {
+        let response = format!(
+            "HTTP/1.1 {} OK\r\nTransfer-Encoding: chunked\r\nContent-Length: {}\r\n\r\n",
+            status, cl
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+        decoder.feed(response.as_bytes()).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert_eq!(body_kind, BodyKind::Tunnel);
+        prop_assert_eq!(head.get_header("Transfer-Encoding"), None);
+        prop_assert_eq!(head.get_header("Content-Length"), None);
+        prop_assert!(!head.is_chunked());
+        prop_assert_eq!(head.content_length().unwrap(), None);
+    }
+}
+
+proptest! {
+    /// CONNECT への 1xx / 3xx / 4xx / 5xx レスポンスでは
+    /// Content-Length が ResponseHead.headers に残る (Tunnel に遷移しないため)
+    #[test]
+    fn prop_connect_non_2xx_keeps_cl_in_head(
+        status in prop_oneof![300u16..400, 400u16..500, 500u16..600],
+        cl in 0u64..1_000,
+    ) {
+        let body = "x".repeat(cl as usize);
+        let response = format!(
+            "HTTP/1.1 {} Some\r\nContent-Length: {}\r\n\r\n{}",
+            status, cl, body
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.set_request_method("CONNECT");
+        decoder.feed(response.as_bytes()).unwrap();
+        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        // status_has_body 系のロジックは status_code 単位で判定されるため、ここでは
+        // CL がそのまま残っていることだけを検証する。
+        let _ = body_kind;
+        let cl_str = cl.to_string();
+        prop_assert_eq!(head.get_header("Content-Length"), Some(cl_str.as_str()));
+    }
+}
+
+// ========================================
+// HTTP/1.1 以外で Transfer-Encoding 受理を拒否 (issue 0046)
+// ========================================
+
+proptest! {
+    /// HTTP/1.1 完全一致以外のレスポンスで Transfer-Encoding は reject される
+    #[test]
+    fn prop_response_te_rejected_for_non_http11(
+        version in prop_oneof![
+            Just("HTTP/0.9".to_string()),
+            Just("HTTP/1.0".to_string()),
+            Just("HTTP/2.0".to_string()),
+            Just("HTTP/3.0".to_string()),
+            Just("RTSP/1.0".to_string()),
+            Just("RTSP/2.0".to_string()),
+            Just("FOO/1.0".to_string()),
+        ]
+    ) {
+        let data = format!(
+            "{} 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n",
+            version
+        );
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        prop_assert!(result.is_err());
+    }
+}
+
+proptest! {
+    /// HTTP/1.1 のレスポンスで Transfer-Encoding: chunked は引き続き受理される
+    #[test]
+    fn prop_response_te_accepted_for_http11(_dummy in 0u8..1) {
+        let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data).unwrap();
+        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        prop_assert!(matches!(body_kind, BodyKind::Chunked));
     }
 }

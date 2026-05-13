@@ -16,7 +16,7 @@
 //!
 //! // ヘッダーをデコード
 //! let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
-//! assert_eq!(head.method, "GET");
+//! assert_eq!(head.method(), "GET");
 //!
 //! // ボディをストリーミングで読み取り
 //! let mut body = Vec::new();
@@ -81,7 +81,7 @@
 //! let mut decoder = RequestDecoder::new();
 //! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").unwrap();
 //! let request = decoder.decode().unwrap().unwrap();
-//! assert_eq!(request.method, "GET");
+//! assert_eq!(request.method(), "GET");
 //! ```
 
 mod body;

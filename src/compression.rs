@@ -8,6 +8,7 @@ use core::fmt;
 
 /// 圧縮/展開エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompressionError {
     /// 出力バッファが小さすぎる
     BufferTooSmall { required: usize, available: usize },
@@ -46,6 +47,7 @@ impl core::error::Error for CompressionError {}
 
 /// 処理結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CompressionStatus {
     /// 処理継続中
     Continue {
@@ -158,14 +160,18 @@ pub trait Compressor {
 /// ```ignore
 /// let mut decompressor = GzipDecompressor::new();
 /// let mut output = vec![0u8; 8192];
+/// let mut input = compressed.as_slice();
 ///
-/// // 圧縮データを展開
-/// let status = decompressor.decompress(compressed, &mut output)?;
-/// // output[..status.produced()] に展開データ
+/// loop {
+///     let status = decompressor.decompress(input, &mut output)?;
+///     // output[..status.produced()] に展開データ
+///     process(&output[..status.produced()]);
+///     input = &input[status.consumed()..];
 ///
-/// // Complete になるまで繰り返す
-/// while !status.is_complete() {
-///     let status = decompressor.decompress(&[], &mut output)?;
+///     if status.is_complete() {
+///         break;
+///     }
+///     // OutputFull なら output が小さい / Continue で input 空なら更なる入力が必要
 /// }
 /// ```
 pub trait Decompressor {
@@ -179,6 +185,15 @@ pub trait Decompressor {
     /// - `Continue`: 処理継続中、さらに入力が必要
     /// - `OutputFull`: 出力バッファが満杯、再度呼び出す必要あり
     /// - `Complete`: 展開完了
+    ///
+    /// # 実装者向け要件
+    ///
+    /// `input` が空でもエラーを返してはならない。
+    /// 空入力は内部 buffer を `output` へ drain したり、ストリーム終端を
+    /// 報告したりする目的で呼び出されるためであり、`Continue` /
+    /// `OutputFull` / `Complete` の何れか (`consumed = 0`) を返すこと。
+    /// `ResponseDecoder::peek_body_decompressed` 等が body 枯渇後の
+    /// drain のために空入力で本メソッドを呼び出す。
     fn decompress(
         &mut self,
         input: &[u8],

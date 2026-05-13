@@ -13,13 +13,19 @@
 //! ### クライアント (リクエスト送信、レスポンス受信)
 //!
 //! ```rust
-//! use shiguredo_http11::{Request, ResponseDecoder};
+//! use shiguredo_http11::{EncodeError, Request, ResponseDecoder};
 //!
-//! // リクエストを作成してエンコード
-//! let request = Request::new("GET", "/")
-//!     .header("Host", "example.com")
-//!     .header("Connection", "close");
-//! let bytes = request.encode();
+//! fn build() -> Result<Vec<u8>, EncodeError> {
+//!     // リクエストを作成してエンコード
+//!     let request = Request::new("GET", "/")
+//!         .unwrap()
+//!         .header("Host", "example.com")
+//!         .unwrap()
+//!         .header("Connection", "close")
+//!         .unwrap();
+//!     request.encode()
+//! }
+//! let bytes = build().unwrap();
 //! // bytes を送信...
 //!
 //! // レスポンスをデコード
@@ -32,7 +38,7 @@
 //! ### サーバー (リクエスト受信、レスポンス送信)
 //!
 //! ```rust
-//! use shiguredo_http11::{RequestDecoder, Response};
+//! use shiguredo_http11::{EncodeError, RequestDecoder, Response, StatusCode};
 //!
 //! // リクエストをデコード
 //! let mut decoder = RequestDecoder::new();
@@ -40,11 +46,14 @@
 //! // decoder.feed(&received_data)?;
 //! // if let Some(request) = decoder.decode()? { ... }
 //!
-//! // レスポンスを作成してエンコード
-//! let response = Response::new(200, "OK")
-//!     .header("Content-Type", "text/plain")
-//!     .body(b"Hello, World!".to_vec());
-//! let bytes = response.encode();
+//! fn build() -> Result<Vec<u8>, EncodeError> {
+//!     // レスポンスを作成してエンコード
+//!     let response = Response::with_status(StatusCode::OK)
+//!         .header("Content-Type", "text/plain").unwrap()
+//!         .body(b"Hello, World!".to_vec());
+//!     response.encode()
+//! }
+//! let bytes = build().unwrap();
 //! // bytes を送信...
 //! ```
 
@@ -77,6 +86,7 @@ pub mod range;
 mod request;
 pub mod request_target;
 mod response;
+pub mod status_code;
 pub mod trailer;
 pub mod upgrade;
 pub mod uri;
@@ -94,3 +104,4 @@ pub use error::{EncodeError, Error};
 pub use limits::DecoderLimits;
 pub use request::Request;
 pub use response::Response;
+pub use status_code::{StatusClass, StatusCode};

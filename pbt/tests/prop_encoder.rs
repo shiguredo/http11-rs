@@ -2,8 +2,9 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, encode_chunk, encode_chunks,
-    encode_request, encode_request_headers, encode_response, encode_response_headers,
+    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, StatusCode, encode_chunk,
+    encode_chunks, encode_request, encode_request_headers, encode_response,
+    encode_response_headers,
 };
 
 // ========================================
@@ -103,7 +104,10 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 proptest! {
     #[test]
     fn prop_encode_request_basic(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let encoded = encode_request(&req).unwrap();
 
         let request_line = format!("{} {} HTTP/1.1\r\n", method, uri);
@@ -122,8 +126,11 @@ proptest! {
         header_value in header_value()
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
-            .header(&header_name, &header_value);
+            .unwrap()
+            .header(&header_name, &header_value)
+            .unwrap();
         let encoded = encode_request(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -136,7 +143,9 @@ proptest! {
     #[test]
     fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .body(data.clone());
         let encoded = encode_request(&req).unwrap();
 
@@ -156,7 +165,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_basic(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let encoded = encode_response(&res).unwrap();
 
         let status_line = format!("HTTP/1.1 {} {}\r\n", status, phrase);
@@ -174,7 +183,10 @@ proptest! {
         header_name in header_name(),
         header_value in header_value()
     ) {
-        let res = Response::new(status, phrase).header(&header_name, &header_value);
+        let res = Response::new(status, phrase)
+            .unwrap()
+            .header(&header_name, &header_value)
+            .unwrap();
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -186,7 +198,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
-        let res = Response::new(status, phrase).body(data.clone());
+        let res = Response::new(status, phrase).unwrap().body(data.clone());
         let encoded = encode_response(&res).unwrap();
 
         let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
@@ -207,7 +219,9 @@ proptest! {
         content_length in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
-            .header("Content-Length", &content_length.to_string())
+            .unwrap()
+            .header("Content-Length", content_length.to_string())
+            .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -224,6 +238,7 @@ proptest! {
         status in 200..204u16
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -322,7 +337,9 @@ proptest! {
     #[test]
     fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
-            .header("Host", "example.com");
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let encoded = encode_request_headers(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -341,7 +358,9 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
-            .header("Content-Type", "text/html");
+            .unwrap()
+            .header("Content-Type", "text/html")
+            .unwrap();
         let encoded = encode_response_headers(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
@@ -359,7 +378,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_required_for_http11(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri);
+        let req = Request::new(method, &uri).unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -368,7 +387,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_optional_for_http10(method in http_method(), uri in uri()) {
-        let req = Request::with_version(method, &uri, "HTTP/1.0");
+        let req = Request::with_version(method, &uri, "HTTP/1.0").unwrap();
         let result = encode_request(&req);
         prop_assert!(result.is_ok());
     }
@@ -386,9 +405,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(
             result,
@@ -404,8 +427,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_response(&res);
         prop_assert!(matches!(
             result,
@@ -423,14 +449,17 @@ proptest! {
     fn prop_encode_response_1xx_or_204_with_te_always_error(
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
-        let res = Response::new(status, "Info").header("Transfer-Encoding", "chunked");
+        let res = Response::new(status, "Info")
+            .unwrap()
+            .header("Transfer-Encoding", "chunked")
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+                prop_assert!(false, "ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -445,14 +474,17 @@ proptest! {
     fn prop_encode_response_1xx_or_204_with_cl_always_error(
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
-        let res = Response::new(status, "Info").header("Content-Length", "0");
+        let res = Response::new(status, "Info")
+            .unwrap()
+            .header("Content-Length", "0")
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+                prop_assert!(false, "ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -467,7 +499,7 @@ proptest! {
     fn prop_encode_response_205_with_body_always_error(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(205, "Reset Content").body(data);
+        let res = Response::with_status(StatusCode::RESET_CONTENT).body(data);
         let result = encode_response(&res);
         prop_assert!(matches!(result, Err(EncodeError::ForbiddenBodyFor205)));
     }
@@ -483,13 +515,14 @@ proptest! {
             Just("deflate".to_string()),
         ]
     ) {
-        let res = Response::new(205, "Reset Content")
-            .header("Transfer-Encoding", &te_value);
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
+            .header("Transfer-Encoding", &te_value)
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -499,13 +532,14 @@ proptest! {
     /// 205 レスポンスで Content-Length が非 0 は常にエラー
     #[test]
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
-        let res = Response::new(205, "Reset Content")
-            .header("Content-Length", &cl.to_string());
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -521,7 +555,7 @@ proptest! {
     fn prop_encode_response_304_no_body(
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let res = Response::new(304, "Not Modified").body(data);
+        let res = Response::with_status(StatusCode::NOT_MODIFIED).body(data);
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
         let header_end = encoded_str.find("\r\n\r\n").unwrap();
@@ -542,8 +576,11 @@ proptest! {
         host2 in "[a-z]{3,8}\\.org"
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", &host1)
-            .header("Host", &host2);
+            .unwrap()
+            .header("Host", &host2)
+            .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
     }
@@ -560,7 +597,7 @@ proptest! {
         method in http_method(),
         uri in uri()
     ) {
-        let req = Request::new(method, &uri);
+        let req = Request::new(method, &uri).unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -575,9 +612,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
+            .unwrap()
             .header("Host", "example.com")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(
             result,
@@ -598,8 +639,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
+            .unwrap()
             .header("Transfer-Encoding", "chunked")
-            .header("Content-Length", &cl.to_string());
+            .unwrap()
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_response_headers(&res);
         prop_assert!(matches!(
             result,
@@ -615,14 +659,16 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .header("Transfer-Encoding", "chunked");
+            .unwrap()
+            .header("Transfer-Encoding", "chunked")
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding, got {:?}", other);
+                prop_assert!(false, "ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -635,14 +681,16 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .header("Content-Length", "0");
+            .unwrap()
+            .header("Content-Length", "0")
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
                 prop_assert_eq!(status_code, status);
             }
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength, got {:?}", other);
+                prop_assert!(false, "ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -657,13 +705,14 @@ proptest! {
             Just("gzip".to_string()),
         ]
     ) {
-        let res = Response::new(205, "Reset Content")
-            .header("Transfer-Encoding", &te_value);
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
+            .header("Transfer-Encoding", &te_value)
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenTransferEncoding for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenTransferEncoding を期待したが {:?} だった", other);
             }
         }
     }
@@ -673,13 +722,14 @@ proptest! {
     /// encode_response_headers で 205+CL(非 0) 禁止
     #[test]
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
-        let res = Response::new(205, "Reset Content")
-            .header("Content-Length", &cl.to_string());
+        let res = Response::with_status(StatusCode::RESET_CONTENT)
+            .header("Content-Length", cl.to_string())
+            .unwrap();
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
             other => {
-                prop_assert!(false, "Expected ForbiddenContentLength for 205, got {:?}", other);
+                prop_assert!(false, "205 で ForbiddenContentLength を期待したが {:?} だった", other);
             }
         }
     }
@@ -693,9 +743,12 @@ proptest! {
     /// Request::encode() は encode_request() と同じ結果を返す
     #[test]
     fn prop_request_encode_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.encode();
-        let via_free = encode_request(&req).unwrap();
+        let via_free = encode_request(&req);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -704,9 +757,9 @@ proptest! {
     /// Response::encode() は encode_response() と同じ結果を返す
     #[test]
     fn prop_response_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
+        let res = Response::new(status, phrase).unwrap();
         let via_method = res.encode();
-        let via_free = encode_response(&res).unwrap();
+        let via_free = encode_response(&res);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -715,9 +768,12 @@ proptest! {
     /// Request::encode_headers() は encode_request_headers() と同じ結果を返す
     #[test]
     fn prop_request_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
+        let req = Request::new(method, &uri)
+            .unwrap()
+            .header("Host", "example.com")
+            .unwrap();
         let via_method = req.encode_headers();
-        let via_free = encode_request_headers(&req).unwrap();
+        let via_free = encode_request_headers(&req);
         prop_assert_eq!(via_method, via_free);
     }
 }
@@ -730,55 +786,10 @@ proptest! {
         phrase in reason_phrase()
     ) {
         let res = Response::new(status, phrase)
-            .header("Content-Type", "text/html");
+            .unwrap()
+            .header("Content-Type", "text/html")
+            .unwrap();
         let via_method = res.encode_headers();
-        let via_free = encode_response_headers(&res).unwrap();
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Request::try_encode() は encode_request() と同じ結果を返す
-    #[test]
-    fn prop_request_try_encode_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
-        let via_method = req.try_encode();
-        let via_free = encode_request(&req);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Response::try_encode() は encode_response() と同じ結果を返す
-    #[test]
-    fn prop_response_try_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase);
-        let via_method = res.try_encode();
-        let via_free = encode_response(&res);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Request::try_encode_headers() は encode_request_headers() と同じ結果を返す
-    #[test]
-    fn prop_request_try_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).header("Host", "example.com");
-        let via_method = req.try_encode_headers();
-        let via_free = encode_request_headers(&req);
-        prop_assert_eq!(via_method, via_free);
-    }
-}
-
-proptest! {
-    /// Response::try_encode_headers() は encode_response_headers() と同じ結果を返す
-    #[test]
-    fn prop_response_try_encode_headers_equals_free_function(
-        status in status_code(),
-        phrase in reason_phrase()
-    ) {
-        let res = Response::new(status, phrase);
-        let via_method = res.try_encode_headers();
         let via_free = encode_response_headers(&res);
         prop_assert_eq!(via_method, via_free);
     }

@@ -31,11 +31,21 @@ fuzz_target!(|input: FuzzRequest| {
         body_present,
         body,
     } = input;
-    let mut request = Request::with_version(&method, &uri, &version);
+    // 構築時バリデーションが失敗する任意入力は早期 return する。
+    // encoder の panic 安全性は構築を通過した Request にだけ問えばよい。
+    let Ok(mut request) = Request::with_version(&method, &uri, &version) else {
+        return;
+    };
     for (name, value) in &headers {
-        request.add_header(name, value);
+        if request.add_header(name, value).is_err() {
+            return;
+        }
     }
-    request.body = if body_present { Some(body) } else { None };
+    let request = if body_present {
+        request.body(body)
+    } else {
+        request
+    };
 
     // 1 回目: パニック / abort しないこと
     let first = encode_request(&request);

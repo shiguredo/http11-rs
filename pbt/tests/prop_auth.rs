@@ -272,7 +272,7 @@ proptest! {
             prop_assert_eq!(basic.username(), username.as_str());
             prop_assert_eq!(basic.password(), password.as_str());
         } else {
-            prop_assert!(false, "Expected Authorization::Basic");
+            prop_assert!(false, "Authorization::Basic を期待");
         }
     }
 }
@@ -287,7 +287,7 @@ proptest! {
         if let Authorization::Bearer(bearer) = &parsed {
             prop_assert_eq!(bearer.token(), token.as_str());
         } else {
-            prop_assert!(false, "Expected Authorization::Bearer");
+            prop_assert!(false, "Authorization::Bearer を期待");
         }
 
         // to_header_value
@@ -315,7 +315,7 @@ proptest! {
         if let Authorization::Digest(digest) = &parsed {
             prop_assert_eq!(digest.username(), Some(username.as_str()));
         } else {
-            prop_assert!(false, "Expected Authorization::Digest");
+            prop_assert!(false, "Authorization::Digest を期待");
         }
 
         // to_header_value
@@ -338,7 +338,7 @@ proptest! {
         if let AuthChallenge::Basic(basic) = &parsed {
             prop_assert_eq!(basic.realm(), realm.as_str());
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Basic");
+            prop_assert!(false, "AuthChallenge::Basic を期待");
         }
 
         // to_header_value
@@ -357,7 +357,7 @@ proptest! {
         if let AuthChallenge::Bearer(_) = &parsed {
             // OK
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Bearer");
+            prop_assert!(false, "AuthChallenge::Bearer を期待");
         }
 
         // to_header_value
@@ -377,7 +377,7 @@ proptest! {
             prop_assert_eq!(digest.realm(), Some(realm.as_str()));
             prop_assert_eq!(digest.nonce(), Some(nonce.as_str()));
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Digest");
+            prop_assert!(false, "AuthChallenge::Digest を期待");
         }
 
         // to_header_value
@@ -405,7 +405,7 @@ proptest! {
         if let Authorization::Basic(basic) = parsed {
             prop_assert_eq!(basic.username(), username.as_str());
         } else {
-            prop_assert!(false, "Expected Authorization::Basic");
+            prop_assert!(false, "Authorization::Basic を期待");
         }
     }
 }
@@ -422,7 +422,7 @@ proptest! {
         if let Authorization::Bearer(bearer) = parsed {
             prop_assert_eq!(bearer.token(), token.as_str());
         } else {
-            prop_assert!(false, "Expected Authorization::Bearer");
+            prop_assert!(false, "Authorization::Bearer を期待");
         }
     }
 }
@@ -446,7 +446,7 @@ proptest! {
         if let Authorization::Digest(digest) = parsed {
             prop_assert_eq!(digest.username(), Some(username.as_str()));
         } else {
-            prop_assert!(false, "Expected Authorization::Digest");
+            prop_assert!(false, "Authorization::Digest を期待");
         }
     }
 }
@@ -467,7 +467,7 @@ proptest! {
         if let AuthChallenge::Basic(basic) = parsed {
             prop_assert_eq!(basic.realm(), realm.as_str());
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Basic");
+            prop_assert!(false, "AuthChallenge::Basic を期待");
         }
     }
 }
@@ -484,7 +484,7 @@ proptest! {
         if let AuthChallenge::Bearer(_) = parsed {
             // OK
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Bearer");
+            prop_assert!(false, "AuthChallenge::Bearer を期待");
         }
     }
 }
@@ -502,7 +502,7 @@ proptest! {
         if let AuthChallenge::Digest(digest) = parsed {
             prop_assert_eq!(digest.realm(), Some(realm.as_str()));
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Digest");
+            prop_assert!(false, "AuthChallenge::Digest を期待");
         }
     }
 }
@@ -523,7 +523,7 @@ proptest! {
             prop_assert_eq!(basic.username(), username.as_str());
             prop_assert_eq!(basic.password(), password.as_str());
         } else {
-            prop_assert!(false, "Expected Authorization::Basic");
+            prop_assert!(false, "Authorization::Basic を期待");
         }
 
         // to_header_value
@@ -546,7 +546,7 @@ proptest! {
         if let AuthChallenge::Basic(basic) = proxy_auth.challenge() {
             prop_assert_eq!(basic.realm(), realm.as_str());
         } else {
-            prop_assert!(false, "Expected AuthChallenge::Basic");
+            prop_assert!(false, "AuthChallenge::Basic を期待");
         }
 
         // to_header_value
@@ -581,5 +581,44 @@ proptest! {
 
         prop_assert_eq!(reparsed.realm(), realm.as_str());
         prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
+    }
+}
+
+// ========================================
+// auth-param の hard cap (issue 0047)
+// ========================================
+
+proptest! {
+    /// 33..=200 個のパラメータは `TooManyParameters` を返す
+    #[test]
+    fn prop_auth_challenge_too_many_params(count in 33usize..=200) {
+        let mut s = String::from("Bearer ");
+        for i in 0..count {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(&format!("p{}=\"v\"", i));
+        }
+        let result = AuthChallenge::parse(&s);
+        prop_assert!(matches!(
+            result,
+            Err(shiguredo_http11::auth::AuthError::TooManyParameters)
+        ));
+    }
+}
+
+proptest! {
+    /// 1..=32 個のパラメータは正常に parse される
+    #[test]
+    fn prop_auth_challenge_at_most_32_params_ok(count in 1usize..=32) {
+        let mut s = String::from("Bearer ");
+        for i in 0..count {
+            if i > 0 {
+                s.push_str(", ");
+            }
+            s.push_str(&format!("p{}=\"v\"", i));
+        }
+        let result = AuthChallenge::parse(&s);
+        prop_assert!(result.is_ok(), "count={}: {:?}", count, result);
     }
 }

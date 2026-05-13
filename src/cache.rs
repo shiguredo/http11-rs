@@ -29,6 +29,7 @@ use core::fmt;
 
 /// キャッシュヘッダーパースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CacheError {
     /// 空の入力
     Empty,
@@ -126,7 +127,18 @@ impl CacheControl {
 
             if let Some((name, value)) = directive.split_once('=') {
                 let name = name.trim().to_lowercase();
-                let value = value.trim().trim_matches('"');
+                let raw_value = value.trim();
+                // RFC 9110 Section 5.6.4 quoted-string は両端を DQUOTE で囲む。
+                // 片端のみ DQUOTE がある partial quote (`max-age="3600`) は ABNF 違反のため reject する。
+                let value = if let Some(stripped) = raw_value.strip_prefix('"') {
+                    stripped
+                        .strip_suffix('"')
+                        .ok_or(CacheError::InvalidFormat)?
+                } else if raw_value.ends_with('"') {
+                    return Err(CacheError::InvalidFormat);
+                } else {
+                    raw_value
+                };
 
                 match name.as_str() {
                     "max-age" => {

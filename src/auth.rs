@@ -33,9 +33,11 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
+use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthError {
     /// 空の入力
     Empty,
@@ -67,6 +69,18 @@ pub enum AuthError {
     ControlCharacter,
     /// charset が UTF-8 でない (RFC 7617 Section 2.1)
     InvalidCharset,
+    /// `username` と `username*` が同時に送信されている (RFC 7616 Section 3.4)
+    ///
+    /// RFC 7616 では `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) は
+    /// XOR で、両方同時の送信は MUST NOT。
+    ConflictingUsernameField,
+    /// `username*` の ext-value が不正 (RFC 5987 Section 3.2.1 / RFC 7616 Section 3.4)
+    InvalidUsernameExtValue,
+    /// auth-param が `MAX_AUTH_PARAMS` を超えた (RFC 9110 Section 11.2 auth-param リスト上限)
+    ///
+    /// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
+    /// 32 を上限とし、線形重複検出の CPU 消費を有限に抑える。
+    TooManyParameters,
 }
 
 impl fmt::Display for AuthError {
@@ -87,9 +101,25 @@ impl fmt::Display for AuthError {
             AuthError::ColonInUserId => write!(f, "colon in user-id"),
             AuthError::ControlCharacter => write!(f, "control character in credentials"),
             AuthError::InvalidCharset => write!(f, "charset must be UTF-8"),
+            AuthError::ConflictingUsernameField => {
+                write!(
+                    f,
+                    "both username and username* present (RFC 7616 Section 3.4)"
+                )
+            }
+            AuthError::InvalidUsernameExtValue => write!(f, "invalid username* ext-value"),
+            AuthError::TooManyParameters => write!(f, "too many auth parameters"),
         }
     }
 }
+
+/// auth-param リストの上限 (issue 0047)
+///
+/// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
+/// 32 を上限とする。重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に
+/// 抑えるための hard cap。
+/// 将来、認証スキームの拡張で 32 を超えるパラメータが必要になれば再評価する。
+const MAX_AUTH_PARAMS: usize = 32;
 
 impl core::error::Error for AuthError {}
 
@@ -325,7 +355,30 @@ impl DigestAuth {
         }
 
         let params = parse_auth_params(params)?;
-        if !has_required_params(&params, &["username", "realm", "nonce", "uri", "response"]) {
+
+        // RFC 7616 §3.4: username と username* は XOR (両方同時送信は MUST NOT)。
+        // どちらか一方が必須。username* は RFC 5987 ext-value (UTF-8 ユーザー名用)。
+        let has_username = params.iter().any(|(n, _)| n == "username");
+        let has_username_ext = params.iter().any(|(n, _)| n == "username*");
+        if has_username && has_username_ext {
+            return Err(AuthError::ConflictingUsernameField);
+        }
+        if !has_username && !has_username_ext {
+            return Err(AuthError::MissingParameter);
+        }
+
+        // username* が指定されている場合は、ext-value として decode 可能か事前検証する。
+        // 不正値は早期に reject (`username()` 呼出時に毎回 fallible にしないため)。
+        if has_username_ext {
+            let raw = params
+                .iter()
+                .find(|(n, _)| n == "username*")
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+            decode_username_ext_value(raw)?;
+        }
+
+        if !has_required_params(&params, &["realm", "nonce", "uri", "response"]) {
             return Err(AuthError::MissingParameter);
         }
 
@@ -341,9 +394,27 @@ impl DigestAuth {
             .map(|(_, v)| v.as_str())
     }
 
-    /// username を取得
+    /// username (ASCII) を取得
+    ///
+    /// `username` パラメータがある場合のみその値を返す。`username*` で送られた
+    /// UTF-8 ユーザー名は本メソッドでは取得できない。UTF-8 ユーザー名を含めて
+    /// 取得するには [`username_decoded`](Self::username_decoded) を使う。
     pub fn username(&self) -> Option<&str> {
         self.param("username")
+    }
+
+    /// `username` または `username*` のいずれかから UTF-8 ユーザー名を取得する
+    ///
+    /// RFC 7616 §3.4 に従い、`username` パラメータがあればその値を、なければ
+    /// `username*` を RFC 5987 ext-value としてデコードした値を返す。
+    /// 構築時に `username*` の ext-value は検証済みのため本メソッドは infallible。
+    pub fn username_decoded(&self) -> Option<String> {
+        if let Some(v) = self.param("username") {
+            return Some(v.to_string());
+        }
+        let raw = self.param("username*")?;
+        // 構築時 (parse) に検証済みのため decode は必ず成功する。
+        decode_username_ext_value(raw).ok()
     }
 
     /// realm を取得
@@ -537,6 +608,7 @@ impl fmt::Display for BearerChallenge {
 
 /// Authorization ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Authorization {
     Basic(BasicAuth),
     Digest(DigestAuth),
@@ -583,6 +655,7 @@ impl fmt::Display for Authorization {
 
 /// WWW-Authenticate / Proxy-Authenticate 用チャレンジ
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AuthChallenge {
     Basic(WwwAuthenticate),
     Digest(DigestChallenge),
@@ -752,6 +825,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             while i < bytes.len() {
                 let b = bytes[i];
                 if escaped {
+                    // RFC 9110 Section 5.6.4: quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+                    // CTL (CR / LF / NUL / 他) は escape の対象として許容しない。
+                    if !is_quoted_pair_byte(b) {
+                        return Err(AuthError::InvalidParameter);
+                    }
                     value.push(b as char);
                     escaped = false;
                 } else if b == b'\\' {
@@ -761,6 +839,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
                     closed = true;
                     break;
                 } else {
+                    // RFC 9110 Section 5.6.4: qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+                    // DQUOTE と backslash は別経路で処理済み。CR / LF / NUL 等の CTL を reject する。
+                    if !is_qdtext_byte(b) {
+                        return Err(AuthError::InvalidParameter);
+                    }
                     value.push(b as char);
                 }
                 i += 1;
@@ -785,6 +868,11 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         let key = name.to_ascii_lowercase();
         if params.iter().any(|(n, _)| n == &key) {
             return Err(AuthError::DuplicateParameter);
+        }
+        // issue 0047: パラメータ数 hard cap (`MAX_AUTH_PARAMS = 32`)。
+        // 線形重複検出の CPU 消費を有限に抑える。
+        if params.len() >= MAX_AUTH_PARAMS {
+            return Err(AuthError::TooManyParameters);
         }
         params.push((key, value));
         while i < bytes.len() && is_ows(bytes[i]) {
@@ -879,6 +967,80 @@ fn is_ows(b: u8) -> bool {
 /// RFC 5234 Appendix B.1: CTL = %x00-1F / %x7F
 fn has_control_chars(s: &str) -> bool {
     s.bytes().any(|b| b <= 0x1F || b == 0x7F)
+}
+
+/// RFC 5987 Section 3.2.1 / RFC 7616 Section 3.4: `username*` の ext-value をデコードする
+///
+/// ext-value = charset "'" [ language ] "'" value-chars
+/// 例: `UTF-8''%E3%83%A6%E3%83%BC%E3%82%B6` → `ユーザ`
+///
+/// charset は UTF-8 のみサポート (RFC 7616 §3.4 で UTF-8 を要求するため、
+/// ISO-8859-1 等は本実装では `InvalidUsernameExtValue` で reject)。
+fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
+    let first_quote = input.find('\'').ok_or(AuthError::InvalidUsernameExtValue)?;
+    let charset = &input[..first_quote];
+    if !charset.eq_ignore_ascii_case("UTF-8") {
+        // RFC 7616 §3.4 は UTF-8 charset を要求する。
+        return Err(AuthError::InvalidUsernameExtValue);
+    }
+
+    let rest = &input[first_quote + 1..];
+    let second_quote = rest.find('\'').ok_or(AuthError::InvalidUsernameExtValue)?;
+    // language タグは無視する (RFC 5987 §3.2.1: 受信側は無視してよい)
+    let value_chars = &rest[second_quote + 1..];
+
+    // percent-decode する。RFC 5987 §3.2.1 の attr-char 範囲外は reject。
+    let bytes = value_chars.as_bytes();
+    let mut result = alloc::vec::Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'%' {
+            if i + 2 >= bytes.len() {
+                return Err(AuthError::InvalidUsernameExtValue);
+            }
+            let hi = (bytes[i + 1] as char)
+                .to_digit(16)
+                .ok_or(AuthError::InvalidUsernameExtValue)? as u8;
+            let lo = (bytes[i + 2] as char)
+                .to_digit(16)
+                .ok_or(AuthError::InvalidUsernameExtValue)? as u8;
+            result.push((hi << 4) | lo);
+            i += 3;
+        } else if is_attr_char(b) {
+            result.push(b);
+            i += 1;
+        } else {
+            return Err(AuthError::InvalidUsernameExtValue);
+        }
+    }
+
+    String::from_utf8(result).map_err(|_| AuthError::InvalidUsernameExtValue)
+}
+
+/// RFC 5987 Section 3.2.1: attr-char
+///
+/// attr-char = ALPHA / DIGIT / "!" / "#" / "$" / "&" / "+" / "-" / "." /
+///             "^" / "_" / "`" / "|" / "~"
+fn is_attr_char(b: u8) -> bool {
+    matches!(
+        b,
+        b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'!'
+            | b'#'
+            | b'$'
+            | b'&'
+            | b'+'
+            | b'-'
+            | b'.'
+            | b'^'
+            | b'_'
+            | b'`'
+            | b'|'
+            | b'~'
+    )
 }
 
 #[cfg(test)]

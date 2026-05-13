@@ -137,6 +137,10 @@ pub(crate) fn is_valid_status_code(code: u16) -> bool {
 /// VCHAR = %x21-7E
 /// obs-text = %x80-FF
 ///
+/// 空文字列は RFC 9112 Section 4 の status-line ABNF で reason-phrase が
+/// absent (未指定) の場合に発生するが、本関数は「reason-phrase が指定された場合」
+/// の文字集合検証を意図している。空文字列の扱いは呼び出し側の責務とする。
+///
 /// # RFC 非準拠
 ///
 /// 現在の実装では reason-phrase を UTF-8 として解釈しており、obs-text (0x80-0xFF) を
@@ -144,9 +148,10 @@ pub(crate) fn is_valid_status_code(code: u16) -> bool {
 /// として定義されているが、本実装では UTF-8 として解釈するため、不正な UTF-8
 /// シーケンスを含む reason-phrase は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn is_valid_reason_phrase(phrase: &str) -> bool {
-    phrase
-        .bytes()
-        .all(|b| matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF))
+    !phrase.is_empty()
+        && phrase
+            .bytes()
+            .all(|b| matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF))
 }
 
 /// RFC 3986 で除外されている文字および request-target で許可されない文字
@@ -247,4 +252,52 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
         b,
         b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
     )
+}
+
+/// qdtext バイトか確認 (RFC 9110 Section 5.6.4)
+///
+/// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+///        = 0x09 / 0x20 / 0x21 / 0x23-0x5B / 0x5D-0x7E / 0x80-0xFF
+///
+/// DQUOTE (0x22) と backslash (0x5C) は除く。
+/// CR / LF / NUL / 他の CTL (0x01-0x1F 範囲のうち HTAB 以外) は不許可。
+pub(crate) fn is_qdtext_byte(b: u8) -> bool {
+    matches!(b, 0x09 | 0x20 | 0x21 | 0x23..=0x5B | 0x5D..=0x7E | 0x80..=0xFF)
+}
+
+/// quoted-pair の右辺バイトか確認 (RFC 9110 Section 5.6.4)
+///
+/// quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+///             = "\" ( 0x09 / 0x20-0x7E / 0x80-0xFF )
+///
+/// NUL (0x00) / CR (0x0D) / LF (0x0A) / 他の CTL (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F) は不許可。
+/// 受信側でも CR / LF を含む quoted-pair を素通りさせると、上位アプリでの再エンコード経路で
+/// response splitting / log injection に至る経路を生むため厳格に reject する。
+pub(crate) fn is_quoted_pair_byte(b: u8) -> bool {
+    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
+}
+
+/// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
+///
+/// OWS = *( SP / HTAB )
+///
+/// Rust の `str::trim()` は `char::is_whitespace` に基づき U+00A0 (NBSP) や
+/// U+2000-200A 等の Unicode 空白も除去する。`is_valid_field_value` は obs-text
+/// (0x80-0xFF) を許容するためヘッダー値にこれらのバイトが含まれ得るが、
+/// OWS として扱ってよいのは SP / HTAB のみ。本関数を使うことで encoder と
+/// decoder の Content-Length 等の解釈を一致させ HTTP Request Smuggling
+/// (CWE-444) 経路を塞ぐ。
+pub(crate) fn trim_ows(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let start = bytes
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|&b| b != b' ' && b != b'\t')
+        .map(|p| p + 1)
+        .unwrap_or(start);
+    // start..end は全て ASCII 文字 (SP/HTAB) の境界なので UTF-8 として安全
+    &s[start..end]
 }

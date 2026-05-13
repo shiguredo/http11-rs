@@ -33,12 +33,26 @@ fuzz_target!(|input: FuzzResponse| {
         body,
         omit_body,
     } = input;
-    let mut response = Response::with_version(&version, status_code, &reason_phrase);
+    // バリデーション失敗は早期 return (fuzzer は次の入力に進める)
+    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+        return;
+    };
     for (name, value) in &headers {
-        response.add_header(name, value);
+        if response.add_header(name, value).is_err() {
+            return;
+        }
     }
-    response.body = if body_present { Some(body) } else { None };
-    response.omit_body = omit_body;
+    // body_present=true のときは body() builder で body=Some(...) を設定する。
+    // body_present=false のときは clear_body() で body=None を明示する
+    // (Response::new 直後の body=None と同じだが、clear_body() の動作確認も兼ねる)。
+    let mut response = if body_present {
+        response.body(body)
+    } else {
+        // clear_body() の戻り値 &mut Self は ; で破棄され借用が終了するため後続行で再利用可能。
+        response.clear_body();
+        response
+    };
+    response.set_omit_body(omit_body);
 
     let first = encode_response(&response);
     let second = encode_response(&response);

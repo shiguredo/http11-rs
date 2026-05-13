@@ -31,14 +31,10 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{RequestDecoder, Response};
+use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
-/// Keep-Alive タイムアウト (秒)
-/// TODO: io_uring でタイムアウト処理を実装する際に使用
-#[allow(dead_code)]
-const DEFAULT_KEEP_ALIVE_TIMEOUT: u64 = 60;
 /// 1 接続あたりの最大リクエスト数
 const DEFAULT_MAX_REQUESTS: u32 = 1000;
 /// 読み取りバッファサイズ
@@ -134,6 +130,18 @@ struct Connection {
     read_buf: Vec<u8>,
     write_buf: Vec<u8>,
     write_offset: usize,
+    /// 進行中の書き込みに紐づく Keep-Alive フラグ。
+    /// `false` のときは書き込み完了後に `pending_writes` 残量に関わらず接続を閉じる
+    /// (RFC 9112 Section 9.6: Connection: close 後の追加メッセージは送らない)。
+    current_write_should_keep_alive: bool,
+    /// 未送信レスポンスキュー (issue 0048)
+    ///
+    /// パイプラインで複数の Request を 1 read で受け取ったとき、build した全レスポンスを
+    /// ここに積む。`handle_write` 完了時に `pop_front` で次エントリを取り出して
+    /// `write_buf` に流し込む。RFC 9112 Section 9.3.2「a server ... MUST send the
+    /// corresponding responses in the same order that the requests were received」を
+    /// 順序保証で満たす。
+    pending_writes: VecDeque<(Vec<u8>, bool)>,
     request_count: u32,
     peer_addr: SocketAddr,
     // kTLS 有効化用の一時バッファ (setsockopt に渡すため生存期間を保証)
@@ -155,6 +163,8 @@ impl Connection {
             read_buf: vec![0u8; READ_BUF_SIZE],
             write_buf: Vec::with_capacity(WRITE_BUF_SIZE),
             write_offset: 0,
+            current_write_should_keep_alive: true,
+            pending_writes: VecDeque::new(),
             request_count: 0,
             peer_addr,
             ulp_name: b"tls\0".to_vec(),
@@ -551,6 +561,70 @@ fn submit_enable_ktls(
     Ok(())
 }
 
+/// rustls の `received_plaintext` に残っている平文を排出して decoder に feed し、
+/// 確定した Request はその場で build_response して `pending_writes` に積む。
+/// (issue 0049)
+///
+/// `dangerous_extract_secrets()` 呼び出し前に呼ぶこと。呼ばないと TLS 1.3 で
+/// Client Finished と同一 flight で来た HTTP リクエストの先頭バイトが消失する。
+///
+/// レスポンス build 時の Keep-Alive 判定は handle_read の `ConnectionState::Reading`
+/// ブランチと同一規則 (`request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS`)
+/// に揃える。`should_keep_alive == false` のレスポンスが出た時点で以降の Request の
+/// 処理は停止する (RFC 9112 Section 9.6)。
+fn drain_and_feed_leftover(
+    tls_conn: &mut ServerConnection,
+    conn: &mut Connection,
+    peer_addr: SocketAddr,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Read;
+
+    let mut leftover = Vec::new();
+    match tls_conn.reader().read_to_end(&mut leftover) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        Err(e) => return Err(Box::new(e)),
+    }
+
+    if leftover.is_empty() {
+        return Ok(());
+    }
+
+    info!(
+        peer_addr = %peer_addr,
+        leftover_bytes = leftover.len(),
+        "Draining TLS plaintext leftover before kTLS handoff"
+    );
+    conn.decoder.feed(&leftover)?;
+
+    let mut request_count = conn.request_count;
+    while let Some(request) = conn.decoder.decode()? {
+        request_count += 1;
+
+        info!(
+            method = %request.method(),
+            uri = %request.uri(),
+            version = %request.version(),
+            peer_addr = %peer_addr,
+            request_count,
+            "Request received (leftover drain)"
+        );
+
+        let should_keep_alive =
+            request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
+
+        let response = build_response(&request, should_keep_alive)?;
+        conn.pending_writes
+            .push_back((response.encode()?, should_keep_alive));
+
+        if !should_keep_alive {
+            break;
+        }
+    }
+    conn.request_count = request_count;
+    Ok(())
+}
+
 fn handle_read(
     ring: &mut IoUring,
     connections: &mut Slab<Connection>,
@@ -605,11 +679,35 @@ fn handle_read(
                 info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
-                let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
+                let cipher_suite = tls_conn.negotiated_cipher_suite().ok_or_else(|| {
+                    error!(
+                        peer_addr = %peer_addr,
+                        "TLS handshake succeeded but no cipher suite negotiated"
+                    );
+                    "TLS handshake succeeded but no cipher suite negotiated"
+                })?;
 
                 // tls_conn を取り出して秘密鍵を抽出
                 let conn = &mut connections[conn_id];
-                let tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn.tls_conn.take().unwrap();
+
+                // RFC 8446 Section 4.4.4: TLS 1.3 では Client Finished と Application Data が
+                // 同一 flight で送信される (curl / openssl s_client 等の典型挙動)。
+                // `dangerous_extract_secrets` / `tls_conn` drop 前に rustls の内部
+                // `received_plaintext` バッファを排出しないと、HTTP リクエストの先頭バイトが
+                // 復元不能で消失する (TCP は ACK 済みのため再送経路もない)。
+                // issue 0049 で本処理を追加した。
+                if let Err(e) = drain_and_feed_leftover(&mut tls_conn, conn, peer_addr) {
+                    error!(
+                        peer_addr = %peer_addr,
+                        error = %e,
+                        "Failed to drain plaintext leftover; closing connection"
+                    );
+                    drop(tls_conn);
+                    close_connection(ring, connections, conn_id)?;
+                    return Ok(());
+                }
+
                 let secrets = tls_conn
                     .dangerous_extract_secrets()
                     .map_err(|e| format!("failed to extract TLS secrets: {:?}", e))?;
@@ -640,17 +738,21 @@ fn handle_read(
             let data = conn.read_buf[..bytes_read].to_vec();
             conn.decoder.feed(&data)?;
 
-            let mut responses = VecDeque::new();
             let peer_addr = conn.peer_addr;
             let mut request_count = conn.request_count;
-
+            // パイプラインで複数 Request を一度に受け取った場合、build した全レスポンスを
+            // conn.pending_writes に積み、handle_write 完了時に順次送出する (issue 0048)。
+            // `should_keep_alive == false` のレスポンスが出た時点でループを break し、
+            // 以降の Request の処理は行わない (RFC 9112 Section 9.6: Connection: close
+            // 後の追加メッセージは送らない)。decoder バッファに残った未処理データは
+            // 次の handle_write 完了時に close_connection で破棄される。
             while let Some(request) = conn.decoder.decode()? {
                 request_count += 1;
 
                 info!(
-                    method = %request.method,
-                    uri = %request.uri,
-                    version = %request.version,
+                    method = %request.method(),
+                    uri = %request.uri(),
+                    version = %request.version(),
                     peer_addr = %peer_addr,
                     request_count,
                     "Request received (kTLS)"
@@ -660,22 +762,36 @@ fn handle_read(
                 let should_keep_alive =
                     request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
 
-                let response = build_response(&request, should_keep_alive);
-                responses.push_back((response.encode(), should_keep_alive));
+                let response = build_response(&request, should_keep_alive)?;
+                conn.pending_writes
+                    .push_back((response.encode()?, should_keep_alive));
+
+                if !should_keep_alive {
+                    break;
+                }
             }
 
             conn.request_count = request_count;
 
-            if let Some((response_bytes, should_keep_alive)) = responses.pop_front() {
-                let conn = &mut connections[conn_id];
+            if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
                 conn.write_buf = response_bytes;
                 conn.write_offset = 0;
+                conn.current_write_should_keep_alive = should_keep_alive;
                 conn.state = if should_keep_alive {
                     ConnectionState::Writing
                 } else {
                     ConnectionState::Closing
                 };
-                submit_write(ring, conn_id, fd, connections)?;
+                if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                    // submission queue full 等で submit_write が失敗した場合は
+                    // pop した先頭エントリを復元してから error を伝播する。
+                    let conn = &mut connections[conn_id];
+                    let buf = core::mem::take(&mut conn.write_buf);
+                    let keep_alive = conn.current_write_should_keep_alive;
+                    conn.pending_writes.push_front((buf, keep_alive));
+                    conn.write_offset = 0;
+                    return Err(e);
+                }
             } else {
                 // リクエストがまだ完全ではない
                 submit_read(ring, conn_id, fd, connections)?;
@@ -716,10 +832,32 @@ fn handle_write(
                 info!(peer_addr = %peer_addr, "TLS handshake completed");
 
                 // 暗号スイートを取得
-                let cipher_suite = tls_conn.negotiated_cipher_suite().unwrap();
+                let cipher_suite = tls_conn.negotiated_cipher_suite().ok_or_else(|| {
+                    error!(
+                        peer_addr = %peer_addr,
+                        "TLS handshake succeeded but no cipher suite negotiated"
+                    );
+                    "TLS handshake succeeded but no cipher suite negotiated"
+                })?;
 
                 // tls_conn を取り出して秘密鍵を抽出
-                let tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn.tls_conn.take().unwrap();
+
+                // issue 0049: ハンドシェイク Write 完了経路でも、念のため rustls の
+                // received_plaintext を排出する。発火頻度は低い (Client Finished と
+                // Application Data はまだ届いていないことが多い) が、防御的措置として
+                // Read 経路と同型で扱う。
+                if let Err(e) = drain_and_feed_leftover(&mut tls_conn, conn, peer_addr) {
+                    error!(
+                        peer_addr = %peer_addr,
+                        error = %e,
+                        "Failed to drain plaintext leftover; closing connection"
+                    );
+                    drop(tls_conn);
+                    close_connection(ring, connections, conn_id)?;
+                    return Ok(());
+                }
+
                 let secrets = tls_conn
                     .dangerous_extract_secrets()
                     .map_err(|e| format!("failed to extract TLS secrets: {:?}", e))?;
@@ -745,12 +883,34 @@ fn handle_write(
             }
         }
         ConnectionState::Writing => {
-            // Keep-Alive: 次のリクエストを待つ
-            conn.state = ConnectionState::Reading;
-            submit_read(ring, conn_id, fd, connections)?;
+            // 進行中レスポンスが Keep-Alive なら pending_writes の次エントリを書き出すか、
+            // キューが空なら次のリクエストを待つ (issue 0048)。
+            if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
+                conn.write_buf = response_bytes;
+                conn.write_offset = 0;
+                conn.current_write_should_keep_alive = should_keep_alive;
+                conn.state = if should_keep_alive {
+                    ConnectionState::Writing
+                } else {
+                    ConnectionState::Closing
+                };
+                if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                    let conn = &mut connections[conn_id];
+                    let buf = core::mem::take(&mut conn.write_buf);
+                    let keep_alive = conn.current_write_should_keep_alive;
+                    conn.pending_writes.push_front((buf, keep_alive));
+                    conn.write_offset = 0;
+                    return Err(e);
+                }
+            } else {
+                conn.state = ConnectionState::Reading;
+                submit_read(ring, conn_id, fd, connections)?;
+            }
         }
         ConnectionState::Closing => {
-            // 接続を閉じる
+            // 接続を閉じる。RFC 9112 Section 9.6 に従い、pending_writes に残っている
+            // レスポンスは Connection: close 後に送信してはならないため破棄する。
+            conn.pending_writes.clear();
             close_connection(ring, connections, conn_id)?;
         }
         _ => {}
@@ -776,10 +936,31 @@ fn handle_setsockopt_complete(
         conn.ktls_tx = None;
         conn.ktls_rx = None;
 
-        // HTTP リクエストの読み取りを開始
+        // issue 0049: leftover drain で `pending_writes` に Response が積まれていれば
+        // ハンドシェイク完了直後に submit_write を発行して順次送出する。
+        // キューが空なら従来通り submit_read を発行する。
         let fd = conn.fd;
-        conn.state = ConnectionState::Reading;
-        submit_read(ring, conn_id, fd, connections)?;
+        if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
+            conn.write_buf = response_bytes;
+            conn.write_offset = 0;
+            conn.current_write_should_keep_alive = should_keep_alive;
+            conn.state = if should_keep_alive {
+                ConnectionState::Writing
+            } else {
+                ConnectionState::Closing
+            };
+            if let Err(e) = submit_write(ring, conn_id, fd, connections) {
+                let conn = &mut connections[conn_id];
+                let buf = core::mem::take(&mut conn.write_buf);
+                let keep_alive = conn.current_write_should_keep_alive;
+                conn.pending_writes.push_front((buf, keep_alive));
+                conn.write_offset = 0;
+                return Err(e);
+            }
+        } else {
+            conn.state = ConnectionState::Reading;
+            submit_read(ring, conn_id, fd, connections)?;
+        }
     }
 
     Ok(())
@@ -809,7 +990,10 @@ fn get_peer_addr(fd: RawFd) -> std::io::Result<SocketAddr> {
     Ok(addr)
 }
 
-fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) -> Response {
+fn build_response(
+    request: &shiguredo_http11::Request,
+    should_keep_alive: bool,
+) -> Result<Response, EncodeError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -819,18 +1003,17 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method.eq_ignore_ascii_case("HEAD");
+    let is_head = request.method().eq_ignore_ascii_case("HEAD");
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
-    let accept_encoding = request
-        .headers
+    let accept_encoding = HttpHead::headers(request)
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
 
-    let response = match request.uri.as_str() {
+    let response = match request.uri() {
         "/" => {
             let body_content = r#"<!DOCTYPE html>
 <html>
@@ -846,14 +1029,13 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
 </html>
 "#;
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/html; charset=utf-8",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
         "/info" => {
             let body_content = format!(
@@ -861,41 +1043,42 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
                 now
             );
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "application/json",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
         "/echo" => {
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             if is_head {
-                return add_connection_headers(
-                    Response::new(200, "OK")
-                        .header("Date", &date)
-                        .header("Content-Type", "text/plain; charset=utf-8")
-                        .header("Content-Length", "0")
-                        .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")
-                        .omit_body(true),
-                    should_keep_alive,
-                );
+                let head_response = Response::with_status(StatusCode::OK)
+                    .header("Date", &date)?
+                    .header("Content-Type", "text/plain; charset=utf-8")?
+                    .header("Content-Length", "0")?
+                    .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
+                    .omit_body(true);
+                return add_connection_headers(head_response, should_keep_alive);
             }
 
             let mut body = format!(
                 "Method: {}\nURI: {}\nVersion: {}\n\nHeaders:\n",
-                request.method, request.uri, request.version
+                request.method(),
+                request.uri(),
+                request.version()
             );
 
-            for (name, value) in &request.headers {
+            for (name, value) in HttpHead::headers(request) {
                 body.push_str(&format!("  {}: {}\n", name, value));
             }
 
-            if !request.body.is_empty() {
-                body.push_str(&format!("\nBody ({} bytes):\n", request.body.len()));
-                if let Ok(text) = std::str::from_utf8(&request.body) {
+            if let Some(req_body) = request.body_bytes()
+                && !req_body.is_empty()
+            {
+                body.push_str(&format!("\nBody ({} bytes):\n", req_body.len()));
+                if let Ok(text) = std::str::from_utf8(req_body) {
                     body.push_str(text);
                 } else {
                     body.push_str("[binary data]");
@@ -903,26 +1086,24 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
             }
 
             build_compressed_response(
-                200,
-                "OK",
+                StatusCode::OK,
                 "text/plain; charset=utf-8",
                 body.as_bytes(),
                 &date,
                 false,
                 encoding,
-            )
+            )?
         }
         _ => {
             let body_content = "404 Not Found\n";
             build_compressed_response(
-                404,
-                "Not Found",
+                StatusCode::NOT_FOUND,
                 "text/plain",
                 body_content.as_bytes(),
                 &date,
                 is_head,
                 encoding,
-            )
+            )?
         }
     };
 
@@ -931,14 +1112,13 @@ fn build_response(request: &shiguredo_http11::Request, should_keep_alive: bool) 
 
 /// 圧縮対応のレスポンスを構築
 fn build_compressed_response(
-    status_code: u16,
-    reason_phrase: &str,
+    status: StatusCode,
     content_type: &str,
     body: &[u8],
     date: &str,
     is_head: bool,
     encoding: Option<&str>,
-) -> Response {
+) -> Result<Response, EncodeError> {
     // 圧縮を試みる
     let (final_body, content_encoding) = if let Some(enc) = encoding {
         match compress_body(body, enc) {
@@ -956,18 +1136,18 @@ fn build_compressed_response(
         (body.to_vec(), None)
     };
 
-    let mut response = Response::new(status_code, reason_phrase)
-        .header("Date", date)
-        .header("Content-Type", content_type)
-        .header("Content-Length", &final_body.len().to_string())
-        .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")
-        .header("Vary", "Accept-Encoding");
+    let mut response = Response::with_status(status)
+        .header("Date", date)?
+        .header("Content-Type", content_type)?
+        .header("Content-Length", final_body.len().to_string())?
+        .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
+        .header("Vary", "Accept-Encoding")?;
 
     if let Some(enc) = content_encoding {
-        response = response.header("Content-Encoding", enc);
+        response = response.header("Content-Encoding", enc)?;
     }
 
-    response.body(final_body).omit_body(is_head)
+    Ok(response.body(final_body).omit_body(is_head))
 }
 
 /// RFC 9112 準拠で Connection ヘッダーを設定する
@@ -975,9 +1155,12 @@ fn build_compressed_response(
 /// HTTP/1.1 では keep-alive がデフォルトのため:
 /// - keep-alive 継続: ヘッダー不要
 /// - 接続終了: Connection: close を追加
-fn add_connection_headers(response: Response, should_keep_alive: bool) -> Response {
+fn add_connection_headers(
+    response: Response,
+    should_keep_alive: bool,
+) -> Result<Response, EncodeError> {
     if should_keep_alive {
-        response
+        Ok(response)
     } else {
         response.header("Connection", "close")
     }
