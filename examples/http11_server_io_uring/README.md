@@ -102,7 +102,6 @@ kTLS 有効化後は、カーネルが TLS レコードの暗号化/復号化を
 
 | 定数 | 値 | 説明 |
 |------|-----|------|
-| `DEFAULT_KEEP_ALIVE_TIMEOUT` | 60秒 | Keep-Alive タイムアウト |
 | `DEFAULT_MAX_REQUESTS` | 1000 | 1 接続あたりの最大リクエスト数 |
 | `READ_BUF_SIZE` | 8KB | 読み取りバッファサイズ |
 | `WRITE_BUF_SIZE` | 64KB | 書き込みバッファサイズ |

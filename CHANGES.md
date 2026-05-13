@@ -16,7 +16,7 @@
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
   - @voluntas
 - [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
-  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる
   - @voluntas
 - [ADD] `Request::set_body` / `Request::clear_body` / `Request::without_body` を追加する
@@ -30,6 +30,11 @@
   - `Response::with_status(StatusCode::OK)` 等で infallible に Response を構築できる (HTTP/1.1 固定、canonical reason phrase が自動付与される)
   - RFC 9110 Section 15 のコアステータスコードに加え、WebDAV (RFC 4918) や 418 (RFC 7168), 429/431/451 (RFC 6585/7725) 等の主要拡張も収録する
   - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code(u16)` でアクセス可能 (`Copy` / `Eq` / `Hash` 派生、IANA 未登録コードは `None`)
+  - @voluntas
+- [ADD] `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` アクセサを追加する
+  - 0031 で記載していた「読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / ...」のうち `version()` / `headers()` が実装漏れで `HttpHead` トレイト経由でしか呼べない状態だった
+  - inherent method 追加により `use shiguredo_http11::HttpHead;` の import なしで `head.version()` / `head.headers()` が呼べるようになる (Request / Response 側と対称)
+  - `HttpHead` トレイト実装は変更しないため trait 経由のアクセスも引き続き可能
   - @voluntas
 - [ADD] `examples/http11_server` に `--port 0` 対応と `LISTENING_PORT=<port>` の stdout 出力を追加する
   - `--port 0` で OS にランダムポートを割当させ、bind 後に実ポートを stdout に出力する
@@ -265,11 +270,6 @@
   - `transport.rs` を `peek_body()` + `AnyDecompressor::decompress` の手動連携経路に書き換え、1 GiB のボディでも 8 KiB 出力バッファでストリーミング展開できる構成にする
   - `src/main.rs` の `print_response` から一括展開関数 `decompress_body` の呼び出しを削除する (受信時点で既に展開済み)
   - `tests/nginx_streaming.rs` に `streams_large_gzip_body` (transport.rs 経路) と `peek_body_decompressed_streams_gzip` (ライブラリ API 経路) の 2 ケースを追加する
-  - @voluntas
-- [ADD] `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` アクセサを追加する
-  - 0031 で記載していた「読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / ...」のうち `version()` / `headers()` が実装漏れで `HttpHead` トレイト経由でしか呼べない状態だった
-  - inherent method 追加により `use shiguredo_http11::HttpHead;` の import なしで `head.version()` / `head.headers()` が呼べるようになる (Request / Response 側と対称)
-  - `HttpHead` トレイト実装は変更しないため trait 経由のアクセスも引き続き可能
   - @voluntas
 - [ADD] `examples/http11_server` に curl ベースの integration test を追加する
   - `tests/http_basic.rs` (GET / HEAD / POST / 404 の 7 ケース) を追加する
