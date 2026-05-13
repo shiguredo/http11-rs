@@ -1,6 +1,7 @@
 # 0060: `RequestEncoder` / `ResponseEncoder` (ストリーミング型) の panic 安全性を検証する fuzz target を追加する
 
 Created: 2026-05-13
+Completed: 2026-05-13
 Model: Opus 4.7
 
 ## 概要
@@ -123,3 +124,11 @@ struct FuzzInput {
 ## RFC 参照
 
 本 issue は API の panic 安全性 fuzz であり RFC 文面そのものは参照しない。`NoCompression` の挙動契約は `src/compression.rs:209-263` (`Compressor for NoCompression` impl) に依拠する。
+
+## 解決方法
+
+- `fuzz/fuzz_targets/fuzz_streaming_encoder.rs` を新規追加し、`RequestEncoder::<NoCompression>::new()` / `ResponseEncoder::<NoCompression>::new()` に対して `compress_body` / `finish` / `reset` を任意操作列で叩く fuzz target を実装した
+- `fuzz/Cargo.toml` に `fuzz_streaming_encoder` bin エントリを追加した
+- 戻り値の `consumed <= input.len()` / `produced <= output.len()`、`compress_body` が `Complete` を返さない契約、`finish` 後の `AlreadyFinished` 復帰、`reset` 後の再利用可能性を assert で検証している
+- `cargo +nightly fuzz build fuzz_streaming_encoder` が成功し、`cargo +nightly fuzz run fuzz_streaming_encoder -- -max_total_time=10` で約 51 万実行をクラッシュ無しで完走することを確認した
+- `CHANGES.md` `## develop` `### misc` に `[ADD]` エントリを追加した
