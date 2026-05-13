@@ -48,6 +48,7 @@ fuzz_target!(|input: FuzzLimits| {
                 }
             }
             BodyKind::None | BodyKind::Tunnel => {}
+            _ => {}
         }
     }
 
@@ -66,6 +67,7 @@ fuzz_target!(|input: FuzzLimits| {
                 }
             }
             BodyKind::None | BodyKind::Tunnel => {}
+            _ => {}
         }
     }
 });

@@ -30,6 +30,7 @@ fuzz_target!(|data: &[u8]| {
                 }
             }
             BodyKind::None | BodyKind::Tunnel => {}
+            _ => {}
         }
     }
 
@@ -52,6 +53,7 @@ fuzz_target!(|data: &[u8]| {
                     }
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
+                _ => {}
             }
             break;
         }
@@ -79,6 +81,7 @@ fuzz_target!(|data: &[u8]| {
                     }
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
+                _ => {}
             }
             break;
         }

@@ -79,6 +79,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             },
             BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
+            _ => return Some(decoded_body),
         }
     }
 
@@ -113,6 +114,7 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
             }
         },
         BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
+        _ => Some(decoded_body),
     }
 }
 
@@ -159,6 +161,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             },
             BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
+            _ => return Some(decoded_body),
         }
     }
 
@@ -193,6 +196,7 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
             }
         },
         BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
+        _ => Some(decoded_body),
     }
 }
 

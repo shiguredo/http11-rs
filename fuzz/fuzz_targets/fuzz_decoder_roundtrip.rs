@@ -87,8 +87,8 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
         if decoder.feed(&encoded).is_ok()
             && let Ok(Some((head, body_kind))) = decoder.decode_headers()
         {
-            assert_eq!(head.method, fuzz_req.method);
-            assert_eq!(head.uri, fuzz_req.uri);
+            assert_eq!(head.method(), fuzz_req.method);
+            assert_eq!(head.uri(), fuzz_req.uri);
 
             let mut decoded_body = Vec::new();
             match body_kind {
@@ -104,6 +104,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                     }
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
+                _ => {}
             }
             let expected_body: Vec<u8> = request
                 .body_bytes()
@@ -161,8 +162,8 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
         if decoder.feed(&encoded).is_ok()
             && let Ok(Some((head, body_kind))) = decoder.decode_headers()
         {
-            assert_eq!(head.status_code, fuzz_resp.status_code);
-            assert_eq!(head.reason_phrase, fuzz_resp.reason_phrase);
+            assert_eq!(head.status_code(), fuzz_resp.status_code);
+            assert_eq!(head.reason_phrase(), fuzz_resp.reason_phrase);
 
             let mut decoded_body = Vec::new();
             if has_body {
@@ -179,6 +180,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                         }
                     }
                     BodyKind::None | BodyKind::Tunnel => {}
+                    _ => {}
                 }
                 assert_eq!(decoded_body, expected_body);
             }
