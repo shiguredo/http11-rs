@@ -2,6 +2,7 @@
 
 - Priority: High
 - Created: 2026-05-14
+- Completed: 2026-05-14
 - Model: Opus 4.7
 - Branch: feature/fix-uri-normalize-not-idempotent
 
@@ -253,3 +254,40 @@ proptest! {
   - 旧実装は `build_uri` が「authority なし、path が `//` 始まり」の文字列を構成しており、再 parse で authority に化け、再度 normalize すると host が小文字化されて結果が変わっていた (RFC 3986 Section 3.3 違反)。`build_uri` で `authority.is_none() && path.starts_with("//")` のとき path 先頭に `/.` を挿入するように修正する
   - @voluntas
 ```
+
+## 解決方法
+
+issue 着手後、`fuzz_uri_resolve` を再実行したところ、本 issue が指定した `//` バグの修正後にも別の冪等性違反が連続して検出された。いずれも `build_uri` (RFC 3986 Section 5.3 Component Recomposition) と `normalize` (Section 6.2.2) の不変条件違反であり、本 issue の射程内とみなして同 PR で併せて修正した。
+
+### 修正 1: `build_uri` で `//` 始まり path に `/.` を prepend (本 issue 本来の対応)
+
+- `src/uri.rs` の `build_uri` で `authority.is_none() && path.starts_with("//")` のとき path 先頭に `"/."` を挿入する
+- RFC 3986 Section 3.3 ABNF (`path-absolute = "/" [ segment-nz *( "/" segment ) ]`、"begins with / but not //") への準拠
+
+### 修正 2: `build_uri` で scheme なし + 最初の segment が `:` を含む場合 `./` を prepend (追加対応)
+
+- 修正 1 適用後の fuzz で `base="S55"`, `reference="%55:;:/."` を起因とする別 crash を検出した
+- resolve 結果 `path="%55:;:/"` を normalize すると `%55` が `U` にデコードされ `path="U:;:/"` となり、`build_uri` 出力 `"U:;:/"` が再 parse 時に `scheme="U"` に誤解釈されていた
+- `src/uri.rs` に `first_segment_contains_colon` ヘルパーを追加し、`build_uri` で `scheme.is_none() && first_segment_contains_colon(path)` のとき path 先頭に `"./"` を挿入する
+- RFC 3986 Section 4.2 の MUST 規定 (relative-path reference の最初の segment は `:` を含めず、必要なら dot-segment を前置する) への準拠
+
+### 修正 3: `normalize` の処理順を RFC 3986 Section 6.2.2 通りに修正 (追加対応)
+
+- 修正 2 適用後の fuzz で `%2E` (= `.`) を含む複雑な入力で 3 つ目の crash を検出した
+- 旧実装は `remove_dot_segments` を先に呼んでから `normalize_percent_encoding` を呼んでおり、encoded dot (`%2E`) が dot-segment 除去をすり抜けたまま decode され、結果に `/./` が残って次回 normalize で除去 → 非冪等になっていた
+- `src/uri.rs::normalize` の path 処理順を「`normalize_percent_encoding` → `remove_dot_segments`」に変更
+- RFC 3986 Section 6.2.2 規定 (6.2.2.2 Percent-Encoding Normalization → 6.2.2.3 Path Segment Normalization) への準拠
+
+### テスト
+
+- `tests/test_uri.rs` に単体テスト 4 件を追加
+  - `test_uri_normalize_idempotent_with_dotdot_double_slash` (`//` 始まり path)
+  - `test_uri_normalize_scheme_only_double_slash` (scheme 付きでも同様)
+  - `test_uri_normalize_idempotent_with_colon_first_segment` (`:` を含む最初の segment)
+  - `test_uri_normalize_idempotent_with_encoded_dot_segment` (`%2E` の処理順)
+- `pbt/tests/prop_uri.rs` に strategy 2 種と property 4 件を追加
+  - `path_inducing_double_slash` strategy
+  - `path_with_colon_first_segment` strategy
+  - `prop_uri_normalize_idempotent` / `prop_uri_normalize_no_authority_injection` / `prop_uri_normalize_path_no_double_slash_without_authority` / `prop_uri_normalize_idempotent_with_colon_first_segment`
+- `cargo +nightly fuzz run fuzz_uri_resolve -- -max_total_time=60` を実行し crash なし (9,008,174 runs)
+- `make fmt && make clippy && make check && make test` がすべて pass

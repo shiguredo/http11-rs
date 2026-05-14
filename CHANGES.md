@@ -23,6 +23,11 @@
   - obs-text は RFC 9110 Section 5.5 の「recipient SHOULD treat obs-text as opaque data」に従い opaque な char として保持する (reject しない)。CR / LF / NUL の reject は char 版ヘルパー `is_qdtext_char` / `is_quoted_pair_char` で等価に維持する
   - issue 0036 で導入した `is_qdtext_byte` / `is_quoted_pair_byte` (`pub(crate)`、2026.4.0 リリース済) を char 版に置き換え本体を削除する
   - @voluntas
+- [FIX] URI の `normalize` で path-only URI が network-path reference や scheme 付き URI に化けて冪等性が破れる不具合を修正する
+  - 旧実装は `build_uri` が「authority なし、path が `//` 始まり」の文字列を構成しており、再 parse で authority に化け、再度 normalize すると host が小文字化されて結果が変わっていた (RFC 3986 Section 3.3 違反)。`build_uri` で `authority.is_none() && path.starts_with("//")` のとき path 先頭に `/.` を挿入するように修正する
+  - 関連して、`build_uri` が「scheme なし、authority なし、path の最初の segment に `:` を含む」文字列を出力すると、再 parse で先頭 segment が scheme として誤解釈されていた (RFC 3986 Section 4.2 違反)。同じく `build_uri` で `./` を path 先頭に挿入するように修正する
+  - `normalize` の処理順を RFC 3986 Section 6.2.2 通り「percent-encoding 正規化 (6.2.2.2)」→「dot-segment 除去 (6.2.2.3)」の順に修正する。旧実装は逆順だったため、`%2E` (= `.`) のような encoded dot が dot-segment 除去後に decode され、結果として残った `/./` が次回 normalize で除去されて冪等性が崩れていた
+  - @voluntas
 
 ### misc
 
