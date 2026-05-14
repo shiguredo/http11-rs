@@ -38,6 +38,7 @@
 
 ## issues について
 
+- `0000-template.md` を参考にすること
 - 番号が小さい issues から順番に対応すること
 - `{seqnum}-{category}-{short-description}.md` という命名規則を守ること
   - seqnum は `issues/SEQUENCE` ファイルの値を使うこと（9999 を超えたら 5 桁にする）
@@ -50,9 +51,11 @@
 - 1 issue 完了ごとに 1 コミットすること
 - Issue の作成日はファイルのタイトルの後に `Created: YYYY-MM-DD` として記載すること
 - Issue の完了日はファイルのタイトルの後に `Completed: YYYY-MM-DD` として記載すること
+- Issue の優先度はファイルのタイトルの後に `Priority: <優先度>` という形で記載すること
+  - 優先度は High / Medium / Low のいずれかをつけること
+  - High は最優先で対応する issue、Medium は優先的に対応する issue、Low は時間があれば対応する issue という意味合いで使うこと
 - Issue を作成した LLM の Model と Version をファイルのタイトルの後に `Model: <model-name> <version>` として記載すること
-  - Opus 4.7 や GPT-5.5 など
-  - モデルが複数ある場合は GPT-5.5 / Opus 4.7 のように両方記載すること
+  - Opus 4.7 や GPT-5.4 など
 - Issue はなぜこの対応が必要なのかの根拠を明確にすること
 
 ### git ブランチの命名規則
