@@ -44,14 +44,20 @@ fn header_count(headers: &[(String, String)], name: &str) -> usize {
         .count()
 }
 
+/// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
+///
+/// OWS = *( SP / HTAB )。`src/validate.rs::trim_ows` の参照実装。
+/// `str::trim()` は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+/// HTTP Request Smuggling (CWE-444) 経路を避ける目的で SP / HTAB のみを除去する。
+fn trim_ows(s: &str) -> &str {
+    s.trim_matches(|c: char| c == ' ' || c == '\t')
+}
+
 /// `Request::content_length` / `Response::content_length` の参照実装。
 ///
 /// decoder の `parse_content_length` (`src/decoder/body.rs`) と同じ厳格パース
 /// (OWS / カンマリスト / 複数行 / mismatched 値の reject) を再現する。
 fn expected_content_length(headers: &[(String, String)]) -> Result<Option<u64>, ()> {
-    fn trim_ows(s: &str) -> &str {
-        s.trim_matches(|c: char| c == ' ' || c == '\t')
-    }
     fn parse_strict_digits(s: &str) -> Result<u64, ()> {
         let trimmed = trim_ows(s);
         if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
@@ -98,7 +104,7 @@ fn expected_chunked(headers: &[(String, String)]) -> bool {
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Transfer-Encoding") {
             for token in value.split(',') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if !token.is_empty() {
                     last_token = Some(token);
                 }
@@ -113,7 +119,7 @@ fn expected_keep_alive(version: &str, headers: &[(String, String)]) -> bool {
     for (name, value) in headers {
         if name.eq_ignore_ascii_case("Connection") {
             for token in value.split(',') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if token.eq_ignore_ascii_case("close") {
                     return false;
                 }

@@ -4,7 +4,7 @@ use crate::error::{EncodeError, Error};
 use crate::status_code::StatusClass;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_protocol_version,
-    is_valid_reason_phrase, is_valid_request_target, is_valid_status_code,
+    is_valid_reason_phrase, is_valid_request_target, is_valid_status_code, trim_ows,
 };
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -87,8 +87,12 @@ pub trait HttpHead {
             }
             // カンマ区切りトークンリストとして解析
             // close トークンがあれば即座に false (close 優先)
+            // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+            // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+            // 前段プロキシ (ASCII OWS のみ) との解釈不一致で
+            // HTTP Request Smuggling (CWE-444) の足場となる。
             for token in value.split(',') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if token.eq_ignore_ascii_case("close") {
                     return false;
                 }
@@ -139,8 +143,12 @@ pub trait HttpHead {
             if !name.eq_ignore_ascii_case("Transfer-Encoding") {
                 continue;
             }
+            // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+            // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+            // 前段プロキシ (ASCII OWS のみ) との解釈不一致で
+            // HTTP Request Smuggling (CWE-444) の足場となる。
             for token in value.split(',') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if !token.is_empty() {
                     last_token = Some(token);
                 }

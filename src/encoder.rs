@@ -768,8 +768,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
             return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
         }
         // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+        // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+        // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+        // 防御層の一貫性を確保する目的で trim_ows に統一する。
         if let Some(cl) = response.get_header("Content-Length")
-            && cl.trim() != "0"
+            && trim_ows(cl) != "0"
         {
             return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
         }
@@ -1036,9 +1039,12 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     }
 
     // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+    // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+    // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+    // 防御層の一貫性を確保する目的で trim_ows に統一する。
     if response.status_code() == 205
         && let Some(cl) = response.get_header("Content-Length")
-        && cl.trim() != "0"
+        && trim_ows(cl) != "0"
     {
         return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
     }

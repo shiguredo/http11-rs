@@ -638,3 +638,81 @@ fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
         "Connection: keep-alive が明示指定されれば true"
     );
 }
+
+// ========================================
+// is_keep_alive / is_chunked の OWS 厳格化 (issue 0062)
+// ========================================
+// RFC 9110 Section 5.6.3 の OWS は `*( SP / HTAB )` のみ。
+// 旧実装は `str::trim()` を使っており NBSP (U+00A0) 等の Unicode 空白も除去していたため、
+// 前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling
+// (CWE-444) の足場となっていた。
+
+/// Connection ヘッダー先頭の NBSP (U+00A0) を OWS として扱わないこと
+#[test]
+fn test_request_is_keep_alive_nbsp_not_trimmed() {
+    let req = Request::with_version("GET", "/", "HTTP/1.0")
+        .unwrap()
+        .header("Connection", "\u{00A0}keep-alive")
+        .unwrap();
+    assert!(
+        !req.is_keep_alive(),
+        "NBSP 前置のトークンは keep-alive と一致してはならない"
+    );
+}
+
+/// Connection ヘッダーの HTAB / SP は OWS として正しく除去されること (リグレッション防止)
+#[test]
+fn test_request_is_keep_alive_htab_sp_trimmed() {
+    let req = Request::with_version("GET", "/", "HTTP/1.0")
+        .unwrap()
+        .header("Connection", "\tkeep-alive")
+        .unwrap();
+    assert!(req.is_keep_alive(), "HTAB 前置は OWS として除去される");
+
+    let req = Request::with_version("GET", "/", "HTTP/1.0")
+        .unwrap()
+        .header("Connection", " keep-alive")
+        .unwrap();
+    assert!(req.is_keep_alive(), "SP 前置は OWS として除去される");
+
+    let req = Request::with_version("GET", "/", "HTTP/1.0")
+        .unwrap()
+        .header("Connection", "  keep-alive ")
+        .unwrap();
+    assert!(req.is_keep_alive(), "前後の SP は OWS として除去される");
+}
+
+/// Transfer-Encoding ヘッダー先頭の NBSP は OWS として扱わないこと
+#[test]
+fn test_request_is_chunked_nbsp_not_trimmed() {
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Transfer-Encoding", "\u{00A0}chunked")
+        .unwrap();
+    assert!(
+        !req.is_chunked(),
+        "NBSP 前置のトークンは chunked と一致してはならない"
+    );
+}
+
+/// Transfer-Encoding ヘッダーの HTAB / SP は OWS として正しく除去されること
+#[test]
+fn test_request_is_chunked_htab_sp_trimmed() {
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Transfer-Encoding", "\tchunked")
+        .unwrap();
+    assert!(req.is_chunked(), "HTAB 前置は OWS として除去される");
+
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Transfer-Encoding", " chunked")
+        .unwrap();
+    assert!(req.is_chunked(), "SP 前置は OWS として除去される");
+
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Transfer-Encoding", "  chunked ")
+        .unwrap();
+    assert!(req.is_chunked(), "前後の SP は OWS として除去される");
+}

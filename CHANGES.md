@@ -44,6 +44,11 @@
   - 関連して、`build_uri` が「scheme なし、authority なし、path の最初の segment に `:` を含む」文字列を出力すると、再 parse で先頭 segment が scheme として誤解釈されていた (RFC 3986 Section 4.2 違反)。同じく `build_uri` で `./` を path 先頭に挿入するように修正する
   - `normalize` の処理順を RFC 3986 Section 6.2.2 通り「percent-encoding 正規化 (6.2.2.2)」→「dot-segment 除去 (6.2.2.3)」の順に修正する。旧実装は逆順だったため、`%2E` (= `.`) のような encoded dot が dot-segment 除去後に decode され、結果として残った `/./` が次回 normalize で除去されて冪等性が崩れていた
   - @voluntas
+- [FIX] `Connection` / `Transfer-Encoding` のトークン OWS 除去で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
+  - 旧実装は `src/decoder/head.rs::is_keep_alive` / `is_chunked` で `str::trim()` を使用しており、NBSP (U+00A0) 等の Unicode 空白を除去していた
+  - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた
+  - 併せて encoder の 205 Content-Length 検証も `trim_ows` に置換し防御層の一貫性を確保する
+  - @voluntas
 
 ### misc
 
