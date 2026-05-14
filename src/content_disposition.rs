@@ -23,7 +23,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{is_qdtext_char, is_quoted_pair_char};
+use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -312,11 +312,11 @@ impl fmt::Display for ContentDisposition {
         write!(f, "{}", self.disposition_type)?;
 
         if let Some(name) = &self.name {
-            write!(f, "; name=\"{}\"", escape_quoted_string(name))?;
+            write!(f, "; name=\"{}\"", escape_quotes(name))?;
         }
 
         if let Some(filename) = &self.filename {
-            write!(f, "; filename=\"{}\"", escape_quoted_string(filename))?;
+            write!(f, "; filename=\"{}\"", escape_quotes(filename))?;
         }
 
         if let Some(filename_ext) = &self.filename_ext {
@@ -324,7 +324,7 @@ impl fmt::Display for ContentDisposition {
         }
 
         for (name, value) in &self.parameters {
-            write!(f, "; {}=\"{}\"", name, escape_quoted_string(value))?;
+            write!(f, "; {}=\"{}\"", name, escape_quotes(value))?;
         }
 
         Ok(())
@@ -520,18 +520,6 @@ fn is_attr_char(b: u8) -> bool {
         b'!' | b'#' | b'$' | b'&' | b'+' | b'-' | b'.' |
         b'^' | b'_' | b'`' | b'|' | b'~'
     )
-}
-
-/// 引用符付き文字列用にエスケープ
-fn escape_quoted_string(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c == '"' || c == '\\' {
-            result.push('\\');
-        }
-        result.push(c);
-    }
-    result
 }
 
 #[cfg(test)]

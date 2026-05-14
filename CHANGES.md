@@ -52,6 +52,13 @@
 
 ### misc
 
+- [UPDATE] quoted-string 用の escape 処理を `validate::escape_quotes` に統合し parse 側と対称な不変条件チェックを追加する
+  - 旧実装は `auth` / `accept` / `content_type` / `expect` / `content_disposition` の 5 モジュールで同一ロジックを重複定義し、CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を素通りさせていた
+  - `src/validate.rs` に `pub(crate) fn escape_quotes` を新設し、parse 側で reject される文字 (`is_quoted_pair_char` の補集合) が escape 側に到達した場合に `debug_assert!` で検出する防御層を追加する (release ビルドでは通過)
+  - 5 モジュールの重複定義を削除し `use crate::validate::escape_quotes;` に置換する
+  - `auth::WwwAuthenticate::Display` も realm / charset の出力経路で `escape_quotes` を経由するように修正する (builder 経路の Display 漏れを塞ぐ)
+  - 本 issue は parse 側 reject を前提とする防御層のみカバーする。送信側 builder の入力検証は別 issue として継続する
+  - @voluntas
 - [ADD] fuzz target `fuzz_multipart_boundary` を追加する
   - 既存 `fuzz_multipart` は boundary が 4 種固定のため、攻撃者が `Content-Type` 経由で制御し得る boundary 文字列の経路 (`MultipartParser::try_new` の `InvalidBoundary` 判定、delimiter 構築、`with_max_buffer_size` の `BufferOverflow` 経路) が未到達だった
   - boundary を arbitrary で任意化し、`new` / `try_new` 双方の panic 安全性と `next_part` 巡回を検証する

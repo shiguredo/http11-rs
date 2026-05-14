@@ -1,7 +1,9 @@
 # 0063 fix escape 関数群で CR / LF / NUL を防御する
 
 Created: 2026-05-14
+Completed: 2026-05-14
 Model: deepseek-v4-pro
+Branch: feature/fix-escape-functions-reject-ctl
 
 ## 概要
 
@@ -150,10 +152,25 @@ fn test_escape_quotes_crlf_nul_debug_assert() {
 
 ## 受け入れ基準
 
-- [ ] `content_disposition.rs::escape_quoted_string` に `debug_assert!` が追加されている
-- [ ] `validate.rs` に `pub(crate) fn escape_quotes` が新設されている
-- [ ] `auth.rs` / `content_type.rs` / `accept.rs` / `expect.rs` の重複定義が削除され `use crate::validate::escape_quotes;` に置換されている
-- [ ] `make fmt && make clippy && make check && make test` が pass
-- [ ] `#[cfg(debug_assertions)]` テストで CR/LF/NUL 入力時 `debug_assert!` 発火を確認
-- [ ] 既存の Display / to_header_value 経路のテストが pass (リグレッション防止)
-- [ ] `CHANGES.md` にエントリが追記されている
+- [x] `content_disposition.rs::escape_quoted_string` は `validate::escape_quotes` に統合した (issue の 5 重複削減の精神に従って同一ロジックを集約)
+- [x] `validate.rs` に `pub(crate) fn escape_quotes` が新設されている
+- [x] `auth.rs` / `content_type.rs` / `accept.rs` / `expect.rs` の重複定義が削除され `use crate::validate::escape_quotes;` に置換されている
+- [x] `make fmt && make clippy && make check && make test` が pass
+- [x] `#[cfg(debug_assertions)]` テストで CR/LF/NUL 入力時 `debug_assert!` 発火を確認
+- [x] 既存の Display / to_header_value 経路のテストが pass (リグレッション防止)
+- [x] `CHANGES.md` にエントリが追記されている
+
+## 解決方法
+
+- `src/validate.rs` に `pub(crate) fn escape_quotes(s: &str) -> String` を新設し、`debug_assert!(is_quoted_pair_char(c), ...)` で CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を開発時に検出するように実装した
+  - parse 側の `is_quoted_pair_char` / `is_qdtext_char` と対称化することで、parse → escape の不変条件を厳密に保つ
+  - issue 本文は CR/LF/NUL のみを対象としていたが、parse 側で他 CTL も reject されている事実に合わせて対称化した (レビューで指摘あり)
+- `src/content_disposition.rs::escape_quoted_string` を削除し `validate::escape_quotes` に統合した (5 重複→ 1 関数に集約)
+- `src/auth.rs` / `src/content_type.rs` / `src/accept.rs` / `src/expect.rs` の重複定義を削除し `use crate::validate::escape_quotes;` に置換した
+- `src/auth.rs::WwwAuthenticate::Display` で realm / charset を escape_quotes 経由にした (本 issue の精神に従い builder 経路の Display 漏れを塞ぐ)
+- `src/validate.rs` 内に `#[cfg(test)] mod tests` を追加し、escape_quotes の挙動 (passes_through_safe_chars / escapes_dquote_and_backslash / debug_assert_on_disallowed_ctl) を 3 テストで検証した (validate モジュールは `pub(crate)` のため `tests/test_validate.rs` には外部化不可)
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリを追記した
+
+## 残課題 (別 issue として記録)
+
+- 送信側 builder (`ContentDisposition::with_filename` / `ContentType::with_parameter` / `WwwAuthenticate::basic` 等) が値検証を行わないため、CR/LF/NUL を含む値をユーザーが直接渡すと debug ビルドでは panic、release ビルドでは raw 出力される。本 issue は parse 側 reject に依存する debug_assert! 防御層のみカバーする (先行 issue 0036 と同じ方針)。builder 側の入力検証は別 issue で対応する。
