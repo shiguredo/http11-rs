@@ -901,6 +901,15 @@ fn remove_dot_segments(path: &str) -> String {
     output.concat()
 }
 
+/// path-noscheme (RFC 3986 Section 3.3) 判定のための補助関数。
+/// `path` の最初の segment (最初の `/` まで、なければ末尾まで) に `:` を含むかを返す。
+/// relative-path reference は `path-noscheme = segment-nz-nc *( "/" segment )` で
+/// segment-nz-nc は `:` を含めない。
+fn first_segment_contains_colon(path: &str) -> bool {
+    let first = path.split('/').next().unwrap_or("");
+    first.contains(':')
+}
+
 /// URI を構築
 fn build_uri(
     scheme: Option<&str>,
@@ -919,6 +928,25 @@ fn build_uri(
     if let Some(a) = authority {
         result.push_str("//");
         result.push_str(a);
+    } else if path.starts_with("//") {
+        // RFC 3986 Section 3.3: authority なし URI の path は "//" で始まれない
+        // (path-absolute = "/" [ segment-nz *( "/" segment ) ]、"begins with / but not //")。
+        // Section 5.3 (Component Recomposition) はこの不変条件を呼び出し側に委ねているため、
+        // recomposition 側で "/." を挿入し path-absolute に収める。
+        // 同等の処理は WHATWG URL Standard の URL serializer でも採用されている
+        // (Living Standard、将来仕様改訂で明文化される可能性あり)。
+        result.push_str("/.");
+    } else if scheme.is_none() && first_segment_contains_colon(path) {
+        // RFC 3986 Section 4.2: relative-path reference の最初の segment が
+        // ":" を含むと scheme として誤解釈される。
+        // > A path segment that contains a colon character (e.g., "this:that")
+        // > cannot be used as the first segment of a relative-path reference,
+        // > as it would be mistaken for a scheme name. Such a segment must be
+        // > preceded by a dot-segment (e.g., "./this:that") to make a
+        // > relative-path reference.
+        // Section 5.3 (Component Recomposition) はこの不変条件を呼び出し側に委ねているため、
+        // recomposition 側で "./" を挿入し relative-path reference に収める。
+        result.push_str("./");
     }
 
     result.push_str(path);
@@ -943,10 +971,14 @@ pub fn normalize(uri: &Uri) -> Result<Uri, UriError> {
     let scheme = uri.scheme().map(|s| s.to_ascii_lowercase());
     // RFC 3986: host のみ case-insensitive、userinfo は case-sensitive
     let authority = uri.authority().map(normalize_authority);
-    let path = remove_dot_segments(uri.path());
 
-    // パーセントエンコーディングの正規化
-    let path = normalize_percent_encoding(&path)?;
+    // RFC 3986 Section 6.2.2 で規定される正規化の順序は
+    //   6.2.2.2 Percent-Encoding Normalization (unreserved の decode)
+    //   6.2.2.3 Path Segment Normalization (remove_dot_segments)
+    // この順序を守らないと、`%2E` (= `.`) のような encoded dot が dot-segment 除去後に
+    // decode され、結果として残った `/./` が次回 normalize で除去されて冪等性が崩れる。
+    let path = normalize_percent_encoding(uri.path())?;
+    let path = remove_dot_segments(&path);
 
     let query = uri.query().map(normalize_percent_encoding).transpose()?;
     let fragment = uri.fragment().map(normalize_percent_encoding).transpose()?;
