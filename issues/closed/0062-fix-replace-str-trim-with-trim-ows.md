@@ -1,6 +1,7 @@
 # 0062 fix Connection / Transfer-Encoding の OWS 除去で str::trim() を trim_ows に統一する
 
 Created: 2026-05-14
+Completed: 2026-05-14
 Model: deepseek-v4-pro
 
 ## 概要
@@ -88,10 +89,50 @@ use crate::validate::{
 
 ## 受け入れ基準
 
-- [ ] 対象 4 箇所 + fuzz 参照実装 2 箇所が `trim_ows` に置換されている
-- [ ] `make fmt && make clippy && make check && make test` が pass
-- [ ] `Connection: \u{00A0}keep-alive` で `is_keep_alive` が `false` を返す
-- [ ] `Transfer-Encoding: \u{00A0}chunked` で `is_chunked` が `false` を返す
-- [ ] SP / HTAB は引き続き OWS として正しく除去される
-- [ ] `cargo +nightly fuzz run fuzz_keep_alive -- -max_total_time=60` で新規 crash が出ない
-- [ ] `CHANGES.md` に `[FIX]` エントリが追記されている
+- [x] 対象 4 箇所 + fuzz 参照実装 2 箇所が `trim_ows` に置換されている
+- [x] `make fmt && make clippy && make check && make test` が pass
+- [x] `Connection: \u{00A0}keep-alive` で `is_keep_alive` が `false` を返す
+- [x] `Transfer-Encoding: \u{00A0}chunked` で `is_chunked` が `false` を返す
+- [x] SP / HTAB は引き続き OWS として正しく除去される
+- [ ] `cargo +nightly fuzz run fuzz_keep_alive -- -max_total_time=60` で新規 crash が出ない (fuzzing は別途実行する)
+- [x] `CHANGES.md` に `[FIX]` エントリが追記されている
+
+## 解決方法
+
+`str::trim()` を RFC 9110 Section 5.6.3 準拠の `trim_ows` (`src/validate.rs`) に統一し、SP / HTAB のみを除去するよう修正した。
+
+### 修正箇所
+
+- `src/decoder/head.rs`
+  - `use crate::validate::{...}` に `trim_ows` を追加
+  - `HttpHead::is_keep_alive` の `token.trim()` → `trim_ows(token)`
+  - `HttpHead::is_chunked` の `token.trim()` → `trim_ows(token)`
+  - 各箇所に「OWS は SP / HTAB のみ」「Smuggling (CWE-444) 対策」のコメントを追記
+- `src/encoder.rs`
+  - `encode_response` の 205 Content-Length 検証 `cl.trim() != "0"` → `trim_ows(cl) != "0"`
+  - `encode_response_headers` の同様の検証も同じく `trim_ows` 化
+  - `trim_ows` は既に import 済み
+- `fuzz/fuzz_targets/fuzz_request_response_helpers.rs`
+  - `expected_content_length` 内に閉じていた `trim_ows` をモジュールレベルに引き上げて 3 つの参照実装で共有
+  - `expected_chunked` / `expected_keep_alive` の `token.trim()` → `trim_ows(token)`
+  - 実装と参照実装の挙動を一致させ、fuzz の false positive を防止
+
+### 追加テスト
+
+- `tests/test_request.rs`
+  - `test_request_is_keep_alive_nbsp_not_trimmed`: `Connection: \u{00A0}keep-alive` で `false` を確認
+  - `test_request_is_keep_alive_htab_sp_trimmed`: HTAB / SP / 前後 SP のリグレッション防止
+  - `test_request_is_chunked_nbsp_not_trimmed`: `Transfer-Encoding: \u{00A0}chunked` で `false` を確認
+  - `test_request_is_chunked_htab_sp_trimmed`: HTAB / SP / 前後 SP のリグレッション防止
+- `tests/test_encoder.rs`
+  - `test_encode_response_205_with_cl_nbsp_zero_error`: `encode_response` 経路で `ForbiddenContentLength`
+  - `test_encode_response_headers_205_with_cl_nbsp_zero_error`: `encode_response_headers` 経路でも同じく reject
+  - `test_encode_response_205_with_cl_htab_zero_ok` / `_sp_zero_ok`: HTAB / SP のリグレッション防止
+
+### CHANGES.md
+
+`## develop` セクションに `[FIX]` エントリを追加し、Connection / Transfer-Encoding の OWS 除去統一と Smuggling 対策、encoder 防御層の一貫性を記載した。
+
+### 検証
+
+`make fmt && make clippy && make check && make test` がすべて pass。新規追加した 8 テスト (request 4 + encoder 4) も pass。

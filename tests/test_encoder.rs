@@ -290,6 +290,60 @@ fn test_encode_response_205_with_cl_zero_ok() {
 }
 
 // ========================================
+// 205 Content-Length の OWS 厳格化 (issue 0062)
+// ========================================
+// RFC 9110 Section 5.6.3 の OWS は `*( SP / HTAB )` のみ。
+// 旧実装は `str::trim()` を使っており NBSP (U+00A0) 等の Unicode 空白も除去していた。
+// 防御層の一貫性のため `trim_ows` に統一し、encode_response / encode_response_headers
+// の両経路で同じ判定を行う。
+
+#[test]
+fn test_encode_response_205_with_cl_nbsp_zero_error() {
+    // Content-Length: \u{00A0}0 (NBSP 前置) は trim_ows で除去されないため非 "0"
+    let res = Response::with_status(StatusCode::RESET_CONTENT)
+        .header("Content-Length", "\u{00A0}0")
+        .unwrap();
+    let result = encode_response(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 205 })
+    ));
+}
+
+#[test]
+fn test_encode_response_headers_205_with_cl_nbsp_zero_error() {
+    // encode_response_headers 経路でも同様に reject されること
+    let res = Response::with_status(StatusCode::RESET_CONTENT)
+        .header("Content-Length", "\u{00A0}0")
+        .unwrap();
+    let result = encode_response_headers(&res);
+    assert!(matches!(
+        result,
+        Err(EncodeError::ForbiddenContentLength { status_code: 205 })
+    ));
+}
+
+#[test]
+fn test_encode_response_205_with_cl_htab_zero_ok() {
+    // HTAB 前置は OWS として正しく除去される (リグレッション防止)
+    let res = Response::with_status(StatusCode::RESET_CONTENT)
+        .header("Content-Length", "\t0")
+        .unwrap();
+    assert!(encode_response(&res).is_ok());
+    assert!(encode_response_headers(&res).is_ok());
+}
+
+#[test]
+fn test_encode_response_205_with_cl_sp_zero_ok() {
+    // SP 前置 / 後置は OWS として正しく除去される (リグレッション防止)
+    let res = Response::with_status(StatusCode::RESET_CONTENT)
+        .header("Content-Length", " 0 ")
+        .unwrap();
+    assert!(encode_response(&res).is_ok());
+    assert!(encode_response_headers(&res).is_ok());
+}
+
+// ========================================
 // Host ヘッダーバリデーションテスト
 // ========================================
 
