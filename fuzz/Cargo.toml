@@ -258,3 +258,52 @@ path = "fuzz_targets/fuzz_streaming_encoder.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_multipart_boundary"
+path = "fuzz_targets/fuzz_multipart_boundary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decoder_response_method"
+path = "fuzz_targets/fuzz_decoder_response_method.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_encode_chunks"
+path = "fuzz_targets/fuzz_encode_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decoder_decompressed"
+path = "fuzz_targets/fuzz_decoder_decompressed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_multipart_roundtrip"
+path = "fuzz_targets/fuzz_multipart_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_chunked_trailer"
+path = "fuzz_targets/fuzz_chunked_trailer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_encode_headers"
+path = "fuzz_targets/fuzz_encode_headers.rs"
+test = false
+doc = false
+bench = false

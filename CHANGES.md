@@ -47,6 +47,34 @@
 
 ### misc
 
+- [ADD] fuzz target `fuzz_multipart_boundary` を追加する
+  - 既存 `fuzz_multipart` は boundary が 4 種固定のため、攻撃者が `Content-Type` 経由で制御し得る boundary 文字列の経路 (`MultipartParser::try_new` の `InvalidBoundary` 判定、delimiter 構築、`with_max_buffer_size` の `BufferOverflow` 経路) が未到達だった
+  - boundary を arbitrary で任意化し、`new` / `try_new` 双方の panic 安全性と `next_part` 巡回を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_decoder_response_method` を追加する
+  - 既存 `fuzz_decoder_response` は `set_request_method` を `"HEAD"` / `"CONNECT"` の 2 値固定でしか叩いていないため、空文字 / 制御文字 / 巨大 method × 任意 status の組合せが未到達だった
+  - method を arbitrary で任意化し、reset 後の再 `set_request_method` (Keep-Alive シナリオ) も含めて panic 安全性を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_encode_chunks` を追加する
+  - `encode_chunk` / `encode_chunks` (`src/encoder.rs:878, 908`) を直接叩く target が無く、`encode_chunks_capacity` の `checked_add` 経路や `Vec::with_capacity` の OOM 経路を独立に確認できていなかった
+  - 任意 `Vec<Vec<u8>>` を入力に panic 安全性、`encode_chunks(refs)` と「順次 `encode_chunk` + 終端 `encode_chunk(&[])`」のバイト等価性、決定性、終端チャンクで終わることを検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_decoder_decompressed` を追加する
+  - `RequestDecoder::peek_body_decompressed` / `ResponseDecoder::peek_body_decompressed` の `Decompressor` 注入経路 (任意 output buffer サイズ + Continue/OutputFull/Complete 状態機械) が未到達だった
+  - `NoCompression` を `Decompressor` として注入し、任意 output サイズ (0 含む) と任意バイト列でループが panic / abort しないこと、`produced <= output.len()` の API 契約、reset 後の再利用を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_multipart_roundtrip` を追加する
+  - `MultipartBuilder` で構築 → `MultipartParser` でデコード のラウンドトリップ panic 安全性を検証する
+  - `text_field` / `file_field` / `part(Part::with_body)` の任意組合せと、`try_with_boundary` が通る valid path / `with_boundary` の検証なし path 双方を網羅する
+  - @voluntas
+- [ADD] fuzz target `fuzz_chunked_trailer` を追加する
+  - `Transfer-Encoding: chunked` + `Trailer:` 宣言 + trailer-section の統合デコード経路が未到達で、decoder の `set_declared_trailers` + `is_prohibited_trailer_field` 経路 (`src/decoder/body.rs:114, 297`) が踏まれていなかった
+  - chunks と trailers (name, value) を arbitrary で生成し、宣言 mask に従って `Trailer:` ヘッダーで宣言したフィールド名のみを trailer-section に書く生成パスを `RequestDecoder` / `ResponseDecoder` 双方で検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_encode_headers` を追加する
+  - `encode_request_headers` / `encode_response_headers` (`src/encoder.rs:948, 1008`) を独立に叩く target が無く、`Transfer-Encoding: chunked` ストリーミング送信シナリオでこの関数群が単独で呼ばれる経路の決定性 / panic 安全性が未検証だった
+  - 任意入力で必ず `Result` を返すこと、同じ入力で 2 回 encode して結果が一致すること、ヘッダーセクションが必ず CRLF CRLF で終わることを検証する
+  - @voluntas
 - [ADD] fuzz target `fuzz_pipelined` を追加する
   - Keep-Alive 接続を想定し `RequestDecoder` / `ResponseDecoder` の `reset()` + `take_remaining()` を組み合わせた連続デコードのパニック安全性を検証する
   - @voluntas
