@@ -43,7 +43,7 @@ pub enum ContentDispositionError {
     DuplicateParameter(String),
     /// パラメータ数が `MAX_PARAMS` を超えた (issue 0047)
     ///
-    /// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とし、
+    /// 実用パラメータ数 (RFC 6266 程度) に十分な余裕として 32 を上限とし、
     /// 線形重複検出の CPU 消費を有限に抑える。
     TooManyParameters,
 }

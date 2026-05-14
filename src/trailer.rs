@@ -1,4 +1,4 @@
-//! Trailer フィールドパース (RFC 9112 Section 7.1.2)
+//! Trailer フィールドパース (RFC 9110 Section 6.6.2)
 //!
 //! ## 概要
 //!

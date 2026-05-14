@@ -13,7 +13,7 @@ Model: deepseek-v4-pro
 - `src/accept.rs:658-660` (`escape_quotes`)
 - `src/expect.rs:250-252` (`escape_quotes`)
 
-RFC 9110 Section 5.5 は「A sender MUST NOT generate a bare CR or LF」および「sender MUST NOT generate NUL in field values」と規定している。これらの escape 関数を経由して CR / LF / NUL を含む文字列を quoted-string や field-value として生成すると、HTTP Response Splitting (CWE-113) の経路となる。
+RFC 9110 Section 5.5 は field value に CR / LF / NUL を含むことを invalid とし、受信側に reject または SP 置換を MUST で義務付けている。また RFC 9112 Section 3.2 は sender が protocol elements 内で bare CR を生成することを MUST NOT で禁止している。これらの escape 関数を経由して CR / LF / NUL を含む文字列を quoted-string や field-value として生成すると、HTTP Response Splitting (CWE-113) の経路となる。
 
 0061 完了後の世界では、受信側（parse 側）で CR / LF / NUL は reject されるため escape 側に CR / LF / NUL が到達する経路は閉ざされる。本 issue はそれでも防御層として escape 側にも検出を追加する。
 

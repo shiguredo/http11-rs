@@ -51,7 +51,7 @@ fn test_disposition_type_display() {
 }
 
 // ========================================
-// filename* (RFC 5987 ext-value) のテスト
+// filename* (RFC 8187 ext-value) のテスト
 // ========================================
 
 #[test]

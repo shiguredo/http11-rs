@@ -524,7 +524,7 @@ fn is_valid_domain_value(s: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
 }
 
-/// トークン文字 (RFC 9110)
+/// トークン文字 (RFC 9110 Section 5.6.2)
 fn is_token_char(b: u8) -> bool {
     matches!(b,
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |

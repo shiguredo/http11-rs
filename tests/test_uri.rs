@@ -233,7 +233,7 @@ fn test_uri_normalize_percent_encoding() {
 
 #[test]
 fn test_remove_dot_segments_edge_cases() {
-    // RFC 3986 Section 5.4 のテストケース
+    // RFC 3986 Section 5.2.4 の remove_dot_segments エッジケース
     let base = Uri::parse("http://example.com/base/").unwrap();
 
     // . のみ

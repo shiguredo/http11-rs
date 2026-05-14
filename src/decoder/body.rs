@@ -2,7 +2,7 @@
 //!
 //! # RFC 非準拠
 //!
-//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析しなければならない (MUST) だが、
 //!   本実装ではチャンクサイズ行やトレーラーを UTF-8 として強制的に解析している。
 //!   非 UTF-8 バイト列を含む場合はエラーとして拒否される。
 
@@ -1455,7 +1455,7 @@ pub(crate) fn resolve_body_headers_for_request(
 /// > request smuggling (Section 11.2) or response splitting (Section 11.1)
 /// > and ought to be handled as an error.
 ///
-/// RFC 9112 Section 6.1 lines 880-884:
+/// RFC 9112 Section 6.1:
 /// > the server MUST close the connection after responding to such a request
 /// > to avoid the potential attacks.
 ///

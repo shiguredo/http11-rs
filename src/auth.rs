@@ -71,10 +71,10 @@ pub enum AuthError {
     InvalidCharset,
     /// `username` と `username*` が同時に送信されている (RFC 7616 Section 3.4)
     ///
-    /// RFC 7616 では `username` (ASCII) と `username*` (RFC 5987 ext-value、UTF-8) は
+    /// RFC 7616 では `username` (ASCII) と `username*` (RFC 8187 ext-value、UTF-8) は
     /// XOR で、両方同時の送信は MUST NOT。
     ConflictingUsernameField,
-    /// `username*` の ext-value が不正 (RFC 5987 Section 3.2.1 / RFC 7616 Section 3.4)
+    /// `username*` の ext-value が不正 (RFC 8187 Section 3.2.1 / RFC 7616 Section 3.4)
     InvalidUsernameExtValue,
     /// auth-param が `MAX_AUTH_PARAMS` を超えた (RFC 9110 Section 11.2 auth-param リスト上限)
     ///
@@ -357,7 +357,7 @@ impl DigestAuth {
         let params = parse_auth_params(params)?;
 
         // RFC 7616 §3.4: username と username* は XOR (両方同時送信は MUST NOT)。
-        // どちらか一方が必須。username* は RFC 5987 ext-value (UTF-8 ユーザー名用)。
+        // どちらか一方が必須。username* は RFC 8187 ext-value (UTF-8 ユーザー名用)。
         let has_username = params.iter().any(|(n, _)| n == "username");
         let has_username_ext = params.iter().any(|(n, _)| n == "username*");
         if has_username && has_username_ext {
@@ -406,7 +406,7 @@ impl DigestAuth {
     /// `username` または `username*` のいずれかから UTF-8 ユーザー名を取得する
     ///
     /// RFC 7616 §3.4 に従い、`username` パラメータがあればその値を、なければ
-    /// `username*` を RFC 5987 ext-value としてデコードした値を返す。
+    /// `username*` を RFC 8187 ext-value としてデコードした値を返す。
     /// 構築時に `username*` の ext-value は検証済みのため本メソッドは infallible。
     pub fn username_decoded(&self) -> Option<String> {
         if let Some(v) = self.param("username") {
@@ -885,7 +885,7 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             i += 1;
         }
         if i < bytes.len() {
-            // RFC 9110 Section 11.2: auth-param *( OWS "," OWS auth-param )
+            // RFC 9110 Section 11.2 (auth-param 定義)、Section 11.6.3: auth-param *( OWS "," OWS auth-param )
             // パラメータ間のカンマは必須
             if bytes[i] == b',' {
                 i += 1;
@@ -975,7 +975,7 @@ fn has_control_chars(s: &str) -> bool {
     s.bytes().any(|b| b <= 0x1F || b == 0x7F)
 }
 
-/// RFC 5987 Section 3.2.1 / RFC 7616 Section 3.4: `username*` の ext-value をデコードする
+/// RFC 8187 Section 3.2.1 / RFC 7616 Section 3.4: `username*` の ext-value をデコードする
 ///
 /// ext-value = charset "'" [ language ] "'" value-chars
 /// 例: `UTF-8''%E3%83%A6%E3%83%BC%E3%82%B6` → `ユーザ`
@@ -992,10 +992,10 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
 
     let rest = &input[first_quote + 1..];
     let second_quote = rest.find('\'').ok_or(AuthError::InvalidUsernameExtValue)?;
-    // language タグは無視する (RFC 5987 §3.2.1: 受信側は無視してよい)
+    // language タグは無視する (RFC 8187 §3.2.1: 受信側は無視してよい)
     let value_chars = &rest[second_quote + 1..];
 
-    // percent-decode する。RFC 5987 §3.2.1 の attr-char 範囲外は reject。
+    // percent-decode する。RFC 8187 §3.2.1 の attr-char 範囲外は reject。
     let bytes = value_chars.as_bytes();
     let mut result = alloc::vec::Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -1024,7 +1024,7 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
     String::from_utf8(result).map_err(|_| AuthError::InvalidUsernameExtValue)
 }
 
-/// RFC 5987 Section 3.2.1: attr-char
+/// RFC 8187 Section 3.2.1: attr-char
 ///
 /// attr-char = ALPHA / DIGIT / "!" / "#" / "$" / "&" / "+" / "-" / "." /
 ///             "^" / "_" / "`" / "|" / "~"

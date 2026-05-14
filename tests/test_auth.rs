@@ -235,7 +235,7 @@ fn test_auth_qdtext_rejects_crlf() {
 // RFC 7616 Section 3.4: DigestAuth username* テスト
 // ========================================
 
-/// `username*` で UTF-8 ユーザー名 (RFC 5987 ext-value) を受理する
+/// `username*` で UTF-8 ユーザー名 (RFC 8187 ext-value) を受理する
 #[test]
 fn test_digest_auth_accepts_username_star_with_utf8() {
     // `ユーザ` を UTF-8 percent-encoded した値

@@ -63,7 +63,7 @@ pub(crate) fn is_valid_field_value(value: &str) -> bool {
 
 /// メソッド名が有効か確認
 ///
-/// RFC 9110 Section 9: method = token
+/// RFC 9110 Section 9.1: method = token
 /// token = 1*tchar (RFC 9110 Section 5.6.2)
 ///
 /// RTSP (RFC 7826) の GET_PARAMETER, SET_PARAMETER なども tchar で表現可能。
@@ -163,7 +163,7 @@ pub(crate) const RFC3986_EXCLUDED: &[u8] = b"\"#<>\\^`{|}";
 
 /// リクエストターゲット (URI) が有効か確認（受信側用）
 ///
-/// RFC 9112 Section 3: request-target には制御文字を含めない
+/// RFC 9112 Section 3.2: request-target には制御文字を含めない
 /// RFC 3986 Section 2: URI で許可されない文字を拒否
 ///
 /// 本関数は受信側の寛容な検証として実装している。

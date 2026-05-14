@@ -770,7 +770,7 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
 /// assert_eq!(resolved.as_str(), "http://example.com/a/d");
 /// ```
 pub fn resolve(base: &Uri, reference: &Uri) -> Result<Uri, UriError> {
-    // RFC 3986 Section 5.3
+    // RFC 3986 Section 5.2.2、recomposition per Section 5.3
     if reference.is_absolute() {
         // 参照が絶対 URI なら、そのまま返す (パスの正規化のみ)
         let path = remove_dot_segments(reference.path());

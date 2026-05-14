@@ -41,7 +41,7 @@ fuzz_target!(|input: FuzzUriResolve| {
     // 二段 resolve: 既に解決済みの URI を base にして再度 resolve
     let _ = resolve(&resolved, &reference_uri);
 
-    // normalize() のパニック安全性と冪等性 (RFC 3986 Section 6.2.2)
+    // normalize() のパニック安全性 (RFC 3986 Section 6 に基づく正規化)
     if let Ok(normalized) = normalize(&resolved)
         && let Ok(renormalized) = normalize(&normalized)
     {

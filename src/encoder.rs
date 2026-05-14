@@ -352,7 +352,7 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
             }
             Ok(())
         }
-        // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2)
+        // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2.1/4.2.2)
         (_, RequestTargetForm::Absolute) => {
             reject_http_without_authority_prefix(uri)?;
             Ok(())
