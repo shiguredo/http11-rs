@@ -33,7 +33,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
-use crate::validate::{is_qdtext_char, is_quoted_pair_char};
+use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -327,9 +327,9 @@ impl WwwAuthenticate {
 
 impl fmt::Display for WwwAuthenticate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Basic realm=\"{}\"", self.realm)?;
+        write!(f, "Basic realm=\"{}\"", escape_quotes(&self.realm))?;
         if let Some(charset) = &self.charset {
-            write!(f, ", charset=\"{}\"", charset)?;
+            write!(f, ", charset=\"{}\"", escape_quotes(charset))?;
         }
         Ok(())
     }
@@ -923,10 +923,6 @@ fn format_auth_params(params: &[(String, String)]) -> String {
 
 fn needs_quoting(value: &str) -> bool {
     value.is_empty() || value.bytes().any(|b| !is_token_char(b))
-}
-
-fn escape_quotes(value: &str) -> String {
-    value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 fn is_valid_token(value: &str) -> bool {

@@ -354,6 +354,49 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
     Err(QuotedStringError::Unterminated)
 }
 
+/// quoted-string の値文字列をエスケープ (送信側、RFC 9110 Section 5.6.4)
+///
+/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ```text
+/// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )
+/// ```
+///
+/// quoted-pair が必要な `"` と `\` のみエスケープし、それ以外はそのまま出力する。
+///
+/// CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は RFC 9110
+/// Section 5.5 (`refs/rfc9110.txt:1606-1615`) と Section 5.6.4 で quoted-string
+/// に含むことが禁止されている (ABNF の qdtext / quoted-pair 右辺に含まれない)。
+/// `parse_quoted_string` がこれらを reject するので、parse → encode の経路では
+/// 到達しない。一方で送信側 builder (`with_filename` / `with_parameter` 等) は
+/// 現時点で値検証を行わないため、ユーザーが直接これらの文字を渡せば escape まで
+/// 到達し得る。素通りすると HTTP Response Splitting (CWE-113) / log injection
+/// 経路を生むため、防御層として `debug_assert!` で開発時に検出する (release
+/// ビルドでは通過する)。
+///
+/// 本関数は RFC 9110 (本リリース時点) の規定に基づく。将来の改訂や erratum で
+/// ABNF が変更される可能性がある。
+///
+/// `debug_assert!` の判定に `is_quoted_pair_char` を使うのは「quoted-pair の
+/// 右辺集合」と「quoted-string 内に出現できる char 集合 (qdtext ∪ `"` ∪ `\`)」
+/// が共に `HTAB / SP / VCHAR / obs-text` で一致するため。`is_qdtext_char` だと
+/// `"` と `\` を弾いてしまい、escape 対象自体が debug_assert で発火してしまう。
+pub(crate) fn escape_quotes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        debug_assert!(
+            is_quoted_pair_char(c),
+            "CTL char (CR/LF/NUL/0x01-08/0x0B-0C/0x0E-1F/0x7F) must be rejected before reaching escape_quotes"
+        );
+        if c == '"' || c == '\\' {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
+}
+
 /// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
 ///
 /// OWS = *( SP / HTAB )
@@ -377,4 +420,40 @@ pub(crate) fn trim_ows(s: &str) -> &str {
         .unwrap_or(start);
     // start..end は全て ASCII 文字 (SP/HTAB) の境界なので UTF-8 として安全
     &s[start..end]
+}
+
+// validate モジュールは `pub(crate)` で外部 integration test (tests/) から参照不可。
+// このためインラインテストとして配置する。CLAUDE.md:93 の「単体テストは tests/test_<module>.rs」
+// 規約は public モジュールが対象であり、本モジュールは対象外。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_quotes_passes_through_safe_chars() {
+        assert_eq!(escape_quotes(""), "");
+        assert_eq!(escape_quotes("hello"), "hello");
+        assert_eq!(escape_quotes("日本語"), "日本語");
+        // obs-text のオクテット範囲 (U+0080..=U+00FF) と Unicode scalar 拡張解釈の範囲 (U+0100..=U+10FFFF)
+        assert_eq!(escape_quotes("\u{0080}\u{00FF}"), "\u{0080}\u{00FF}");
+        assert_eq!(escape_quotes("\u{0100}\u{10FFFF}"), "\u{0100}\u{10FFFF}");
+    }
+
+    #[test]
+    fn escape_quotes_escapes_dquote_and_backslash() {
+        assert_eq!(escape_quotes("a\"b"), "a\\\"b");
+        assert_eq!(escape_quotes("a\\b"), "a\\\\b");
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn escape_quotes_debug_assert_on_disallowed_ctl() {
+        // CR / LF / NUL / 他の CTL / DEL は parse 側で reject 済みの不変条件を
+        // 表明する debug_assert!。release ビルドでは通過する。
+        for c in ['\r', '\n', '\0', '\x01', '\x1F', '\x7F'] {
+            let s = alloc::format!("a{c}b");
+            let result = std::panic::catch_unwind(|| escape_quotes(&s));
+            assert!(result.is_err(), "{c:?} で debug_assert! が発火しなかった");
+        }
+    }
 }

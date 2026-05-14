@@ -31,7 +31,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{QuotedStringError, parse_quoted_string};
+use crate::validate::{QuotedStringError, escape_quotes, parse_quoted_string};
 
 /// Expect パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,10 +244,6 @@ fn is_token_char(b: u8) -> bool {
 fn needs_quoting(s: &str) -> bool {
     // 空文字列は引用符が必要
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-fn escape_quotes(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]

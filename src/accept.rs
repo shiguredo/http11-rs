@@ -20,7 +20,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{QuotedStringError, parse_quoted_string};
+use crate::validate::{QuotedStringError, escape_quotes, parse_quoted_string};
 
 /// Accept 系パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -654,10 +654,6 @@ fn needs_quoting(s: &str) -> bool {
     // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
     // のため必ず引用符が必要。
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-fn escape_quotes(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]
