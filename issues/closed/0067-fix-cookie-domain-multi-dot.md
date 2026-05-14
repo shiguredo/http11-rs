@@ -1,4 +1,4 @@
-# 0061 fix Set-Cookie の Domain 属性を RFC 1034 subdomain 構文準拠で厳格化する
+# 0067 fix Set-Cookie の Domain 属性を RFC 1034 subdomain 構文準拠で厳格化する
 
 Created: 2026-05-13
 Completed: 2026-05-13
@@ -25,14 +25,14 @@ Model: Opus 4.7
 
 crash artifact 2 件を regression seed として `fuzz/corpus/fuzz_cookie/` に保存する (`fuzz/.gitignore` により tracked しないが、local 保持で fuzz 走行時に自動的に拾われる):
 
-- `regression-0061` (846 バイト, leading dot 複数系)
-- `regression-0061-non-ldh` (101 バイト, non-LDH 系)
+- `regression-0067` (846 バイト, leading dot 複数系)
+- `regression-0067-non-ldh` (101 バイト, non-LDH 系)
 
 再現は以下:
 
 ```
-cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0061
-cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0061-non-ldh
+cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067
+cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067-non-ldh
 ```
 
 入力 hex は単体テスト `test_set_cookie_domain_multi_leading_dot_roundtrip_closed` / `test_set_cookie_domain_leading_dot_space_roundtrip_closed` の最小再現で永続化する。
@@ -158,8 +158,8 @@ fn is_valid_domain_value(s: &str) -> bool {
 
 ### 修正方針 2: regression seed を local 保存し、最小再現を単体テストに永続化する
 
-- `fuzz/corpus/fuzz_cookie/regression-0061` (846 バイト, leading dot 複数系) を local 配置
-- `fuzz/corpus/fuzz_cookie/regression-0061-non-ldh` (101 バイト, non-LDH 系) を local 配置
+- `fuzz/corpus/fuzz_cookie/regression-0067` (846 バイト, leading dot 複数系) を local 配置
+- `fuzz/corpus/fuzz_cookie/regression-0067-non-ldh` (101 バイト, non-LDH 系) を local 配置
 - 上記 2 件は `fuzz/.gitignore` 配下のため tracked しない。代わりに各々の最小再現を `tests/test_cookie.rs` の roundtrip テストに焼き付け永続化する
 
 ### 修正方針 3: 単体テストで意図を明文化する
@@ -186,8 +186,8 @@ fn is_valid_domain_value(s: &str) -> bool {
 
 ## 検証手順
 
-1. `cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0061` を実行し、修正前は crash 再現、修正後は完走することを確認する
-2. `cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0061-non-ldh` 同上
+1. `cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067` を実行し、修正前は crash 再現、修正後は完走することを確認する
+2. `cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067-non-ldh` 同上
 3. `make fmt && make clippy && make check && make test` をすべて通す
 4. `tests/test_cookie.rs` の新規テスト群が pass することを確認する
 5. 短時間の fuzz 実走 (`-max_total_time=60`) で他の crash が出ないことを確認する

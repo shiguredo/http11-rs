@@ -193,7 +193,7 @@ fn test_set_cookie_domain_normalization() {
 }
 
 // ========================================
-// Set-Cookie Domain 属性の RFC 1034 subdomain 構文準拠テスト (issue 0061)
+// Set-Cookie Domain 属性の RFC 1034 subdomain 構文準拠テスト (issue 0067)
 // ========================================
 
 #[test]
@@ -272,7 +272,7 @@ fn test_set_cookie_domain_hyphen_preserved() {
 
 #[test]
 fn test_set_cookie_domain_multi_leading_dot_roundtrip_closed() {
-    // issue 0061 の crash 入力の最小再現: Display -> 再 parse で domain が一致する
+    // issue 0067 の crash 入力の最小再現: Display -> 再 parse で domain が一致する
     // (旧実装では Some(".") → None で不一致だった)。
     let cookie = SetCookie::parse("3=; Domain=..", 2026).unwrap();
     let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
@@ -282,7 +282,7 @@ fn test_set_cookie_domain_multi_leading_dot_roundtrip_closed() {
 
 #[test]
 fn test_set_cookie_domain_leading_dot_space_roundtrip_closed() {
-    // issue 0061 の派生 crash 入力 (regression-0061-non-ldh) の最小再現:
+    // issue 0067 の派生 crash 入力 (regression-0067-non-ldh) の最小再現:
     // "Domain=. " (leading dot + space + ...) は旧実装で
     // strip 後に leading space が残ったまま store されていたが、
     // Display 出力を再 parse すると attr_value.trim() で space が削られ不一致になる。
