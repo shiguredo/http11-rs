@@ -27,6 +27,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{QuotedStringError, parse_quoted_string};
+
 /// Content-Type パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -53,6 +55,17 @@ impl fmt::Display for ContentTypeError {
 }
 
 impl core::error::Error for ContentTypeError {}
+
+impl From<QuotedStringError> for ContentTypeError {
+    fn from(e: QuotedStringError) -> Self {
+        match e {
+            QuotedStringError::InvalidQdtext | QuotedStringError::InvalidQuotedPair => {
+                ContentTypeError::InvalidParameter
+            }
+            QuotedStringError::Unterminated => ContentTypeError::UnterminatedQuote,
+        }
+    }
+}
 
 /// パース済み Content-Type
 ///
@@ -271,26 +284,9 @@ fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeErr
     Ok(parameters)
 }
 
-/// 引用符付き文字列をパース
-fn parse_quoted_string(input: &str) -> Result<(String, &str), ContentTypeError> {
-    let mut result = String::new();
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            result.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Ok((result, &input[i + 1..]));
-        } else {
-            result.push(c);
-        }
-    }
-
-    Err(ContentTypeError::UnterminatedQuote)
-}
+// 引用符付き文字列のパースは `validate::parse_quoted_string` に委譲する。
+// `From<QuotedStringError> for ContentTypeError` で文字種違反は `InvalidParameter`、
+// 終端引用符なしは `UnterminatedQuote` にマップする。
 
 /// トークン値をパース
 ///
@@ -328,7 +324,9 @@ fn is_token_char(b: u8) -> bool {
 
 /// 引用符で囲む必要があるかどうか
 fn needs_quoting(s: &str) -> bool {
-    s.bytes().any(|b| !is_token_char(b))
+    // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
+    // のため必ず引用符が必要。
+    s.is_empty() || s.bytes().any(|b| !is_token_char(b))
 }
 
 /// 引用符をエスケープ

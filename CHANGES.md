@@ -17,6 +17,22 @@
   - 旧実装は RFC 6265 Section 5.2.3 の strip 規則 (先頭 dot を 1 つ削除) を素直に実装し strip 後の値の validity を検証していなかったため、`Domain=..` が `Some(".")`、`Domain=. foo` が `Some(" foo")` (leading space) で保存され、`Display` 出力を再 parse すると別値に縮退して `parse -> to_string -> parse` の roundtrip が破綻していた (fuzz_cookie の 2 系統の crash)
   - RFC 6265 Section 4.1.1 の `domain-value = <subdomain>` (RFC 1034 Section 3.5 + RFC 1123 Section 2.1) と RFC 6265bis Section 6.3 (IDN は punycode = LDH 必須) に従い、strip 後の値が LDH + dot のみで構成されていることを検証する。RFC 6265 の strip 規則自体 (1 つだけ strip) は変更しない
   - @voluntas
+- [CHANGE] `AcceptError` / `ExpectError` に `UnterminatedQuote` バリアントを追加する
+  - 旧実装は閉じ DQUOTE が無い quoted-string をそれぞれ `InvalidParameter` / `InvalidValue` に潰していたが、`ContentTypeError::UnterminatedQuote` と粒度を揃えて構造エラーと文字種エラーを区別する
+  - `From<QuotedStringError>` impl 経由で 3 モジュール共通の `validate::parse_quoted_string` から各エラー型へマップする
+  - `#[non_exhaustive]` のため利用側の `match` で warning が出る場合は新バリアントを追加してハンドリングすること
+  - @voluntas
+- [CHANGE] `Accept` / `Content-Type` の `Display` で値が空文字列のパラメータを `name=""` (引用符付き) で出力する
+  - 旧実装は `needs_quoting("")` が `false` を返したため `name=` (引用符なし) を出力し、再 parse すると `is_valid_token("")` が `false` で reject される Display ラウンドトリップ破綻があった
+  - RFC 9110 Section 5.6.2 の `token = 1*tchar` (空文字 token は構文上不可) に従い、空値は必ず引用符付き (`name=""`) で出力する
+  - @voluntas
+- [FIX] `Accept` / `Content-Type` / `Expect` の quoted-string パースに qdtext / quoted-pair 文字種検証を追加する
+  - 旧実装は RFC 9110 Section 5.5 の CR/LF/NUL MUST 要件に違反し、任意の制御文字 (CR / LF / NUL / 他の CTL) を無条件に受理していた
+  - 受理された制御文字が上位アプリで再エンコードされると HTTP Response Splitting (CWE-113) / log injection の経路となる
+  - 修正後は CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を含む quoted-string は qdtext / quoted-pair のどちらの右辺でも reject される (これまで通っていた入力が `InvalidParameter` / `InvalidValue` を返すようになる)
+  - 共通実装を `src/validate.rs` の `parse_quoted_string` (`pub(crate)`) に集約し、3 モジュールから `From<QuotedStringError>` 経由で呼び出す
+  - obs-text (U+0080 以上) は opaque data として引き続き受理する (RFC 9110 Section 5.5)
+  - @voluntas
 - [FIX] `Authorization` / `Content-Disposition` の quoted-string パースで obs-text を含む UTF-8 値の Latin-1 mojibake を修正する
   - 旧実装は入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push していたため、UTF-8 マルチバイトシーケンスが `U+0080..=U+00FF` にマップされ Display 出力で別バイトに展開、ラウンドトリップで mojibake していた
   - char 単位走査に書き換え、入力 `&str` の UTF-8 不変条件を保つ

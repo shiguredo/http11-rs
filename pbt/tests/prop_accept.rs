@@ -54,8 +54,9 @@ fn accept_qvalue_string(value: u16) -> String {
     format!("0.{}", frac)
 }
 
-// 言語タグ生成は pbt クレートを使用
+// 共通 strategy は pbt クレートから import
 use pbt::language_tag as accept_language_tag;
+use pbt::qdtext_value;
 
 // ========================================
 // QValue のテスト
@@ -343,5 +344,37 @@ proptest! {
         prop_assert_eq!(item.media_type(), reparsed_item.media_type());
         prop_assert_eq!(item.subtype(), reparsed_item.subtype());
         prop_assert_eq!(item.qvalue().value(), reparsed_item.qvalue().value());
+    }
+}
+
+// ========================================
+// obs-text 含む quoted-string の PBT (issue 0061)
+// ========================================
+
+// qdtext (obs-text を含む) を quoted parameter として往復できる
+proptest! {
+    #[test]
+    fn prop_accept_quoted_obs_text_roundtrip(value in qdtext_value(0..=16)) {
+        let header = format!("text/plain; ext=\"{}\"", value);
+        let accept = Accept::parse(&header).unwrap();
+        let item = &accept.items()[0];
+        prop_assert_eq!(item.parameters().len(), 1);
+        prop_assert_eq!(&item.parameters()[0].0, "ext");
+        prop_assert_eq!(&item.parameters()[0].1, &value);
+
+        // Display 出力は obs-text / 制御文字以外をエスケープしないため、
+        // value がそのまま埋め込まれる。直接 assert で実体化する。
+        let displayed = accept.to_string();
+        prop_assert!(
+            displayed.contains(&value)
+                || (value.is_empty() && displayed.contains("ext=\"\"")),
+            "Display 出力 {:?} に value {:?} が含まれない",
+            displayed,
+            value,
+        );
+        let reparsed = Accept::parse(&displayed).unwrap();
+        let reparsed_item = &reparsed.items()[0];
+        prop_assert_eq!(reparsed_item.parameters().len(), 1);
+        prop_assert_eq!(&reparsed_item.parameters()[0].1, &value);
     }
 }

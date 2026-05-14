@@ -16,6 +16,7 @@ fn test_accept_error_display() {
         (AcceptError::InvalidMediaRange, "invalid media range"),
         (AcceptError::InvalidToken, "invalid token"),
         (AcceptError::InvalidParameter, "invalid parameter"),
+        (AcceptError::UnterminatedQuote, "unterminated quoted-string"),
         (AcceptError::InvalidQValue, "invalid qvalue"),
         (AcceptError::InvalidLanguageTag, "invalid language tag"),
     ];
@@ -227,4 +228,90 @@ fn test_accept_language_tag_variants() {
     // 不正なタグ (空のサブタグ)
     assert!(AcceptLanguage::parse("en-").is_err());
     assert!(AcceptLanguage::parse("-US").is_err());
+}
+
+mod helpers;
+
+// ========================================
+// quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
+// issue 0061
+// ========================================
+
+// CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
+#[test]
+fn test_accept_quoted_string_rejects_ctl() {
+    for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
+        let c = char::from_u32(code).unwrap();
+        // qdtext 経路
+        assert_eq!(
+            Accept::parse(&format!("text/html; charset=\"{c}\"")),
+            Err(AcceptError::InvalidParameter),
+            "qdtext で CTL U+{code:04X} が reject されない",
+        );
+        // quoted-pair 経路
+        assert_eq!(
+            Accept::parse(&format!("text/html; charset=\"\\{c}\"")),
+            Err(AcceptError::InvalidParameter),
+            "quoted-pair で CTL U+{code:04X} が reject されない",
+        );
+    }
+
+    // 中間に CTL を置いた `"\rabc"` 形式でも文字種エラーになる
+    // (上流の trim() が `parse_quoted_string` への到達を消さないことを確認)
+    assert_eq!(
+        Accept::parse("text/html; charset=\"\rabc\""),
+        Err(AcceptError::InvalidParameter),
+    );
+}
+
+// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
+// (RFC 9110 Section 5.5)
+#[test]
+fn test_accept_quoted_string_accepts_obs_text() {
+    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
+        // qdtext 経路
+        let input = format!("text/html; ext=\"{c}\"");
+        let accept = Accept::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        let params = accept.items()[0].parameters();
+        assert_eq!(params, &[("ext".to_string(), c.to_string())]);
+
+        // quoted-pair 経路
+        let input = format!("text/html; ext=\"\\{c}\"");
+        let accept = Accept::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        let params = accept.items()[0].parameters();
+        assert_eq!(params, &[("ext".to_string(), c.to_string())]);
+    }
+}
+
+// 空 quoted-string `""` が受理され、Display ラウンドトリップも破綻しない
+// (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
+#[test]
+fn test_accept_empty_quoted_string() {
+    let accept = Accept::parse("text/html; ext=\"\"").unwrap();
+    let params = accept.items()[0].parameters();
+    assert_eq!(params, &[("ext".to_string(), "".to_string())]);
+
+    let displayed = accept.to_string();
+    assert!(displayed.contains("ext=\"\""), "Display 出力 {displayed:?}");
+    let reparsed = Accept::parse(&displayed).unwrap();
+    assert_eq!(accept, reparsed);
+}
+
+// 終端引用符が無いと UnterminatedQuote が返る
+#[test]
+fn test_accept_unterminated_quote() {
+    assert_eq!(
+        Accept::parse("text/html; ext=\"abc"),
+        Err(AcceptError::UnterminatedQuote),
+    );
 }
