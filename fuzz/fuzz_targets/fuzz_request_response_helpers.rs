@@ -126,7 +126,9 @@ fn expected_keep_alive(version: &str, headers: &[(String, String)]) -> bool {
     if has_keep_alive {
         return true;
     }
-    version.ends_with("/1.1")
+    // HttpHead::is_keep_alive は HTTP/1.1 完全一致のみ persistent をデフォルトとする
+    // (`RTSP/1.1` 等で誤判定を避けるため厳格化されている、src/decoder/head.rs)
+    version == "HTTP/1.1"
 }
 
 fn exercise_request(input: FuzzRequest) {

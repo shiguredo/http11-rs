@@ -49,6 +49,10 @@
   - 対象: `fuzz_content_encoding` / `fuzz_content_language` / `fuzz_content_location` / `fuzz_expect` / `fuzz_host` / `fuzz_trailer` / `fuzz_upgrade`
   - `cargo clippy -- -D warnings` の `collapsible_if` 警告を解消する
   - @voluntas
+- [FIX] `fuzz_request_response_helpers` の `expected_keep_alive` を `HttpHead::is_keep_alive` の HTTP/1.1 完全一致仕様に追従させる
+  - 旧実装は `version.ends_with("/1.1")` のままで、本体が issue 0040 (`HttpHead::is_keep_alive を HTTP/1.1 完全一致に変更する`) で `version == "HTTP/1.1"` に厳格化された変更に追従していなかった
+  - `version: "~~~~/1.1"` のような `/1.1` で終わるが `HTTP/1.1` でない入力で参照実装と本体が乖離し fuzz が panic していた (artifact: `crash-d81ecc4ea00756faf3dddfadf972107ee9d9501b`)
+  - @voluntas
 
 ## 2026.4.0
 
