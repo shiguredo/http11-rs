@@ -52,6 +52,11 @@
 
 ### misc
 
+- [UPDATE] `src/<module>.rs` 内のインラインテストを `tests/test_<module>.rs` に外部化する (CLAUDE.md:93 準拠)
+  - 対象: compression / content_language / etag / trailer / upgrade / vary
+  - compression は `CompressionStatus` の variant 構築テストを `NoCompression::compress` / `finish` 経由のヘルパー関数 (`make_continue` / `make_output_full` / `make_complete`) に書き換えて完全に外部化する
+  - `test_compression_error_display` は `BufferTooSmall` を含む 5 variant 全ての Display を検証する
+  - @voluntas
 - [UPDATE] `is_token_char` / `is_valid_token` の 12 重複定義を `validate.rs` に一元化する
   - accept / auth / content_disposition / content_encoding / content_type / cookie / digest_fields / expect / range / trailer / upgrade / vary の重複を削除し `use crate::validate::is_valid_token;` (および必要に応じて `is_token_char`) に置換する
   - cookie は `is_valid_cookie_name` 経由で `is_token_char` を利用するため `is_token_char` のみを import する (`is_valid_cookie_name` の `is_valid_token` 置換は責務独立性のため別 issue)

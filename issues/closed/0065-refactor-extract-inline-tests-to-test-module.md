@@ -1,7 +1,9 @@
 # 0065 refactor 内部テストを tests/test_<module>.rs に外部化する
 
 Created: 2026-05-14
+Completed: 2026-05-14
 Model: deepseek-v4-pro
+Branch: feature/fix-extract-inline-tests
 
 ## 概要
 
@@ -95,8 +97,17 @@ cargo test --workspace  # 全テスト pass 確認
 
 ## 受け入れ基準
 
-- [ ] 6 モジュールの `#[cfg(test)] mod tests` から公開 API テストが `tests/test_<module>.rs` に移動されている
-- [ ] 各テストファイルで `use shiguredo_http11::<module>::...` の import が正しく設定されている
-- [ ] `cargo test --workspace` が pass
-- [ ] 移動前と同一のテスト数が pass している
-- [ ] `CHANGES.md` にエントリが追記されている
+- [x] 6 モジュールの `#[cfg(test)] mod tests` から公開 API テストが `tests/test_<module>.rs` に移動されている
+- [x] 各テストファイルで `use shiguredo_http11::<module>::...` の import が正しく設定されている
+- [x] `cargo test --workspace` が pass
+- [x] 移動前と同一のテスト数が pass している (67 / 67)
+- [x] `CHANGES.md` にエントリが追記されている
+
+## 解決方法
+
+- 6 モジュール (compression / content_language / etag / trailer / upgrade / vary) から `#[cfg(test)] mod tests` ブロックを完全に削除した (合計 -776 行)
+- 同名の `tests/test_<module>.rs` を新規作成し、`use super::*;` を `use shiguredo_http11::<module>::...` に書き換えた
+- compression.rs の 5 テストは `CompressionStatus` の variant を直接構築していた経路を、`NoCompression::compress` / `finish` 経由でヘルパー関数 (`make_continue` / `make_output_full` / `make_complete`) を使って取得する形に書き換えた
+- issue 本文は `BufferTooSmall { required, available }` を `#[non_exhaustive]` enum の struct variant のため外部からは構築不可と記載していたが、実装上は構築可能と判明したため、`test_compression_error_display` で 5 variant 全てを検証する完全網羅形にした
+- 全 6 ファイルのファイルヘッダー doc コメントを既存 tests/ 配下の多数派表記である「ユニットテスト」に揃えた
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリを追記した
