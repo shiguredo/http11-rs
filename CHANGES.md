@@ -52,6 +52,12 @@
 
 ### misc
 
+- [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (CLAUDE.md:97 準拠)
+  - `tests/test_decoder.rs` (1907 行) → `tests/test_decoder/` (main / head / body / streaming / direct_buffer / decode_body)
+  - `pbt/tests/prop_decoder/response.rs` (1317 行) → `pbt/tests/prop_decoder/response/` (status_line / body_decoding / limits / streaming)
+  - `tests/test_decode_body.rs` を `tests/test_decoder/decode_body.rs` として統合し元ファイルを削除する
+  - HTTP/1.0 + Transfer-Encoding の重複テスト 1 件を統合・除去する
+  - @voluntas
 - [UPDATE] `src/<module>.rs` 内のインラインテストを `tests/test_<module>.rs` に外部化する (CLAUDE.md:93 準拠)
   - 対象: compression / content_language / etag / trailer / upgrade / vary
   - compression は `CompressionStatus` の variant 構築テストを `NoCompression::compress` / `finish` 経由のヘルパー関数 (`make_continue` / `make_output_full` / `make_complete`) に書き換えて完全に外部化する
