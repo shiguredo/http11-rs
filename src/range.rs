@@ -28,6 +28,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::is_valid_token;
+
 /// Range パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -483,24 +485,6 @@ impl fmt::Display for AcceptRanges {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.units.join(", "))
     }
-}
-
-/// 有効なトークン文字列かどうか (RFC 9110 Section 5.6.2)
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-/// トークン文字 (RFC 9110 Section 5.6.2)
-///
-/// token = 1*tchar
-/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 #[cfg(test)]

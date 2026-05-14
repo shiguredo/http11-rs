@@ -27,7 +27,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{QuotedStringError, escape_quotes, parse_quoted_string};
+use crate::validate::{
+    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+};
 
 /// Content-Type パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,22 +306,6 @@ fn parse_token_value(input: &str) -> Result<(String, &str), ContentTypeError> {
     }
 
     Ok((token.to_string(), &input[end..]))
-}
-
-/// 有効なトークン文字かどうか
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-/// RFC 9110 Section 5.6.2 のトークン文字 (tchar)
-///
-/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-fn is_token_char(b: u8) -> bool {
-    matches!(b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 /// 引用符で囲む必要があるかどうか

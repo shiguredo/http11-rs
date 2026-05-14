@@ -52,6 +52,10 @@
 
 ### misc
 
+- [UPDATE] `is_token_char` / `is_valid_token` の 12 重複定義を `validate.rs` に一元化する
+  - accept / auth / content_disposition / content_encoding / content_type / cookie / digest_fields / expect / range / trailer / upgrade / vary の重複を削除し `use crate::validate::is_valid_token;` (および必要に応じて `is_token_char`) に置換する
+  - cookie は `is_valid_cookie_name` 経由で `is_token_char` を利用するため `is_token_char` のみを import する (`is_valid_cookie_name` の `is_valid_token` 置換は責務独立性のため別 issue)
+  - @voluntas
 - [UPDATE] quoted-string 用の escape 処理を `validate::escape_quotes` に統合し parse 側と対称な不変条件チェックを追加する
   - 旧実装は `auth` / `accept` / `content_type` / `expect` / `content_disposition` の 5 モジュールで同一ロジックを重複定義し、CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を素通りさせていた
   - `src/validate.rs` に `pub(crate) fn escape_quotes` を新設し、parse 側で reject される文字 (`is_quoted_pair_char` の補集合) が escape 側に到達した場合に `debug_assert!` で検出する防御層を追加する (release ビルドでは通過)
