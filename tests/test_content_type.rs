@@ -178,3 +178,77 @@ fn test_content_type_empty_quoted_value() {
     let ct = ContentType::parse("text/plain; name=\"\"").unwrap();
     assert_eq!(ct.parameter("name"), Some(""));
 }
+
+mod helpers;
+
+// ========================================
+// quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
+// issue 0061
+// ========================================
+
+// CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
+#[test]
+fn test_content_type_quoted_string_rejects_ctl() {
+    for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
+        let c = char::from_u32(code).unwrap();
+        // qdtext 経路
+        assert_eq!(
+            ContentType::parse(&format!("text/html; charset=\"{c}\"")),
+            Err(ContentTypeError::InvalidParameter),
+            "qdtext で CTL U+{code:04X} が reject されない",
+        );
+        // quoted-pair 経路
+        assert_eq!(
+            ContentType::parse(&format!("text/html; charset=\"\\{c}\"")),
+            Err(ContentTypeError::InvalidParameter),
+            "quoted-pair で CTL U+{code:04X} が reject されない",
+        );
+    }
+
+    // 中間に CTL を置いた `"\rabc"` 形式でも文字種エラーが先に検出される
+    // (`parse_parameters` は値を `trim()` するため末尾だけの `\r\n` は届かない)
+    assert_eq!(
+        ContentType::parse("text/html; charset=\"\rabc\""),
+        Err(ContentTypeError::InvalidParameter),
+    );
+}
+
+// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
+// (RFC 9110 Section 5.5)
+#[test]
+fn test_content_type_quoted_string_accepts_obs_text() {
+    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
+        // qdtext 経路
+        let input = format!("text/html; ext=\"{c}\"");
+        let ct = ContentType::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        assert_eq!(ct.parameter("ext"), Some(c.to_string()).as_deref());
+
+        // quoted-pair 経路
+        let input = format!("text/html; ext=\"\\{c}\"");
+        let ct = ContentType::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        assert_eq!(ct.parameter("ext"), Some(c.to_string()).as_deref());
+    }
+}
+
+// 空 quoted-string `""` の Display ラウンドトリップが破綻しない
+// (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
+#[test]
+fn test_content_type_empty_quoted_value_roundtrip() {
+    let ct = ContentType::parse("text/plain; ext=\"\"").unwrap();
+    assert_eq!(ct.parameter("ext"), Some(""));
+
+    let displayed = ct.to_string();
+    assert!(displayed.contains("ext=\"\""), "Display 出力 {displayed:?}");
+    let reparsed = ContentType::parse(&displayed).unwrap();
+    assert_eq!(reparsed.parameter("ext"), Some(""));
+}

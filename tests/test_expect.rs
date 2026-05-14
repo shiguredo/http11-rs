@@ -13,6 +13,7 @@ fn test_expect_error_display() {
         (ExpectError::InvalidFormat, "invalid Expect header format"),
         (ExpectError::InvalidToken, "invalid Expect token"),
         (ExpectError::InvalidValue, "invalid Expect value"),
+        (ExpectError::UnterminatedQuote, "unterminated quoted-string"),
     ];
 
     for (error, expected) in errors {
@@ -141,10 +142,10 @@ fn test_expect_parse_errors() {
         Err(ExpectError::InvalidValue)
     ));
 
-    // 閉じ引用符がない
+    // 閉じ引用符がない (issue 0061: UnterminatedQuote に分離)
     assert!(matches!(
         Expect::parse("token=\"unclosed"),
-        Err(ExpectError::InvalidValue)
+        Err(ExpectError::UnterminatedQuote)
     ));
 
     // 不正な値 (引用符付きでもトークンでもない)
@@ -235,4 +236,80 @@ fn test_expect_quoted_with_special_chars() {
     let input = "token=\"value\twith\ttabs\"";
     let expect = Expect::parse(input).unwrap();
     assert_eq!(expect.items()[0].value(), Some("value\twith\ttabs"));
+}
+
+mod helpers;
+
+// ========================================
+// quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
+// issue 0061
+// ========================================
+
+// CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
+#[test]
+fn test_expect_quoted_string_rejects_ctl() {
+    for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
+        let c = char::from_u32(code).unwrap();
+        // qdtext 経路
+        assert_eq!(
+            Expect::parse(&format!("token=\"{c}\"")),
+            Err(ExpectError::InvalidValue),
+            "qdtext で CTL U+{code:04X} が reject されない",
+        );
+        // quoted-pair 経路
+        assert_eq!(
+            Expect::parse(&format!("token=\"\\{c}\"")),
+            Err(ExpectError::InvalidValue),
+            "quoted-pair で CTL U+{code:04X} が reject されない",
+        );
+    }
+
+    // 中間に CTL を置いた `"\rabc"` 形式でも文字種エラーになる
+    assert_eq!(
+        Expect::parse("token=\"\rabc\""),
+        Err(ExpectError::InvalidValue),
+    );
+}
+
+// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
+// (RFC 9110 Section 5.5)
+#[test]
+fn test_expect_quoted_string_accepts_obs_text() {
+    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
+        // qdtext 経路
+        let input = format!("token=\"{c}\"");
+        let expect = Expect::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        assert_eq!(expect.items()[0].value(), Some(c.to_string()).as_deref());
+
+        // quoted-pair 経路
+        let input = format!("token=\"\\{c}\"");
+        let expect = Expect::parse(&input).unwrap_or_else(|e| {
+            panic!(
+                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
+                c as u32
+            )
+        });
+        assert_eq!(expect.items()[0].value(), Some(c.to_string()).as_deref());
+    }
+}
+
+// 空 quoted-string `""` が受理される (リグレッション防止)
+#[test]
+fn test_expect_empty_quoted_string() {
+    let expect = Expect::parse("token=\"\"").unwrap();
+    assert_eq!(expect.items()[0].value(), Some(""));
+}
+
+// 終端引用符が無いと UnterminatedQuote が返る
+#[test]
+fn test_expect_unterminated_quote() {
+    assert_eq!(
+        Expect::parse("token=\"abc"),
+        Err(ExpectError::UnterminatedQuote),
+    );
 }

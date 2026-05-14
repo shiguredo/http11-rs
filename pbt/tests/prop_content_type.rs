@@ -1,5 +1,6 @@
 //! Content-Type のプロパティテスト
 
+use pbt::qdtext_value;
 use proptest::prelude::*;
 use shiguredo_http11::content_type::ContentType;
 
@@ -31,6 +32,8 @@ fn value_needing_quotes() -> impl Strategy<Value = String> {
         "[a-z]{1,4}=[a-z]{1,4}".prop_map(|s| s),
     ]
 }
+
+// qdtext_value は pbt クレートで共通化済み。
 
 // ========================================
 // 基本的なパースのテスト
@@ -445,5 +448,32 @@ proptest! {
         prop_assert_eq!(&params[0].1, &value1);
         prop_assert_eq!(&params[1].0, "param2");
         prop_assert_eq!(&params[1].1, &value2);
+    }
+}
+
+// ========================================
+// obs-text 含む quoted-string の PBT (issue 0061)
+// ========================================
+
+// qdtext (obs-text を含む) を quoted parameter として往復できる
+proptest! {
+    #[test]
+    fn prop_content_type_quoted_obs_text_roundtrip(value in qdtext_value(0..=16)) {
+        let ct_str = format!("text/plain; ext=\"{}\"", value);
+        let ct = ContentType::parse(&ct_str).unwrap();
+        prop_assert_eq!(ct.parameter("ext"), Some(value.as_str()));
+
+        // Display 出力は obs-text / 制御文字以外をエスケープしないため、
+        // value がそのまま埋め込まれる。直接 assert で実体化する。
+        let displayed = ct.to_string();
+        prop_assert!(
+            displayed.contains(&value)
+                || (value.is_empty() && displayed.contains("ext=\"\"")),
+            "Display 出力 {:?} に value {:?} が含まれない",
+            displayed,
+            value,
+        );
+        let reparsed = ContentType::parse(&displayed).unwrap();
+        prop_assert_eq!(reparsed.parameter("ext"), Some(value.as_str()));
     }
 }

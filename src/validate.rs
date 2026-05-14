@@ -1,5 +1,7 @@
 //! RFC 9110 / RFC 3986 基本文字集合の共通検証（デコード・エンコード双方で使用）
 
+use alloc::string::String;
+
 /// トークン文字か確認 (RFC 9110 Section 5.6.2)
 ///
 /// token = 1*tchar
@@ -284,6 +286,72 @@ pub(crate) fn is_qdtext_char(c: char) -> bool {
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
 pub(crate) fn is_quoted_pair_char(c: char) -> bool {
     matches!(c, '\t' | ' '..='~') || c as u32 >= 0x80
+}
+
+/// quoted-string パースのエラー種別 (RFC 9110 Section 5.6.4)
+///
+/// `parse_quoted_string` から返り、各ヘッダーモジュールが自身のエラー型に
+/// マッピングする。文字種違反と構造違反を区別することで、`Content-Type` の
+/// `UnterminatedQuote` のような既存の細粒度エラーを保てる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum QuotedStringError {
+    /// qdtext 経路で `is_qdtext_char` が false を返した
+    InvalidQdtext,
+    /// quoted-pair 経路で `is_quoted_pair_char` が false を返した
+    InvalidQuotedPair,
+    /// 閉じ DQUOTE が見つからずに入力を使い切った
+    /// (バックスラッシュエスケープ未完了で入力が尽きた場合も含む)
+    Unterminated,
+}
+
+/// 引用符付き文字列をパース (RFC 9110 Section 5.6.4)
+///
+/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ```text
+/// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )
+/// ```
+///
+/// 入力は開く DQUOTE を消費した残り。閉じ DQUOTE までを `qdtext / quoted-pair`
+/// として走査し、検証済み中身と閉じ DQUOTE 以降の残り `&str` を返す。
+///
+/// CR / LF / NUL は RFC 9110 Section 5.5 (`refs/rfc9110.txt:1606-1615`) で MUST reject。
+/// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は同節で MAY retain (safe context 限定)
+/// だが、本ヘルパーを使うヘッダ群は HTTP インターミディアリが解釈・書換する
+/// 標準ヘッダ (Accept / Content-Type / Expect 等) であり safe context に該当しないため
+/// 保守的に reject する。素通りさせると上位アプリの再エンコード経路で
+/// response splitting (CWE-113) / log injection に至る経路を生む。
+///
+/// obs-text (RFC 上は %x80-FF) は `is_qdtext_char` / `is_quoted_pair_char` の
+/// Unicode scalar 拡張解釈 (`U+0080..=U+10FFFF`、surrogate 除く) で受理する。
+///
+/// 本関数は RFC 9110 (本リリース時点) の規定に基づく。将来の改訂や erratum で
+/// ABNF が変更される可能性がある。
+pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedStringError> {
+    let mut result = String::new();
+    let mut escaped = false;
+
+    for (i, c) in input.char_indices() {
+        if escaped {
+            if !is_quoted_pair_char(c) {
+                return Err(QuotedStringError::InvalidQuotedPair);
+            }
+            result.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            return Ok((result, &input[i + 1..]));
+        } else {
+            if !is_qdtext_char(c) {
+                return Err(QuotedStringError::InvalidQdtext);
+            }
+            result.push(c);
+        }
+    }
+
+    Err(QuotedStringError::Unterminated)
 }
 
 /// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)

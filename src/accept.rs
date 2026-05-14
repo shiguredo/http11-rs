@@ -20,6 +20,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{QuotedStringError, parse_quoted_string};
+
 /// Accept 系パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -32,8 +34,10 @@ pub enum AcceptError {
     InvalidMediaRange,
     /// 不正なトークン
     InvalidToken,
-    /// 不正なパラメータ
+    /// 不正なパラメータ (qdtext / quoted-pair の文字種違反を含む)
     InvalidParameter,
+    /// quoted-string の閉じ DQUOTE が見つからない (RFC 9110 Section 5.6.4)
+    UnterminatedQuote,
     /// 不正な q 値
     InvalidQValue,
     /// 不正な言語タグ
@@ -48,6 +52,7 @@ impl fmt::Display for AcceptError {
             AcceptError::InvalidMediaRange => write!(f, "invalid media range"),
             AcceptError::InvalidToken => write!(f, "invalid token"),
             AcceptError::InvalidParameter => write!(f, "invalid parameter"),
+            AcceptError::UnterminatedQuote => write!(f, "unterminated quoted-string"),
             AcceptError::InvalidQValue => write!(f, "invalid qvalue"),
             AcceptError::InvalidLanguageTag => write!(f, "invalid language tag"),
         }
@@ -55,6 +60,17 @@ impl fmt::Display for AcceptError {
 }
 
 impl core::error::Error for AcceptError {}
+
+impl From<QuotedStringError> for AcceptError {
+    fn from(e: QuotedStringError) -> Self {
+        match e {
+            QuotedStringError::InvalidQdtext | QuotedStringError::InvalidQuotedPair => {
+                AcceptError::InvalidParameter
+            }
+            QuotedStringError::Unterminated => AcceptError::UnterminatedQuote,
+        }
+    }
+}
 
 /// q 値 (0.000 - 1.000)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -545,33 +561,16 @@ fn parse_param_value(input: &str) -> Result<String, AcceptError> {
             return Err(AcceptError::InvalidParameter);
         }
         Ok(value)
+    } else if !is_valid_token(input) {
+        Err(AcceptError::InvalidToken)
     } else {
-        if !is_valid_token(input) {
-            return Err(AcceptError::InvalidToken);
-        }
         Ok(input.to_string())
     }
 }
 
-fn parse_quoted_string(input: &str) -> Result<(String, &str), AcceptError> {
-    let mut result = String::new();
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            result.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Ok((result, &input[i + 1..]));
-        } else {
-            result.push(c);
-        }
-    }
-
-    Err(AcceptError::InvalidParameter)
-}
+// 引用符付き文字列のパースは `validate::parse_quoted_string` に委譲する。
+// `From<QuotedStringError> for AcceptError` で文字種違反は `InvalidParameter`、
+// 終端引用符なしは `UnterminatedQuote` にマップする。
 
 fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
     let mut parts = Vec::new();
@@ -652,7 +651,9 @@ fn is_token_char(b: u8) -> bool {
 }
 
 fn needs_quoting(s: &str) -> bool {
-    s.bytes().any(|b| !is_token_char(b))
+    // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
+    // のため必ず引用符が必要。
+    s.is_empty() || s.bytes().any(|b| !is_token_char(b))
 }
 
 fn escape_quotes(s: &str) -> String {
