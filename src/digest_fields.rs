@@ -22,6 +22,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
+use crate::validate::is_valid_token;
 
 /// Digest Fields パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -349,18 +350,6 @@ fn parse_preference(input: &str) -> Result<u8, DigestFieldsError> {
         return Err(DigestFieldsError::InvalidPreference);
     }
     Ok(value)
-}
-
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 #[cfg(test)]

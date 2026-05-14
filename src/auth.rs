@@ -33,7 +33,9 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
-use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char};
+use crate::validate::{
+    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_token_char, is_valid_token,
+};
 
 /// Basic 認証エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -923,18 +925,6 @@ fn format_auth_params(params: &[(String, String)]) -> String {
 
 fn needs_quoting(value: &str) -> bool {
     value.is_empty() || value.bytes().any(|b| !is_token_char(b))
-}
-
-fn is_valid_token(value: &str) -> bool {
-    !value.is_empty() && value.bytes().all(is_token_char)
-}
-
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 /// RFC 9110 Section 11.2: token68 = 1*( ALPHA / DIGIT / "-" / "." / "_" / "~" / "+" / "/" ) *"="

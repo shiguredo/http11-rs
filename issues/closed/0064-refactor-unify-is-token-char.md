@@ -1,7 +1,9 @@
 # 0064 refactor is_token_char / is_valid_token の重複定義を validate.rs に一元化する
 
 Created: 2026-05-14
+Completed: 2026-05-14
 Model: deepseek-v4-pro
+Branch: feature/fix-unify-is-token-char
 
 ## 概要
 
@@ -67,9 +69,23 @@ cargo test --workspace
 
 ## 受け入れ基準
 
-- [ ] 12 モジュールの重複 `is_token_char` / `is_valid_token` 定義が削除されている
-- [ ] 各モジュールに `use crate::validate::{is_token_char, is_valid_token};` が追加されている
-- [ ] `cargo check --workspace` が pass
-- [ ] `cargo clippy --workspace -- -D warnings` が pass (未使用 import 警告なし)
-- [ ] `cargo test --workspace` が pass (全テスト pass)
-- [ ] `CHANGES.md` にエントリが追記されている
+- [x] 12 モジュールの重複 `is_token_char` / `is_valid_token` 定義が削除されている
+- [x] 各モジュールに `use crate::validate::is_valid_token;` (または `is_token_char` も含む) が追加されている
+- [x] `cargo check --workspace` が pass
+- [x] `cargo clippy --workspace -- -D warnings` が pass (未使用 import 警告なし)
+- [x] `cargo test --workspace` が pass (全テスト pass)
+- [x] `CHANGES.md` にエントリが追記されている
+
+## 解決方法
+
+- 12 モジュール (accept / auth / content_disposition / content_encoding / content_type / cookie / digest_fields / expect / range / trailer / upgrade / vary) から `fn is_valid_token` / `fn is_token_char` の重複定義を削除した
+- 各モジュールから直接呼び出している関数のみを import した。issue 本文は `use crate::validate::{is_token_char, is_valid_token};` で統一していたが、`is_token_char` を直接呼ばないモジュール (content_disposition / content_encoding / digest_fields / range / trailer / upgrade / vary) では未使用 import 警告が出るため `is_valid_token` のみに絞った
+  - accept / auth / content_type / expect: `is_token_char` と `is_valid_token` 両方を import
+  - cookie: `is_token_char` のみを import (`is_valid_cookie_name` 経由で利用、`is_valid_token` 置換は issue スコープ外)
+  - content_disposition / content_encoding / digest_fields / range / trailer / upgrade / vary: `is_valid_token` のみを import
+- content_type.rs:311 にあった旧関数の孤立ドックコメント (`/// 有効なトークン文字かどうか`) を削除した (レビューで指摘あり)
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリを追記した
+
+## ブランチ名について
+
+issue 本文は `feature/add-unify-is-token-char` を指示していたが、本リファクタリングはバグ修正でも機能追加でもなく「規約違反の重複定義整理」に該当するため、ユーザー判断により `feature/fix-unify-is-token-char` で進めた。CHANGES.md 種別は `[UPDATE]` (後方互換あり) で issue 指示と一致。

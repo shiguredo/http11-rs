@@ -24,6 +24,7 @@
 //! ```
 
 use crate::date::{DateError, HttpDate};
+use crate::validate::is_token_char;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -522,14 +523,6 @@ fn is_valid_cookie_value(s: &str) -> bool {
 fn is_valid_domain_value(s: &str) -> bool {
     s.bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
-}
-
-/// トークン文字 (RFC 9110 Section 5.6.2)
-fn is_token_char(b: u8) -> bool {
-    matches!(b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 /// Cookie 値に使える文字

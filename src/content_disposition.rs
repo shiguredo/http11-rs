@@ -23,7 +23,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char};
+use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -394,22 +394,6 @@ fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
         }
         Ok(value.to_string())
     }
-}
-
-/// 有効なトークンかどうか
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-/// RFC 9110 Section 5.6.2 のトークン文字 (tchar)
-///
-/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-fn is_token_char(b: u8) -> bool {
-    matches!(b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
 }
 
 /// 引用符付き文字列をパース (RFC 9110 Section 5.6.4 qdtext / quoted-pair)
