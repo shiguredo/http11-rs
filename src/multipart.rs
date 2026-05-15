@@ -472,24 +472,29 @@ impl MultipartParser {
                             // パートのボディは所有権移転で 1 回だけコピーする
                             let body = self.buffer[body_start..body_end].to_vec();
 
-                            // 終了境界かどうか確認
-                            let after_next = body_end + self.inner_delimiter.len();
-                            if self.buffer.len() >= after_next + 2 {
-                                if &self.buffer[after_next..after_next + 2] == b"--" {
+                            // 終了境界または次パート区切りを判定。
+                            // 内部デリミタ直後に transport-padding (SP/HTAB) をスキップする。
+                            let after_delim = body_end + self.inner_delimiter.len();
+                            let mut padded = after_delim;
+                            while padded < self.buffer.len()
+                                && matches!(self.buffer[padded], b' ' | b'\t')
+                            {
+                                padded += 1;
+                            }
+                            if self.buffer.len() >= padded + 2 {
+                                if &self.buffer[padded..padded + 2] == b"--" {
                                     self.finished = true;
                                     self.state = ParserState::Finished;
-                                } else if &self.buffer[after_next..after_next + 2] == b"\r\n" {
-                                    self.pos = after_next + 2;
+                                } else if &self.buffer[padded..padded + 2] == b"\r\n" {
+                                    self.pos = padded + 2;
                                 } else {
-                                    self.pos = after_next;
+                                    // RFC 2046 Section 5.1.1 違反
+                                    return Err(MultipartError::InvalidPart);
                                 }
                             } else {
-                                // 2 バイト不足。次回 feed 後に判定できるよう
-                                // `AfterInnerDelimiter` に遷移して `pos` を保持する。
-                                // 旧実装はここで `state` を `InPart` のまま残し、
-                                // 次回 `next_part()` でヘッダー区切り `\r\n\r\n` を
-                                // 永久に探し続ける経路があった。
-                                self.pos = after_next;
+                                // transport-padding の途中で buffer が尽きた。
+                                // 次回 feed 後に判定できるよう AfterInnerDelimiter に遷移する。
+                                self.pos = padded;
                                 self.state = ParserState::AfterInnerDelimiter;
                             }
                             // 次のパート検索は新しい開始位置から行うので scan_offset を pos に揃える
@@ -527,18 +532,26 @@ impl MultipartParser {
                 }
                 ParserState::AfterInnerDelimiter => {
                     // inner_delimiter (`\r\n--<boundary>`) 直後の 2 バイトを判定する。
-                    // `pos` は `inner_delimiter` の直後 (close-delimiter `--` または
-                    // 次パート区切り `\r\n` の先頭) を指す。
-                    if self.buffer.len() < self.pos + 2 {
+                    // `pos` は `inner_delimiter` の直後または transport-padding の
+                    // 途中を指す。まず transport-padding をスキップする。
+                    let mut padded = self.pos;
+                    while padded < self.buffer.len() && matches!(self.buffer[padded], b' ' | b'\t')
+                    {
+                        padded += 1;
+                    }
+                    if self.buffer.len() < padded + 2 {
+                        // transport-padding の途中で buffer が尽きた。
+                        // pos を進めて次回 feed 後に続きを判定する。
+                        self.pos = padded;
                         return Err(MultipartError::Incomplete);
                     }
-                    let head = &self.buffer[self.pos..self.pos + 2];
+                    let head = &self.buffer[padded..padded + 2];
                     if head == b"--" {
                         self.finished = true;
                         self.state = ParserState::Finished;
                         return Ok(None);
                     } else if head == b"\r\n" {
-                        self.pos += 2;
+                        self.pos = padded + 2;
                         self.boundary_scan_offset = self.pos;
                         self.state = ParserState::InPart;
                         continue;
