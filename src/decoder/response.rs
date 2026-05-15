@@ -56,8 +56,6 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     headers: Vec<(String, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
-    /// ステータスコード（ヘッダーデコード後に保持）
-    status_code: u16,
     /// decode() 用: デコード済みヘッダー
     decoded_head: Option<ResponseHead>,
     /// decode() 用: ボディ種別
@@ -88,7 +86,6 @@ impl ResponseDecoder<NoCompression> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits: DecoderLimits::default(),
-            status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
@@ -107,7 +104,6 @@ impl ResponseDecoder<NoCompression> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits,
-            status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
@@ -128,7 +124,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits: DecoderLimits::default(),
-            status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
@@ -147,7 +142,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
             headers: Vec::new(),
             body_decoder: BodyDecoder::new(),
             limits,
-            status_code: 0,
             decoded_head: None,
             decoded_body_kind: None,
             decoded_body: Vec::new(),
@@ -298,7 +292,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.start_line = None;
         self.headers.clear();
         self.body_decoder.reset();
-        self.status_code = 0;
         self.decoded_head = None;
         self.decoded_body_kind = None;
         self.decoded_body.clear();
@@ -524,7 +517,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 ))
                             })?;
 
-                            self.status_code = status_code;
                             let body_kind = self.determine_body_kind(status_code)?;
 
                             // ヘッダー完了、ボディフェーズに遷移
@@ -607,7 +599,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     self.headers.clear();
                     self.body_decoder.reset();
                     self.decompressor.reset();
-                    self.status_code = 0;
                     // request_method は元のリクエストごとに設定し直す前提で
                     // ここでクリアする。クリアしないと Keep-Alive 接続で前回の
                     // CONNECT などが残り、次のレスポンスを誤ってトンネル判定
@@ -858,7 +849,6 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body.clear();
         self.body_decoder.reset();
         self.decompressor.reset();
-        self.status_code = 0;
         // request_method は元のリクエストごとに設定し直す前提でクリアする。
         // クリアしないと Keep-Alive 接続で前回の CONNECT などが残り、次のレス
         // ポンスを誤ってトンネル判定してしまう状態漏れバグになる。
