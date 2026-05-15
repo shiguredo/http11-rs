@@ -1,8 +1,9 @@
 # detect_scheme と detect_request_target_form の encoder/decoder 間重複を統合する
 
 - Priority: High
+- Branch: feature/refactor-unify-detect-scheme-target-form
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

@@ -1,8 +1,9 @@
 # parse_content_length_value と digest_fields の空カンマ区切り要素を RFC 9110 Section 5.6.1.2 に従いスキップする
 
 - Priority: Medium
+- Branch: feature/fix-empty-comma-list-element-rfc9110
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 
@@ -40,3 +41,4 @@ if part.is_empty() {
 - `Content-Length: 100, ` (末尾カンマ) が受理され 100 と解釈されること
 - `Content-Length: , ` (空要素のみ) はエラーになること
 - `Digest` 系ヘッダーでも同様の挙動になること
+- CHANGES.md の ## develop に [FIX] エントリが追加されていること

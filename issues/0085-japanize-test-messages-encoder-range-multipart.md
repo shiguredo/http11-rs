@@ -1,8 +1,9 @@
 # テストメッセージを日本語に統一する (encoder.rs / range.rs / multipart.rs)
 
 - Priority: Low
+- Branch: feature/japanize-test-messages-encoder-range-multipart
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

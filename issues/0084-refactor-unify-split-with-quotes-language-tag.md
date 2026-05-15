@@ -1,8 +1,9 @@
 # split_with_quotes と is_valid_language_tag の重複を validate.rs に統合する
 
 - Priority: Low
+- Branch: feature/refactor-unify-split-with-quotes-language-tag
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

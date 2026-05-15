@@ -1,8 +1,9 @@
 # Cookie の RFC 6265bis 節番号誤りを修正し、is_valid_domain_value の DNS ラベル制約を文書化する
 
 - Priority: Low
+- Branch: feature/fix-cookie-rfc6265bis-section-ref-and-domain-doc
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 
@@ -31,3 +32,4 @@ fn is_valid_domain_value(value: &str) -> bool {
 
 - 節番号が `Section 5.1.2` に修正されていること
 - DNS ラベル制約の未検証がコメントで明示されていること
+- CHANGES.md の ## develop に [FIX] エントリが追加されていること

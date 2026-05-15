@@ -2,7 +2,8 @@
 
 - Priority: High
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
+- Branch: feature/fix-encode-headers-content-length-validation
 
 ## 目的
 
@@ -49,4 +50,5 @@ debug_assert!({
 
 - `encode_request_headers()` が `Content-Length: abc` や `Content-Length: 999` + `body: b"hello"` でエラーを返すこと
 - `encode_response_headers()` の Content-Length 検証が release ビルドでも有効であること
-- `cargo test` で全テストが通過すること
+- `cargo test` と `cargo test --release` で全テストが通過すること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること

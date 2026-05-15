@@ -1,8 +1,9 @@
 # tests/test_encoder.rs をディレクトリモジュールに分割する
 
 - Priority: Medium
+- Branch: feature/split-test-encoder-into-directory-module
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

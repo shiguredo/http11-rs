@@ -1,8 +1,9 @@
 # ヘッダーパース系モジュールの str::trim() を trim_ows() に統一する
 
 - Priority: Medium
+- Branch: feature/refactor-unify-str-trim-to-trim-ows
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

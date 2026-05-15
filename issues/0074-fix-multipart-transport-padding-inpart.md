@@ -2,7 +2,8 @@
 
 - Priority: High
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
+- Branch: feature/fix-multipart-transport-padding
 
 ## 目的
 
@@ -44,3 +45,4 @@ if self.buffer[after_delim] == b'\r' && self.buffer[after_delim + 1] == b'\n' {
 - `\r\n--boundary \t--\r\n` (内部デリミタ + transport-padding + close-delimiter) が正しく処理されること
 - transport-padding の途中で feed が切れた場合も正常に継続できること
 - `cargo test` と `cargo test -p pbt` で全テストが通過すること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること

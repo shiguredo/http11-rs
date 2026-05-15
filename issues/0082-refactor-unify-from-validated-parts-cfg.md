@@ -1,8 +1,9 @@
 # from_validated_parts の #[cfg(debug_assertions)] 複製を単一実装に統合する
 
 - Priority: Medium
+- Branch: feature/refactor-unify-from-validated-parts-cfg
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

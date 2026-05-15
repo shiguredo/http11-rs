@@ -1,8 +1,9 @@
 # SetCookie の Max-Age 負値を 0 にクランプし、Path 属性の空値を default-path 扱いにする
 
 - Priority: Medium
+- Branch: feature/fix-setcookie-max-age-negative-and-path-empty
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 
@@ -38,3 +39,4 @@ set_cookie.path = Some(attr_value.to_string());
 - `Max-Age=-3600` が `max_age = Some(0)` になること
 - `Path=` (空値) が `path = None` になること
 - `cargo test` で全テストが通過すること
+- CHANGES.md の ## develop に [FIX] エントリが追加されていること

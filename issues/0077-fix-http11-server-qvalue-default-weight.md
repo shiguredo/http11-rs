@@ -1,8 +1,9 @@
 # examples/http11_server の Accept-Encoding qvalue デフォルト値を RFC 9110 Section 12.4.2 に準拠させる
 
 - Priority: High
+- Branch: feature/fix-http11-server-qvalue-default-weight
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 
@@ -31,3 +32,4 @@ let q: f32 = part[pos + 3..].trim().parse().unwrap_or(1.0);
 
 - `Accept-Encoding: zstd;q=badvalue` に対して zstd が選択されないこと
 - `Accept-Encoding: gzip;q=0.8, zstd;q=INVALID, br;q=0.5` で zstd が選択されず gzip が選択されること
+- CHANGES.md の ## develop に [FIX] エントリが追加されていること

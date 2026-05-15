@@ -1,8 +1,9 @@
 # PBT の header_value strategy に obs-text を追加し、strategy 重複を pbt/src/lib.rs に集約する
 
 - Priority: High
+- Branch: feature/enhance-pbt-strategy-obs-text-and-consolidation
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

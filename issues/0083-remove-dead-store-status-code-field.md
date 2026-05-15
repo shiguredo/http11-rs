@@ -1,8 +1,9 @@
 # ResponseDecoder::status_code フィールドのデッドストアを削除する
 
 - Priority: Low
+- Branch: feature/remove-dead-store-status-code-field
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
 
 ## 目的
 

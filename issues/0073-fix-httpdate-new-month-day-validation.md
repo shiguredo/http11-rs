@@ -2,7 +2,8 @@
 
 - Priority: High
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
+- Branch: feature/fix-httpdate-month-day-validation
 
 ## 目的
 
@@ -38,4 +39,6 @@ pub fn new(year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8) -> R
 
 - `HttpDate::new(1994, 6, 31, 8, 49, 37)` が `Err(DateError::InvalidDay)` を返すこと
 - うるう年 (`2000`) の 2 月 29 日が有効、平年 (`2001`) の 2 月 29 日が拒否されること
+- 単体テスト (`tests/test_date.rs`) に月別日数の境界値テスト (2/29 うるう年/平年、4/31 拒否、6/31 拒否等) が追加されていること
 - `cargo test` で全テストが通過すること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること

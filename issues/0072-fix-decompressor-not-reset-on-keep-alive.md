@@ -2,7 +2,8 @@
 
 - Priority: High
 - Created: 2026-05-15
-- Model: deepseek-v4-pro
+- Model: deepseek v4-pro
+- Branch: feature/fix-decompressor-keep-alive-reset
 
 ## 目的
 
@@ -16,39 +17,22 @@
 
 ## 現状
 
-**`decode()` 完了時のリセット** (4 箇所):
+修正対象は 4 箇所。いずれも既存のリセットブロックに `self.decompressor.reset()` が欠落している:
 
-`src/decoder/request.rs:757-761`:
-```rust
-self.phase = DecodePhase::StartLine;
-self.decoded_body_kind = None;
-self.decoded_body.clear();
-self.body_decoder.reset();
-// self.decompressor がリセットされない
-```
-
-`src/decoder/response.rs:854-863`:
-```rust
-self.phase = DecodePhase::StartLine;
-self.decoded_body_kind = None;
-self.decoded_body.clear();
-self.body_decoder.reset();
-self.status_code = 0;
-self.request_method = None;
-// self.decompressor がリセットされない
-```
-
-**`decode_headers()` の Complete→StartLine 遷移** (2 箇所):
-
-`src/decoder/request.rs:547-553` と `src/decoder/response.rs:603-615` で同様に `self.decompressor.reset()` が欠落。
+1. `src/decoder/request.rs:757-761` — `decode()` 完了時リセット
+2. `src/decoder/response.rs:854-863` — `decode()` 完了時リセット
+3. `src/decoder/request.rs:547-553` — `decode_headers()` Complete→StartLine 遷移
+4. `src/decoder/response.rs:603-615` — `decode_headers()` Complete→StartLine 遷移
 
 ## 設計方針
 
-1. 上記 4 箇所すべてに `self.decompressor.reset()` を追加する
-2. 追加後も `reset()` が呼ばれるタイミングで他にクリアすべき状態漏れがないか確認する
+上記 4 箇所すべてに `self.decompressor.reset()` を追加する。既存の `self.body_decoder.reset()` の直後に追加することでリセット順序を統一する。
+
+`Decompressor::reset()` は戻り値を持たない infallible なメソッドであるため、追加によるエラー経路の変化はない。
 
 ## 完了条件
 
-- `decode()` 完了後、`decode_headers()` の Complete→StartLine 遷移後ともに `self.decompressor` がリセットされていること
+- 上記 4 箇所すべてに `self.decompressor.reset()` が追加されていること
 - `NoCompression` とカスタム `Decompressor` 実装の両方で Keep-Alive 接続時に状態漏れが発生しないこと
 - `cargo test` で全テストが通過すること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること
