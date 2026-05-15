@@ -3,7 +3,7 @@ use crate::decoder::HttpHead;
 use crate::error::EncodeError;
 use crate::host::Host;
 use crate::request::Request;
-use crate::request_target::RequestTargetForm;
+use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::response::Response;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
@@ -276,33 +276,6 @@ fn validate_encoder_authority_form(uri: &str) -> Result<(), EncodeError> {
         })?;
     }
     Ok(())
-}
-
-/// スキームを検出する (RFC 3986 Section 3.1)
-///
-/// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-/// 先頭が有効なスキーム + ":" であればスキームの長さを返す
-fn detect_scheme(target: &str) -> Option<usize> {
-    let bytes = target.as_bytes();
-    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
-        return None;
-    }
-    let colon_pos = bytes.iter().position(|&b| b == b':')?;
-    if colon_pos == 0 {
-        return None;
-    }
-    for &b in &bytes[1..colon_pos] {
-        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
-            return None;
-        }
-    }
-    // 意図的な RFC 非準拠: path-empty (scheme ":" のみ) を拒否する。
-    // RFC 3986 の ABNF では path-empty は合法だが、HTTP request-target として
-    // path-empty が単独で出現する実用的なケースはないため、不正な入力として扱う。
-    if colon_pos + 1 >= bytes.len() {
-        return None;
-    }
-    Some(colon_pos)
 }
 
 /// RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証

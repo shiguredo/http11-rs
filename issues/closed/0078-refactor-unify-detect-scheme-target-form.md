@@ -2,7 +2,15 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/refactor-unify-detect-scheme
+
+## 解決方法
+
+- `detect_scheme` 関数を `src/request_target.rs` に `pub(crate)` で移動し、encoder / decoder 両方から共有するようにした
+- `src/encoder.rs` と `src/decoder/body.rs` の重複定義を削除した
+- `detect_request_target_form` は encoder と decoder で検証ロジックとエラー型が異なるため、共通の検出部分のみ `detect_scheme` として抽出した
 
 ## 目的
 

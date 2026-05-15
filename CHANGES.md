@@ -77,6 +77,9 @@
 
 ### misc
 
+- [UPDATE] `detect_scheme` を `request_target.rs` に一元化し encoder/decoder 間の重複を除去する
+  - `src/encoder.rs` と `src/decoder/body.rs` の重複定義を削除し `crate::request_target::detect_scheme` に集約する
+  - @voluntas
 - [FIX] `examples/http11_client` のボディ出力で UTF-8 文字境界パニックを修正する
   - `&text[..1000]` を `&text[..text.floor_char_boundary(1000)]` に変更し安全な truncate にする
   - @voluntas
