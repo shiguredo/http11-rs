@@ -6,7 +6,109 @@
 //! - CONNECT メソッドへの 2xx レスポンスでのトンネル化と非トンネル化の判定
 //! - CONNECT リクエスト受信時のトンネルモード遷移と reset の挙動
 
+use shiguredo_http11::compression::{
+    CompressionError, CompressionStatus, Decompressor, NoCompression,
+};
 use shiguredo_http11::{BodyKind, HttpHead, RequestDecoder, ResponseDecoder};
+
+// ========================================
+// Keep-Alive 接続での Decompressor リセット検証
+// ========================================
+
+use std::cell::Cell;
+use std::rc::Rc;
+
+/// テスト用 stub: NoCompression をラップし reset() 呼び出し回数をカウントする
+struct CountingDecompressor {
+    inner: NoCompression,
+    reset_count: Rc<Cell<usize>>,
+}
+
+impl Decompressor for CountingDecompressor {
+    fn decompress(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+    ) -> Result<CompressionStatus, CompressionError> {
+        self.inner.decompress(input, output)
+    }
+
+    fn reset(&mut self) {
+        self.inner.reset();
+        let count = self.reset_count.get();
+        self.reset_count.set(count + 1);
+    }
+}
+
+/// 2 メッセージ連続 decode で RequestDecoder 側の decompressor.reset() が呼ばれること
+#[test]
+fn test_decompressor_reset_request_pipelined() {
+    let reset_count = Rc::new(Cell::new(0));
+    let decomp = CountingDecompressor {
+        inner: NoCompression::new(),
+        reset_count: reset_count.clone(),
+    };
+    let mut decoder = RequestDecoder::with_decompressor(decomp);
+
+    // 1 件目のリクエスト (Content-Length: 0)
+    let req1 = "GET /1 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(req1.as_bytes()).unwrap();
+    let request = decoder.decode().unwrap().unwrap();
+    assert_eq!(request.method(), "GET");
+
+    assert_eq!(
+        reset_count.get(),
+        1,
+        "1 件目のメッセージ完了後に reset() が呼ばれる"
+    );
+
+    // 2 件目のリクエスト (Content-Length: 0)
+    let req2 = "GET /2 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(req2.as_bytes()).unwrap();
+    let request = decoder.decode().unwrap().unwrap();
+    assert_eq!(request.method(), "GET");
+
+    assert_eq!(
+        reset_count.get(),
+        2,
+        "2 件目のメッセージ完了後に reset() が呼ばれる"
+    );
+}
+
+/// 2 メッセージ連続 decode で ResponseDecoder 側の decompressor.reset() が呼ばれること
+#[test]
+fn test_decompressor_reset_response_pipelined() {
+    let reset_count = Rc::new(Cell::new(0));
+    let decomp = CountingDecompressor {
+        inner: NoCompression::new(),
+        reset_count: reset_count.clone(),
+    };
+    let mut decoder = ResponseDecoder::with_decompressor(decomp);
+
+    // 1 件目のレスポンス (Content-Length: 0)
+    let res1 = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(res1.as_bytes()).unwrap();
+    let response = decoder.decode().unwrap().unwrap();
+    assert_eq!(response.status_code(), 200);
+
+    assert_eq!(
+        reset_count.get(),
+        1,
+        "1 件目のメッセージ完了後に reset() が呼ばれる"
+    );
+
+    // 2 件目のレスポンス (Content-Length: 0)
+    let res2 = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n";
+    decoder.feed(res2.as_bytes()).unwrap();
+    let response = decoder.decode().unwrap().unwrap();
+    assert_eq!(response.status_code(), 201);
+
+    assert_eq!(
+        reset_count.get(),
+        2,
+        "2 件目のメッセージ完了後に reset() が呼ばれる"
+    );
+}
 
 // ========================================
 // CONNECT トンネルモードのテスト (RFC 9110 Section 9.3.6 / RFC 9112 Section 6.3)

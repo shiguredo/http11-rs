@@ -2,7 +2,9 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-decompressor-reset
 
 ## 目的
 
@@ -49,3 +51,18 @@
 - `cargo fuzz run fuzz_pipelined` が Decompressor 注入経路でも crash を報告しないこと
 - `cargo test` で全テストが通過すること
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること（文言例: `Keep-Alive 接続で RequestDecoder / ResponseDecoder の Decompressor をリセットし状態漏れを防ぐ`）
+
+## 解決方法
+
+### デコーダー本体
+
+- `src/decoder/request.rs` の `decode()` 完了時と `decode_headers()` Complete→StartLine 遷移時の 2 箇所に `self.decompressor.reset()` を追加した
+- `src/decoder/response.rs` の `decode()` 完了時と `decode_headers()` Complete→StartLine 遷移時の 2 箇所に `self.decompressor.reset()` を追加した
+
+### 単体テスト
+
+- `tests/test_decoder/streaming.rs` に `CountingDecompressor` (内部状態カウンタ付き Decompressor stub) を導入し、2 メッセージ連続 decode でメッセージ間の `reset()` が呼ばれることを検証するテスト 2 件を追加した
+
+### fuzz
+
+- `fuzz/fuzz_targets/fuzz_pipelined.rs` に `CountingFuzzDecompressor` を注入する Decompressor 経路を追加し、連続 decode の panic 安全性を検証する
