@@ -17,6 +17,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::is_valid_language_tag;
+
 /// Content-Language パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -84,33 +86,4 @@ impl fmt::Display for ContentLanguage {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.tags.join(", "))
     }
-}
-
-fn is_valid_language_tag(tag: &str) -> bool {
-    if tag.is_empty() {
-        return false;
-    }
-
-    let mut parts = tag.split('-');
-
-    // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ (数字不可)
-    if let Some(primary) = parts.next() {
-        if primary.is_empty()
-            || primary.len() > 8
-            || !primary.chars().all(|c| c.is_ascii_alphabetic())
-        {
-            return false;
-        }
-    } else {
-        return false;
-    }
-
-    // 後続サブタグは ALPHA / DIGIT
-    for part in parts {
-        if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
-    }
-
-    true
 }

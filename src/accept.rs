@@ -21,7 +21,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::validate::{
-    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string, trim_ows,
+    QuotedStringError, escape_quotes, is_token_char, is_valid_language_tag, is_valid_token,
+    parse_quoted_string, split_with_quotes, trim_ows,
 };
 
 /// Accept 系パースエラー
@@ -574,34 +575,6 @@ fn parse_param_value(input: &str) -> Result<String, AcceptError> {
 // `From<QuotedStringError> for AcceptError` で文字種違反は `InvalidParameter`、
 // 終端引用符なしは `UnterminatedQuote` にマップする。
 
-fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut in_quote = false;
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' && in_quote {
-            escaped = true;
-            continue;
-        }
-        if c == '"' {
-            in_quote = !in_quote;
-            continue;
-        }
-        if c == delimiter && !in_quote {
-            parts.push(input[start..i].to_string());
-            start = i + c.len_utf8();
-        }
-    }
-    parts.push(input[start..].to_string());
-    parts
-}
-
 fn validate_token_or_star(token: &str) -> bool {
     if token == "*" {
         return true;
@@ -614,30 +587,6 @@ fn validate_language_range(token: &str) -> bool {
         return true;
     }
     is_valid_language_tag(token)
-}
-
-fn is_valid_language_tag(tag: &str) -> bool {
-    if tag.is_empty() {
-        return false;
-    }
-    let mut parts = tag.split('-');
-
-    // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ (数字不可)
-    let Some(primary) = parts.next() else {
-        return false;
-    };
-    if primary.is_empty() || primary.len() > 8 || !primary.chars().all(|c| c.is_ascii_alphabetic())
-    {
-        return false;
-    }
-
-    // 後続サブタグは ALPHA / DIGIT
-    for part in parts {
-        if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
-    }
-    true
 }
 
 fn needs_quoting(s: &str) -> bool {

@@ -1,6 +1,7 @@
 //! RFC 9110 / RFC 3986 基本文字集合の共通検証（デコード・エンコード双方で使用）
 
-use alloc::string::String;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 /// トークン文字か確認 (RFC 9110 Section 5.6.2)
 ///
@@ -414,6 +415,66 @@ pub(crate) fn trim_ows(s: &str) -> &str {
         .unwrap_or(start);
     // start..end は全て ASCII 文字 (SP/HTAB) の境界なので UTF-8 として安全
     &s[start..end]
+}
+
+/// クォートを考慮したカンマ区切り分割
+///
+/// delimiter (通常は `,`) で文字列を分割するが、引用符 (`"`) 内の
+/// delimiter は区切り文字として扱わない。escaped quote (`\"`) も
+/// 正しく処理する。
+pub(crate) fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quote = false;
+    let mut escaped = false;
+
+    for (i, c) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' && in_quote {
+            escaped = true;
+            continue;
+        }
+        if c == '"' {
+            in_quote = !in_quote;
+            continue;
+        }
+        if c == delimiter && !in_quote {
+            parts.push(input[start..i].to_string());
+            start = i + c.len_utf8();
+        }
+    }
+    parts.push(input[start..].to_string());
+    parts
+}
+
+/// BCP 47 / RFC 5646 言語タグの簡易検証
+///
+/// language-tag = 1*8ALPHA *( "-" 1*8alphanum )
+pub(crate) fn is_valid_language_tag(tag: &str) -> bool {
+    if tag.is_empty() {
+        return false;
+    }
+    let mut parts = tag.split('-');
+
+    // 先頭サブタグは ALPHA のみ (数字不可)
+    let Some(primary) = parts.next() else {
+        return false;
+    };
+    if primary.is_empty() || primary.len() > 8 || !primary.chars().all(|c| c.is_ascii_alphabetic())
+    {
+        return false;
+    }
+
+    // 後続サブタグは ALPHA / DIGIT
+    for part in parts {
+        if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return false;
+        }
+    }
+    true
 }
 
 // validate モジュールは `pub(crate)` で外部 integration test (tests/) から参照不可。

@@ -33,6 +33,7 @@ use core::fmt;
 
 use crate::validate::{
     QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+    split_with_quotes,
 };
 
 /// Expect パースエラー
@@ -202,34 +203,6 @@ fn parse_value(input: &str) -> Result<String, ExpectError> {
 // 引用符付き文字列のパースは `validate::parse_quoted_string` に委譲する。
 // `From<QuotedStringError> for ExpectError` で文字種違反は `InvalidValue`、
 // 終端引用符なしは `UnterminatedQuote` にマップする。
-
-fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut in_quote = false;
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' && in_quote {
-            escaped = true;
-            continue;
-        }
-        if c == '"' {
-            in_quote = !in_quote;
-            continue;
-        }
-        if c == delimiter && !in_quote {
-            parts.push(input[start..i].to_string());
-            start = i + c.len_utf8();
-        }
-    }
-    parts.push(input[start..].to_string());
-    parts
-}
 
 fn needs_quoting(s: &str) -> bool {
     // 空文字列は引用符が必要
