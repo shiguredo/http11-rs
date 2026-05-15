@@ -413,3 +413,23 @@ fn test_cookie_parse_only_semicolons() {
     // セミコロンのみ（Cookie が 0 個になるケース）
     assert!(matches!(Cookie::parse(";;;"), Err(CookieError::Empty)));
 }
+
+// ========================================
+// Max-Age 負値のクランプ (RFC 6265 Section 5.2.2)
+// ========================================
+
+#[test]
+fn test_set_cookie_max_age_negative_clamped_to_zero() {
+    let cookie = SetCookie::parse("name=value; Max-Age=-3600", 2026).unwrap();
+    assert_eq!(cookie.max_age(), Some(0));
+}
+
+// ========================================
+// Path 空値の取り扱い (RFC 6265 Section 5.2.4)
+// ========================================
+
+#[test]
+fn test_set_cookie_path_empty_is_none() {
+    let cookie = SetCookie::parse("name=value; Path=", 2026).unwrap();
+    assert!(cookie.path().is_none());
+}

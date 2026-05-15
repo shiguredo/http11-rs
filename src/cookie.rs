@@ -277,7 +277,8 @@ impl SetCookie {
                             && bytes[1..].iter().all(|b| b.is_ascii_digit())
                             && let Ok(age) = attr_value.parse::<i64>()
                         {
-                            set_cookie.max_age = Some(age);
+                            // RFC 6265 Section 5.2.2: 負の Max-Age は 0 として扱う
+                            set_cookie.max_age = Some(if age < 0 { 0 } else { age });
                         }
                     }
                     "domain" => {
@@ -301,7 +302,9 @@ impl SetCookie {
                             set_cookie.domain = Some(d.to_ascii_lowercase());
                         }
                     }
-                    "path" => {
+                    "path" if !attr_value.is_empty() && attr_value.starts_with('/') => {
+                        // RFC 6265 Section 5.2.4: 空の attribute-value や
+                        // / 始まりでない値は default-path を使うべき (None を維持する)
                         set_cookie.path = Some(attr_value.to_string());
                     }
                     "samesite" => {
