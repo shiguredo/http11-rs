@@ -14,10 +14,10 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{
-    BodyKind, BodyProgress, CompressionError, CompressionStatus, Decompressor, NoCompression,
-    RequestDecoder, ResponseDecoder,
+use shiguredo_http11::compression::{
+    CompressionError, CompressionStatus, Decompressor, NoCompression,
 };
+use shiguredo_http11::{BodyKind, BodyProgress, RequestDecoder, ResponseDecoder};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzPipelined {
@@ -166,7 +166,25 @@ fuzz_target!(|input: FuzzPipelined| {
             if let Ok(Some((_, body_kind))) = request_decoder.decode_headers() {
                 match body_kind {
                     BodyKind::ContentLength(_) | BodyKind::Chunked => {
-                        drain_body_request(&mut request_decoder);
+                        // Decompressor 注入経路ではヘルパー関数の型制約により
+                        // drain_body_request が使えないため、インラインで drain する
+                        loop {
+                            if let Some(data) = request_decoder.peek_body() {
+                                let len = data.len();
+                                match request_decoder.consume_body(len) {
+                                    Ok(BodyProgress::Complete { .. }) => break,
+                                    Ok(BodyProgress::Advanced | BodyProgress::NeedData) => {
+                                        continue;
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                            match request_decoder.progress() {
+                                Ok(BodyProgress::Complete { .. }) => break,
+                                Ok(BodyProgress::Advanced) => continue,
+                                Ok(BodyProgress::NeedData) | Err(_) => break,
+                            }
+                        }
                     }
                     BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
                     _ => {}
