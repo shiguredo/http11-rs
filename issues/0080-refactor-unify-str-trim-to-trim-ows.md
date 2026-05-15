@@ -1,7 +1,6 @@
 # ヘッダーパース系モジュールの str::trim() を trim_ows() に統一する
 
 - Priority: Medium
-- Branch: feature/refactor-unify-str-trim-to-trim-ows
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
@@ -28,10 +27,15 @@ encoder/decoder 側で HTTP Request Smuggling (CWE-444) 対策として `trim_ow
 
 ## 設計方針
 
-全箇所の `str::trim()` を `trim_ows()` に置換する。ただし Host パースの先頭に OWS を許容するか否かは RFC 9110 Section 7.2 を要確認。
+全箇所の `str::trim()` を `trim_ows()` に置換する。Host ヘッダーも対象に含める。RFC 9110 Section 7.2 の `Host = uri-host [ ":" port ]` の ABNF は OWS を含まないが、受信側の寛容性として OWS 除去は許容範囲であり、`trim_ows()` により ASCII OWS (SP/HTAB) のみを除去することで解釈の一貫性を保つ。
+
+## テスト
+
+置換対象の各モジュールの既存テストが引き続き通過することを確認する。新たなテスト追加は不要（trim の挙動変更は各モジュールのテストでカバーされる）。
 
 ## 完了条件
 
 - src/ 以下の全 .rs ファイルで `str::trim()` が `trim_ows()` に置換されていること
 - ただし `is_valid_field_value` 等の `trim()` が意図的に Unicode 空白を含む箇所は対象外
 - `cargo test` で全テストが通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

@@ -1,7 +1,6 @@
 # detect_scheme と detect_request_target_form の encoder/decoder 間重複を統合する
 
 - Priority: High
-- Branch: feature/refactor-unify-detect-scheme-target-form
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
@@ -35,4 +34,6 @@
 
 - `detect_scheme` が 1 箇所のみに存在すること
 - `detect_request_target_form` の判定ロジックが 1 箇所に集約されていること
+- 既存の `tests/test_request_target.rs` の全テストが引き続き通過すること
 - `cargo test` で全テストが通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

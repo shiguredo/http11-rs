@@ -3,11 +3,10 @@
 - Priority: High
 - Created: 2026-05-15
 - Model: deepseek v4-pro
-- Branch: feature/fix-decompressor-keep-alive-reset
 
 ## 目的
 
-`RequestDecoder` と `ResponseDecoder` が `decode()` 完了時および `decode_headers()` の Complete→StartLine 遷移時に `self.decompressor` をリセットしていない。`NoCompression` に対しては無害だが、カスタム `Decompressor` (gzip 等) で前メッセージの内部展開状態が後続メッセージに持ち越される。
+`RequestDecoder` と `ResponseDecoder` が `decode()` 完了時および `decode_headers()` の Complete→StartLine 遷移時に `self.decompressor` をリセットしていない。RFC 9112 Section 9.6 の persistent connection では複数のリクエスト/レスポンスが同一接続上で連続するため、前メッセージの Decompressor 内部状態（gzip の辞書、zstd のコンテキスト等）が後続メッセージに持ち越されるとデータ破損が発生する。
 
 ## 優先度根拠
 
@@ -28,11 +27,25 @@
 
 上記 4 箇所すべてに `self.decompressor.reset()` を追加する。既存の `self.body_decoder.reset()` の直後に追加することでリセット順序を統一する。
 
-`Decompressor::reset()` は戻り値を持たない infallible なメソッドであるため、追加によるエラー経路の変化はない。
+`Decompressor::reset()` は戻り値を持たない infallible なメソッドであるため、追加によるエラー経路の変化はない。`NoCompression::reset()` は `self.finished = false` をセットするが、`NoCompression` の `decompress()` 実装はこのフィールドを参照しないため実害はない。
+
+## テスト
+
+### 単体テスト
+
+`tests/test_decoder/` に以下を追加する:
+
+- 内部状態（呼び出し回数カウンタ）を持つカスタム `Decompressor` stub 実装を使用し、2 メッセージ連続 decode で状態がメッセージ間でリセットされることを検証する
+- 検証内容: 1 件目のメッセージ完了後に `decompressor.reset()` が呼ばれ、2 件目のデコード開始時に内部状態が初期値に戻っていること
+
+### fuzz 拡充
+
+`fuzz/fuzz_targets/fuzz_pipelined.rs` に `Decompressor` 注入経路を追加する。内部状態カウンタを持つ stub を注入し、連続 decode の panic 安全性と状態リセットを検証する。
 
 ## 完了条件
 
 - 上記 4 箇所すべてに `self.decompressor.reset()` が追加されていること
-- `NoCompression` とカスタム `Decompressor` 実装の両方で Keep-Alive 接続時に状態漏れが発生しないこと
+- カスタム `Decompressor` stub を用いた単体テストでメッセージ間の状態リセットが検証されていること
+- `cargo fuzz run fuzz_pipelined` が Decompressor 注入経路でも crash を報告しないこと
 - `cargo test` で全テストが通過すること
-- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること
+- `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること（文言例: `Keep-Alive 接続で RequestDecoder / ResponseDecoder の Decompressor をリセットし状態漏れを防ぐ`）

@@ -1,7 +1,6 @@
 # from_validated_parts の #[cfg(debug_assertions)] 複製を単一実装に統合する
 
 - Priority: Medium
-- Branch: feature/refactor-unify-from-validated-parts-cfg
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
@@ -42,3 +41,4 @@ pub(crate) fn from_validated_parts(...) -> Self {
 - `from_validated_parts` が各型で 1 つだけ存在すること
 - `debug_assert!` が release ビルドでコンパイル時に除去されること
 - `cargo test` で全テストが通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

@@ -3,11 +3,9 @@
 - Priority: High
 - Created: 2026-05-15
 - Model: deepseek v4-pro
-- Branch: feature/fix-encode-headers-content-length-validation
-
 ## 目的
 
-`encode_request_headers()` と `encode_response_headers()` は `encode_request()` / `encode_response()` と異なり、Content-Length の値が `1*DIGIT` であることの ABNF 検証と、body 長との整合性検証を行っていない。特に `encode_response_headers()` ではこれらの検証が `debug_assert!` ブロック内にあり release ビルドで完全にバイパスされる。
+`encode_request_headers()` と `encode_response_headers()` は `encode_request()` / `encode_response()` と異なり、Content-Length の値が `1*DIGIT` (RFC 9110 Section 8.6) であることの ABNF 検証と、body 長との整合性検証を行っていない。特に `encode_response_headers()` ではこれらの検証が `debug_assert!` ブロック内にあり release ビルドで完全にバイパスされる。
 
 ## 優先度根拠
 
@@ -50,5 +48,6 @@ debug_assert!({
 
 - `encode_request_headers()` が `Content-Length: abc` や `Content-Length: 999` + `body: b"hello"` でエラーを返すこと
 - `encode_response_headers()` の Content-Length 検証が release ビルドでも有効であること
+- `tests/test_encoder.rs` に `encode_request_headers` / `encode_response_headers` の Content-Length 検証テスト（`"abc"` 拒否、長不一致拒否）が追加されていること
 - `cargo test` と `cargo test --release` で全テストが通過すること
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること

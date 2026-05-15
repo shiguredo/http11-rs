@@ -3,11 +3,9 @@
 - Priority: High
 - Created: 2026-05-15
 - Model: deepseek v4-pro
-- Branch: feature/fix-httpdate-month-day-validation
-
 ## 目的
 
-`HttpDate::new` が `day` の 1..=31 範囲検証のみを行い、月別の日数上限 (2 月は 28/29 日、4/6/9/11 月は 30 日) を検証していない。`Sun, 31 Jun 1994 08:49:37 GMT` (6 月 31 日は存在しない) のような無効な日付が成功裡に構築される。
+`HttpDate::new` が `day` の 1..=31 範囲検証のみを行い、月別の日数上限 (2 月は 28/29 日、4/6/9/11 月は 30 日) を検証していない。RFC 9110 Section 5.6.7 が参照する IMF-fixdate (RFC 5322 Section 3.3) の day は実在する日付でなければならない。`Sun, 31 Jun 1994 08:49:37 GMT` (6 月 31 日は存在しない) のような無効な日付が成功裡に構築される。
 
 ## 優先度根拠
 

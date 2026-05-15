@@ -1,7 +1,6 @@
 # PBT の header_value strategy に obs-text を追加し、strategy 重複を pbt/src/lib.rs に集約する
 
 - Priority: High
-- Branch: feature/enhance-pbt-strategy-obs-text-and-consolidation
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
@@ -37,3 +36,4 @@
 - strategy 定義が各テストファイルに重複せず `pbt/src/lib.rs` に集約されていること
 - cookie の strategy が RFC 6265 cookie-octet の全文字をカバーしていること
 - `cargo test -p pbt` で全 PBT が通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

@@ -1,13 +1,12 @@
 # tests/test_encoder.rs をディレクトリモジュールに分割する
 
 - Priority: Medium
-- Branch: feature/split-test-encoder-into-directory-module
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
 ## 目的
 
-`tests/test_encoder.rs` が 1323 行と過大であり、CLAUDE.md:100-101 の「テストファイルが長くなった場合はファイル内で `mod` を使って分割すること」に違反する。`tests/test_decoder/` が既に分割済みであるのと対照的。
+`tests/test_encoder.rs` が 1323 行と過大であり、AGENTS.md:119-121 の「テストファイルが長くなった場合はファイル内で `mod` を使って分割すること」に違反する。`tests/test_decoder/` が既に分割済みであるのと対照的。
 
 ## 現状
 
@@ -27,3 +26,4 @@
 
 - `tests/test_encoder.rs` が `tests/test_encoder/main.rs` + サブモジュールに分割されていること
 - `cargo test -p shiguredo_http11 --test test_encoder` で全テストが通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

@@ -1,7 +1,6 @@
 # examples/http11_reverse_proxy と http11_server の graceful shutdown を実装する
 
 - Priority: Medium
-- Branch: feature/add-graceful-shutdown-to-examples
 - Created: 2026-05-15
 - Model: deepseek v4-pro
 
@@ -28,3 +27,5 @@
 - 全 example で graceful shutdown が実装されていること
 - CTRL+C で実行中リクエストを完了させてからプロセスが終了すること
 - クリーンアップタスクが確実に停止すること
+- 既存の examples テストが引き続き通過すること
+- `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること

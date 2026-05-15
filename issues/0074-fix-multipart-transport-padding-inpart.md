@@ -3,8 +3,6 @@
 - Priority: High
 - Created: 2026-05-15
 - Model: deepseek v4-pro
-- Branch: feature/fix-multipart-transport-padding
-
 ## 目的
 
 RFC 2046 Section 5.1.1 はすべての boundary delimiter (dash-boundary / delimiter / close-delimiter) に transport-padding (= *LWSP-char, SP/HTAB) を許容している。`MultipartParser` の `Initial` 状態では transport-padding が正しく処理されているが、`InPart` 状態と `AfterInnerDelimiter` 状態では未対応のままである。
@@ -44,5 +42,6 @@ if self.buffer[after_delim] == b'\r' && self.buffer[after_delim + 1] == b'\n' {
 - `\r\n--boundary \t\r\n` (内部デリミタ + transport-padding + CRLF) が正しく処理されること
 - `\r\n--boundary \t--\r\n` (内部デリミタ + transport-padding + close-delimiter) が正しく処理されること
 - transport-padding の途中で feed が切れた場合も正常に継続できること
+- 上記のテストケースが `tests/test_multipart.rs` に追加されていること
 - `cargo test` と `cargo test -p pbt` で全テストが通過すること
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること
