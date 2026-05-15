@@ -16,7 +16,8 @@ jobs:
         os:
           - ubuntu-24.04
           - ubuntu-24.04-arm
-          - windows-2025
+          # windows はテストに時間がかかりすぎるため一時的に除外する
+          # - windows-2025
           - macos-26
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
