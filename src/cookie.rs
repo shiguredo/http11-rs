@@ -287,7 +287,7 @@ impl SetCookie {
                         //   = LDH (letter / digit / hyphen) を含む label を "." で連結したもの。
                         // RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3:
                         //   先頭の "." を 1 つだけ除去し、小文字に変換する。
-                        // RFC 6265bis Section 6.3 (IDNA Dependency):
+                        // RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
                         //   Domain attribute は全 label が punycode (LDH) でなければならず、
                         //   非 LDH を含む値は reject すべき (SHOULD)。
                         // 上記を統合し、strip 後の値が「LDH と "." のみで構成され、空でなく、
@@ -521,8 +521,12 @@ fn is_valid_cookie_value(s: &str) -> bool {
 ///
 /// RFC 6265 Section 4.1.1 は `domain-value = <subdomain>` と定義し、`<subdomain>` は
 /// RFC 1034 Section 3.5 + RFC 1123 Section 2.1 の構文に従う。すなわち letter / digit /
-/// hyphen を含む label を "." で連結した形である。RFC 6265bis Section 6.3 は IDN を
+/// hyphen を含む label を "." で連結した形である。RFC 6265bis Section 5.1.2 は IDN を
 /// punycode (LDH) で表現することを要求しているため、本実装も LDH + "." のみを許容する。
+///
+/// RFC 1034 Section 3.5 の DNS ラベル制約 (先頭/末尾ハイフン禁止、空ラベル禁止、
+/// ラベル長 1-63、全体長 253) は現時点では検証していない。
+/// 今後の RFC 改訂や erratum で厳格化が必要になった場合に追加する。
 fn is_valid_domain_value(s: &str) -> bool {
     s.bytes()
         .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
