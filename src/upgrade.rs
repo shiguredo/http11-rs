@@ -17,7 +17,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Upgrade パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,11 +57,11 @@ impl Upgrade {
     ///
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, UpgradeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut protocols = Vec::new();
         for part in input.split(',') {
-            let part = part.trim();
+            let part = trim_ows(part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if part.is_empty() {
                 continue;
@@ -71,8 +71,8 @@ impl Upgrade {
                 if version.contains('/') {
                     return Err(UpgradeError::InvalidFormat);
                 }
-                let name = name.trim();
-                let version = version.trim();
+                let name = trim_ows(name);
+                let version = trim_ows(version);
                 if name.is_empty() {
                     return Err(UpgradeError::InvalidProtocol);
                 }

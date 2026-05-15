@@ -18,6 +18,8 @@ use alloc::string::{String, ToString};
 use core::fmt;
 use core::net::{Ipv4Addr, Ipv6Addr};
 
+use crate::validate::trim_ows;
+
 /// Host パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -55,7 +57,7 @@ pub struct Host {
 impl Host {
     /// Host ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, HostError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(HostError::Empty);
         }

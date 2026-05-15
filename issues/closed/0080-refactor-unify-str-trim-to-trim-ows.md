@@ -2,7 +2,16 @@
 
 - Priority: Medium
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/refactor-unify-trim-ows
+
+## 解決方法
+
+- src/host.rs, src/cookie.rs, src/accept.rs, src/trailer.rs, src/upgrade.rs, src/vary.rs の全 `.trim()` 呼び出しを `trim_ows()` (ASCII SP/HTAB のみ除去) に置換した
+- 各ファイルに `use crate::validate::trim_ows;` を追加した
+
+## 完了条件
 
 ## 目的
 

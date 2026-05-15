@@ -20,7 +20,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Trailer パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,11 +63,11 @@ impl Trailer {
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     /// RFC 9112 Section 7.1.2: 禁止フィールドを含む場合はエラー
     pub fn parse(input: &str) -> Result<Self, TrailerError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut fields = Vec::new();
         for part in input.split(',') {
-            let name = part.trim();
+            let name = trim_ows(part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if name.is_empty() {
                 continue;
