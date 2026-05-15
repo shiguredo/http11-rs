@@ -2,7 +2,15 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-server-qvalue
+
+## 解決方法
+
+`examples/http11_server/src/compressor.rs:17` と `examples/http11_server_io_uring/src/compressor.rs:17` の `unwrap_or(1.0)` を `unwrap_or(0.0)` に変更し、RFC 9110 Section 12.4.2 の「無効な quality 値のデフォルトは 0」に準拠させた。
+
+## 完了条件
 
 ## 目的
 
