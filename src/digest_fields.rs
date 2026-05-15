@@ -295,7 +295,8 @@ fn parse_dictionary<T>(
     for part in input.split(',') {
         let part = part.trim();
         if part.is_empty() {
-            return Err(DigestFieldsError::InvalidFormat);
+            // RFC 9110 Section 5.6.1.2: empty list element MUST be ignored
+            continue;
         }
 
         let (algorithm, value) = part

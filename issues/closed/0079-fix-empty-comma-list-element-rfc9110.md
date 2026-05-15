@@ -2,7 +2,15 @@
 
 - Priority: Medium
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-empty-comma-list
+
+## 解決方法
+
+- `src/decoder/body.rs` の `parse_content_length_value` と `src/digest_fields.rs` の `parse_dictionary` で空カンマ区切り要素を `continue` でスキップするように変更した
+- 既存の error アサーションを success に更新した
+- 空要素のみ (`Content-Length: ,`) のエラーケーステストを追加した
 
 ## 目的
 

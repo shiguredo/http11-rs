@@ -82,11 +82,8 @@ fn test_content_digest_parse_errors() {
         Err(DigestFieldsError::InvalidAlgorithm)
     ));
 
-    // 空のパート (カンマの後に何もない)
-    assert!(matches!(
-        ContentDigest::parse("sha-256=:YWJj:,"),
-        Err(DigestFieldsError::InvalidFormat)
-    ));
+    // 空のパート (カンマの後に何もない) は RFC 9110 Section 5.6.1.2 によりスキップされる
+    assert!(ContentDigest::parse("sha-256=:YWJj:,").is_ok());
 }
 
 #[test]
@@ -166,4 +163,25 @@ fn test_preference_boundary_values() {
     // 最大値
     let want = WantContentDigest::parse("sha-256=10").unwrap();
     assert_eq!(want.get("sha-256"), Some(10));
+}
+
+/// 末尾カンマを受理 (RFC 9110 Section 5.6.1.2)
+#[test]
+fn test_digest_trailing_comma_accepted() {
+    let digest = ContentDigest::parse("sha-256=:YWJj:,").unwrap();
+    assert_eq!(digest.items().len(), 1);
+}
+
+/// 先頭カンマを受理 (RFC 9110 Section 5.6.1.2)
+#[test]
+fn test_digest_leading_comma_accepted() {
+    let digest = ContentDigest::parse(",sha-256=:YWJj:").unwrap();
+    assert_eq!(digest.items().len(), 1);
+}
+
+/// 空要素のみはエラー (RFC 9110 Section 5.6.1.2)
+#[test]
+fn test_digest_empty_only_error() {
+    let result = ContentDigest::parse(",");
+    assert!(result.is_err());
 }

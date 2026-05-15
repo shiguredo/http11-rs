@@ -214,22 +214,33 @@ fn test_cl_comma_different_values_error() {
     assert!(result.is_err());
 }
 
-/// Content-Length: 42, → エラー (空の値)
+/// Content-Length: 42, → 受理 (RFC 9110 Section 5.6.1.2: empty list element MUST be ignored)
 #[test]
-fn test_cl_comma_trailing_comma_error() {
+fn test_cl_comma_trailing_comma_accepted() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 42,\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
-    let result = decoder.decode_headers();
-    assert!(result.is_err());
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(42));
 }
 
-/// Content-Length: ,42 → エラー (空の値)
+/// Content-Length: ,42 → 受理 (RFC 9110 Section 5.6.1.2: empty list element MUST be ignored)
 #[test]
-fn test_cl_comma_leading_comma_error() {
+fn test_cl_comma_leading_comma_accepted() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: ,42\r\n\r\n";
+    decoder.feed(response.as_bytes()).unwrap();
+
+    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    assert_eq!(body_kind, BodyKind::ContentLength(42));
+}
+
+/// Content-Length: , → エラー (空要素のみ)
+#[test]
+fn test_cl_comma_empty_only_error() {
+    let mut decoder = ResponseDecoder::new();
+    let response = "HTTP/1.1 200 OK\r\nContent-Length: ,\r\n\r\n";
     decoder.feed(response.as_bytes()).unwrap();
 
     let result = decoder.decode_headers();
