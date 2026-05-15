@@ -1046,7 +1046,7 @@ mod tests {
                     Ok(Some(part)) => collected.push(part),
                     Ok(None) => break,
                     Err(MultipartError::Incomplete) => break,
-                    Err(e) => panic!("unexpected error: {e:?}"),
+                    Err(e) => panic!("予期しないエラー: {e:?}"),
                 }
             }
         }

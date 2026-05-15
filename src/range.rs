@@ -533,7 +533,7 @@ mod tests {
                 assert_eq!(start, 0);
                 assert_eq!(end, 499);
             }
-            _ => panic!("expected Range"),
+            _ => panic!("Range バリアントを期待"),
         }
     }
 
@@ -548,7 +548,7 @@ mod tests {
         let range = Range::parse("bytes=-500").unwrap();
         match range.first().unwrap() {
             RangeSpec::Suffix { length } => assert_eq!(*length, 500),
-            _ => panic!("expected Suffix"),
+            _ => panic!("Suffix バリアントを期待"),
         }
     }
 
@@ -557,7 +557,7 @@ mod tests {
         let range = Range::parse("bytes=500-").unwrap();
         match range.first().unwrap() {
             RangeSpec::FromStart { start } => assert_eq!(*start, 500),
-            _ => panic!("expected FromStart"),
+            _ => panic!("FromStart バリアントを期待"),
         }
     }
 
