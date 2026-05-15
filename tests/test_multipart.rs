@@ -540,3 +540,88 @@ fn test_multipart_missing_name_parameter() {
         Err(MultipartError::MissingName)
     ));
 }
+
+// ========================================
+// inner delimiter 直後の transport-padding 検証 (RFC 2046 Section 5.1.1)
+// ========================================
+
+/// 内部デリミタ + transport-padding + CRLF が正しく処理されること
+#[test]
+fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
+    let mut parser = MultipartParser::new("b");
+    parser
+        .feed(
+            b"--b\r\n\
+              Content-Disposition: form-data; name=\"a\"\r\n\r\n\
+              hello\r\n\
+              --b \t\r\n\
+              Content-Disposition: form-data; name=\"b\"\r\n\r\n\
+              world\r\n\
+              --b--\r\n",
+        )
+        .unwrap();
+
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("b"));
+    assert_eq!(part.body(), b"world");
+
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}
+
+/// 内部デリミタ + transport-padding + close-delimiter が正しく処理されること
+#[test]
+fn test_multipart_parser_inner_delimiter_transport_padding_close() {
+    let mut parser = MultipartParser::new("b");
+    parser
+        .feed(
+            b"--b\r\n\
+              Content-Disposition: form-data; name=\"a\"\r\n\r\n\
+              hello\r\n\
+              --b \t--\r\n",
+        )
+        .unwrap();
+
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}
+
+/// transport-padding 途中で feed が切れた場合も正常に継続できること
+#[test]
+fn test_multipart_parser_inner_delimiter_transport_padding_incomplete() {
+    let mut parser = MultipartParser::new("b");
+    // 最初のパート + inner delimiter + transport-padding 途中で feed を切る
+    parser
+        .feed(b"--b\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b ")
+        .unwrap();
+
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("a"));
+    assert_eq!(part.body(), b"hello");
+
+    // Incomplete になる (transport-padding の途中)
+    assert!(matches!(
+        parser.next_part(),
+        Err(MultipartError::Incomplete)
+    ));
+
+    // 残りの transport-padding + CRLF + 次のパートを feed
+    parser
+        .feed(b"\t\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\nworld\r\n--b--\r\n")
+        .unwrap();
+
+    let part = parser.next_part().unwrap().unwrap();
+    assert_eq!(part.name(), Some("b"));
+    assert_eq!(part.body(), b"world");
+
+    assert!(matches!(parser.next_part(), Ok(None)));
+    assert!(parser.is_finished());
+}

@@ -67,6 +67,10 @@
   - `day` の検証を `1..=31` 固定から `max_day_in_month(month, year)` に変更する
   - 2 月のうるう年判定を含む (RFC 9110 Section 5.6.7 IMF-fixdate)
   - @voluntas
+- [FIX] `MultipartParser` の `InPart` / `AfterInnerDelimiter` 状態で transport-padding に対応する
+  - 内部デリミタ `\r\n--<boundary>` 直後に SP/HTAB の transport-padding をスキップする (RFC 2046 Section 5.1.1)
+  - padding 途中で buffer が尽きた場合は `AfterInnerDelimiter` に留まり次回 feed で再開する
+  - @voluntas
 
 ### misc
 
