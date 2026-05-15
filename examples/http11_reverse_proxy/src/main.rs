@@ -719,7 +719,7 @@ async fn stream_response_on_connection(
         let n = upstream.read(dst).await?;
         if n == 0 {
             decoder.advance_buf(0);
-            return Err("接続が閉じられました".into());
+            return Err("upstream connection closed".into());
         }
         decoder.advance_buf(n);
 
