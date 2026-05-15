@@ -14,7 +14,8 @@ pub fn select_encoding(accept_encoding: &str) -> Option<&'static str> {
             let part = part.trim();
             let (encoding, quality) = if let Some(pos) = part.find(";q=") {
                 let enc = part[..pos].trim();
-                let q: f32 = part[pos + 3..].trim().parse().unwrap_or(1.0);
+                // RFC 9110 Section 12.4.2: 無効な quality 値のデフォルトは 0
+                let q: f32 = part[pos + 3..].trim().parse().unwrap_or(0.0);
                 (enc, q)
             } else {
                 (part, 1.0)
