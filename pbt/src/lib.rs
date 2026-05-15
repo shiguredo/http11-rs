@@ -68,3 +68,31 @@ pub fn qdtext_value(len_range: RangeInclusive<usize>) -> impl Strategy<Value = S
     proptest::collection::vec(qdtext_char(), len_range)
         .prop_map(|chars| chars.into_iter().collect())
 }
+
+// ========================================
+// ヘッダー値用 char / String strategy (RFC 9110 Section 5.5)
+// ========================================
+
+/// ヘッダー値の文字 (RFC 9110 Section 5.5 field-vchar + obs-text)
+///
+/// field-vchar = VCHAR / obs-text
+/// obs-text = %x80-FF (Unicode scalar 拡張: U+0080..=U+10FFFF)
+///
+/// 注: VCHAR (0x21-0x7E) + SP + HTAB + obs-text を生成する。
+/// 一部のヘッダー (Cookie octet等) は obs-text を許容しないが、
+/// その制約は個別の strategy で扱う。
+pub fn field_vchar() -> impl Strategy<Value = char> {
+    prop_oneof![
+        prop::char::range('!', '~'), // VCHAR: 0x21-0x7E
+        Just(' '),                   // SP: 0x20
+        Just('\t'),                  // HTAB: 0x09
+        // obs-text (Unicode scalar 拡張, surrogate 除く)
+        prop::char::range('\u{80}', '\u{D7FF}'),
+        prop::char::range('\u{E000}', '\u{10FFFF}'),
+    ]
+}
+
+/// ヘッダー値文字列
+pub fn header_value() -> impl Strategy<Value = String> {
+    proptest::collection::vec(field_vchar(), 1..=64).prop_map(|chars| chars.into_iter().collect())
+}
