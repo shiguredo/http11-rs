@@ -2,7 +2,15 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-client-utf8-panic
+
+## 解決方法
+
+`examples/http11_client/src/main.rs:104` の `&text[..1000]` を `&text[..text.floor_char_boundary(1000)]` に変更し、マルチバイト UTF-8 文字境界を越えた truncate で panic しないようにした。
+
+## 完了条件
 
 ## 目的
 
