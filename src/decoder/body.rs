@@ -1359,9 +1359,8 @@ fn parse_content_length_value(input: &str) -> Result<u64, Error> {
     for part in input.split(',') {
         let part = trim_ows(part);
         if part.is_empty() {
-            return Err(Error::InvalidData(
-                "invalid Content-Length: empty value in list".to_string(),
-            ));
+            // RFC 9110 Section 5.6.1.2: empty list element MUST be ignored
+            continue;
         }
         if !part.chars().all(|c| c.is_ascii_digit()) {
             return Err(Error::InvalidData(
