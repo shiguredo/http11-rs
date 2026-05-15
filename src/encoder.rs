@@ -1292,22 +1292,22 @@ mod capacity_tests {
     use crate::status_code::StatusCode;
 
     fn assert_request_capacity_sufficient(req: &Request) {
-        let est = estimate_request_capacity(req).expect("estimate overflow");
-        let out = encode_request(req).expect("encode failed");
+        let est = estimate_request_capacity(req).expect("容量見積もりがオーバーフロー");
+        let out = encode_request(req).expect("エンコード失敗");
         assert!(
             est >= out.len(),
-            "estimate {} < output {}: req={req:?}",
+            "見積もり {} < 出力 {}: req={req:?}",
             est,
             out.len(),
         );
     }
 
     fn assert_response_capacity_sufficient(res: &Response) {
-        let est = estimate_response_capacity(res).expect("estimate overflow");
-        let out = encode_response(res).expect("encode failed");
+        let est = estimate_response_capacity(res).expect("容量見積もりがオーバーフロー");
+        let out = encode_response(res).expect("エンコード失敗");
         assert!(
             est >= out.len(),
-            "estimate {} < output {}: res={res:?}",
+            "見積もり {} < 出力 {}: res={res:?}",
             est,
             out.len(),
         );
