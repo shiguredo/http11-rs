@@ -14,7 +14,10 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{BodyKind, BodyProgress, RequestDecoder, ResponseDecoder};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, CompressionError, CompressionStatus, Decompressor, NoCompression,
+    RequestDecoder, ResponseDecoder,
+};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzPipelined {
@@ -121,6 +124,53 @@ fuzz_target!(|input: FuzzPipelined| {
                 }
                 BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
                 _ => {}
+            }
+        }
+    }
+
+    // Decompressor 注入経路: CountingFuzzDecompressor で連続 decode の
+    // panic 安全性と状態リセットを検証する
+    {
+        struct CountingFuzzDecompressor {
+            inner: NoCompression,
+            reset_count: usize,
+        }
+        impl Decompressor for CountingFuzzDecompressor {
+            fn decompress(
+                &mut self,
+                input: &[u8],
+                output: &mut [u8],
+            ) -> Result<CompressionStatus, CompressionError> {
+                self.inner.decompress(input, output)
+            }
+            fn reset(&mut self) {
+                self.inner.reset();
+                self.reset_count += 1;
+            }
+        }
+
+        let decomp = CountingFuzzDecompressor {
+            inner: NoCompression::new(),
+            reset_count: 0,
+        };
+        let mut request_decoder = RequestDecoder::with_decompressor(decomp);
+        for message in &messages {
+            let mut combined = request_decoder.take_remaining();
+            combined.extend_from_slice(message);
+            request_decoder.reset();
+            for part in combined.chunks(split_size) {
+                if request_decoder.feed(part).is_err() {
+                    break;
+                }
+            }
+            if let Ok(Some((_, body_kind))) = request_decoder.decode_headers() {
+                match body_kind {
+                    BodyKind::ContentLength(_) | BodyKind::Chunked => {
+                        drain_body_request(&mut request_decoder);
+                    }
+                    BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
+                    _ => {}
+                }
             }
         }
     }

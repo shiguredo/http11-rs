@@ -550,6 +550,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                     self.start_line = None;
                     self.headers.clear();
                     self.body_decoder.reset();
+                    self.decompressor.reset();
                     continue;
                 }
                 DecodePhase::Tunnel => {
@@ -759,6 +760,7 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.body_decoder.reset();
+        self.decompressor.reset();
 
         Ok(Some(Request::from_raw_parts(
             head.method,

@@ -606,6 +606,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     self.start_line = None;
                     self.headers.clear();
                     self.body_decoder.reset();
+                    self.decompressor.reset();
                     self.status_code = 0;
                     // request_method は元のリクエストごとに設定し直す前提で
                     // ここでクリアする。クリアしないと Keep-Alive 接続で前回の
@@ -856,6 +857,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.body_decoder.reset();
+        self.decompressor.reset();
         self.status_code = 0;
         // request_method は元のリクエストごとに設定し直す前提でクリアする。
         // クリアしないと Keep-Alive 接続で前回の CONNECT などが残り、次のレス

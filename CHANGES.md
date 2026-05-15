@@ -59,6 +59,10 @@
   - 旧実装は `debug_assert!` で CTL 検出を行っており、release ビルドでは CTL 文字が素通りして HTTP Response Splitting (CWE-113) の経路になっていた
   - `is_quoted_pair_char` に適合しない文字 (CR / LF / NUL / 他の CTL / DEL) を SP に置換する (RFC 9110 Section 5.5 "MUST either reject or replace with SP")
   - @voluntas
+- [FIX] Keep-Alive 接続で RequestDecoder / ResponseDecoder の Decompressor をリセットし状態漏れを防ぐ
+  - `decode()` 完了時と `decode_headers()` Complete→StartLine 遷移時の 4 箇所に `self.decompressor.reset()` を追加する
+  - 前メッセージの Decompressor 内部状態が後続メッセージに持ち越されるデータ破損経路を塞ぐ
+  - @voluntas
 
 ### misc
 
