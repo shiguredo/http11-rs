@@ -77,6 +77,9 @@
 
 ### misc
 
+- [FIX] `examples/http11_client` のボディ出力で UTF-8 文字境界パニックを修正する
+  - `&text[..1000]` を `&text[..text.floor_char_boundary(1000)]` に変更し安全な truncate にする
+  - @voluntas
 - [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (CLAUDE.md:97 準拠)
   - `tests/test_decoder.rs` (1907 行) → `tests/test_decoder/` (main / head / body / streaming / direct_buffer / decode_body)
   - `pbt/tests/prop_decoder/response.rs` (1317 行) → `pbt/tests/prop_decoder/response/` (status_line / body_decoding / limits / streaming)
