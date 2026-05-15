@@ -55,6 +55,10 @@
   - `new_bytes()` に `start > end` と `complete_length <= end` の `assert!` を追加する (RFC 9110 Section 14.4 の validity rule)
   - `parse()` の検証ロジックを `validate_content_range_parts()` として抽出し重複を除去する
   - @voluntas
+- [FIX] `escape_quotes()` の CTL 検出を `debug_assert!` から常時有効な SP 置換に変更する
+  - 旧実装は `debug_assert!` で CTL 検出を行っており、release ビルドでは CTL 文字が素通りして HTTP Response Splitting (CWE-113) の経路になっていた
+  - `is_quoted_pair_char` に適合しない文字 (CR / LF / NUL / 他の CTL / DEL) を SP に置換する (RFC 9110 Section 5.5 "MUST either reject or replace with SP")
+  - @voluntas
 
 ### misc
 

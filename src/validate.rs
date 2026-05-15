@@ -365,30 +365,24 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 ///
 /// quoted-pair が必要な `"` と `\` のみエスケープし、それ以外はそのまま出力する。
 ///
-/// CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は RFC 9110
-/// Section 5.5 (`refs/rfc9110.txt:1606-1615`) と Section 5.6.4 で quoted-string
-/// に含むことが禁止されている (ABNF の qdtext / quoted-pair 右辺に含まれない)。
-/// `parse_quoted_string` がこれらを reject するので、parse → encode の経路では
-/// 到達しない。一方で送信側 builder (`with_filename` / `with_parameter` 等) は
-/// 現時点で値検証を行わないため、ユーザーが直接これらの文字を渡せば escape まで
-/// 到達し得る。素通りすると HTTP Response Splitting (CWE-113) / log injection
-/// 経路を生むため、防御層として `debug_assert!` で開発時に検出する (release
-/// ビルドでは通過する)。
+/// CR / LF / NUL (RFC 9110 Section 5.5 `refs/rfc9110.txt:1606-1611`) および
+/// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は SP に置換する。
+/// RFC 9110 Section 5.5 は CR / LF / NUL に対し "MUST either reject the message
+/// or replace each of those characters with SP" と規定しており、SP 置換は RFC 準拠。
+/// 他の CTL については "recipients MAY retain such characters ... within a safe
+/// context" (`refs/rfc9110.txt:1611-1615`) とされ、本関数の出力先 (WWW-Authenticate /
+/// Accept / Content-Type / Expect 等の HTTP 標準ヘッダ) は safe context に該当しない
+/// ため retain せず SP 置換する。
 ///
 /// 本関数は RFC 9110 (本リリース時点) の規定に基づく。将来の改訂や erratum で
 /// ABNF が変更される可能性がある。
-///
-/// `debug_assert!` の判定に `is_quoted_pair_char` を使うのは「quoted-pair の
-/// 右辺集合」と「quoted-string 内に出現できる char 集合 (qdtext ∪ `"` ∪ `\`)」
-/// が共に `HTAB / SP / VCHAR / obs-text` で一致するため。`is_qdtext_char` だと
-/// `"` と `\` を弾いてしまい、escape 対象自体が debug_assert で発火してしまう。
 pub(crate) fn escape_quotes(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for c in s.chars() {
-        debug_assert!(
-            is_quoted_pair_char(c),
-            "CTL char (CR/LF/NUL/0x01-08/0x0B-0C/0x0E-1F/0x7F) must be rejected before reaching escape_quotes"
-        );
+        if !is_quoted_pair_char(c) {
+            result.push(' '); // CTL を SP に置換 (RFC 9110 Section 5.5)
+            continue;
+        }
         if c == '"' || c == '\\' {
             result.push('\\');
         }
@@ -445,15 +439,23 @@ mod tests {
         assert_eq!(escape_quotes("a\\b"), "a\\\\b");
     }
 
-    #[cfg(debug_assertions)]
     #[test]
-    fn escape_quotes_debug_assert_on_disallowed_ctl() {
-        // CR / LF / NUL / 他の CTL / DEL は parse 側で reject 済みの不変条件を
-        // 表明する debug_assert!。release ビルドでは通過する。
-        for c in ['\r', '\n', '\0', '\x01', '\x1F', '\x7F'] {
-            let s = alloc::format!("a{c}b");
-            let result = std::panic::catch_unwind(|| escape_quotes(&s));
-            assert!(result.is_err(), "{c:?} で debug_assert! が発火しなかった");
-        }
+    fn escape_quotes_replaces_ctl_with_space() {
+        // CR / LF / NUL は MUST replace with SP (RFC 9110 Section 5.5)
+        assert_eq!(escape_quotes("\r"), " ");
+        assert_eq!(escape_quotes("\n"), " ");
+        assert_eq!(escape_quotes("\0"), " ");
+        // 他の CTL も SP 置換
+        assert_eq!(escape_quotes("\x01"), " ");
+        assert_eq!(escape_quotes("\x1F"), " ");
+        // DEL
+        assert_eq!(escape_quotes("\x7F"), " ");
+        // 複数 CTL の連続
+        assert_eq!(escape_quotes("\r\n\0"), "   ");
+        // CTL とエスケープ対象の相互作用
+        assert_eq!(escape_quotes("\0\""), " \\\"");
+        assert_eq!(escape_quotes("\0\\"), " \\\\");
+        // CTL と正常文字の混在
+        assert_eq!(escape_quotes("a\rb\nc"), "a b c");
     }
 }
