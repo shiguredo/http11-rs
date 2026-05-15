@@ -270,7 +270,6 @@ impl RequestHead {
     /// 命名は標準ライブラリの unsafe 慣習 (`Vec::from_raw_parts` 等) と表面的に
     /// 衝突するが、本関数は unsafe ではない (整合性責任が呼出側にある点だけが
     /// 共通)。
-    #[cfg(debug_assertions)]
     pub(crate) fn from_validated_parts(
         method: String,
         uri: String,
@@ -293,21 +292,6 @@ impl RequestHead {
             );
             debug_assert!(is_valid_field_value(value), "header value must be valid");
         }
-        Self {
-            method,
-            uri,
-            version,
-            headers,
-        }
-    }
-
-    #[cfg(not(debug_assertions))]
-    pub(crate) fn from_validated_parts(
-        method: String,
-        uri: String,
-        version: String,
-        headers: Vec<(String, String)>,
-    ) -> Self {
         Self {
             method,
             uri,
@@ -459,7 +443,6 @@ impl ResponseHead {
     /// 命名は標準ライブラリの unsafe 慣習 (`Vec::from_raw_parts` 等) と表面的に
     /// 衝突するが、本関数は unsafe ではない (整合性責任が呼出側にある点だけが
     /// 共通)。
-    #[cfg(debug_assertions)]
     pub(crate) fn from_validated_parts(
         version: String,
         status_code: u16,
@@ -485,21 +468,6 @@ impl ResponseHead {
             );
             debug_assert!(is_valid_field_value(value), "header value must be valid");
         }
-        Self {
-            version,
-            status_code,
-            reason_phrase,
-            headers,
-        }
-    }
-
-    #[cfg(not(debug_assertions))]
-    pub(crate) fn from_validated_parts(
-        version: String,
-        status_code: u16,
-        reason_phrase: String,
-        headers: Vec<(String, String)>,
-    ) -> Self {
         Self {
             version,
             status_code,
