@@ -71,6 +71,9 @@
   - 内部デリミタ `\r\n--<boundary>` 直後に SP/HTAB の transport-padding をスキップする (RFC 2046 Section 5.1.1)
   - padding 途中で buffer が尽きた場合は `AfterInnerDelimiter` に留まり次回 feed で再開する
   - @voluntas
+- [FIX] `encode_request_headers` / `encode_response_headers` に Content-Length の値検証と body 長整合性検証を追加する
+  - `encode_response_headers` の `debug_assert!` ブロックを常時有効な検証に変更し release ビルドでも防御する
+  - @voluntas
 
 ### misc
 

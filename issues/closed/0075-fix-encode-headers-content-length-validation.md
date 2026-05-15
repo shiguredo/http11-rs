@@ -2,7 +2,25 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-encode-headers-cl-validation
+
+## 解決方法
+
+### `src/encoder.rs`
+
+- `encode_request_headers()` に Content-Length の値検証と body 長整合性検証を追加した (CONNECT リクエストはスキップ)
+- `encode_response_headers()` の `debug_assert!` ブロックを削除し、常時有効な検証に変更した
+
+### `tests/test_encoder.rs`
+
+- encode_request_headers の Content-Length 非数値拒否テストを追加した
+- encode_request_headers の Content-Length / body 長不一致拒否テストを追加した
+- encode_response_headers の Content-Length 非数値拒否テストを追加した
+- encode_response_headers の Content-Length / body 長不一致拒否テストを追加した
+
+## 完了条件
 ## 目的
 
 `encode_request_headers()` と `encode_response_headers()` は `encode_request()` / `encode_response()` と異なり、Content-Length の値が `1*DIGIT` (RFC 9110 Section 8.6) であることの ABNF 検証と、body 長との整合性検証を行っていない。特に `encode_response_headers()` ではこれらの検証が `debug_assert!` ブロック内にあり release ビルドで完全にバイパスされる。

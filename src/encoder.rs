@@ -966,6 +966,22 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
+    // Content-Length の値検証 (1*DIGIT ABNF + ボディ長との整合性)
+    // CONNECT リクエストは RFC 9110 Section 9.3.6 で content を持たず、
+    // CL 検証はアプリケーション層の責務とするためスキップする。
+    if request.method() != "CONNECT"
+        && !request.has_header("Transfer-Encoding")
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
+    {
+        let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
+        }
+    }
+
     // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
     // RFC は CONNECT リクエスト側に Content-Length / Transfer-Encoding を MUST NOT とはしていない。
     // encode_request_headers はボディを扱わないため、CONNECT 専用チェックは不要。
@@ -1049,24 +1065,20 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
     }
 
-    // debug_assert!: encode_response 側で行っている Content-Length と実ボディ長の
-    // 一致検証を headers-only 経路でも実行し、開発中の誤用を早期に検出する。
+    // Content-Length の値検証。encode_response 側と同等の常時検証を行う。
     // TE がない場合のみ検証 (TE がある場合は chunked 送信が前提のためスキップ)。
-    debug_assert!(
-        {
-            if response.has_header("Transfer-Encoding") {
-                true
-            } else if let Ok(Some(cl)) =
-                validate_content_length_headers(HttpHead::headers(response))
-            {
-                let body_len = response.body_bytes().map(|b| b.len() as u64).unwrap_or(0);
-                cl == body_len
-            } else {
-                true
-            }
-        },
-        "Content-Length header value does not match body length in encode_response_headers"
-    );
+    if response_status_has_body(response.status_code())
+        && !response.has_header("Transfer-Encoding")
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
+    {
+        let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
+        }
+    }
 
     let mut buf = Vec::new();
 

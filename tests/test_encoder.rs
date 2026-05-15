@@ -220,6 +220,54 @@ fn test_encode_response_headers_ignores_body() {
     assert!(!encoded_str.contains("hello world"));
 }
 
+/// encode_request_headers で Content-Length が 1*DIGIT でない場合はエラー
+#[test]
+fn test_encode_request_headers_content_length_not_digit() {
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap()
+        .header("Content-Length", "abc")
+        .unwrap();
+    let result = encode_request_headers(&req);
+    assert!(result.is_err());
+}
+
+/// encode_request_headers で Content-Length と body 長が不一致の場合はエラー
+#[test]
+fn test_encode_request_headers_content_length_mismatch() {
+    let req = Request::new("POST", "/")
+        .unwrap()
+        .header("Host", "example.com")
+        .unwrap()
+        .header("Content-Length", "999")
+        .unwrap()
+        .body(b"hello".to_vec());
+    let result = encode_request_headers(&req);
+    assert!(result.is_err());
+}
+
+/// encode_response_headers で Content-Length が 1*DIGIT でない場合はエラー
+#[test]
+fn test_encode_response_headers_content_length_not_digit() {
+    let res = Response::with_status(StatusCode::OK)
+        .header("Content-Length", "abc")
+        .unwrap();
+    let result = encode_response_headers(&res);
+    assert!(result.is_err());
+}
+
+/// encode_response_headers で Content-Length と body 長が不一致の場合はエラー
+#[test]
+fn test_encode_response_headers_content_length_mismatch() {
+    let res = Response::with_status(StatusCode::OK)
+        .header("Content-Length", "999")
+        .unwrap()
+        .body(b"hello".to_vec());
+    let result = encode_response_headers(&res);
+    assert!(result.is_err());
+}
+
 // ========================================
 // 正常ケース: Transfer-Encoding のみ、または Content-Length のみは許可
 // ========================================
