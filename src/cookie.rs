@@ -24,7 +24,7 @@
 //! ```
 
 use crate::date::{DateError, HttpDate};
-use crate::validate::is_token_char;
+use crate::validate::{is_token_char, trim_ows};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -87,7 +87,7 @@ impl Cookie {
     /// assert_eq!(cookies[1].name(), "user");
     /// ```
     pub fn parse(input: &str) -> Result<Vec<Cookie>, CookieError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(CookieError::Empty);
         }
@@ -95,7 +95,7 @@ impl Cookie {
         let mut cookies = Vec::new();
 
         for pair in input.split(';') {
-            let pair = pair.trim();
+            let pair = trim_ows(pair);
             if pair.is_empty() {
                 continue;
             }
@@ -221,7 +221,7 @@ impl SetCookie {
     /// assert!(cookie.secure());
     /// ```
     pub fn parse(input: &str, reference_year: u16) -> Result<Self, CookieError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(CookieError::Empty);
         }
@@ -230,7 +230,7 @@ impl SetCookie {
 
         // 最初の部分は name=value
         let first = parts.next().ok_or(CookieError::InvalidFormat)?;
-        let (name, value) = parse_cookie_pair(first.trim())?;
+        let (name, value) = parse_cookie_pair(trim_ows(first))?;
 
         let mut set_cookie = SetCookie {
             name: name.to_string(),
@@ -246,7 +246,7 @@ impl SetCookie {
 
         // 属性をパース
         for part in parts {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }

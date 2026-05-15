@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::validate::{
-    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string, trim_ows,
 };
 
 /// Accept 系パースエラー
@@ -81,7 +81,7 @@ pub struct QValue(u16);
 impl QValue {
     /// q 値をパース
     pub fn parse(input: &str) -> Result<Self, AcceptError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AcceptError::InvalidQValue);
         }
@@ -164,12 +164,12 @@ impl Accept {
     /// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
     /// 空の値は空リストとして受理する。
     pub fn parse(input: &str) -> Result<Self, AcceptError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut items = Vec::new();
         if !input.is_empty() {
             for part in split_with_quotes(input, ',') {
-                let part = part.trim();
+                let part = trim_ows(&part);
                 if part.is_empty() {
                     continue;
                 }
@@ -428,12 +428,12 @@ fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
     let mut q_seen = false;
 
     for param in parts {
-        let param = param.trim();
+        let param = trim_ows(&param);
         if param.is_empty() {
             continue;
         }
         let (name, value) = param.split_once('=').ok_or(AcceptError::InvalidParameter)?;
-        let name = name.trim().to_ascii_lowercase();
+        let name = trim_ows(name).to_ascii_lowercase();
         let value = parse_param_value(value)?;
 
         if name == "q" {
@@ -456,7 +456,7 @@ fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
 }
 
 fn parse_media_range(input: &str) -> Result<(String, String), AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input == "*/*" {
         return Ok(("*".to_string(), "*".to_string()));
     }
@@ -464,8 +464,8 @@ fn parse_media_range(input: &str) -> Result<(String, String), AcceptError> {
     let (media_type, subtype) = input
         .split_once('/')
         .ok_or(AcceptError::InvalidMediaRange)?;
-    let media_type = media_type.trim();
-    let subtype = subtype.trim();
+    let media_type = trim_ows(media_type);
+    let subtype = trim_ows(subtype);
 
     if media_type == "*" {
         if subtype != "*" {
@@ -499,21 +499,21 @@ fn parse_weighted_tokens(
     lowercase: bool,
     allow_wildcard: bool,
 ) -> Result<Vec<(String, QValue)>, AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut items = Vec::new();
     for part in split_with_quotes(input, ',') {
-        let part = part.trim();
+        let part = trim_ows(&part);
         if part.is_empty() {
             continue;
         }
 
         let mut parts = split_with_quotes(part, ';').into_iter();
         let token_raw = parts.next().unwrap_or_default();
-        let token = token_raw.trim();
+        let token = trim_ows(&token_raw);
         if token.is_empty() {
             return Err(AcceptError::InvalidFormat);
         }
@@ -528,16 +528,16 @@ fn parse_weighted_tokens(
         let mut q_seen = false;
 
         for param in parts {
-            let param = param.trim();
+            let param = trim_ows(&param);
             if param.is_empty() {
                 continue;
             }
             let (name, value) = param.split_once('=').ok_or(AcceptError::InvalidParameter)?;
-            if name.trim().eq_ignore_ascii_case("q") {
+            if trim_ows(name).eq_ignore_ascii_case("q") {
                 if q_seen {
                     return Err(AcceptError::InvalidQValue);
                 }
-                qvalue = QValue::parse(value.trim())?;
+                qvalue = QValue::parse(trim_ows(value))?;
                 q_seen = true;
             } else {
                 return Err(AcceptError::InvalidParameter);
@@ -556,10 +556,10 @@ fn parse_weighted_tokens(
 }
 
 fn parse_param_value(input: &str) -> Result<String, AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if let Some(rest) = input.strip_prefix('"') {
         let (value, remaining) = parse_quoted_string(rest)?;
-        if !remaining.trim().is_empty() {
+        if !trim_ows(remaining).is_empty() {
             return Err(AcceptError::InvalidParameter);
         }
         Ok(value)
