@@ -2,7 +2,9 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-escape-quotes-ctl
 
 ## 目的
 
@@ -121,3 +123,16 @@ for c in s.chars() {
 - `cargo test` で全テストが通過すること
 - `cargo test --release` で全テストが通過すること（release ビルドでの検証）
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること
+
+## 解決方法
+
+### `src/validate.rs`
+
+- `escape_quotes()` の CTL 検出を `debug_assert!` から常時有効な SP 置換に変更した
+  - `is_quoted_pair_char(c)` が `false` のとき `result.push(' ')` で置換し `continue` する
+- doc コメントを更新し、RFC 9110 Section 5.5 の "MUST either reject or replace with SP" 規定 (`refs/rfc9110.txt:1606-1611`) と "safe context" 限定句 (`refs/rfc9110.txt:1611-1615`) への参照を追加した
+
+### インラインテスト
+
+- `escape_quotes_debug_assert_on_disallowed_ctl` (`#[cfg(debug_assertions)]` 依存) を削除した
+- `escape_quotes_replaces_ctl_with_space` を新設し、CR / LF / NUL / 他の CTL / DEL の SP 置換とエスケープとの相互作用を検証する
