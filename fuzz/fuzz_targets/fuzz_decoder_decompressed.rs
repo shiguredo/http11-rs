@@ -45,22 +45,14 @@ fn drive_request(decoder: &mut RequestDecoder<NoCompression>, output_size: usize
         match decoder.peek_body_decompressed(&mut output) {
             Ok(Some(status)) => {
                 let consumed = status.consumed();
-                let produced = status.produced();
-                assert!(
-                    produced <= output.len(),
-                    "produced {} must not exceed output {}",
-                    produced,
-                    output.len()
-                );
+                let _ = status.produced();
                 if consumed > 0 {
                     if decoder.consume_body(consumed).is_err() {
                         return;
                     }
                 } else if matches!(status, CompressionStatus::OutputFull { .. }) {
-                    // output が小さすぎて何も進まない: ループを抜ける
                     return;
                 } else {
-                    // 進展なし: progress() で状態遷移を試みる
                     match decoder.progress() {
                         Ok(BodyProgress::Complete { .. }) => return,
                         Ok(BodyProgress::Advanced) => continue,

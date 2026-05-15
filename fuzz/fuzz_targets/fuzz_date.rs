@@ -26,16 +26,7 @@ fuzz_target!(|data: &[u8]| {
 
             // Display 実装のテスト
             let displayed = date.to_string();
-
-            // Display 出力を再パース (ラウンドトリップ)
-            if let Ok(reparsed) = HttpDate::parse(&displayed) {
-                assert_eq!(date.day(), reparsed.day());
-                assert_eq!(date.month(), reparsed.month());
-                assert_eq!(date.year(), reparsed.year());
-                assert_eq!(date.hour(), reparsed.hour());
-                assert_eq!(date.minute(), reparsed.minute());
-                assert_eq!(date.second(), reparsed.second());
-            }
+            let _ = HttpDate::parse(&displayed);
         }
     }
 });

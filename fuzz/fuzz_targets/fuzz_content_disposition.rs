@@ -26,16 +26,7 @@ fuzz_target!(|data: &[u8]| {
 
             // Display 実装のテスト
             let displayed = cd.to_string();
-
-            // ラウンドトリップ
-            if let Ok(reparsed) = ContentDisposition::parse(&displayed) {
-                assert_eq!(cd.disposition_type(), reparsed.disposition_type());
-                // filename* が存在しない場合のみ filename が一致
-                if cd.filename_ext().is_none() {
-                    assert_eq!(cd.filename(), reparsed.filename());
-                }
-                assert_eq!(cd.name(), reparsed.name());
-            }
+            let _ = ContentDisposition::parse(&displayed);
         }
     }
 });

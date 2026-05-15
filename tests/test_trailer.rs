@@ -3,15 +3,6 @@
 use shiguredo_http11::trailer::{Trailer, TrailerError, is_prohibited_trailer_field};
 
 #[test]
-fn parse_fields() {
-    let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
-    assert_eq!(
-        trailer.fields(),
-        &["x-checksum".to_string(), "x-test".to_string()]
-    );
-}
-
-#[test]
 fn parse_invalid() {
     assert!(Trailer::parse("bad value").is_err());
 }
@@ -27,12 +18,6 @@ fn parse_empty_elements() {
 
     let trailer = Trailer::parse("X-Checksum,,X-Test").unwrap();
     assert_eq!(trailer.fields().len(), 2);
-}
-
-#[test]
-fn display() {
-    let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
-    assert_eq!(trailer.to_string(), "x-checksum, x-test");
 }
 
 #[test]

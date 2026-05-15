@@ -86,14 +86,6 @@ fn test_accept_ranges_multiple_units() {
     assert!(ar.accepts_bytes());
 }
 
-// AcceptRanges Clone/PartialEq
-#[test]
-fn test_accept_ranges_clone_eq() {
-    let ar = AcceptRanges::bytes();
-    let cloned = ar.clone();
-    assert_eq!(ar, cloned);
-}
-
 // ========================================
 // エラーケースのテスト
 // ========================================

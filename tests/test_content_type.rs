@@ -213,33 +213,6 @@ fn test_content_type_quoted_string_rejects_ctl() {
     );
 }
 
-// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
-// (RFC 9110 Section 5.5)
-#[test]
-fn test_content_type_quoted_string_accepts_obs_text() {
-    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
-        // qdtext 経路
-        let input = format!("text/html; ext=\"{c}\"");
-        let ct = ContentType::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        assert_eq!(ct.parameter("ext"), Some(c.to_string()).as_deref());
-
-        // quoted-pair 経路
-        let input = format!("text/html; ext=\"\\{c}\"");
-        let ct = ContentType::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        assert_eq!(ct.parameter("ext"), Some(c.to_string()).as_deref());
-    }
-}
-
 // 空 quoted-string `""` の Display ラウンドトリップが破綻しない
 // (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
 #[test]

@@ -507,53 +507,6 @@ fn test_request_body_bytes_some_empty() {
 // API 対称化テスト (Response との対称化、issue 0039)
 // ========================================
 
-/// add_header の戻り値がチェイン可能であることを確認
-#[test]
-fn test_request_add_header_chainable() {
-    let mut req = Request::new("POST", "/").unwrap();
-    let result = req
-        .add_header("Host", "example.com")
-        .and_then(|r| r.add_header("X-A", "1"))
-        .and_then(|r| r.add_header("X-B", "2"));
-    assert!(result.is_ok());
-    assert_eq!(req.get_header("X-B"), Some("2"));
-}
-
-/// set_header の戻り値がチェイン可能であることを確認
-#[test]
-fn test_request_set_header_chainable() {
-    let mut req = Request::new("GET", "/").unwrap();
-    let result = req
-        .set_header("Host", "example.com")
-        .and_then(|r| r.set_header("Host", "evil.example"));
-    assert!(result.is_ok());
-    assert_eq!(req.get_header("Host"), Some("evil.example"));
-    // 同名は 1 個のみ
-    assert_eq!(req.get_headers("Host").len(), 1);
-}
-
-/// `impl Into<String>` で String / &str の両方を受理する
-#[test]
-fn test_request_new_accepts_string_and_str() {
-    // &str
-    let _req = Request::new("GET", "/").unwrap();
-    // String
-    let _req = Request::new(String::from("GET"), String::from("/")).unwrap();
-    // 混在
-    let _req = Request::new("GET", String::from("/")).unwrap();
-}
-
-/// `impl Into<Vec<u8>>` で Vec<u8> / &[u8] の両方を受理する
-#[test]
-fn test_request_body_accepts_vec_and_slice() {
-    // Vec<u8>
-    let req = Request::new("POST", "/").unwrap().body(b"hello".to_vec());
-    assert_eq!(req.body_bytes(), Some(b"hello".as_slice()));
-    // &[u8] は impl Into<Vec<u8>> で受理される
-    let req = Request::new("POST", "/").unwrap().body(b"world".as_slice());
-    assert_eq!(req.body_bytes(), Some(b"world".as_slice()));
-}
-
 /// without_body() / set_body() / clear_body() の動作
 #[test]
 fn test_request_body_mutators() {

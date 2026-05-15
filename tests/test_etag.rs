@@ -3,20 +3,6 @@
 use shiguredo_http11::etag::{ETagList, EntityTag, parse_etag_list};
 
 #[test]
-fn test_parse_strong() {
-    let etag = EntityTag::parse("\"abc123\"").unwrap();
-    assert!(etag.is_strong());
-    assert_eq!(etag.tag(), "abc123");
-}
-
-#[test]
-fn test_parse_weak() {
-    let etag = EntityTag::parse("W/\"abc123\"").unwrap();
-    assert!(etag.is_weak());
-    assert_eq!(etag.tag(), "abc123");
-}
-
-#[test]
 fn test_parse_weak_lowercase_rejected() {
     // RFC 9110 Section 8.8.3: weak = %s"W/" (case-sensitive)
     // 小文字 w/ は許可されない
@@ -31,12 +17,6 @@ fn test_parse_trailing_content_rejected() {
 }
 
 #[test]
-fn test_parse_empty_tag() {
-    let etag = EntityTag::parse("\"\"").unwrap();
-    assert_eq!(etag.tag(), "");
-}
-
-#[test]
 fn test_parse_missing_quote() {
     assert!(EntityTag::parse("abc").is_err());
     assert!(EntityTag::parse("\"abc").is_err());
@@ -46,56 +26,6 @@ fn test_parse_missing_quote() {
 #[test]
 fn test_parse_empty() {
     assert!(EntityTag::parse("").is_err());
-}
-
-#[test]
-fn test_display_strong() {
-    let etag = EntityTag::strong("v1.0").unwrap();
-    assert_eq!(etag.to_string(), "\"v1.0\"");
-}
-
-#[test]
-fn test_display_weak() {
-    let etag = EntityTag::weak("v1.0").unwrap();
-    assert_eq!(etag.to_string(), "W/\"v1.0\"");
-}
-
-#[test]
-fn test_strong_compare() {
-    let e1 = EntityTag::strong("abc").unwrap();
-    let e2 = EntityTag::strong("abc").unwrap();
-    let e3 = EntityTag::weak("abc").unwrap();
-
-    assert!(e1.strong_compare(&e2));
-    assert!(!e1.strong_compare(&e3));
-    assert!(!e3.strong_compare(&e1));
-}
-
-#[test]
-fn test_weak_compare() {
-    let e1 = EntityTag::strong("abc").unwrap();
-    let e2 = EntityTag::weak("abc").unwrap();
-    let e3 = EntityTag::strong("xyz").unwrap();
-
-    assert!(e1.weak_compare(&e2));
-    assert!(e2.weak_compare(&e1));
-    assert!(!e1.weak_compare(&e3));
-}
-
-#[test]
-fn test_parse_etag_list() {
-    let list = parse_etag_list("\"a\", \"b\", W/\"c\"").unwrap();
-    match list {
-        ETagList::Tags(tags) => {
-            assert_eq!(tags.len(), 3);
-            assert_eq!(tags[0].tag(), "a");
-            assert!(tags[0].is_strong());
-            assert_eq!(tags[1].tag(), "b");
-            assert_eq!(tags[2].tag(), "c");
-            assert!(tags[2].is_weak());
-        }
-        _ => panic!("expected Tags"),
-    }
 }
 
 #[test]

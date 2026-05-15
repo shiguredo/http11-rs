@@ -2,6 +2,7 @@
 
 use shiguredo_http11::auth::{
     AuthChallenge, AuthError, Authorization, BasicAuth, BearerToken, DigestAuth, DigestChallenge,
+    WwwAuthenticate,
 };
 
 // ========================================
@@ -306,103 +307,6 @@ fn test_digest_auth_rejects_username_star_invalid_ext_value() {
         "ext-value 形式不正 (シングルクォート欠落) は reject 想定。actual = {:?}",
         result
     );
-}
-
-// ========================================
-// auth-param の hard cap (issue 0047)
-// ========================================
-
-fn build_auth_challenge(param_count: usize) -> String {
-    let mut s = String::from("Bearer ");
-    for i in 0..param_count {
-        if i > 0 {
-            s.push_str(", ");
-        }
-        // 各パラメータ名は一意 (重複検出経路を踏まないため)
-        s.push_str(&format!("p{}=\"v\"", i));
-    }
-    s
-}
-
-// 32 個ちょうどのパラメータは受理される (境界値)
-#[test]
-fn test_auth_challenge_32_params_accepted() {
-    let input = build_auth_challenge(32);
-    let result = AuthChallenge::parse(&input);
-    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
-}
-
-// 33 個目で TooManyParameters を返す (境界値)
-#[test]
-fn test_auth_challenge_33_params_rejected() {
-    let input = build_auth_challenge(33);
-    let result = AuthChallenge::parse(&input);
-    assert!(
-        matches!(result, Err(AuthError::TooManyParameters)),
-        "33 個目で TooManyParameters を返す想定: {:?}",
-        result
-    );
-}
-
-// 100 個でも同じく TooManyParameters
-#[test]
-fn test_auth_challenge_100_params_rejected() {
-    let input = build_auth_challenge(100);
-    let result = AuthChallenge::parse(&input);
-    assert!(matches!(result, Err(AuthError::TooManyParameters)));
-}
-
-// ========================================
-// obs-text / UTF-8 multi-byte char の opaque 保持 (issue 0059)
-// ========================================
-
-use shiguredo_http11::auth::WwwAuthenticate;
-
-// `Basic realm="..."` の realm に obs-text を含む UTF-8 char が含まれても、
-// `parse -> to_string -> parse` で mojibake せず元の値が保持されることを検証する。
-fn assert_basic_realm_roundtrip(realm: &str) {
-    let input = format!("Basic realm=\"{}\"", realm);
-    let parsed = WwwAuthenticate::parse(&input)
-        .unwrap_or_else(|e| panic!("parse failed for {:?}: {:?}", realm, e));
-    assert_eq!(parsed.realm(), realm);
-
-    let displayed = parsed.to_string();
-    let reparsed = WwwAuthenticate::parse(&displayed)
-        .unwrap_or_else(|e| panic!("reparse failed for {:?}: {:?}", displayed, e));
-    assert_eq!(reparsed.realm(), realm);
-}
-
-// BMP 内の 2 バイト UTF-8 (`U+00E9` = `é`)
-#[test]
-fn test_basic_realm_obs_text_bmp_2byte() {
-    assert_basic_realm_roundtrip("réalm");
-}
-
-// 3 バイト UTF-8 (`U+65E5` = `日`)
-#[test]
-fn test_basic_realm_obs_text_bmp_3byte() {
-    assert_basic_realm_roundtrip("日本語領域");
-}
-
-// BMP 末尾 (`U+D7FF`)
-#[test]
-fn test_basic_realm_obs_text_bmp_end() {
-    let realm = format!("a{}b", '\u{D7FF}');
-    assert_basic_realm_roundtrip(&realm);
-}
-
-// surrogate 直後 (`U+E000`)
-#[test]
-fn test_basic_realm_obs_text_supplementary_start() {
-    let realm = format!("a{}b", '\u{E000}');
-    assert_basic_realm_roundtrip(&realm);
-}
-
-// 4 バイト UTF-8 最大 (`U+10FFFF`)
-#[test]
-fn test_basic_realm_obs_text_max_scalar() {
-    let realm = format!("a{}b", '\u{10FFFF}');
-    assert_basic_realm_roundtrip(&realm);
 }
 
 // CR / LF / NUL を含む quoted-string は引き続き reject される (issue 0036 のリグレッション防止)

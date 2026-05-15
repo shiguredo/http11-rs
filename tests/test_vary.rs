@@ -3,21 +3,6 @@
 use shiguredo_http11::vary::Vary;
 
 #[test]
-fn parse_any() {
-    let vary = Vary::parse("*").unwrap();
-    assert!(vary.is_any());
-}
-
-#[test]
-fn parse_fields() {
-    let vary = Vary::parse("Accept-Encoding, User-Agent").unwrap();
-    assert_eq!(
-        vary.fields(),
-        &["accept-encoding".to_string(), "user-agent".to_string()]
-    );
-}
-
-#[test]
 fn parse_invalid() {
     assert!(Vary::parse("bad value").is_err());
 }

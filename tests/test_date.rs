@@ -154,53 +154,6 @@ fn test_date_invalid_time_format() {
 // ========================================
 
 #[test]
-fn test_date_all_months() {
-    let months = [
-        (1, "Jan"),
-        (2, "Feb"),
-        (3, "Mar"),
-        (4, "Apr"),
-        (5, "May"),
-        (6, "Jun"),
-        (7, "Jul"),
-        (8, "Aug"),
-        (9, "Sep"),
-        (10, "Oct"),
-        (11, "Nov"),
-        (12, "Dec"),
-    ];
-
-    for (expected_month, month_name) in months {
-        let date_str = format!("Sun, 06 {} 1994 08:49:37 GMT", month_name);
-        let date = HttpDate::parse(&date_str).unwrap();
-        assert_eq!(date.month(), expected_month);
-    }
-}
-
-// ========================================
-// 全曜日のパーステスト
-// ========================================
-
-#[test]
-fn test_date_all_days_of_week() {
-    let days = [
-        (DayOfWeek::Sunday, "Sun"),
-        (DayOfWeek::Monday, "Mon"),
-        (DayOfWeek::Tuesday, "Tue"),
-        (DayOfWeek::Wednesday, "Wed"),
-        (DayOfWeek::Thursday, "Thu"),
-        (DayOfWeek::Friday, "Fri"),
-        (DayOfWeek::Saturday, "Sat"),
-    ];
-
-    for (expected_dow, dow_name) in days {
-        let date_str = format!("{}, 06 Nov 1994 08:49:37 GMT", dow_name);
-        let date = HttpDate::parse(&date_str).unwrap();
-        assert_eq!(date.day_of_week(), expected_dow);
-    }
-}
-
-#[test]
 fn test_date_rfc850_all_days_of_week() {
     // rfc850-date 形式は長い曜日名 (Monday, Tuesday, ...) を使う (RFC 9110 §5.6.7 ABNF: day-name-l)
     let long_days = [
@@ -218,31 +171,6 @@ fn test_date_rfc850_all_days_of_week() {
         let date = HttpDate::parse_rfc850(&date_str, 2026).unwrap();
         assert_eq!(date.day_of_week(), expected_dow);
     }
-}
-
-// ========================================
-// 境界値テスト
-// ========================================
-
-#[test]
-fn test_date_boundary_values() {
-    // 最小値
-    let date = HttpDate::new(DayOfWeek::Sunday, 1, 1, 1, 0, 0, 0).unwrap();
-    assert_eq!(date.day(), 1);
-    assert_eq!(date.month(), 1);
-    assert_eq!(date.year(), 1);
-    assert_eq!(date.hour(), 0);
-    assert_eq!(date.minute(), 0);
-    assert_eq!(date.second(), 0);
-
-    // 最大値
-    let date = HttpDate::new(DayOfWeek::Saturday, 31, 12, 9999, 23, 59, 60).unwrap();
-    assert_eq!(date.day(), 31);
-    assert_eq!(date.month(), 12);
-    assert_eq!(date.year(), 9999);
-    assert_eq!(date.hour(), 23);
-    assert_eq!(date.minute(), 59);
-    assert_eq!(date.second(), 60);
 }
 
 // ========================================

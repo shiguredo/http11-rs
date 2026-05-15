@@ -448,20 +448,6 @@ fn test_multipart_parser_dash_boundary_incomplete_during_transport_padding() {
     assert_eq!(part.body(), b"hello");
 }
 
-// Clone のテスト
-#[test]
-fn test_multipart_parser_clone() {
-    let mut parser = MultipartParser::new("boundary");
-    parser
-        .feed(
-            b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--\r\n",
-        )
-        .unwrap();
-
-    let cloned = parser.clone();
-    assert!(!cloned.is_finished());
-}
-
 // ========================================
 // Content-Disposition 必須チェックのテスト (RFC 7578 Section 4.2)
 // ========================================

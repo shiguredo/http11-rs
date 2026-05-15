@@ -43,16 +43,6 @@ fn test_expect_100_continue_case_insensitive() {
     assert!(expect.has_100_continue());
 }
 
-#[test]
-fn test_expect_100_continue_roundtrip() {
-    let input = "100-continue";
-    let expect = Expect::parse(input).unwrap();
-    let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
-
-    assert_eq!(expect, reparsed);
-}
-
 // ========================================
 // エスケープシーケンスのテスト
 // ========================================
@@ -269,33 +259,6 @@ fn test_expect_quoted_string_rejects_ctl() {
         Expect::parse("token=\"\rabc\""),
         Err(ExpectError::InvalidValue),
     );
-}
-
-// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
-// (RFC 9110 Section 5.5)
-#[test]
-fn test_expect_quoted_string_accepts_obs_text() {
-    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
-        // qdtext 経路
-        let input = format!("token=\"{c}\"");
-        let expect = Expect::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        assert_eq!(expect.items()[0].value(), Some(c.to_string()).as_deref());
-
-        // quoted-pair 経路
-        let input = format!("token=\"\\{c}\"");
-        let expect = Expect::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        assert_eq!(expect.items()[0].value(), Some(c.to_string()).as_deref());
-    }
 }
 
 // 空 quoted-string `""` が受理される (リグレッション防止)

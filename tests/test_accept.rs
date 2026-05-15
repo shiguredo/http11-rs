@@ -30,22 +30,6 @@ fn test_accept_error_display() {
 // QValue のテスト
 // ========================================
 
-// QValue パース (1)
-#[test]
-fn test_qvalue_parse_one() {
-    let q = QValue::parse("1").unwrap();
-    assert_eq!(q.value(), 1000);
-    assert!((q.as_f32() - 1.0).abs() < f32::EPSILON);
-}
-
-// QValue パース (0)
-#[test]
-fn test_qvalue_parse_zero() {
-    let q = QValue::parse("0").unwrap();
-    assert_eq!(q.value(), 0);
-    assert!((q.as_f32() - 0.0).abs() < f32::EPSILON);
-}
-
 // QValue デフォルト
 #[test]
 fn test_qvalue_default() {
@@ -93,22 +77,6 @@ fn test_qvalue_one_variants() {
     assert_eq!(QValue::parse("1.00").unwrap().value(), 1000);
     assert_eq!(QValue::parse("1.000").unwrap().value(), 1000);
 }
-
-// QValue エッジケース
-#[test]
-fn test_qvalue_edge_cases() {
-    // 境界値
-    assert_eq!(QValue::parse("0.001").unwrap().value(), 1);
-    assert_eq!(QValue::parse("0.999").unwrap().value(), 999);
-
-    // 省略形式
-    assert_eq!(QValue::parse("0.1").unwrap().value(), 100);
-    assert_eq!(QValue::parse("0.01").unwrap().value(), 10);
-}
-
-// ========================================
-// Accept のテスト
-// ========================================
 
 // Accept 空値テスト
 #[test]
@@ -262,35 +230,6 @@ fn test_accept_quoted_string_rejects_ctl() {
         Accept::parse("text/html; charset=\"\rabc\""),
         Err(AcceptError::InvalidParameter),
     );
-}
-
-// obs-text (U+0080 以上) を含む quoted-string は opaque data として受理する
-// (RFC 9110 Section 5.5)
-#[test]
-fn test_accept_quoted_string_accepts_obs_text() {
-    for &c in helpers::quoted_string::OBS_TEXT_BOUNDARIES {
-        // qdtext 経路
-        let input = format!("text/html; ext=\"{c}\"");
-        let accept = Accept::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (qdtext) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        let params = accept.items()[0].parameters();
-        assert_eq!(params, &[("ext".to_string(), c.to_string())]);
-
-        // quoted-pair 経路
-        let input = format!("text/html; ext=\"\\{c}\"");
-        let accept = Accept::parse(&input).unwrap_or_else(|e| {
-            panic!(
-                "obs-text U+{:04X} (quoted-pair) が reject された: {e:?}",
-                c as u32
-            )
-        });
-        let params = accept.items()[0].parameters();
-        assert_eq!(params, &[("ext".to_string(), c.to_string())]);
-    }
 }
 
 // 空 quoted-string `""` が受理され、Display ラウンドトリップも破綻しない

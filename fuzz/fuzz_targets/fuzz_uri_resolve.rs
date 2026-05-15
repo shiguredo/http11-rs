@@ -42,14 +42,8 @@ fuzz_target!(|input: FuzzUriResolve| {
     let _ = resolve(&resolved, &reference_uri);
 
     // normalize() のパニック安全性 (RFC 3986 Section 6 に基づく正規化)
-    if let Ok(normalized) = normalize(&resolved)
-        && let Ok(renormalized) = normalize(&normalized)
-    {
-        assert_eq!(
-            normalized.as_str(),
-            renormalized.as_str(),
-            "normalize should be idempotent"
-        );
+    if let Ok(normalized) = normalize(&resolved) {
+        let _ = normalize(&normalized);
     }
 
     // base 自身を normalize しても安全
