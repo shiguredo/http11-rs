@@ -63,6 +63,10 @@
   - `decode()` 完了時と `decode_headers()` Complete→StartLine 遷移時の 4 箇所に `self.decompressor.reset()` を追加する
   - 前メッセージの Decompressor 内部状態が後続メッセージに持ち越されるデータ破損経路を塞ぐ
   - @voluntas
+- [FIX] `HttpDate::new` に月別日数検証を追加し、無効な日付の構築を防ぐ
+  - `day` の検証を `1..=31` 固定から `max_day_in_month(month, year)` に変更する
+  - 2 月のうるう年判定を含む (RFC 9110 Section 5.6.7 IMF-fixdate)
+  - @voluntas
 
 ### misc
 

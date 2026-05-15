@@ -174,8 +174,75 @@ fn test_date_rfc850_all_days_of_week() {
 }
 
 // ========================================
-// RFC 850 形式の追加テスト
+// HttpDate::new の月別日数検証
 // ========================================
+
+#[test]
+fn test_date_month_day_validation() {
+    // 6 月 31 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Sunday, 31, 6, 1994, 8, 49, 37),
+        Err(DateError::InvalidDay)
+    ));
+
+    // 2 月 30 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Monday, 30, 2, 2000, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
+
+    // 4 月 31 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Tuesday, 31, 4, 2000, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
+}
+
+#[test]
+fn test_date_february_leap_year() {
+    // うるう年の 2 月 29 日は有効
+    let date = HttpDate::new(DayOfWeek::Tuesday, 29, 2, 2000, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 29);
+    assert_eq!(date.month(), 2);
+    assert_eq!(date.year(), 2000);
+
+    // うるう年の 2 月 28 日も有効
+    let date = HttpDate::new(DayOfWeek::Monday, 28, 2, 2000, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 28);
+
+    // 平年の 2 月 29 日は拒否
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Thursday, 29, 2, 2001, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
+
+    // 平年の 2 月 28 日は有効
+    let date = HttpDate::new(DayOfWeek::Wednesday, 28, 2, 2001, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 28);
+}
+
+#[test]
+fn test_date_30_day_months() {
+    // 4/6/9/11 月の 30 日は有効、31 日は拒否
+    for month in [4, 6, 9, 11] {
+        let date = HttpDate::new(DayOfWeek::Monday, 30, month, 2000, 0, 0, 0).unwrap();
+        assert_eq!(date.day(), 30);
+
+        assert!(matches!(
+            HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0),
+            Err(DateError::InvalidDay)
+        ));
+    }
+}
+
+#[test]
+fn test_date_31_day_months() {
+    // 1/3/5/7/8/10/12 月の 31 日は有効
+    for month in [1, 3, 5, 7, 8, 10, 12] {
+        let date = HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0).unwrap();
+        assert_eq!(date.day(), 31);
+    }
+}
 
 #[test]
 fn test_date_rfc850_format_errors() {

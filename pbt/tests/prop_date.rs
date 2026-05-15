@@ -69,9 +69,10 @@ fn valid_month() -> impl Strategy<Value = u8> {
     1u8..=12u8
 }
 
-// 日 (1-31)
+// 日 (1-28、全月で有効な範囲)
+// 月別日数検証は単体テストでカバーする。PBT では全月で有効な日数のみ生成する。
 fn valid_day() -> impl Strategy<Value = u8> {
-    1u8..=31u8
+    1u8..=28u8
 }
 
 // 年 (1-9999)
