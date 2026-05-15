@@ -2,7 +2,9 @@
 
 - Priority: High
 - Created: 2026-05-15
+- Completed: 2026-05-15
 - Model: deepseek v4-pro
+- Branch: feature/fix-content-range-overflow
 
 ## 目的
 
@@ -181,3 +183,30 @@ pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
 - `parse()` の検証ロジックが `validate_content_range_parts()` として抽出され、重複が除去されていること
 - `CHANGES.md` の `## develop` に `[FIX]` エントリが追加されていること
 - 全既存テストが引き続き通過すること
+
+## 解決方法
+
+### `src/range.rs`
+
+- `length()` の計算を `e - s + 1` から `e.checked_sub(s).and_then(|d| d.checked_add(1))` に変更し、オーバーフロー時は `None` を返すようにした
+- `new_bytes()` に `assert!(start <= end)` と `assert!(len > end)` のバリデーションを追加した
+- `new_bytes()` の doc コメントに panic 条件と `end = u64::MAX` 時の `complete_length` 制約を明記した
+- `parse()` 内の `start > end` / `complete_length <= end` 検証を `validate_content_range_parts()` として抽出し、`parse()` から呼び出すようにした
+- `InvalidBounds` の Display メッセージを `"invalid range bounds"` に簡略化した
+
+### `tests/test_range.rs`
+
+- `length()` の境界値テスト 6 件を追加した (`(0, u64::MAX)` → None、`(1, u64::MAX)` → Some(u64::MAX) 等)
+- `new_bytes()` の `#[should_panic]` テスト 4 件を追加した (start > end、complete_length <= end)
+- `new_bytes(0, u64::MAX, None)` の正常系テスト 1 件を追加した
+- `test_content_range_parse_errors` に `complete_length <= end` のケース 2 件を追加した
+- `test_range_error_display` の `InvalidBounds` 期待値を更新した
+
+### `pbt/tests/prop_range.rs`
+
+- `prop_content_range_length` / `prop_content_range_roundtrip` / `prop_content_range_unknown_length` の strategy を `0u64..=u64::MAX` に拡張した
+- `end = u64::MAX` のとき `complete_length = None` にするよう `checked_add` で安全にガードした
+
+### `fuzz/fuzz_targets/fuzz_range.rs`
+
+- `ContentRange::new_bytes()` の直接構築経路を追加した (バイナリデータから start/end/complete_length を LE で構成し、事前検証後に構築・アクセサ・Display ラウンドトリップを検証)

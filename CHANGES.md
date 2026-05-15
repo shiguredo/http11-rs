@@ -49,6 +49,12 @@
   - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた
   - 併せて encoder の 205 Content-Length 検証も `trim_ows` に置換し防御層の一貫性を確保する
   - @voluntas
+- [FIX] `ContentRange::length()` の整数オーバーフローを修正し `new_bytes()` にバリデーションを追加する
+  - `length()` が `e - s + 1` を unchecked に計算しており、`(0, u64::MAX)` で debug ビルドの panic / release ビルドの wrapping を起こしていた
+  - `checked_sub` + `checked_add` に変更し、オーバーフロー時は `None` を返す
+  - `new_bytes()` に `start > end` と `complete_length <= end` の `assert!` を追加する (RFC 9110 Section 14.4 の validity rule)
+  - `parse()` の検証ロジックを `validate_content_range_parts()` として抽出し重複を除去する
+  - @voluntas
 
 ### misc
 

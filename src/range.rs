@@ -53,7 +53,7 @@ impl fmt::Display for RangeError {
             RangeError::InvalidFormat => write!(f, "invalid range header format"),
             RangeError::InvalidUnit => write!(f, "invalid range unit"),
             RangeError::InvalidRange => write!(f, "invalid range specification"),
-            RangeError::InvalidBounds => write!(f, "invalid range bounds (start > end)"),
+            RangeError::InvalidBounds => write!(f, "invalid range bounds"),
         }
     }
 }
@@ -250,6 +250,27 @@ fn parse_range_spec(s: &str) -> Result<RangeSpec, RangeError> {
     Ok(RangeSpec::Range { start, end })
 }
 
+/// Content-Range の start / end / complete_length の整合性を検証する
+///
+/// RFC 9110 Section 14.4 (行 6634-6638) の validity rule:
+/// - last-pos < first-pos は invalid
+/// - complete-length <= last-pos は invalid
+fn validate_content_range_parts(
+    start: u64,
+    end: u64,
+    complete_length: Option<u64>,
+) -> Result<(), RangeError> {
+    if start > end {
+        return Err(RangeError::InvalidBounds);
+    }
+    if let Some(len) = complete_length
+        && len <= end
+    {
+        return Err(RangeError::InvalidBounds);
+    }
+    Ok(())
+}
+
 /// Content-Range ヘッダー (RFC 9110 Section 14.4)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentRange {
@@ -319,16 +340,7 @@ impl ContentRange {
             .parse::<u64>()
             .map_err(|_| RangeError::InvalidFormat)?;
 
-        if start > end {
-            return Err(RangeError::InvalidBounds);
-        }
-
-        // RFC 9110 Section 14.4: complete-length が last-pos 以下なら invalid
-        if let Some(len) = complete_length
-            && len <= end
-        {
-            return Err(RangeError::InvalidBounds);
-        }
+        validate_content_range_parts(start, end, complete_length)?;
 
         Ok(ContentRange {
             unit: unit.to_string(),
@@ -339,7 +351,23 @@ impl ContentRange {
     }
 
     /// 新しい Content-Range を作成 (bytes)
+    ///
+    /// # Panics
+    ///
+    /// - `start > end` の場合 panic する
+    /// - `complete_length` が `Some(cl)` かつ `cl <= end` の場合 panic する
+    ///
+    /// `end = u64::MAX` のときは `complete_length` に `Some(_)` を指定できない
+    /// (`u64` の最大値を超える値を表現できないため)。
+    /// `complete_length = None` (不明) で構築すること。
     pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
+        assert!(start <= end, "ContentRange: start must be <= end");
+        if let Some(len) = complete_length {
+            assert!(
+                len > end,
+                "ContentRange: complete_length must be > last-pos"
+            );
+        }
         ContentRange {
             unit: "bytes".to_string(),
             start: Some(start),
@@ -379,9 +407,11 @@ impl ContentRange {
     }
 
     /// 範囲の長さを取得
+    ///
+    /// `(start=0, end=u64::MAX)` のように結果が `u64` に収まらない場合は `None` を返す。
     pub fn length(&self) -> Option<u64> {
         match (self.start, self.end) {
-            (Some(s), Some(e)) => Some(e - s + 1),
+            (Some(s), Some(e)) => e.checked_sub(s).and_then(|d| d.checked_add(1)),
             _ => None,
         }
     }
