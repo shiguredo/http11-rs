@@ -85,7 +85,8 @@
   - `src/encoder.rs` と `src/decoder/body.rs` の重複定義を削除し `crate::request_target::detect_scheme` に集約する
   - @voluntas
 - [FIX] `examples/http11_client` のボディ出力で UTF-8 文字境界パニックを修正する
-  - `&text[..1000]` を `&text[..text.floor_char_boundary(1000)]` に変更し安全な truncate にする
+  - `&text[..1000]` を `is_char_boundary` で UTF-8 境界まで縮める安全な truncate に変更する
+  - `str::floor_char_boundary` は MSRV 1.88 では unstable (1.91 stabilize) のため利用しない
   - @voluntas
 - [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の Accept-Encoding qvalue デフォルト値を RFC 9110 Section 12.4.2 に準拠させる
   - `unwrap_or(1.0)` を `unwrap_or(0.0)` に修正する
