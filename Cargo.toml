@@ -1,8 +1,8 @@
 [package]
 name = "shiguredo_http11"
 version = "2026.5.0-canary.0"
-edition = "2024"
-rust-version = "1.88"
+edition.workspace = true
+rust-version.workspace = true
 description = "HTTP/1.1 Library"
 readme = "README.md"
 homepage = "https://github.com/shiguredo/http11-rs"
@@ -18,5 +18,13 @@ members = [
   "pbt",
 ]
 exclude = ["examples/http11_server_io_uring", "fuzz"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# 本ライブラリ (workspace ルートを参照)
+shiguredo_http11 = { path = "." }
 
 [dependencies]
