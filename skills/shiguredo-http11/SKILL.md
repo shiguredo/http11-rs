@@ -21,10 +21,12 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## バージョン情報
 
 - crate 名: `shiguredo_http11`
-- バージョン: 2026.3.0
+- バージョン: 2026.5.0
 - Rust Edition: 2024
 - 最小 Rust バージョン: 1.88
 - ライセンス: Apache-2.0
+
+公開 enum (全 `Error` 系・`StatusClass` / `BodyKind` / `CompressionStatus` / `Authorization` / `AuthChallenge` 等) には `#[non_exhaustive]` が付与されている。利用側の `match` には `_` アームを置くこと。
 
 ## コア API
 
@@ -32,7 +34,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `Request` | HTTP リクエスト | `new()` (Result), `with_version()` (Result), `header()` (Result), `add_header()` (Result), `set_header()` (Result), `body()` (builder), `body_bytes()` (getter), `method()`, `uri()`, `version()`, `encode()` (Result), `encode_headers()` (Result), `is_keep_alive()`, `is_chunked()` |
+| `Request` | HTTP リクエスト | `new()` (Result), `with_version()` (Result), `header()` (Result, builder), `add_header()` (Result, mutator, チェイン可), `set_header()` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `method()`, `uri()`, `version()`, `encode()` (Result), `encode_headers()` (Result), `is_keep_alive()`, `is_chunked()` |
 | `Response` | HTTP レスポンス | `new()` (Result), `with_version()` (Result), `with_status(StatusCode)` (infallible), `header()` (Result, builder), `add_header()` (Result, mutator, チェイン可), `set_header()` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `omit_body()` (builder), `set_omit_body()` (mutator), `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()` (Result), `encode_headers()` (Result), `status_class()`, `is_keep_alive()` |
 | `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `class()`, `from_code(u16)` (未登録コードは `None`) |
 | `StatusClass` | RFC 9110 Section 15 のクラス分類 enum | `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`, `from_status_code(u16)` (範囲外は `None`) |
@@ -41,12 +43,14 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 `encode()` / `encode_headers()` は意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合、1xx/204/205 へのボディ等) を `Result<Vec<u8>, EncodeError>` で返す。構築時バリデーションを通過した値でも encode 時に検出されるため、呼び出し側は `?` 等で伝播する。
 
+`Request` / `Response` の文字列・バイト列受け取り API (`new` / `with_version` / `header` / `add_header` / `set_header` / `body` 等) は `impl Into<String>` / `impl Into<Vec<u8>>` を受け、`String` や `Vec<u8>` をムーブで渡せる。`&str` / `&[u8]` も従来どおり利用可能。
+
 ### デコード用 (受信側)
 
 | 型 | 説明 | 主要メソッド |
 |----|------|-------------|
-| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()` |
-| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `is_tunnel()`, `take_remaining()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
+| `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()`, `is_tunnel()`, `take_remaining()` (CONNECT 用) |
+| `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
 | `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `status_class()`) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
@@ -65,7 +69,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `has_header(name)` | ヘッダーの存在確認 |
 | `connection()` | Connection ヘッダーを取得 |
 | `is_keep_alive()` | キープアライブ接続か判定 |
-| `content_length()` | Content-Length を取得 (`Option<u64>`) |
+| `content_length()` | Content-Length を取得 (`Result<Option<u64>, Error>`、複数値・不正値を検出) |
 | `is_chunked()` | Transfer-Encoding の最後が chunked か判定 |
 
 ### ボディ処理
@@ -105,6 +109,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 `CompressionStatus` には `consumed()`, `produced()`, `is_complete()`, `is_output_full()` ヘルパーがある。
 
 ライブラリ本体は圧縮実装を含まないため、利用者が `noflate` / `flate2` (gzip), `brotli`, `zstd` などを使って実装する。サンプル (`examples/`) は `noflate` ベースで実装されている。
+
+`RequestDecoder` / `ResponseDecoder` は Keep-Alive 接続におけるメッセージ境界 (`decode()` 完了時および `decode_headers()` Complete→StartLine 遷移時) で `Decompressor::reset()` を自動的に呼び出すため、前メッセージの内部状態が次メッセージに漏れない。
 
 ## ヘッダーパースモジュール
 
@@ -243,8 +249,12 @@ use shiguredo_http11::ResponseDecoder;
 
 let mut decoder = ResponseDecoder::new();
 decoder.set_request_method("CONNECT");
-// CONNECT 2xx 応答後のボディは Tunnel として扱われる
+// CONNECT 2xx 応答後のボディは Tunnel として扱われる。
+// CONNECT 2xx を検出した時点で ResponseHead.headers からは
+// Transfer-Encoding / Content-Length が除去される (RFC 9110 §9.3.6 / §7.8)。
 ```
+
+サーバー側 (`RequestDecoder`) も CONNECT メソッド受信時に `BodyKind::Tunnel` を返し、`is_tunnel()` / `take_remaining()` でトンネル接続を引き継げる。
 
 ### 直接書き込み API (`mut_buf` / `advance_buf` / `available_buf`)
 
