@@ -227,13 +227,81 @@ fn test_uri_normalize_percent_encoding() {
     assert_eq!(normalized.path(), "/%2F");
 }
 
+// authority なし + path-only URI で `..` + 空 segment が `//` 始まりになる
+// ケースで normalize が冪等であること (RFC 3986 Section 3.3)
+#[test]
+fn test_uri_normalize_idempotent_with_dotdot_double_slash() {
+    let uri = Uri::parse("/..//YYYYYYYY/#").unwrap();
+    let n1 = normalize(&uri).unwrap();
+    let n2 = normalize(&n1).unwrap();
+    assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
+    assert_eq!(
+        n1.path(),
+        "/.//YYYYYYYY/",
+        "path が path-absolute 形であること"
+    );
+    assert!(n1.authority().is_none(), "authority が None で保たれること");
+}
+
+// relative-path reference で最初の segment が `:` を含むケース
+// (RFC 3986 Section 4.2) で normalize が冪等であること
+#[test]
+fn test_uri_normalize_idempotent_with_colon_first_segment() {
+    // base="S55", reference="%55:;:/." を resolve すると path="%55:;:/" になり、
+    // normalize で %55 が "U" にデコードされ "U:;:/" となるため、
+    // 再 parse 時に "U" が scheme として誤解釈されていた。
+    let base = Uri::parse("S55").unwrap();
+    let reference = Uri::parse("%55:;:/.").unwrap();
+    let resolved = resolve(&base, &reference).unwrap();
+    let n1 = normalize(&resolved).unwrap();
+    let n2 = normalize(&n1).unwrap();
+    assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
+    assert!(n1.scheme().is_none(), "scheme が誤って注入されないこと");
+    assert!(n1.authority().is_none(), "authority が None で保たれること");
+}
+
+// percent-encoded dot (`%2E`) が含まれていても normalize が冪等であること
+// (RFC 3986 Section 6.2.2: percent-encoding 正規化 → dot-segment 除去の順)
+#[test]
+fn test_uri_normalize_idempotent_with_encoded_dot_segment() {
+    let uri = Uri::parse("/a/%2E/b/%2E%2E/c").unwrap();
+    let n1 = normalize(&uri).unwrap();
+    let n2 = normalize(&n1).unwrap();
+    assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
+    assert_eq!(
+        n1.path(),
+        "/a/c",
+        "%2E は . にデコードされた後 dot-segment として除去されること"
+    );
+}
+
+// scheme 付き + authority なしでも同様に冪等であること
+#[test]
+fn test_uri_normalize_scheme_only_double_slash() {
+    let uri = Uri::parse("file:/..//Y/").unwrap();
+    let n1 = normalize(&uri).unwrap();
+    let n2 = normalize(&n1).unwrap();
+    assert_eq!(n1.scheme(), Some("file"), "scheme が file で保たれること");
+    assert!(
+        n1.authority().is_none(),
+        "scheme 付きでも authority が None で保たれること"
+    );
+    assert_eq!(n1.path(), "/.//Y/", "path が path-absolute 形であること");
+    assert_eq!(
+        n1.as_str(),
+        "file:/.//Y/",
+        "再 parse 可能な canonical 文字列であること"
+    );
+    assert_eq!(n1.as_str(), n2.as_str(), "scheme 付きでも冪等であること");
+}
+
 // ========================================
 // remove_dot_segments の追加テスト
 // ========================================
 
 #[test]
 fn test_remove_dot_segments_edge_cases() {
-    // RFC 3986 Section 5.4 のテストケース
+    // RFC 3986 Section 5.2.4 の remove_dot_segments エッジケース
     let base = Uri::parse("http://example.com/base/").unwrap();
 
     // . のみ

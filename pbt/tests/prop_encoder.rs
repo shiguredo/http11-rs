@@ -441,7 +441,7 @@ proptest! {
 }
 
 // ========================================
-// RFC 9112 Section 6.1: 1xx / 204 レスポンスで Transfer-Encoding 禁止
+// RFC 9112 Section 6.3 item 1: 1xx / 204 レスポンスで Transfer-Encoding 禁止
 // ========================================
 
 proptest! {
@@ -466,7 +466,7 @@ proptest! {
 }
 
 // ========================================
-// RFC 9110 Section 8.6: 1xx / 204 レスポンスで Content-Length 禁止
+// RFC 9112 Section 6.3 item 1: 1xx / 204 レスポンスで Content-Length 禁止
 // ========================================
 
 proptest! {

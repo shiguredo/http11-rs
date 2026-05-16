@@ -20,6 +20,11 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{
+    QuotedStringError, escape_quotes, is_token_char, is_valid_language_tag, is_valid_token,
+    parse_quoted_string, split_with_quotes, trim_ows,
+};
+
 /// Accept 系パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -32,8 +37,10 @@ pub enum AcceptError {
     InvalidMediaRange,
     /// 不正なトークン
     InvalidToken,
-    /// 不正なパラメータ
+    /// 不正なパラメータ (qdtext / quoted-pair の文字種違反を含む)
     InvalidParameter,
+    /// quoted-string の閉じ DQUOTE が見つからない (RFC 9110 Section 5.6.4)
+    UnterminatedQuote,
     /// 不正な q 値
     InvalidQValue,
     /// 不正な言語タグ
@@ -48,6 +55,7 @@ impl fmt::Display for AcceptError {
             AcceptError::InvalidMediaRange => write!(f, "invalid media range"),
             AcceptError::InvalidToken => write!(f, "invalid token"),
             AcceptError::InvalidParameter => write!(f, "invalid parameter"),
+            AcceptError::UnterminatedQuote => write!(f, "unterminated quoted-string"),
             AcceptError::InvalidQValue => write!(f, "invalid qvalue"),
             AcceptError::InvalidLanguageTag => write!(f, "invalid language tag"),
         }
@@ -56,6 +64,17 @@ impl fmt::Display for AcceptError {
 
 impl core::error::Error for AcceptError {}
 
+impl From<QuotedStringError> for AcceptError {
+    fn from(e: QuotedStringError) -> Self {
+        match e {
+            QuotedStringError::InvalidQdtext | QuotedStringError::InvalidQuotedPair => {
+                AcceptError::InvalidParameter
+            }
+            QuotedStringError::Unterminated => AcceptError::UnterminatedQuote,
+        }
+    }
+}
+
 /// q 値 (0.000 - 1.000)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct QValue(u16);
@@ -63,7 +82,7 @@ pub struct QValue(u16);
 impl QValue {
     /// q 値をパース
     pub fn parse(input: &str) -> Result<Self, AcceptError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AcceptError::InvalidQValue);
         }
@@ -146,12 +165,12 @@ impl Accept {
     /// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
     /// 空の値は空リストとして受理する。
     pub fn parse(input: &str) -> Result<Self, AcceptError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut items = Vec::new();
         if !input.is_empty() {
             for part in split_with_quotes(input, ',') {
-                let part = part.trim();
+                let part = trim_ows(&part);
                 if part.is_empty() {
                     continue;
                 }
@@ -410,12 +429,12 @@ fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
     let mut q_seen = false;
 
     for param in parts {
-        let param = param.trim();
+        let param = trim_ows(&param);
         if param.is_empty() {
             continue;
         }
         let (name, value) = param.split_once('=').ok_or(AcceptError::InvalidParameter)?;
-        let name = name.trim().to_ascii_lowercase();
+        let name = trim_ows(name).to_ascii_lowercase();
         let value = parse_param_value(value)?;
 
         if name == "q" {
@@ -438,7 +457,7 @@ fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
 }
 
 fn parse_media_range(input: &str) -> Result<(String, String), AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input == "*/*" {
         return Ok(("*".to_string(), "*".to_string()));
     }
@@ -446,8 +465,8 @@ fn parse_media_range(input: &str) -> Result<(String, String), AcceptError> {
     let (media_type, subtype) = input
         .split_once('/')
         .ok_or(AcceptError::InvalidMediaRange)?;
-    let media_type = media_type.trim();
-    let subtype = subtype.trim();
+    let media_type = trim_ows(media_type);
+    let subtype = trim_ows(subtype);
 
     if media_type == "*" {
         if subtype != "*" {
@@ -481,21 +500,21 @@ fn parse_weighted_tokens(
     lowercase: bool,
     allow_wildcard: bool,
 ) -> Result<Vec<(String, QValue)>, AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Ok(Vec::new());
     }
 
     let mut items = Vec::new();
     for part in split_with_quotes(input, ',') {
-        let part = part.trim();
+        let part = trim_ows(&part);
         if part.is_empty() {
             continue;
         }
 
         let mut parts = split_with_quotes(part, ';').into_iter();
         let token_raw = parts.next().unwrap_or_default();
-        let token = token_raw.trim();
+        let token = trim_ows(&token_raw);
         if token.is_empty() {
             return Err(AcceptError::InvalidFormat);
         }
@@ -510,16 +529,16 @@ fn parse_weighted_tokens(
         let mut q_seen = false;
 
         for param in parts {
-            let param = param.trim();
+            let param = trim_ows(&param);
             if param.is_empty() {
                 continue;
             }
             let (name, value) = param.split_once('=').ok_or(AcceptError::InvalidParameter)?;
-            if name.trim().eq_ignore_ascii_case("q") {
+            if trim_ows(name).eq_ignore_ascii_case("q") {
                 if q_seen {
                     return Err(AcceptError::InvalidQValue);
                 }
-                qvalue = QValue::parse(value.trim())?;
+                qvalue = QValue::parse(trim_ows(value))?;
                 q_seen = true;
             } else {
                 return Err(AcceptError::InvalidParameter);
@@ -538,68 +557,23 @@ fn parse_weighted_tokens(
 }
 
 fn parse_param_value(input: &str) -> Result<String, AcceptError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if let Some(rest) = input.strip_prefix('"') {
         let (value, remaining) = parse_quoted_string(rest)?;
-        if !remaining.trim().is_empty() {
+        if !trim_ows(remaining).is_empty() {
             return Err(AcceptError::InvalidParameter);
         }
         Ok(value)
+    } else if !is_valid_token(input) {
+        Err(AcceptError::InvalidToken)
     } else {
-        if !is_valid_token(input) {
-            return Err(AcceptError::InvalidToken);
-        }
         Ok(input.to_string())
     }
 }
 
-fn parse_quoted_string(input: &str) -> Result<(String, &str), AcceptError> {
-    let mut result = String::new();
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            result.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Ok((result, &input[i + 1..]));
-        } else {
-            result.push(c);
-        }
-    }
-
-    Err(AcceptError::InvalidParameter)
-}
-
-fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut in_quote = false;
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' && in_quote {
-            escaped = true;
-            continue;
-        }
-        if c == '"' {
-            in_quote = !in_quote;
-            continue;
-        }
-        if c == delimiter && !in_quote {
-            parts.push(input[start..i].to_string());
-            start = i + c.len_utf8();
-        }
-    }
-    parts.push(input[start..].to_string());
-    parts
-}
+// 引用符付き文字列のパースは `validate::parse_quoted_string` に委譲する。
+// `From<QuotedStringError> for AcceptError` で文字種違反は `InvalidParameter`、
+// 終端引用符なしは `UnterminatedQuote` にマップする。
 
 fn validate_token_or_star(token: &str) -> bool {
     if token == "*" {
@@ -615,48 +589,10 @@ fn validate_language_range(token: &str) -> bool {
     is_valid_language_tag(token)
 }
 
-fn is_valid_language_tag(tag: &str) -> bool {
-    if tag.is_empty() {
-        return false;
-    }
-    let mut parts = tag.split('-');
-
-    // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ (数字不可)
-    let Some(primary) = parts.next() else {
-        return false;
-    };
-    if primary.is_empty() || primary.len() > 8 || !primary.chars().all(|c| c.is_ascii_alphabetic())
-    {
-        return false;
-    }
-
-    // 後続サブタグは ALPHA / DIGIT
-    for part in parts {
-        if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return false;
-        }
-    }
-    true
-}
-
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
 fn needs_quoting(s: &str) -> bool {
-    s.bytes().any(|b| !is_token_char(b))
-}
-
-fn escape_quotes(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
+    // のため必ず引用符が必要。
+    s.is_empty() || s.bytes().any(|b| !is_token_char(b))
 }
 
 #[cfg(test)]

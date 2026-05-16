@@ -3,7 +3,7 @@ use crate::decoder::HttpHead;
 use crate::error::EncodeError;
 use crate::host::Host;
 use crate::request::Request;
-use crate::request_target::RequestTargetForm;
+use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::response::Response;
 use crate::validate::{
     is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
@@ -278,33 +278,6 @@ fn validate_encoder_authority_form(uri: &str) -> Result<(), EncodeError> {
     Ok(())
 }
 
-/// スキームを検出する (RFC 3986 Section 3.1)
-///
-/// scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-/// 先頭が有効なスキーム + ":" であればスキームの長さを返す
-fn detect_scheme(target: &str) -> Option<usize> {
-    let bytes = target.as_bytes();
-    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
-        return None;
-    }
-    let colon_pos = bytes.iter().position(|&b| b == b':')?;
-    if colon_pos == 0 {
-        return None;
-    }
-    for &b in &bytes[1..colon_pos] {
-        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
-            return None;
-        }
-    }
-    // 意図的な RFC 非準拠: path-empty (scheme ":" のみ) を拒否する。
-    // RFC 3986 の ABNF では path-empty は合法だが、HTTP request-target として
-    // path-empty が単独で出現する実用的なケースはないため、不正な入力として扱う。
-    if colon_pos + 1 >= bytes.len() {
-        return None;
-    }
-    Some(colon_pos)
-}
-
 /// RFC 9112 Section 3.2: メソッドと request-target 形式の整合性を検証
 ///
 /// - CONNECT は authority-form のみ (Section 3.2.3)
@@ -352,7 +325,7 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
             }
             Ok(())
         }
-        // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2)
+        // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2.1/4.2.2)
         (_, RequestTargetForm::Absolute) => {
             reject_http_without_authority_prefix(uri)?;
             Ok(())
@@ -768,8 +741,11 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
             return Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 });
         }
         // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+        // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+        // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+        // 防御層の一貫性を確保する目的で trim_ows に統一する。
         if let Some(cl) = response.get_header("Content-Length")
-            && cl.trim() != "0"
+            && trim_ows(cl) != "0"
         {
             return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
         }
@@ -963,6 +939,22 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
     }
 
+    // Content-Length の値検証 (1*DIGIT ABNF + ボディ長との整合性)
+    // CONNECT リクエストは RFC 9110 Section 9.3.6 で content を持たず、
+    // CL 検証はアプリケーション層の責務とするためスキップする。
+    if request.method() != "CONNECT"
+        && !request.has_header("Transfer-Encoding")
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
+    {
+        let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
+        }
+    }
+
     // RFC 9110 Section 9.3.6: "A CONNECT request message does not have content."
     // RFC は CONNECT リクエスト側に Content-Length / Transfer-Encoding を MUST NOT とはしていない。
     // encode_request_headers はボディを扱わないため、CONNECT 専用チェックは不要。
@@ -1036,31 +1028,30 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     }
 
     // RFC 9110 Section 8.6: 205 の Content-Length は 0 のみ許可
+    // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
+    // str::trim() は NBSP (U+00A0) 等の Unicode 空白も除去するため、
+    // 防御層の一貫性を確保する目的で trim_ows に統一する。
     if response.status_code() == 205
         && let Some(cl) = response.get_header("Content-Length")
-        && cl.trim() != "0"
+        && trim_ows(cl) != "0"
     {
         return Err(EncodeError::ForbiddenContentLength { status_code: 205 });
     }
 
-    // debug_assert!: encode_response 側で行っている Content-Length と実ボディ長の
-    // 一致検証を headers-only 経路でも実行し、開発中の誤用を早期に検出する。
+    // Content-Length の値検証。encode_response 側と同等の常時検証を行う。
     // TE がない場合のみ検証 (TE がある場合は chunked 送信が前提のためスキップ)。
-    debug_assert!(
-        {
-            if response.has_header("Transfer-Encoding") {
-                true
-            } else if let Ok(Some(cl)) =
-                validate_content_length_headers(HttpHead::headers(response))
-            {
-                let body_len = response.body_bytes().map(|b| b.len() as u64).unwrap_or(0);
-                cl == body_len
-            } else {
-                true
-            }
-        },
-        "Content-Length header value does not match body length in encode_response_headers"
-    );
+    if response_status_has_body(response.status_code())
+        && !response.has_header("Transfer-Encoding")
+        && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
+    {
+        let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        if header_value != body_length {
+            return Err(EncodeError::ContentLengthMismatch {
+                header_value,
+                body_length,
+            });
+        }
+    }
 
     let mut buf = Vec::new();
 
@@ -1301,22 +1292,22 @@ mod capacity_tests {
     use crate::status_code::StatusCode;
 
     fn assert_request_capacity_sufficient(req: &Request) {
-        let est = estimate_request_capacity(req).expect("estimate overflow");
-        let out = encode_request(req).expect("encode failed");
+        let est = estimate_request_capacity(req).expect("容量見積もりがオーバーフロー");
+        let out = encode_request(req).expect("エンコード失敗");
         assert!(
             est >= out.len(),
-            "estimate {} < output {}: req={req:?}",
+            "見積もり {} < 出力 {}: req={req:?}",
             est,
             out.len(),
         );
     }
 
     fn assert_response_capacity_sufficient(res: &Response) {
-        let est = estimate_response_capacity(res).expect("estimate overflow");
-        let out = encode_response(res).expect("encode failed");
+        let est = estimate_response_capacity(res).expect("容量見積もりがオーバーフロー");
+        let out = encode_response(res).expect("エンコード失敗");
         assert!(
             est >= out.len(),
-            "estimate {} < output {}: res={res:?}",
+            "見積もり {} < 出力 {}: res={res:?}",
             est,
             out.len(),
         );

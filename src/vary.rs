@@ -17,6 +17,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{is_valid_token, trim_ows};
+
 /// Vary パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -54,12 +56,12 @@ impl Vary {
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     /// RFC 9110 Section 12.5.5: リスト内に "*" を含む場合はワイルドカードとして扱う
     pub fn parse(input: &str) -> Result<Self, VaryError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut any = false;
         let mut fields = Vec::new();
         for part in input.split(',') {
-            let name = part.trim();
+            let name = trim_ows(part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if name.is_empty() {
                 continue;
@@ -100,68 +102,5 @@ impl fmt::Display for Vary {
             return write!(f, "*");
         }
         write!(f, "{}", self.fields.join(", "))
-    }
-}
-
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_any() {
-        let vary = Vary::parse("*").unwrap();
-        assert!(vary.is_any());
-    }
-
-    #[test]
-    fn parse_fields() {
-        let vary = Vary::parse("Accept-Encoding, User-Agent").unwrap();
-        assert_eq!(
-            vary.fields(),
-            &["accept-encoding".to_string(), "user-agent".to_string()]
-        );
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(Vary::parse("bad value").is_err());
-    }
-
-    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
-    #[test]
-    fn parse_empty_elements() {
-        let vary = Vary::parse("").unwrap();
-        assert!(!vary.is_any());
-        assert!(vary.fields().is_empty());
-
-        let vary = Vary::parse(",").unwrap();
-        assert!(vary.fields().is_empty());
-
-        let vary = Vary::parse("Accept,,User-Agent").unwrap();
-        assert_eq!(vary.fields().len(), 2);
-    }
-
-    /// RFC 9110 Section 12.5.5: リスト内の "*" はワイルドカード
-    #[test]
-    fn parse_wildcard_in_list() {
-        let vary = Vary::parse("*, Accept").unwrap();
-        assert!(vary.is_any());
-        assert!(vary.fields().is_empty());
-
-        let vary = Vary::parse("Accept, *").unwrap();
-        assert!(vary.is_any());
-        assert!(vary.fields().is_empty());
     }
 }

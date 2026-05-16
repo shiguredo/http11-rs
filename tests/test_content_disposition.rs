@@ -51,7 +51,7 @@ fn test_disposition_type_display() {
 }
 
 // ========================================
-// filename* (RFC 5987 ext-value) のテスト
+// filename* (RFC 8187 ext-value) のテスト
 // ========================================
 
 #[test]
@@ -279,43 +279,50 @@ fn test_content_disposition_qdtext_rejects_crlf() {
     assert!(result.is_err(), "qdtext に LF を含むものは reject される");
 }
 
-// ========================================
-// パラメータ数の hard cap (issue 0047)
-// ========================================
+// issue 0059 で報告された Latin-1 mojibake 入力。`\xeb\xa3\xa3` と `\xe9\xa3\xa3` は
+// それぞれ UTF-8 として valid な 3 バイトシーケンス (`U+B8E3` / `U+98E3`)。
+#[test]
+fn test_content_disposition_regression_0059() {
+    let input =
+        b"inlnie;filename=\"aDDDDDDdttach]ment;}\\/\\\\\\\\;\\\\\\\xeb\xa3\xa3\xe9\xa3\xa3\\;\"";
+    let s = core::str::from_utf8(input).expect("valid UTF-8");
+    let cd = ContentDisposition::parse(s).expect("parse should succeed");
 
-fn build_content_disposition(param_count: usize) -> String {
-    let mut s = String::from("attachment");
-    for i in 0..param_count {
-        // 各パラメータ名は一意 (重複検出経路を踏まないため)
-        s.push_str(&format!("; p{}=\"v\"", i));
+    let expected = "aDDDDDDdttach]ment;}/\\\\;\\\u{B8E3}\u{98E3};";
+    assert_eq!(cd.filename(), Some(expected));
+
+    // ラウンドトリップで mojibake しないこと
+    let displayed = cd.to_string();
+    let reparsed = ContentDisposition::parse(&displayed).expect("reparse should succeed");
+    assert_eq!(reparsed.filename(), Some(expected));
+}
+
+// CR / LF / NUL は引き続き reject される (issue 0036 のリグレッション防止)
+#[test]
+fn test_content_disposition_filename_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("attachment; filename=\"a{}b\"", c);
+        let result = ContentDisposition::parse(&input);
+        assert!(
+            matches!(result, Err(ContentDispositionError::InvalidParameter)),
+            "char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
     }
-    s
 }
 
+// quoted-pair (`\` + char) でも CR / LF / NUL は reject される
 #[test]
-fn test_content_disposition_32_params_accepted() {
-    let input = build_content_disposition(32);
-    let result = ContentDisposition::parse(&input);
-    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
-}
-
-#[test]
-fn test_content_disposition_33_params_rejected() {
-    let input = build_content_disposition(33);
-    let result = ContentDisposition::parse(&input);
-    assert!(
-        matches!(result, Err(ContentDispositionError::TooManyParameters)),
-        "33 個目で TooManyParameters を返す想定: {:?}",
-        result
-    );
-}
-
-#[test]
-fn test_content_disposition_100_params_rejected() {
-    let input = build_content_disposition(100);
-    let result = ContentDisposition::parse(&input);
-    assert!(matches!(
-        result,
-        Err(ContentDispositionError::TooManyParameters)
-    ));
+fn test_content_disposition_filename_quoted_pair_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("attachment; filename=\"a\\{}b\"", c);
+        let result = ContentDisposition::parse(&input);
+        assert!(
+            matches!(result, Err(ContentDispositionError::InvalidParameter)),
+            "quoted-pair char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
 }

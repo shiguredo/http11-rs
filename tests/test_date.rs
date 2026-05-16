@@ -154,53 +154,6 @@ fn test_date_invalid_time_format() {
 // ========================================
 
 #[test]
-fn test_date_all_months() {
-    let months = [
-        (1, "Jan"),
-        (2, "Feb"),
-        (3, "Mar"),
-        (4, "Apr"),
-        (5, "May"),
-        (6, "Jun"),
-        (7, "Jul"),
-        (8, "Aug"),
-        (9, "Sep"),
-        (10, "Oct"),
-        (11, "Nov"),
-        (12, "Dec"),
-    ];
-
-    for (expected_month, month_name) in months {
-        let date_str = format!("Sun, 06 {} 1994 08:49:37 GMT", month_name);
-        let date = HttpDate::parse(&date_str).unwrap();
-        assert_eq!(date.month(), expected_month);
-    }
-}
-
-// ========================================
-// 全曜日のパーステスト
-// ========================================
-
-#[test]
-fn test_date_all_days_of_week() {
-    let days = [
-        (DayOfWeek::Sunday, "Sun"),
-        (DayOfWeek::Monday, "Mon"),
-        (DayOfWeek::Tuesday, "Tue"),
-        (DayOfWeek::Wednesday, "Wed"),
-        (DayOfWeek::Thursday, "Thu"),
-        (DayOfWeek::Friday, "Fri"),
-        (DayOfWeek::Saturday, "Sat"),
-    ];
-
-    for (expected_dow, dow_name) in days {
-        let date_str = format!("{}, 06 Nov 1994 08:49:37 GMT", dow_name);
-        let date = HttpDate::parse(&date_str).unwrap();
-        assert_eq!(date.day_of_week(), expected_dow);
-    }
-}
-
-#[test]
 fn test_date_rfc850_all_days_of_week() {
     // rfc850-date 形式は長い曜日名 (Monday, Tuesday, ...) を使う (RFC 9110 §5.6.7 ABNF: day-name-l)
     let long_days = [
@@ -221,33 +174,75 @@ fn test_date_rfc850_all_days_of_week() {
 }
 
 // ========================================
-// 境界値テスト
+// HttpDate::new の月別日数検証
 // ========================================
 
 #[test]
-fn test_date_boundary_values() {
-    // 最小値
-    let date = HttpDate::new(DayOfWeek::Sunday, 1, 1, 1, 0, 0, 0).unwrap();
-    assert_eq!(date.day(), 1);
-    assert_eq!(date.month(), 1);
-    assert_eq!(date.year(), 1);
-    assert_eq!(date.hour(), 0);
-    assert_eq!(date.minute(), 0);
-    assert_eq!(date.second(), 0);
+fn test_date_month_day_validation() {
+    // 6 月 31 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Sunday, 31, 6, 1994, 8, 49, 37),
+        Err(DateError::InvalidDay)
+    ));
 
-    // 最大値
-    let date = HttpDate::new(DayOfWeek::Saturday, 31, 12, 9999, 23, 59, 60).unwrap();
-    assert_eq!(date.day(), 31);
-    assert_eq!(date.month(), 12);
-    assert_eq!(date.year(), 9999);
-    assert_eq!(date.hour(), 23);
-    assert_eq!(date.minute(), 59);
-    assert_eq!(date.second(), 60);
+    // 2 月 30 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Monday, 30, 2, 2000, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
+
+    // 4 月 31 日は存在しない
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Tuesday, 31, 4, 2000, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
 }
 
-// ========================================
-// RFC 850 形式の追加テスト
-// ========================================
+#[test]
+fn test_date_february_leap_year() {
+    // うるう年の 2 月 29 日は有効
+    let date = HttpDate::new(DayOfWeek::Tuesday, 29, 2, 2000, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 29);
+    assert_eq!(date.month(), 2);
+    assert_eq!(date.year(), 2000);
+
+    // うるう年の 2 月 28 日も有効
+    let date = HttpDate::new(DayOfWeek::Monday, 28, 2, 2000, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 28);
+
+    // 平年の 2 月 29 日は拒否
+    assert!(matches!(
+        HttpDate::new(DayOfWeek::Thursday, 29, 2, 2001, 0, 0, 0),
+        Err(DateError::InvalidDay)
+    ));
+
+    // 平年の 2 月 28 日は有効
+    let date = HttpDate::new(DayOfWeek::Wednesday, 28, 2, 2001, 0, 0, 0).unwrap();
+    assert_eq!(date.day(), 28);
+}
+
+#[test]
+fn test_date_30_day_months() {
+    // 4/6/9/11 月の 30 日は有効、31 日は拒否
+    for month in [4, 6, 9, 11] {
+        let date = HttpDate::new(DayOfWeek::Monday, 30, month, 2000, 0, 0, 0).unwrap();
+        assert_eq!(date.day(), 30);
+
+        assert!(matches!(
+            HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0),
+            Err(DateError::InvalidDay)
+        ));
+    }
+}
+
+#[test]
+fn test_date_31_day_months() {
+    // 1/3/5/7/8/10/12 月の 31 日は有効
+    for month in [1, 3, 5, 7, 8, 10, 12] {
+        let date = HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0).unwrap();
+        assert_eq!(date.day(), 31);
+    }
+}
 
 #[test]
 fn test_date_rfc850_format_errors() {

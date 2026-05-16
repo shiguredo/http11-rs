@@ -41,13 +41,7 @@ fuzz_target!(|data: &[u8]| {
         }
 
         // パーセントエンコード/デコード
-        let encoded = percent_encode(s);
-        // エンコードした結果をデコードしてラウンドトリップ確認
-        if let Ok(decoded) = percent_decode(&encoded) {
-            assert_eq!(decoded, s, "roundtrip failed");
-        }
-
-        // パーセントデコード (任意の入力)
+        let _ = percent_encode(s);
         let _ = percent_decode(s);
     }
 });

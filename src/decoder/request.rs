@@ -2,7 +2,7 @@
 //!
 //! # RFC 非準拠
 //!
-//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析しなければならない (MUST) だが、
 //!   本実装では UTF-8 として強制的に解析している。非 UTF-8 バイト列を含むリクエストは
 //!   エラーとして拒否される。
 //!
@@ -373,10 +373,10 @@ impl<D: Decompressor> RequestDecoder<D> {
                             ));
                         }
 
-                        // 送信側ポリシーとの一貫性のため、decoder 側でも obs-text (0x80-0xFF) を拒否する。
+                        // request-target は RFC 3986 Section 2 で US-ASCII 限定であり、
+                        // decoder 側でも obs-text (0x80-0xFF) を reject する。
                         // is_valid_request_target は受信側互換性のため obs-text を許容するが、
                         // 構築された Request は送信されることを前提とするため、ここで早期に拒否する。
-                        // 注: validate.rs 側の obs-text 許容撤去は別 issue で対応する暫定措置である。
                         if parts[1].bytes().any(|b| b >= 0x80) {
                             return Err(Error::InvalidData(
                                 "invalid request-target: non-ASCII characters".to_string(),
@@ -550,6 +550,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                     self.start_line = None;
                     self.headers.clear();
                     self.body_decoder.reset();
+                    self.decompressor.reset();
                     continue;
                 }
                 DecodePhase::Tunnel => {
@@ -759,6 +760,7 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.body_decoder.reset();
+        self.decompressor.reset();
 
         Ok(Some(Request::from_raw_parts(
             head.method,

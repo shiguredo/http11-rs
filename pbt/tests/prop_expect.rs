@@ -1,5 +1,6 @@
 //! Expect ヘッダーのプロパティテスト (expect.rs)
 
+use pbt::qdtext_value;
 use proptest::prelude::*;
 use shiguredo_http11::expect::Expect;
 
@@ -177,5 +178,33 @@ proptest! {
         let displayed = expect.to_string();
         let reparsed = Expect::parse(&displayed).unwrap();
         prop_assert_eq!(expect, reparsed);
+    }
+}
+
+// ========================================
+// obs-text 含む quoted-string の PBT (issue 0061)
+// ========================================
+
+// qdtext (obs-text を含む) を quoted value として往復できる
+proptest! {
+    #[test]
+    fn prop_expect_quoted_obs_text_roundtrip(t in token(), value in qdtext_value(0..=16)) {
+        let header = format!("{}=\"{}\"", t, value);
+        let expect = Expect::parse(&header).unwrap();
+        let item = &expect.items()[0];
+        prop_assert_eq!(item.value(), Some(value.as_str()));
+
+        // Display 出力は obs-text / 制御文字以外をエスケープしないため、
+        // value がそのまま埋め込まれる。直接 assert で実体化する。
+        let displayed = expect.to_string();
+        prop_assert!(
+            displayed.contains(&value)
+                || (value.is_empty() && displayed.contains("=\"\"")),
+            "Display 出力 {:?} に value {:?} が含まれない",
+            displayed,
+            value,
+        );
+        let reparsed = Expect::parse(&displayed).unwrap();
+        prop_assert_eq!(reparsed.items()[0].value(), Some(value.as_str()));
     }
 }

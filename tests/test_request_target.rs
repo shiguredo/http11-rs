@@ -8,7 +8,6 @@
 //! テストも特定のエッジケースを網羅的に確認する目的で書かれている。
 
 use shiguredo_http11::RequestDecoder;
-use shiguredo_http11::request_target::RequestTargetForm;
 
 // ========================================
 // asterisk-form テスト
@@ -134,25 +133,4 @@ fn test_tel_absolute_form() {
     decoder.feed(raw.as_bytes()).unwrap();
     let (head, _) = decoder.decode_headers().unwrap().unwrap();
     assert_eq!(head.uri(), "tel:+1-201-555-0123");
-}
-
-// ========================================
-// RequestTargetForm API テスト
-// ========================================
-
-#[test]
-fn test_request_target_form_export() {
-    // 型が公開されていることを確認
-    let _origin = RequestTargetForm::Origin;
-    let _absolute = RequestTargetForm::Absolute;
-    let _authority = RequestTargetForm::Authority;
-    let _asterisk = RequestTargetForm::Asterisk;
-
-    // Debug トレイト
-    assert!(!format!("{:?}", RequestTargetForm::Origin).is_empty());
-
-    // Clone と PartialEq
-    let form = RequestTargetForm::Origin;
-    let cloned = form;
-    assert_eq!(form, cloned);
 }

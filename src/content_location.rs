@@ -24,7 +24,7 @@ pub enum ContentLocationError {
     Empty,
     /// 不正な URI
     InvalidUri,
-    /// フラグメントは許可されない (RFC 9110 Section 8.7)
+    /// フラグメントは許可されない (RFC 9110 Section 4.1 / Section 8.7)
     FragmentNotAllowed,
 }
 

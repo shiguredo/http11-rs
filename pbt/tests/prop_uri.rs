@@ -500,3 +500,98 @@ proptest! {
         prop_assert_eq!(normalized.fragment(), Some(f.as_str()));
     }
 }
+
+// 最初の segment に `:` を含む path-noscheme を生成する strategy。
+// RFC 3986 Section 4.2 で relative-path reference の最初の segment は
+// scheme として誤解釈されないために `:` を含めてはならない。
+// このバグの本質は normalize 経由で percent-decode された結果 `:` が露出することにあるため、
+// 「Uri::parse 時点では scheme として検出されない (= 最初の文字が `%` で始まる)」
+// 入力を生成する。これにより:
+// - Uri::parse(p) は scheme=None で path=p になる
+// - normalize で先頭の `%XX` が decode され、結果として最初の segment が "A:..." の形となり、
+//   修正がなければ build_uri 出力が再 parse 時に scheme に化ける
+fn path_with_colon_first_segment() -> impl Strategy<Value = String> {
+    (
+        // ALPHA をパーセントエンコードしたもの (Uri::parse は `%` 始まりを scheme と認識しない)
+        prop_oneof![
+            Just("%41".to_string()), // A
+            Just("%42".to_string()), // B
+            Just("%55".to_string()), // U
+            Just("%66".to_string()), // f
+        ],
+        "[a-zA-Z0-9]{0,4}", // 最初の segment 内の中間文字 (`:` 前)
+        "[a-zA-Z0-9]{1,4}", // `:` 後
+        proptest::collection::vec("[a-zA-Z0-9]{1,4}", 0..3), // 後続セグメント
+    )
+        .prop_map(|(enc, mid, post, rest)| {
+            let mut segs = vec![format!("{}{}:{}", enc, mid, post)];
+            segs.extend(rest);
+            segs.join("/")
+        })
+}
+
+// 本バグの再現には ".." segment + 空 segment + 通常 segment の構造が必要。
+// 既存 path() strategy は "." / ".." / 空 segment を除外しているため別途追加する。
+fn path_inducing_double_slash() -> impl Strategy<Value = String> {
+    (
+        proptest::collection::vec("[a-zA-Z0-9]{1,4}", 0..3), // 前置セグメント
+        proptest::collection::vec(Just("..".to_string()), 1..3), // 連続する .. セグメント
+        proptest::collection::vec("[a-zA-Z][a-zA-Z0-9]{0,7}", 0..3), // 後置セグメント
+    )
+        .prop_map(|(pre, dd, suf)| {
+            let mut segs = pre;
+            segs.extend(dd);
+            segs.push(String::new()); // 空 segment が "//" 連続を作る鍵
+            segs.extend(suf);
+            format!("/{}", segs.join("/"))
+        })
+}
+
+proptest! {
+    // strategy は必ず "/" 始まりかつ 2 文字目が非 "/" の入力を返すため、
+    // Uri::parse 後の authority は常に None。prop_assume! は不要。
+    #[test]
+    fn prop_uri_normalize_idempotent(p in path_inducing_double_slash()) {
+        let uri = Uri::parse(&p).unwrap();
+        let n1 = normalize(&uri).unwrap();
+        let n2 = normalize(&n1).unwrap();
+        prop_assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
+    }
+
+    #[test]
+    fn prop_uri_normalize_no_authority_injection(p in path_inducing_double_slash()) {
+        let uri = Uri::parse(&p).unwrap();
+        let normalized = normalize(&uri).unwrap();
+        prop_assert!(normalized.authority().is_none(), "authority が新規に注入されないこと");
+    }
+
+    #[test]
+    fn prop_uri_normalize_path_no_double_slash_without_authority(
+        p in path_inducing_double_slash()
+    ) {
+        let uri = Uri::parse(&p).unwrap();
+        let normalized = normalize(&uri).unwrap();
+        prop_assert!(
+            !normalized.path().starts_with("//"),
+            "authority なし URI の path は // で始まらない (RFC 3986 Section 3.3)"
+        );
+    }
+}
+
+proptest! {
+    // relative-path reference の最初の segment に `:` を含む URI で
+    // normalize が冪等であること (RFC 3986 Section 4.2)
+    #[test]
+    fn prop_uri_normalize_idempotent_with_colon_first_segment(
+        p in path_with_colon_first_segment()
+    ) {
+        let uri = Uri::parse(&p).unwrap();
+        // strategy は `%` 始まりなので Uri::parse の scheme 検出には引っかからない。
+        prop_assert!(uri.scheme().is_none(), "strategy 由来の入力は scheme を持たない");
+
+        let n1 = normalize(&uri).unwrap();
+        let n2 = normalize(&n1).unwrap();
+        prop_assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
+        prop_assert!(n1.scheme().is_none(), "scheme が新規に注入されないこと");
+    }
+}

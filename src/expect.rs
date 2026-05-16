@@ -31,6 +31,11 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::{
+    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+    split_with_quotes,
+};
+
 /// Expect パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -41,8 +46,10 @@ pub enum ExpectError {
     InvalidFormat,
     /// 不正なトークン
     InvalidToken,
-    /// 不正な値
+    /// 不正な値 (qdtext / quoted-pair の文字種違反を含む)
     InvalidValue,
+    /// quoted-string の閉じ DQUOTE が見つからない (RFC 9110 Section 5.6.4)
+    UnterminatedQuote,
 }
 
 impl fmt::Display for ExpectError {
@@ -52,11 +59,23 @@ impl fmt::Display for ExpectError {
             ExpectError::InvalidFormat => write!(f, "invalid Expect header format"),
             ExpectError::InvalidToken => write!(f, "invalid Expect token"),
             ExpectError::InvalidValue => write!(f, "invalid Expect value"),
+            ExpectError::UnterminatedQuote => write!(f, "unterminated quoted-string"),
         }
     }
 }
 
 impl core::error::Error for ExpectError {}
+
+impl From<QuotedStringError> for ExpectError {
+    fn from(e: QuotedStringError) -> Self {
+        match e {
+            QuotedStringError::InvalidQdtext | QuotedStringError::InvalidQuotedPair => {
+                ExpectError::InvalidValue
+            }
+            QuotedStringError::Unterminated => ExpectError::UnterminatedQuote,
+        }
+    }
+}
 
 /// Expect ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,81 +193,20 @@ fn parse_value(input: &str) -> Result<String, ExpectError> {
             return Err(ExpectError::InvalidValue);
         }
         Ok(value)
+    } else if !is_valid_token(input) {
+        Err(ExpectError::InvalidValue)
     } else {
-        if !is_valid_token(input) {
-            return Err(ExpectError::InvalidValue);
-        }
         Ok(input.to_string())
     }
 }
 
-fn parse_quoted_string(input: &str) -> Result<(String, &str), ExpectError> {
-    let mut result = String::new();
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            result.push(c);
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            return Ok((result, &input[i + 1..]));
-        } else {
-            result.push(c);
-        }
-    }
-
-    Err(ExpectError::InvalidValue)
-}
-
-fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut start = 0;
-    let mut in_quote = false;
-    let mut escaped = false;
-
-    for (i, c) in input.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if c == '\\' && in_quote {
-            escaped = true;
-            continue;
-        }
-        if c == '"' {
-            in_quote = !in_quote;
-            continue;
-        }
-        if c == delimiter && !in_quote {
-            parts.push(input[start..i].to_string());
-            start = i + c.len_utf8();
-        }
-    }
-    parts.push(input[start..].to_string());
-    parts
-}
-
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-fn is_token_char(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
+// 引用符付き文字列のパースは `validate::parse_quoted_string` に委譲する。
+// `From<QuotedStringError> for ExpectError` で文字種違反は `InvalidValue`、
+// 終端引用符なしは `UnterminatedQuote` にマップする。
 
 fn needs_quoting(s: &str) -> bool {
     // 空文字列は引用符が必要
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-fn escape_quotes(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[cfg(test)]

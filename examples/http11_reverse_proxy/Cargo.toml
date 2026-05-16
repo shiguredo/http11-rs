@@ -1,12 +1,13 @@
 [package]
 name = "http11_reverse_proxy"
 version = "0.0.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 publish = false
 
 [dependencies]
-# 本ライブラリ (相対パスで参照)
-shiguredo_http11 = { path = "../.." }
+# 本ライブラリ (workspace で参照)
+shiguredo_http11.workspace = true
 
 # コマンドライン引数のパース
 noargs = "0.4"

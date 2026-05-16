@@ -2,13 +2,13 @@
 //!
 //! # RFC 非準拠
 //!
-//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析すべき (SHOULD) だが、
+//! - RFC 9112 Section 2.2: HTTP/1.1 メッセージはオクテット列として解析しなければならない (MUST) だが、
 //!   本実装ではチャンクサイズ行やトレーラーを UTF-8 として強制的に解析している。
 //!   非 UTF-8 バイト列を含む場合はエラーとして拒否される。
 
 use crate::error::Error;
 use crate::limits::DecoderLimits;
-use crate::request_target::RequestTargetForm;
+use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::trailer::is_prohibited_trailer_field;
 use crate::validate::{
     is_pchar_or_slash, is_query_char, is_sub_delim_byte, is_token_char, is_unreserved_byte,
@@ -896,46 +896,6 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
     Ok(RequestTargetForm::Absolute)
 }
 
-/// スキームを検出する
-///
-/// RFC 3986 Section 3.1: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-/// absolute-URI = scheme ":" hier-part [ "?" query ]
-///
-/// target の先頭が有効なスキーム + ":" であればスキームの長さを返す。
-/// "://" を含む URI だけでなく、":" の後に "//" がない absolute-URI にも対応する。
-fn detect_scheme(target: &str) -> Option<usize> {
-    let bytes = target.as_bytes();
-
-    // 最初の文字が ALPHA でなければスキームではない
-    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
-        return None;
-    }
-
-    // ":" を探す
-    let colon_pos = bytes.iter().position(|&b| b == b':')?;
-
-    // スキーム部分が空でないこと (最低 1 文字)
-    if colon_pos == 0 {
-        return None;
-    }
-
-    // スキーム文字の検証
-    for &b in &bytes[1..colon_pos] {
-        if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
-            return None;
-        }
-    }
-
-    // 意図的な RFC 非準拠: path-empty (scheme ":" のみ) を拒否する。
-    // RFC 3986 の ABNF では path-empty は合法だが、HTTP request-target として
-    // path-empty が単独で出現する実用的なケースはないため、不正な入力として扱う。
-    if colon_pos + 1 >= bytes.len() {
-        return None;
-    }
-
-    Some(colon_pos)
-}
-
 /// IPv6 リテラルの括弧対応を検証
 ///
 /// RFC 3986 Section 3.2.2:
@@ -1399,9 +1359,8 @@ fn parse_content_length_value(input: &str) -> Result<u64, Error> {
     for part in input.split(',') {
         let part = trim_ows(part);
         if part.is_empty() {
-            return Err(Error::InvalidData(
-                "invalid Content-Length: empty value in list".to_string(),
-            ));
+            // RFC 9110 Section 5.6.1.2: empty list element MUST be ignored
+            continue;
         }
         if !part.chars().all(|c| c.is_ascii_digit()) {
             return Err(Error::InvalidData(
@@ -1455,7 +1414,7 @@ pub(crate) fn resolve_body_headers_for_request(
 /// > request smuggling (Section 11.2) or response splitting (Section 11.1)
 /// > and ought to be handled as an error.
 ///
-/// RFC 9112 Section 6.1 lines 880-884:
+/// RFC 9112 Section 6.1:
 /// > the server MUST close the connection after responding to such a request
 /// > to avoid the potential attacks.
 ///

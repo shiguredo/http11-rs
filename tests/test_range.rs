@@ -13,10 +13,7 @@ fn test_range_error_display() {
         (RangeError::InvalidFormat, "invalid range header format"),
         (RangeError::InvalidUnit, "invalid range unit"),
         (RangeError::InvalidRange, "invalid range specification"),
-        (
-            RangeError::InvalidBounds,
-            "invalid range bounds (start > end)",
-        ),
+        (RangeError::InvalidBounds, "invalid range bounds"),
     ];
 
     for (error, expected) in errors {
@@ -84,14 +81,6 @@ fn test_accept_ranges_multiple_units() {
     let ar = AcceptRanges::parse("bytes, custom").unwrap();
     assert_eq!(ar.units().len(), 2);
     assert!(ar.accepts_bytes());
-}
-
-// AcceptRanges Clone/PartialEq
-#[test]
-fn test_accept_ranges_clone_eq() {
-    let ar = AcceptRanges::bytes();
-    let cloned = ar.clone();
-    assert_eq!(ar, cloned);
 }
 
 // ========================================
@@ -171,6 +160,16 @@ fn test_content_range_parse_errors() {
         ContentRange::parse("bytes 0-499/abc"),
         Err(RangeError::InvalidFormat)
     ));
+
+    // complete_length <= end (RFC 9110 Section 14.4)
+    assert!(matches!(
+        ContentRange::parse("bytes 0-100/50"),
+        Err(RangeError::InvalidBounds)
+    ));
+    assert!(matches!(
+        ContentRange::parse("bytes 0-0/0"),
+        Err(RangeError::InvalidBounds)
+    ));
 }
 
 #[test]
@@ -215,4 +214,90 @@ fn test_accept_ranges_multiple_units_without_none_ok() {
     let ar = AcceptRanges::parse("bytes, items").unwrap();
     assert!(!ar.is_none());
     assert!(ar.accepts_bytes());
+}
+
+// ========================================
+// ContentRange::length() 境界値テスト
+// ========================================
+
+#[test]
+fn test_content_range_length_overflow_returns_none() {
+    // (s=0, e=u64::MAX) → None (唯一の overflow ケース)
+    let cr = ContentRange::new_bytes(0, u64::MAX, None);
+    assert_eq!(cr.length(), None);
+}
+
+#[test]
+fn test_content_range_length_max_some() {
+    // (s=1, e=u64::MAX) → Some(u64::MAX)
+    let cr = ContentRange::new_bytes(1, u64::MAX, None);
+    assert_eq!(cr.length(), Some(u64::MAX));
+}
+
+#[test]
+fn test_content_range_length_max_result() {
+    // (s=0, e=u64::MAX-1) → Some(u64::MAX)
+    let cr = ContentRange::new_bytes(0, u64::MAX - 1, None);
+    assert_eq!(cr.length(), Some(u64::MAX));
+}
+
+#[test]
+fn test_content_range_length_single_byte() {
+    // (s=0, e=0) → Some(1)
+    let cr = ContentRange::new_bytes(0, 0, Some(1));
+    assert_eq!(cr.length(), Some(1));
+}
+
+#[test]
+fn test_content_range_length_max_single_byte() {
+    // (s=u64::MAX, e=u64::MAX) → Some(1)
+    let cr = ContentRange::new_bytes(u64::MAX, u64::MAX, None);
+    assert_eq!(cr.length(), Some(1));
+}
+
+#[test]
+fn test_content_range_length_max_two_bytes() {
+    // (s=u64::MAX-1, e=u64::MAX) → Some(2)
+    let cr = ContentRange::new_bytes(u64::MAX - 1, u64::MAX, None);
+    assert_eq!(cr.length(), Some(2));
+}
+
+// ========================================
+// ContentRange::new_bytes() バリデーションテスト
+// ========================================
+
+#[test]
+#[should_panic(expected = "ContentRange: start must be <= end")]
+fn test_new_bytes_start_greater_than_end() {
+    ContentRange::new_bytes(10, 5, None);
+}
+
+#[test]
+#[should_panic(expected = "ContentRange: complete_length must be > last-pos")]
+fn test_new_bytes_complete_length_less_than_end() {
+    ContentRange::new_bytes(0, 100, Some(50));
+}
+
+#[test]
+#[should_panic(expected = "ContentRange: complete_length must be > last-pos")]
+fn test_new_bytes_complete_length_equal_to_end() {
+    ContentRange::new_bytes(u64::MAX, u64::MAX, Some(u64::MAX));
+}
+
+#[test]
+#[should_panic(expected = "ContentRange: complete_length must be > last-pos")]
+fn test_new_bytes_complete_length_zero_with_max_end() {
+    ContentRange::new_bytes(0, u64::MAX, Some(0));
+}
+
+// ========================================
+// ContentRange::new_bytes() 正常系テスト
+// ========================================
+
+#[test]
+fn test_new_bytes_max_range_none_length() {
+    // new_bytes(0, u64::MAX, None) は正常終了する
+    let cr = ContentRange::new_bytes(0, u64::MAX, None);
+    assert_eq!(cr.length(), None);
+    assert_eq!(cr.to_string(), "bytes 0-18446744073709551615/*");
 }

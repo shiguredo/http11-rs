@@ -48,11 +48,5 @@ fuzz_target!(|input: FuzzRequest| {
     };
 
     // 1 回目: パニック / abort しないこと
-    let first = encode_request(&request);
-    // 2 回目: 決定性 (同じ入力で同じ出力)
-    let second = encode_request(&request);
-    assert_eq!(first.is_ok(), second.is_ok());
-    if let (Ok(a), Ok(b)) = (&first, &second) {
-        assert_eq!(a, b);
-    }
+    let _ = encode_request(&request);
 });

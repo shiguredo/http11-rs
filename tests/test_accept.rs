@@ -16,6 +16,7 @@ fn test_accept_error_display() {
         (AcceptError::InvalidMediaRange, "invalid media range"),
         (AcceptError::InvalidToken, "invalid token"),
         (AcceptError::InvalidParameter, "invalid parameter"),
+        (AcceptError::UnterminatedQuote, "unterminated quoted-string"),
         (AcceptError::InvalidQValue, "invalid qvalue"),
         (AcceptError::InvalidLanguageTag, "invalid language tag"),
     ];
@@ -28,22 +29,6 @@ fn test_accept_error_display() {
 // ========================================
 // QValue のテスト
 // ========================================
-
-// QValue パース (1)
-#[test]
-fn test_qvalue_parse_one() {
-    let q = QValue::parse("1").unwrap();
-    assert_eq!(q.value(), 1000);
-    assert!((q.as_f32() - 1.0).abs() < f32::EPSILON);
-}
-
-// QValue パース (0)
-#[test]
-fn test_qvalue_parse_zero() {
-    let q = QValue::parse("0").unwrap();
-    assert_eq!(q.value(), 0);
-    assert!((q.as_f32() - 0.0).abs() < f32::EPSILON);
-}
 
 // QValue デフォルト
 #[test]
@@ -92,22 +77,6 @@ fn test_qvalue_one_variants() {
     assert_eq!(QValue::parse("1.00").unwrap().value(), 1000);
     assert_eq!(QValue::parse("1.000").unwrap().value(), 1000);
 }
-
-// QValue エッジケース
-#[test]
-fn test_qvalue_edge_cases() {
-    // 境界値
-    assert_eq!(QValue::parse("0.001").unwrap().value(), 1);
-    assert_eq!(QValue::parse("0.999").unwrap().value(), 999);
-
-    // 省略形式
-    assert_eq!(QValue::parse("0.1").unwrap().value(), 100);
-    assert_eq!(QValue::parse("0.01").unwrap().value(), 10);
-}
-
-// ========================================
-// Accept のテスト
-// ========================================
 
 // Accept 空値テスト
 #[test]
@@ -227,4 +196,61 @@ fn test_accept_language_tag_variants() {
     // 不正なタグ (空のサブタグ)
     assert!(AcceptLanguage::parse("en-").is_err());
     assert!(AcceptLanguage::parse("-US").is_err());
+}
+
+mod helpers;
+
+// ========================================
+// quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
+// issue 0061
+// ========================================
+
+// CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
+#[test]
+fn test_accept_quoted_string_rejects_ctl() {
+    for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
+        let c = char::from_u32(code).unwrap();
+        // qdtext 経路
+        assert_eq!(
+            Accept::parse(&format!("text/html; charset=\"{c}\"")),
+            Err(AcceptError::InvalidParameter),
+            "qdtext で CTL U+{code:04X} が reject されない",
+        );
+        // quoted-pair 経路
+        assert_eq!(
+            Accept::parse(&format!("text/html; charset=\"\\{c}\"")),
+            Err(AcceptError::InvalidParameter),
+            "quoted-pair で CTL U+{code:04X} が reject されない",
+        );
+    }
+
+    // 中間に CTL を置いた `"\rabc"` 形式でも文字種エラーになる
+    // (上流の trim() が `parse_quoted_string` への到達を消さないことを確認)
+    assert_eq!(
+        Accept::parse("text/html; charset=\"\rabc\""),
+        Err(AcceptError::InvalidParameter),
+    );
+}
+
+// 空 quoted-string `""` が受理され、Display ラウンドトリップも破綻しない
+// (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
+#[test]
+fn test_accept_empty_quoted_string() {
+    let accept = Accept::parse("text/html; ext=\"\"").unwrap();
+    let params = accept.items()[0].parameters();
+    assert_eq!(params, &[("ext".to_string(), "".to_string())]);
+
+    let displayed = accept.to_string();
+    assert!(displayed.contains("ext=\"\""), "Display 出力 {displayed:?}");
+    let reparsed = Accept::parse(&displayed).unwrap();
+    assert_eq!(accept, reparsed);
+}
+
+// 終端引用符が無いと UnterminatedQuote が返る
+#[test]
+fn test_accept_unterminated_quote() {
+    assert_eq!(
+        Accept::parse("text/html; ext=\"abc"),
+        Err(AcceptError::UnterminatedQuote),
+    );
 }

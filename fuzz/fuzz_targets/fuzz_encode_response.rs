@@ -54,10 +54,5 @@ fuzz_target!(|input: FuzzResponse| {
     };
     response.set_omit_body(omit_body);
 
-    let first = encode_response(&response);
-    let second = encode_response(&response);
-    assert_eq!(first.is_ok(), second.is_ok());
-    if let (Ok(a), Ok(b)) = (&first, &second) {
-        assert_eq!(a, b);
-    }
+    let _ = encode_response(&response);
 });

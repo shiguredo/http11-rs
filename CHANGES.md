@@ -11,6 +11,170 @@
 
 ## develop
 
+### misc
+
+## 2026.5.0
+
+**リリース日**: 2026-05-16
+
+- [CHANGE] `SetCookie::parse` の `Domain` 属性を RFC 1034 subdomain 構文 (LDH + dot) 準拠で厳格化する
+  - `Domain=..` / `Domain=...` / `Domain=..foo` のような leading dot 複数の入力を `None` 扱いに変更する (旧 `Some(".")` / `Some("..")` / `Some(".foo")`)
+  - `Domain=foo bar` / `Domain=foo\0bar` / `Domain=. foo` / `Domain=日本.example` のような非 LDH 文字 (空白・NUL・制御文字・非 ASCII) を含む入力も `None` 扱いに変更する
+  - 旧実装は RFC 6265 Section 5.2.3 の strip 規則 (先頭 dot を 1 つ削除) を素直に実装し strip 後の値の validity を検証していなかったため、`Domain=..` が `Some(".")`、`Domain=. foo` が `Some(" foo")` (leading space) で保存され、`Display` 出力を再 parse すると別値に縮退して `parse -> to_string -> parse` の roundtrip が破綻していた (fuzz_cookie の 2 系統の crash)
+  - RFC 6265 Section 4.1.1 の `domain-value = <subdomain>` (RFC 1034 Section 3.5 + RFC 1123 Section 2.1) と RFC 6265bis Section 6.3 (IDN は punycode = LDH 必須) に従い、strip 後の値が LDH + dot のみで構成されていることを検証する。RFC 6265 の strip 規則自体 (1 つだけ strip) は変更しない
+  - @voluntas
+- [CHANGE] `AcceptError` / `ExpectError` に `UnterminatedQuote` バリアントを追加する
+  - 旧実装は閉じ DQUOTE が無い quoted-string をそれぞれ `InvalidParameter` / `InvalidValue` に潰していたが、`ContentTypeError::UnterminatedQuote` と粒度を揃えて構造エラーと文字種エラーを区別する
+  - `From<QuotedStringError>` impl 経由で 3 モジュール共通の `validate::parse_quoted_string` から各エラー型へマップする
+  - `#[non_exhaustive]` のため利用側の `match` で warning が出る場合は新バリアントを追加してハンドリングすること
+  - @voluntas
+- [CHANGE] `Accept` / `Content-Type` の `Display` で値が空文字列のパラメータを `name=""` (引用符付き) で出力する
+  - 旧実装は `needs_quoting("")` が `false` を返したため `name=` (引用符なし) を出力し、再 parse すると `is_valid_token("")` が `false` で reject される Display ラウンドトリップ破綻があった
+  - RFC 9110 Section 5.6.2 の `token = 1*tchar` (空文字 token は構文上不可) に従い、空値は必ず引用符付き (`name=""`) で出力する
+  - @voluntas
+- [FIX] `Accept` / `Content-Type` / `Expect` の quoted-string パースに qdtext / quoted-pair 文字種検証を追加する
+  - 旧実装は RFC 9110 Section 5.5 の CR/LF/NUL MUST 要件に違反し、任意の制御文字 (CR / LF / NUL / 他の CTL) を無条件に受理していた
+  - 受理された制御文字が上位アプリで再エンコードされると HTTP Response Splitting (CWE-113) / log injection の経路となる
+  - 修正後は CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を含む quoted-string は qdtext / quoted-pair のどちらの右辺でも reject される (これまで通っていた入力が `InvalidParameter` / `InvalidValue` を返すようになる)
+  - 共通実装を `src/validate.rs` の `parse_quoted_string` (`pub(crate)`) に集約し、3 モジュールから `From<QuotedStringError>` 経由で呼び出す
+  - obs-text (U+0080 以上) は opaque data として引き続き受理する (RFC 9110 Section 5.5)
+  - @voluntas
+- [FIX] `Authorization` / `Content-Disposition` の quoted-string パースで obs-text を含む UTF-8 値の Latin-1 mojibake を修正する
+  - 旧実装は入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push していたため、UTF-8 マルチバイトシーケンスが `U+0080..=U+00FF` にマップされ Display 出力で別バイトに展開、ラウンドトリップで mojibake していた
+  - char 単位走査に書き換え、入力 `&str` の UTF-8 不変条件を保つ
+  - obs-text は RFC 9110 Section 5.5 の「recipient SHOULD treat obs-text as opaque data」に従い opaque な char として保持する (reject しない)。CR / LF / NUL の reject は char 版ヘルパー `is_qdtext_char` / `is_quoted_pair_char` で等価に維持する
+  - issue 0036 で導入した `is_qdtext_byte` / `is_quoted_pair_byte` (`pub(crate)`、2026.4.0 リリース済) を char 版に置き換え本体を削除する
+  - @voluntas
+- [FIX] URI の `normalize` で path-only URI が network-path reference や scheme 付き URI に化けて冪等性が破れる不具合を修正する
+  - 旧実装は `build_uri` が「authority なし、path が `//` 始まり」の文字列を構成しており、再 parse で authority に化け、再度 normalize すると host が小文字化されて結果が変わっていた (RFC 3986 Section 3.3 違反)。`build_uri` で `authority.is_none() && path.starts_with("//")` のとき path 先頭に `/.` を挿入するように修正する
+  - 関連して、`build_uri` が「scheme なし、authority なし、path の最初の segment に `:` を含む」文字列を出力すると、再 parse で先頭 segment が scheme として誤解釈されていた (RFC 3986 Section 4.2 違反)。同じく `build_uri` で `./` を path 先頭に挿入するように修正する
+  - `normalize` の処理順を RFC 3986 Section 6.2.2 通り「percent-encoding 正規化 (6.2.2.2)」→「dot-segment 除去 (6.2.2.3)」の順に修正する。旧実装は逆順だったため、`%2E` (= `.`) のような encoded dot が dot-segment 除去後に decode され、結果として残った `/./` が次回 normalize で除去されて冪等性が崩れていた
+  - @voluntas
+- [FIX] `Connection` / `Transfer-Encoding` のトークン OWS 除去で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
+  - 旧実装は `src/decoder/head.rs::is_keep_alive` / `is_chunked` で `str::trim()` を使用しており、NBSP (U+00A0) 等の Unicode 空白を除去していた
+  - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた
+  - 併せて encoder の 205 Content-Length 検証も `trim_ows` に置換し防御層の一貫性を確保する
+  - @voluntas
+- [FIX] `ContentRange::length()` の整数オーバーフローを修正し `new_bytes()` にバリデーションを追加する
+  - `length()` が `e - s + 1` を unchecked に計算しており、`(0, u64::MAX)` で debug ビルドの panic / release ビルドの wrapping を起こしていた
+  - `checked_sub` + `checked_add` に変更し、オーバーフロー時は `None` を返す
+  - `new_bytes()` に `start > end` と `complete_length <= end` の `assert!` を追加する (RFC 9110 Section 14.4 の validity rule)
+  - `parse()` の検証ロジックを `validate_content_range_parts()` として抽出し重複を除去する
+  - @voluntas
+- [FIX] `escape_quotes()` の CTL 検出を `debug_assert!` から常時有効な SP 置換に変更する
+  - 旧実装は `debug_assert!` で CTL 検出を行っており、release ビルドでは CTL 文字が素通りして HTTP Response Splitting (CWE-113) の経路になっていた
+  - `is_quoted_pair_char` に適合しない文字 (CR / LF / NUL / 他の CTL / DEL) を SP に置換する (RFC 9110 Section 5.5 "MUST either reject or replace with SP")
+  - @voluntas
+- [FIX] Keep-Alive 接続で RequestDecoder / ResponseDecoder の Decompressor をリセットし状態漏れを防ぐ
+  - `decode()` 完了時と `decode_headers()` Complete→StartLine 遷移時の 4 箇所に `self.decompressor.reset()` を追加する
+  - 前メッセージの Decompressor 内部状態が後続メッセージに持ち越されるデータ破損経路を塞ぐ
+  - @voluntas
+- [FIX] `HttpDate::new` に月別日数検証を追加し、無効な日付の構築を防ぐ
+  - `day` の検証を `1..=31` 固定から `max_day_in_month(month, year)` に変更する
+  - 2 月のうるう年判定を含む (RFC 9110 Section 5.6.7 IMF-fixdate)
+  - @voluntas
+- [FIX] `MultipartParser` の `InPart` / `AfterInnerDelimiter` 状態で transport-padding に対応する
+  - 内部デリミタ `\r\n--<boundary>` 直後に SP/HTAB の transport-padding をスキップする (RFC 2046 Section 5.1.1)
+  - padding 途中で buffer が尽きた場合は `AfterInnerDelimiter` に留まり次回 feed で再開する
+  - @voluntas
+- [FIX] `encode_request_headers` / `encode_response_headers` に Content-Length の値検証と body 長整合性検証を追加する
+  - `encode_response_headers` の `debug_assert!` ブロックを常時有効な検証に変更し release ビルドでも防御する
+  - @voluntas
+- [FIX] `parse_content_length_value` と `parse_dictionary` の空カンマ区切り要素を RFC 9110 Section 5.6.1.2 に従いスキップする
+  - 空リスト要素をエラーではなく ignore する
+  - 全要素が空の場合は引き続きエラーとする
+  - @voluntas
+
+### misc
+
+- [UPDATE] `detect_scheme` を `request_target.rs` に一元化し encoder/decoder 間の重複を除去する
+  - `src/encoder.rs` と `src/decoder/body.rs` の重複定義を削除し `crate::request_target::detect_scheme` に集約する
+  - @voluntas
+- [FIX] `examples/http11_client` のボディ出力で UTF-8 文字境界パニックを修正する
+  - `&text[..1000]` を `is_char_boundary` で UTF-8 境界まで縮める安全な truncate に変更する
+  - `str::floor_char_boundary` は MSRV 1.88 では unstable (1.91 stabilize) のため利用しない
+  - @voluntas
+- [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の Accept-Encoding qvalue デフォルト値を RFC 9110 Section 12.4.2 に準拠させる
+  - `unwrap_or(1.0)` を `unwrap_or(0.0)` に修正する
+  - @voluntas
+- [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (CLAUDE.md:97 準拠)
+  - `tests/test_decoder.rs` (1907 行) → `tests/test_decoder/` (main / head / body / streaming / direct_buffer / decode_body)
+  - `pbt/tests/prop_decoder/response.rs` (1317 行) → `pbt/tests/prop_decoder/response/` (status_line / body_decoding / limits / streaming)
+  - `tests/test_decode_body.rs` を `tests/test_decoder/decode_body.rs` として統合し元ファイルを削除する
+  - HTTP/1.0 + Transfer-Encoding の重複テスト 1 件を統合・除去する
+  - @voluntas
+- [UPDATE] `src/<module>.rs` 内のインラインテストを `tests/test_<module>.rs` に外部化する (CLAUDE.md:93 準拠)
+  - 対象: compression / content_language / etag / trailer / upgrade / vary
+  - compression は `CompressionStatus` の variant 構築テストを `NoCompression::compress` / `finish` 経由のヘルパー関数 (`make_continue` / `make_output_full` / `make_complete`) に書き換えて完全に外部化する
+  - `test_compression_error_display` は `BufferTooSmall` を含む 5 variant 全ての Display を検証する
+  - @voluntas
+- [UPDATE] `is_token_char` / `is_valid_token` の 12 重複定義を `validate.rs` に一元化する
+  - accept / auth / content_disposition / content_encoding / content_type / cookie / digest_fields / expect / range / trailer / upgrade / vary の重複を削除し `use crate::validate::is_valid_token;` (および必要に応じて `is_token_char`) に置換する
+  - cookie は `is_valid_cookie_name` 経由で `is_token_char` を利用するため `is_token_char` のみを import する (`is_valid_cookie_name` の `is_valid_token` 置換は責務独立性のため別 issue)
+  - @voluntas
+- [UPDATE] quoted-string 用の escape 処理を `validate::escape_quotes` に統合し parse 側と対称な不変条件チェックを追加する
+  - 旧実装は `auth` / `accept` / `content_type` / `expect` / `content_disposition` の 5 モジュールで同一ロジックを重複定義し、CR / LF / NUL / 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) を素通りさせていた
+  - `src/validate.rs` に `pub(crate) fn escape_quotes` を新設し、parse 側で reject される文字 (`is_quoted_pair_char` の補集合) が escape 側に到達した場合に `debug_assert!` で検出する防御層を追加する (release ビルドでは通過)
+  - 5 モジュールの重複定義を削除し `use crate::validate::escape_quotes;` に置換する
+  - `auth::WwwAuthenticate::Display` も realm / charset の出力経路で `escape_quotes` を経由するように修正する (builder 経路の Display 漏れを塞ぐ)
+  - 本 issue は parse 側 reject を前提とする防御層のみカバーする。送信側 builder の入力検証は別 issue として継続する
+  - @voluntas
+- [ADD] fuzz target `fuzz_multipart_boundary` を追加する
+  - 既存 `fuzz_multipart` は boundary が 4 種固定のため、攻撃者が `Content-Type` 経由で制御し得る boundary 文字列の経路 (`MultipartParser::try_new` の `InvalidBoundary` 判定、delimiter 構築、`with_max_buffer_size` の `BufferOverflow` 経路) が未到達だった
+  - boundary を arbitrary で任意化し、`new` / `try_new` 双方の panic 安全性と `next_part` 巡回を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_decoder_response_method` を追加する
+  - 既存 `fuzz_decoder_response` は `set_request_method` を `"HEAD"` / `"CONNECT"` の 2 値固定でしか叩いていないため、空文字 / 制御文字 / 巨大 method × 任意 status の組合せが未到達だった
+  - method を arbitrary で任意化し、reset 後の再 `set_request_method` (Keep-Alive シナリオ) も含めて panic 安全性を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_encode_chunks` を追加する
+  - `encode_chunk` / `encode_chunks` (`src/encoder.rs:878, 908`) を直接叩く target が無く、`encode_chunks_capacity` の `checked_add` 経路や `Vec::with_capacity` の OOM 経路を独立に確認できていなかった
+  - 任意 `Vec<Vec<u8>>` を入力に panic 安全性、`encode_chunks(refs)` と「順次 `encode_chunk` + 終端 `encode_chunk(&[])`」のバイト等価性、決定性、終端チャンクで終わることを検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_decoder_decompressed` を追加する
+  - `RequestDecoder::peek_body_decompressed` / `ResponseDecoder::peek_body_decompressed` の `Decompressor` 注入経路 (任意 output buffer サイズ + Continue/OutputFull/Complete 状態機械) が未到達だった
+  - `NoCompression` を `Decompressor` として注入し、任意 output サイズ (0 含む) と任意バイト列でループが panic / abort しないこと、`produced <= output.len()` の API 契約、reset 後の再利用を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_multipart_roundtrip` を追加する
+  - `MultipartBuilder` で構築 → `MultipartParser` でデコード のラウンドトリップ panic 安全性を検証する
+  - `text_field` / `file_field` / `part(Part::with_body)` の任意組合せと、`try_with_boundary` が通る valid path / `with_boundary` の検証なし path 双方を網羅する
+  - @voluntas
+- [ADD] fuzz target `fuzz_chunked_trailer` を追加する
+  - `Transfer-Encoding: chunked` + `Trailer:` 宣言 + trailer-section の統合デコード経路が未到達で、decoder の `set_declared_trailers` + `is_prohibited_trailer_field` 経路 (`src/decoder/body.rs:114, 297`) が踏まれていなかった
+  - chunks と trailers (name, value) を arbitrary で生成し、宣言 mask に従って `Trailer:` ヘッダーで宣言したフィールド名のみを trailer-section に書く生成パスを `RequestDecoder` / `ResponseDecoder` 双方で検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_encode_headers` を追加する
+  - `encode_request_headers` / `encode_response_headers` (`src/encoder.rs:948, 1008`) を独立に叩く target が無く、`Transfer-Encoding: chunked` ストリーミング送信シナリオでこの関数群が単独で呼ばれる経路の決定性 / panic 安全性が未検証だった
+  - 任意入力で必ず `Result` を返すこと、同じ入力で 2 回 encode して結果が一致すること、ヘッダーセクションが必ず CRLF CRLF で終わることを検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_pipelined` を追加する
+  - Keep-Alive 接続を想定し `RequestDecoder` / `ResponseDecoder` の `reset()` + `take_remaining()` を組み合わせた連続デコードのパニック安全性を検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_uri_resolve` を追加する
+  - `Uri::resolve` の base と reference 両方を任意入力にする (既存 `fuzz_uri` は reference が `/test` 固定だった)
+  - `normalize` の冪等性 (RFC 3986 Section 6.2.2) も併せて検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_mark_eof` を追加する
+  - `ResponseDecoder::mark_eof` と `is_close_delimited` の状態遷移、`BodyKind::CloseDelimited` のパスを検証する
+  - @voluntas
+- [ADD] fuzz target `fuzz_streaming_encoder` を追加する
+  - `RequestEncoder` / `ResponseEncoder` のストリーミング API (`compress_body` / `finish` / `reset`) の panic 安全性と API 契約を検証する
+  - 既存 `fuzz_encode_request` / `fuzz_encode_response` はバッチ API (`encode_request` / `encode_response`) のみで、`NoCompression` 経由のストリーミング経路は未到達だった
+  - `consumed <= input.len()` / `produced <= output.len()` の不変条件、`finish` 後の `AlreadyFinished` 復帰、`reset` 後の再利用可能性を検証する
+  - @voluntas
+- [UPDATE] `fuzz_decoder_request` / `fuzz_decoder_response` を強化する
+  - `feed_unchecked` / `progress` / `take_remaining` / `is_tunnel` / `available_buf` / `remaining` のアクセサを網羅
+  - `fuzz_decoder_response` に `set_request_method("CONNECT")` の Tunnel モード経路、`mark_eof` / `is_close_delimited` のパスを追加
+  - @voluntas
+- [UPDATE] 既存 fuzz target の `if let` 二段ネストを `let ... && let ...` 形式に統一する
+  - 対象: `fuzz_content_encoding` / `fuzz_content_language` / `fuzz_content_location` / `fuzz_expect` / `fuzz_host` / `fuzz_trailer` / `fuzz_upgrade`
+  - `cargo clippy -- -D warnings` の `collapsible_if` 警告を解消する
+  - @voluntas
+- [FIX] `fuzz_request_response_helpers` の `expected_keep_alive` を `HttpHead::is_keep_alive` の HTTP/1.1 完全一致仕様に追従させる
+  - 旧実装は `version.ends_with("/1.1")` のままで、本体が issue 0040 (`HttpHead::is_keep_alive を HTTP/1.1 完全一致に変更する`) で `version == "HTTP/1.1"` に厳格化された変更に追従していなかった
+  - `version: "~~~~/1.1"` のような `/1.1` で終わるが `HTTP/1.1` でない入力で参照実装と本体が乖離し fuzz が panic していた (artifact: `crash-d81ecc4ea00756faf3dddfadf972107ee9d9501b`)
+  - @voluntas
+
 ## 2026.4.0
 
 **リリース日**: 2026-05-13

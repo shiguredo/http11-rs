@@ -145,17 +145,6 @@ fn test_status_code_no_duplicate_codes() {
 }
 
 #[test]
-fn test_status_code_eq_and_copy() {
-    // StatusCode は Copy / PartialEq / Eq を派生
-    let a = StatusCode::OK;
-    let b = StatusCode::OK;
-    assert_eq!(a, b);
-    let _c = a; // Copy で move されない
-    let _d = a;
-    assert_ne!(StatusCode::OK, StatusCode::CREATED);
-}
-
-#[test]
 fn test_status_code_from_code_known() {
     // IANA 登録済みコードは Some(StatusCode) を返す
     assert_eq!(StatusCode::from_code(200), Some(StatusCode::OK));

@@ -1,5 +1,8 @@
 //! RFC 9110 / RFC 3986 基本文字集合の共通検証（デコード・エンコード双方で使用）
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 /// トークン文字か確認 (RFC 9110 Section 5.6.2)
 ///
 /// token = 1*tchar
@@ -63,7 +66,7 @@ pub(crate) fn is_valid_field_value(value: &str) -> bool {
 
 /// メソッド名が有効か確認
 ///
-/// RFC 9110 Section 9: method = token
+/// RFC 9110 Section 9.1: method = token
 /// token = 1*tchar (RFC 9110 Section 5.6.2)
 ///
 /// RTSP (RFC 7826) の GET_PARAMETER, SET_PARAMETER なども tchar で表現可能。
@@ -163,7 +166,7 @@ pub(crate) const RFC3986_EXCLUDED: &[u8] = b"\"#<>\\^`{|}";
 
 /// リクエストターゲット (URI) が有効か確認（受信側用）
 ///
-/// RFC 9112 Section 3: request-target には制御文字を含めない
+/// RFC 9112 Section 3.2: request-target には制御文字を含めない
 /// RFC 3986 Section 2: URI で許可されない文字を拒否
 ///
 /// 本関数は受信側の寛容な検証として実装している。
@@ -254,27 +257,139 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
     )
 }
 
-/// qdtext バイトか確認 (RFC 9110 Section 5.6.4)
+/// qdtext char か確認 (RFC 9110 Section 5.6.4)
 ///
-/// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
-///        = 0x09 / 0x20 / 0x21 / 0x23-0x5B / 0x5D-0x7E / 0x80-0xFF
+/// ABNF (bytes): qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+///                obs-text = %x80-FF (RFC 9110 Section 5.5)
 ///
-/// DQUOTE (0x22) と backslash (0x5C) は除く。
-/// CR / LF / NUL / 他の CTL (0x01-0x1F 範囲のうち HTAB 以外) は不許可。
-pub(crate) fn is_qdtext_byte(b: u8) -> bool {
-    matches!(b, 0x09 | 0x20 | 0x21 | 0x23..=0x5B | 0x5D..=0x7E | 0x80..=0xFF)
+/// 本実装は valid UTF-8 `&str` を char 単位で走査するため、
+/// ABNF のオクテット表現を Unicode scalar に拡張解釈し、obs-text の
+/// オクテット範囲 (`U+0080..=U+00FF`) を超える Unicode scalar
+/// (`U+0100..=U+10FFFF`、surrogate `U+D800..=U+DFFF` は char 型で構築不能)
+/// も opaque char としてそのまま受理する。RFC 9110 Section 5.5 の
+/// 「recipient SHOULD treat ... obs-text ... as opaque data」を
+/// char 単位に拡張解釈したもの。
+///
+/// DQUOTE (`"`) と backslash (`\`) は除く。
+/// CR / LF / NUL / 他の CTL (`U+0001..=U+001F` のうち HTAB 以外、`U+007F`) は不許可。
+pub(crate) fn is_qdtext_char(c: char) -> bool {
+    matches!(c, '\t' | ' ' | '!' | '#'..='[' | ']'..='~') || c as u32 >= 0x80
 }
 
-/// quoted-pair の右辺バイトか確認 (RFC 9110 Section 5.6.4)
+/// quoted-pair の右辺 char か確認 (RFC 9110 Section 5.6.4)
 ///
-/// quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
-///             = "\" ( 0x09 / 0x20-0x7E / 0x80-0xFF )
+/// ABNF (bytes): quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+///                VCHAR = %x21-7E, obs-text = %x80-FF (RFC 9110 Section 5.5)
 ///
-/// NUL (0x00) / CR (0x0D) / LF (0x0A) / 他の CTL (0x01-0x08, 0x0B, 0x0C, 0x0E-0x1F, 0x7F) は不許可。
+/// `is_qdtext_char` と同じく Unicode scalar 単位に拡張解釈する。
+/// NUL (`U+0000`) / CR (`U+000D`) / LF (`U+000A`) / 他の CTL は不許可。
 /// 受信側でも CR / LF を含む quoted-pair を素通りさせると、上位アプリでの再エンコード経路で
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
-pub(crate) fn is_quoted_pair_byte(b: u8) -> bool {
-    matches!(b, 0x09 | 0x20..=0x7E | 0x80..=0xFF)
+pub(crate) fn is_quoted_pair_char(c: char) -> bool {
+    matches!(c, '\t' | ' '..='~') || c as u32 >= 0x80
+}
+
+/// quoted-string パースのエラー種別 (RFC 9110 Section 5.6.4)
+///
+/// `parse_quoted_string` から返り、各ヘッダーモジュールが自身のエラー型に
+/// マッピングする。文字種違反と構造違反を区別することで、`Content-Type` の
+/// `UnterminatedQuote` のような既存の細粒度エラーを保てる。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum QuotedStringError {
+    /// qdtext 経路で `is_qdtext_char` が false を返した
+    InvalidQdtext,
+    /// quoted-pair 経路で `is_quoted_pair_char` が false を返した
+    InvalidQuotedPair,
+    /// 閉じ DQUOTE が見つからずに入力を使い切った
+    /// (バックスラッシュエスケープ未完了で入力が尽きた場合も含む)
+    Unterminated,
+}
+
+/// 引用符付き文字列をパース (RFC 9110 Section 5.6.4)
+///
+/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ```text
+/// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )
+/// ```
+///
+/// 入力は開く DQUOTE を消費した残り。閉じ DQUOTE までを `qdtext / quoted-pair`
+/// として走査し、検証済み中身と閉じ DQUOTE 以降の残り `&str` を返す。
+///
+/// CR / LF / NUL は RFC 9110 Section 5.5 (`refs/rfc9110.txt:1606-1615`) で MUST reject。
+/// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は同節で MAY retain (safe context 限定)
+/// だが、本ヘルパーを使うヘッダ群は HTTP インターミディアリが解釈・書換する
+/// 標準ヘッダ (Accept / Content-Type / Expect 等) であり safe context に該当しないため
+/// 保守的に reject する。素通りさせると上位アプリの再エンコード経路で
+/// response splitting (CWE-113) / log injection に至る経路を生む。
+///
+/// obs-text (RFC 上は %x80-FF) は `is_qdtext_char` / `is_quoted_pair_char` の
+/// Unicode scalar 拡張解釈 (`U+0080..=U+10FFFF`、surrogate 除く) で受理する。
+///
+/// 本関数は RFC 9110 (本リリース時点) の規定に基づく。将来の改訂や erratum で
+/// ABNF が変更される可能性がある。
+pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedStringError> {
+    let mut result = String::new();
+    let mut escaped = false;
+
+    for (i, c) in input.char_indices() {
+        if escaped {
+            if !is_quoted_pair_char(c) {
+                return Err(QuotedStringError::InvalidQuotedPair);
+            }
+            result.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == '"' {
+            return Ok((result, &input[i + 1..]));
+        } else {
+            if !is_qdtext_char(c) {
+                return Err(QuotedStringError::InvalidQdtext);
+            }
+            result.push(c);
+        }
+    }
+
+    Err(QuotedStringError::Unterminated)
+}
+
+/// quoted-string の値文字列をエスケープ (送信側、RFC 9110 Section 5.6.4)
+///
+/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ```text
+/// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
+/// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
+/// quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )
+/// ```
+///
+/// quoted-pair が必要な `"` と `\` のみエスケープし、それ以外はそのまま出力する。
+///
+/// CR / LF / NUL (RFC 9110 Section 5.5 `refs/rfc9110.txt:1606-1611`) および
+/// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は SP に置換する。
+/// RFC 9110 Section 5.5 は CR / LF / NUL に対し "MUST either reject the message
+/// or replace each of those characters with SP" と規定しており、SP 置換は RFC 準拠。
+/// 他の CTL については "recipients MAY retain such characters ... within a safe
+/// context" (`refs/rfc9110.txt:1611-1615`) とされ、本関数の出力先 (WWW-Authenticate /
+/// Accept / Content-Type / Expect 等の HTTP 標準ヘッダ) は safe context に該当しない
+/// ため retain せず SP 置換する。
+///
+/// 本関数は RFC 9110 (本リリース時点) の規定に基づく。将来の改訂や erratum で
+/// ABNF が変更される可能性がある。
+pub(crate) fn escape_quotes(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        if !is_quoted_pair_char(c) {
+            result.push(' '); // CTL を SP に置換 (RFC 9110 Section 5.5)
+            continue;
+        }
+        if c == '"' || c == '\\' {
+            result.push('\\');
+        }
+        result.push(c);
+    }
+    result
 }
 
 /// OWS (Optional Whitespace) を前後から除去 (RFC 9110 Section 5.6.3)
@@ -300,4 +415,108 @@ pub(crate) fn trim_ows(s: &str) -> &str {
         .unwrap_or(start);
     // start..end は全て ASCII 文字 (SP/HTAB) の境界なので UTF-8 として安全
     &s[start..end]
+}
+
+/// クォートを考慮したカンマ区切り分割
+///
+/// delimiter (通常は `,`) で文字列を分割するが、引用符 (`"`) 内の
+/// delimiter は区切り文字として扱わない。escaped quote (`\"`) も
+/// 正しく処理する。
+pub(crate) fn split_with_quotes(input: &str, delimiter: char) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quote = false;
+    let mut escaped = false;
+
+    for (i, c) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if c == '\\' && in_quote {
+            escaped = true;
+            continue;
+        }
+        if c == '"' {
+            in_quote = !in_quote;
+            continue;
+        }
+        if c == delimiter && !in_quote {
+            parts.push(input[start..i].to_string());
+            start = i + c.len_utf8();
+        }
+    }
+    parts.push(input[start..].to_string());
+    parts
+}
+
+/// BCP 47 / RFC 5646 言語タグの簡易検証
+///
+/// language-tag = 1*8ALPHA *( "-" 1*8alphanum )
+pub(crate) fn is_valid_language_tag(tag: &str) -> bool {
+    if tag.is_empty() {
+        return false;
+    }
+    let mut parts = tag.split('-');
+
+    // 先頭サブタグは ALPHA のみ (数字不可)
+    let Some(primary) = parts.next() else {
+        return false;
+    };
+    if primary.is_empty() || primary.len() > 8 || !primary.chars().all(|c| c.is_ascii_alphabetic())
+    {
+        return false;
+    }
+
+    // 後続サブタグは ALPHA / DIGIT
+    for part in parts {
+        if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return false;
+        }
+    }
+    true
+}
+
+// validate モジュールは `pub(crate)` で外部 integration test (tests/) から参照不可。
+// このためインラインテストとして配置する。CLAUDE.md:93 の「単体テストは tests/test_<module>.rs」
+// 規約は public モジュールが対象であり、本モジュールは対象外。
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_quotes_passes_through_safe_chars() {
+        assert_eq!(escape_quotes(""), "");
+        assert_eq!(escape_quotes("hello"), "hello");
+        assert_eq!(escape_quotes("日本語"), "日本語");
+        // obs-text のオクテット範囲 (U+0080..=U+00FF) と Unicode scalar 拡張解釈の範囲 (U+0100..=U+10FFFF)
+        assert_eq!(escape_quotes("\u{0080}\u{00FF}"), "\u{0080}\u{00FF}");
+        assert_eq!(escape_quotes("\u{0100}\u{10FFFF}"), "\u{0100}\u{10FFFF}");
+    }
+
+    #[test]
+    fn escape_quotes_escapes_dquote_and_backslash() {
+        assert_eq!(escape_quotes("a\"b"), "a\\\"b");
+        assert_eq!(escape_quotes("a\\b"), "a\\\\b");
+    }
+
+    #[test]
+    fn escape_quotes_replaces_ctl_with_space() {
+        // CR / LF / NUL は MUST replace with SP (RFC 9110 Section 5.5)
+        assert_eq!(escape_quotes("\r"), " ");
+        assert_eq!(escape_quotes("\n"), " ");
+        assert_eq!(escape_quotes("\0"), " ");
+        // 他の CTL も SP 置換
+        assert_eq!(escape_quotes("\x01"), " ");
+        assert_eq!(escape_quotes("\x1F"), " ");
+        // DEL
+        assert_eq!(escape_quotes("\x7F"), " ");
+        // 複数 CTL の連続
+        assert_eq!(escape_quotes("\r\n\0"), "   ");
+        // CTL とエスケープ対象の相互作用
+        assert_eq!(escape_quotes("\0\""), " \\\"");
+        assert_eq!(escape_quotes("\0\\"), " \\\\");
+        // CTL と正常文字の混在
+        assert_eq!(escape_quotes("a\rb\nc"), "a b c");
+    }
 }

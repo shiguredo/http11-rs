@@ -170,6 +170,20 @@ impl Ord for HttpDate {
     }
 }
 
+/// 月と年からその月の最大日数を返す
+fn max_day_in_month(month: u8, year: u16) -> u8 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            let leap =
+                year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
+            if leap { 29 } else { 28 }
+        }
+        _ => 0,
+    }
+}
+
 impl HttpDate {
     /// HTTP-date 文字列をパース (IMF-fixdate / asctime)
     ///
@@ -249,11 +263,12 @@ impl HttpDate {
         minute: u8,
         second: u8,
     ) -> Result<Self, DateError> {
-        if !(1..=31).contains(&day) {
-            return Err(DateError::InvalidDay);
-        }
         if !(1..=12).contains(&month) {
             return Err(DateError::InvalidMonth);
+        }
+        let max_day = max_day_in_month(month, year);
+        if day < 1 || day > max_day {
+            return Err(DateError::InvalidDay);
         }
         if year < 1 {
             return Err(DateError::InvalidYear);

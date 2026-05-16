@@ -23,7 +23,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{is_qdtext_byte, is_quoted_pair_byte};
+use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +43,7 @@ pub enum ContentDispositionError {
     DuplicateParameter(String),
     /// パラメータ数が `MAX_PARAMS` を超えた (issue 0047)
     ///
-    /// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とし、
+    /// 実用パラメータ数 (RFC 6266 程度) に十分な余裕として 32 を上限とし、
     /// 線形重複検出の CPU 消費を有限に抑える。
     TooManyParameters,
 }
@@ -312,11 +312,11 @@ impl fmt::Display for ContentDisposition {
         write!(f, "{}", self.disposition_type)?;
 
         if let Some(name) = &self.name {
-            write!(f, "; name=\"{}\"", escape_quoted_string(name))?;
+            write!(f, "; name=\"{}\"", escape_quotes(name))?;
         }
 
         if let Some(filename) = &self.filename {
-            write!(f, "; filename=\"{}\"", escape_quoted_string(filename))?;
+            write!(f, "; filename=\"{}\"", escape_quotes(filename))?;
         }
 
         if let Some(filename_ext) = &self.filename_ext {
@@ -324,7 +324,7 @@ impl fmt::Display for ContentDisposition {
         }
 
         for (name, value) in &self.parameters {
-            write!(f, "; {}=\"{}\"", name, escape_quoted_string(value))?;
+            write!(f, "; {}=\"{}\"", name, escape_quotes(value))?;
         }
 
         Ok(())
@@ -396,22 +396,6 @@ fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
     }
 }
 
-/// 有効なトークンかどうか
-fn is_valid_token(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(is_token_char)
-}
-
-/// RFC 9110 Section 5.6.2 のトークン文字 (tchar)
-///
-/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-///         "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-fn is_token_char(b: u8) -> bool {
-    matches!(b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
 /// 引用符付き文字列をパース (RFC 9110 Section 5.6.4 qdtext / quoted-pair)
 ///
 /// 入力は両端の DQUOTE を除いた中身 (= `qdtext / quoted-pair` の連結)。
@@ -419,31 +403,25 @@ fn is_token_char(b: u8) -> bool {
 /// 受信側でも CR/LF を含む quoted-string を素通りさせると、上位アプリでの再エンコード経路で
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
 fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
-    let bytes = s.as_bytes();
     let mut result = String::with_capacity(s.len());
-    let mut i = 0;
+    let mut iter = s.chars();
 
-    while i < bytes.len() {
-        let b = bytes[i];
-        if b == b'\\' {
-            // quoted-pair: 次のバイトが HTAB / SP / VCHAR / obs-text であること
-            i += 1;
-            if i >= bytes.len() {
+    while let Some(c) = iter.next() {
+        if c == '\\' {
+            // quoted-pair: 次の char が HTAB / SP / VCHAR / obs-text (Unicode scalar 拡張) であること
+            let next = iter
+                .next()
+                .ok_or(ContentDispositionError::InvalidParameter)?;
+            if !is_quoted_pair_char(next) {
                 return Err(ContentDispositionError::InvalidParameter);
             }
-            let next = bytes[i];
-            if !is_quoted_pair_byte(next) {
-                return Err(ContentDispositionError::InvalidParameter);
-            }
-            result.push(next as char);
-            i += 1;
+            result.push(next);
         } else {
-            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
-            if !is_qdtext_byte(b) {
+            // qdtext: HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text (Unicode scalar 拡張)
+            if !is_qdtext_char(c) {
                 return Err(ContentDispositionError::InvalidParameter);
             }
-            result.push(b as char);
-            i += 1;
+            result.push(c);
         }
     }
 
@@ -526,18 +504,6 @@ fn is_attr_char(b: u8) -> bool {
         b'!' | b'#' | b'$' | b'&' | b'+' | b'-' | b'.' |
         b'^' | b'_' | b'`' | b'|' | b'~'
     )
-}
-
-/// 引用符付き文字列用にエスケープ
-fn escape_quoted_string(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    for c in s.chars() {
-        if c == '"' || c == '\\' {
-            result.push('\\');
-        }
-        result.push(c);
-    }
-    result
 }
 
 #[cfg(test)]

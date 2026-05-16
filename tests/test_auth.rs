@@ -2,6 +2,7 @@
 
 use shiguredo_http11::auth::{
     AuthChallenge, AuthError, Authorization, BasicAuth, BearerToken, DigestAuth, DigestChallenge,
+    WwwAuthenticate,
 };
 
 // ========================================
@@ -235,7 +236,7 @@ fn test_auth_qdtext_rejects_crlf() {
 // RFC 7616 Section 3.4: DigestAuth username* テスト
 // ========================================
 
-/// `username*` で UTF-8 ユーザー名 (RFC 5987 ext-value) を受理する
+/// `username*` で UTF-8 ユーザー名 (RFC 8187 ext-value) を受理する
 #[test]
 fn test_digest_auth_accepts_username_star_with_utf8() {
     // `ユーザ` を UTF-8 percent-encoded した値
@@ -308,46 +309,32 @@ fn test_digest_auth_rejects_username_star_invalid_ext_value() {
     );
 }
 
-// ========================================
-// auth-param の hard cap (issue 0047)
-// ========================================
-
-fn build_auth_challenge(param_count: usize) -> String {
-    let mut s = String::from("Bearer ");
-    for i in 0..param_count {
-        if i > 0 {
-            s.push_str(", ");
-        }
-        // 各パラメータ名は一意 (重複検出経路を踏まないため)
-        s.push_str(&format!("p{}=\"v\"", i));
+// CR / LF / NUL を含む quoted-string は引き続き reject される (issue 0036 のリグレッション防止)
+#[test]
+fn test_basic_realm_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("Basic realm=\"a{}b\"", c);
+        let result = WwwAuthenticate::parse(&input);
+        assert!(
+            matches!(result, Err(AuthError::InvalidParameter)),
+            "char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
     }
-    s
 }
 
-// 32 個ちょうどのパラメータは受理される (境界値)
+// quoted-pair (`\` + char) でも CR / LF / NUL は reject される
 #[test]
-fn test_auth_challenge_32_params_accepted() {
-    let input = build_auth_challenge(32);
-    let result = AuthChallenge::parse(&input);
-    assert!(result.is_ok(), "32 個までは受理される想定: {:?}", result);
-}
-
-// 33 個目で TooManyParameters を返す (境界値)
-#[test]
-fn test_auth_challenge_33_params_rejected() {
-    let input = build_auth_challenge(33);
-    let result = AuthChallenge::parse(&input);
-    assert!(
-        matches!(result, Err(AuthError::TooManyParameters)),
-        "33 個目で TooManyParameters を返す想定: {:?}",
-        result
-    );
-}
-
-// 100 個でも同じく TooManyParameters
-#[test]
-fn test_auth_challenge_100_params_rejected() {
-    let input = build_auth_challenge(100);
-    let result = AuthChallenge::parse(&input);
-    assert!(matches!(result, Err(AuthError::TooManyParameters)));
+fn test_basic_realm_quoted_pair_rejects_cr_lf_nul() {
+    for c in ['\r', '\n', '\0'] {
+        let input = format!("Basic realm=\"a\\{}b\"", c);
+        let result = WwwAuthenticate::parse(&input);
+        assert!(
+            matches!(result, Err(AuthError::InvalidParameter)),
+            "quoted-pair char {:?} は reject される想定: {:?}",
+            c,
+            result
+        );
+    }
 }

@@ -172,15 +172,16 @@ proptest! {
 // Content-Range ラウンドトリップ
 proptest! {
     #[test]
-    fn prop_content_range_roundtrip(start in 0u64..10000, end in 0u64..10000, total in 1u64..20000) {
+    fn prop_content_range_roundtrip(start in 0u64..=u64::MAX, end in 0u64..=u64::MAX, total in 1u64..=20000) {
         let (start, end) = if start <= end {
             (start, end)
         } else {
             (end, start)
         };
-        let total = total.max(end + 1); // total は end より大きい必要がある
+        // end = u64::MAX のとき complete_length を表現できないため None にする
+        let complete_length = end.checked_add(1).map(|min| total.max(min));
 
-        let cr = ContentRange::new_bytes(start, end, Some(total));
+        let cr = ContentRange::new_bytes(start, end, complete_length);
         let displayed = cr.to_string();
         let reparsed = ContentRange::parse(&displayed).unwrap();
 
@@ -259,14 +260,14 @@ proptest! {
 // ContentRange::length のテスト
 proptest! {
     #[test]
-    fn prop_content_range_length(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_content_range_length(start in 0u64..=u64::MAX, end in 0u64..=u64::MAX) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
-        let cr = ContentRange::new_bytes(start, end, Some(end + 100));
-        let length = cr.length();
+        let complete_length = end.checked_add(100);
+        let cr = ContentRange::new_bytes(start, end, complete_length);
 
-        prop_assert!(length.is_some());
-        prop_assert_eq!(length.unwrap(), end - start + 1);
+        let expected = end.checked_sub(start).and_then(|d| d.checked_add(1));
+        prop_assert_eq!(cr.length(), expected);
     }
 }
 
@@ -315,7 +316,7 @@ proptest! {
 // ContentRange パース (不明な長さ)
 proptest! {
     #[test]
-    fn prop_content_range_unknown_length(start in 0u64..10000, end in 0u64..10000) {
+    fn prop_content_range_unknown_length(start in 0u64..=u64::MAX, end in 0u64..=u64::MAX) {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes {}-{}/*", start, end);

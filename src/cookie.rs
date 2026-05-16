@@ -24,6 +24,7 @@
 //! ```
 
 use crate::date::{DateError, HttpDate};
+use crate::validate::{is_token_char, trim_ows};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -86,7 +87,7 @@ impl Cookie {
     /// assert_eq!(cookies[1].name(), "user");
     /// ```
     pub fn parse(input: &str) -> Result<Vec<Cookie>, CookieError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(CookieError::Empty);
         }
@@ -94,7 +95,7 @@ impl Cookie {
         let mut cookies = Vec::new();
 
         for pair in input.split(';') {
-            let pair = pair.trim();
+            let pair = trim_ows(pair);
             if pair.is_empty() {
                 continue;
             }
@@ -220,7 +221,7 @@ impl SetCookie {
     /// assert!(cookie.secure());
     /// ```
     pub fn parse(input: &str, reference_year: u16) -> Result<Self, CookieError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(CookieError::Empty);
         }
@@ -229,7 +230,7 @@ impl SetCookie {
 
         // 最初の部分は name=value
         let first = parts.next().ok_or(CookieError::InvalidFormat)?;
-        let (name, value) = parse_cookie_pair(first.trim())?;
+        let (name, value) = parse_cookie_pair(trim_ows(first))?;
 
         let mut set_cookie = SetCookie {
             name: name.to_string(),
@@ -245,7 +246,7 @@ impl SetCookie {
 
         // 属性をパース
         for part in parts {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }
@@ -276,19 +277,34 @@ impl SetCookie {
                             && bytes[1..].iter().all(|b| b.is_ascii_digit())
                             && let Ok(age) = attr_value.parse::<i64>()
                         {
-                            set_cookie.max_age = Some(age);
+                            // RFC 6265 Section 5.2.2: 負の Max-Age は 0 として扱う
+                            set_cookie.max_age = Some(if age < 0 { 0 } else { age });
                         }
                     }
                     "domain" => {
-                        // RFC 6265 Section 5.2.3: 先頭の "." を除去し、小文字に変換する
+                        // RFC 6265 Section 4.1.1:
+                        //   domain-value = <subdomain> (RFC 1034 Section 3.5 + RFC 1123 Section 2.1)
+                        //   = LDH (letter / digit / hyphen) を含む label を "." で連結したもの。
+                        // RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3:
+                        //   先頭の "." を 1 つだけ除去し、小文字に変換する。
+                        // RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
+                        //   Domain attribute は全 label が punycode (LDH) でなければならず、
+                        //   非 LDH を含む値は reject すべき (SHOULD)。
+                        // 上記を統合し、strip 後の値が「LDH と "." のみで構成され、空でなく、
+                        // 再び "." で始まらない」ことを検証する。これにより
+                        // parse -> to_string -> parse の fixed-point 性も同時に担保される
+                        // (`Display` が値をそのまま吐くため、validity が閉じた集合なら再 parse でも
+                        // 同じ値が得られる)。
                         let d = attr_value.strip_prefix('.').unwrap_or(attr_value);
-                        if d.is_empty() {
-                            // RFC 6265 Section 5.2.3: 空の場合は無視すべき (SHOULD)
+                        if d.is_empty() || d.starts_with('.') || !is_valid_domain_value(d) {
+                            // 空 / leading dot 複数 / 非 LDH は無視する
                         } else {
                             set_cookie.domain = Some(d.to_ascii_lowercase());
                         }
                     }
-                    "path" => {
+                    "path" if !attr_value.is_empty() && attr_value.starts_with('/') => {
+                        // RFC 6265 Section 5.2.4: 空の attribute-value や
+                        // / 始まりでない値は default-path を使うべき (None を維持する)
                         set_cookie.path = Some(attr_value.to_string());
                     }
                     "samesite" => {
@@ -501,12 +517,19 @@ fn is_valid_cookie_value(s: &str) -> bool {
     s.bytes().all(is_cookie_octet)
 }
 
-/// トークン文字 (RFC 9110)
-fn is_token_char(b: u8) -> bool {
-    matches!(b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
-        b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
+/// 有効な domain-value かどうか
+///
+/// RFC 6265 Section 4.1.1 は `domain-value = <subdomain>` と定義し、`<subdomain>` は
+/// RFC 1034 Section 3.5 + RFC 1123 Section 2.1 の構文に従う。すなわち letter / digit /
+/// hyphen を含む label を "." で連結した形である。RFC 6265bis Section 5.1.2 は IDN を
+/// punycode (LDH) で表現することを要求しているため、本実装も LDH + "." のみを許容する。
+///
+/// RFC 1034 Section 3.5 の DNS ラベル制約 (先頭/末尾ハイフン禁止、空ラベル禁止、
+/// ラベル長 1-63、全体長 253) は現時点では検証していない。
+/// 今後の RFC 改訂や erratum で厳格化が必要になった場合に追加する。
+fn is_valid_domain_value(s: &str) -> bool {
+    s.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
 }
 
 /// Cookie 値に使える文字

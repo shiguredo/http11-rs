@@ -31,27 +31,10 @@ fn header_name() -> impl Strategy<Value = String> {
 
 // HTTP ヘッダー値 (RFC 9110 Section 5.5)
 // field-vchar = VCHAR / obs-text
-// VCHAR = %x21-7E, obs-text = %x80-FF, SP = 0x20, HTAB = 0x09
+// VCHAR = %x21-7E, obs-text = %x80-FF
 //
-// 注: 構築時バリデーション (Request::add_header / .header) を通過するため、
-// VCHAR + SP + HTAB のみを生成する (obs-text は UTF-8 として扱われ、
-// validate.rs の is_valid_field_value では受理されるが、本 strategy は
-// ASCII safe な集合に限定する)。
-//
-// また先頭/末尾の SP は構築時バリデーションを通過するが、
-// ヘッダー数の比較を簡単にするため空文字は許容する。
-fn header_value_char() -> impl Strategy<Value = char> {
-    prop_oneof![
-        prop::char::range('!', '~'), // VCHAR: 0x21-0x7E
-        Just(' '),                   // SP: 0x20
-        Just('\t'),                  // HTAB: 0x09
-    ]
-}
-
-fn header_value() -> impl Strategy<Value = String> {
-    proptest::collection::vec(header_value_char(), 1..=64)
-        .prop_map(|chars| chars.into_iter().collect())
-}
+// obs-text を含む共通 strategy は pbt::field_vchar / pbt::header_value を使用する。
+use pbt::header_value;
 
 // HTTP メソッド
 fn http_method() -> impl Strategy<Value = String> {
