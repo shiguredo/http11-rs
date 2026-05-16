@@ -11,6 +11,12 @@
 
 ## develop
 
+### misc
+
+## 2026.5.0
+
+**リリース日**: 2026-05-16
+
 - [CHANGE] `SetCookie::parse` の `Domain` 属性を RFC 1034 subdomain 構文 (LDH + dot) 準拠で厳格化する
   - `Domain=..` / `Domain=...` / `Domain=..foo` のような leading dot 複数の入力を `None` 扱いに変更する (旧 `Some(".")` / `Some("..")` / `Some(".foo")`)
   - `Domain=foo bar` / `Domain=foo\0bar` / `Domain=. foo` / `Domain=日本.example` のような非 LDH 文字 (空白・NUL・制御文字・非 ASCII) を含む入力も `None` 扱いに変更する
