@@ -252,11 +252,8 @@ pub fn percent_encode_query(input: &str) -> String {
 }
 
 fn to_hex_char(nibble: u8) -> char {
-    match nibble {
-        0..=9 => (b'0' + nibble) as char,
-        10..=15 => (b'A' + nibble - 10) as char,
-        _ => unreachable!(),
-    }
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    HEX[(nibble & 0x0F) as usize] as char
 }
 
 /// パーセントデコーディング

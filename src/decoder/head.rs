@@ -415,8 +415,7 @@ impl ResponseHead {
     /// `StatusClass::from_status_code` は必ず `Some` を返す。
     #[must_use]
     pub fn status_class(&self) -> StatusClass {
-        StatusClass::from_status_code(self.status_code)
-            .expect("status_code is in 100..=599 by construction invariant")
+        StatusClass::from_validated_status_code(self.status_code)
     }
 
     /// HTTP プロトコルバージョンを取得 (例: `"HTTP/1.1"`)。

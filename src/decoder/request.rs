@@ -709,7 +709,14 @@ impl<D: Decompressor> RequestDecoder<D> {
 
         // ボディを読む
         // RFC 9112: リクエストは close-delimited を使わないため、CloseDelimited は None と同じ
-        let body_kind = *self.decoded_body_kind.as_ref().unwrap();
+        let body_kind = match self.decoded_body_kind.as_ref() {
+            Some(body_kind) => *body_kind,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing body kind".to_string(),
+                ));
+            }
+        };
         match body_kind {
             BodyKind::Tunnel => {
                 return Err(Error::InvalidData(
@@ -747,7 +754,14 @@ impl<D: Decompressor> RequestDecoder<D> {
         // Request を構築
         // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
         // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
-        let head = self.decoded_head.take().unwrap();
+        let head = match self.decoded_head.take() {
+            Some(head) => head,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing head".to_string(),
+                ));
+            }
+        };
         let body = match body_kind {
             BodyKind::None | BodyKind::Tunnel => None,
             BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {

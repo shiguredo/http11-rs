@@ -33,7 +33,13 @@ fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
     let mut remaining = n;
     while remaining > 0 {
         i -= 1;
-        let nibble = (remaining & 0xF) as u8;
+        let nibble = match u8::try_from(remaining & 0xF) {
+            Ok(n) => n,
+            Err(_) => {
+                debug_assert!(false, "low 4 bits always fit in u8");
+                0
+            }
+        };
         tmp[i] = if nibble < 10 {
             b'0' + nibble
         } else {
@@ -55,7 +61,14 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
     let mut remaining = n;
     while remaining > 0 {
         i -= 1;
-        tmp[i] = b'0' + (remaining % 10) as u8;
+        let digit = match u8::try_from(remaining % 10) {
+            Ok(d) => d,
+            Err(_) => {
+                debug_assert!(false, "decimal digit always fits in u8");
+                0
+            }
+        };
+        tmp[i] = b'0' + digit;
         remaining /= 10;
     }
     buf.extend_from_slice(&tmp[i..]);

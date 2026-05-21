@@ -58,6 +58,38 @@
 //! ```
 
 #![cfg_attr(not(test), no_std)]
+// library target (src/) 向けの追加 deny (restriction / pedantic。単体では allow)。
+// `not(test)` … lib を cfg(test) なしでビルドするときだけ有効。tests/ は別 crate のため届かない。
+// `[workspace.lints.clippy]` に書かない理由 … 同じ package の tests/ にも lint が乗るため。
+// src/ 内の #[test] / #[cfg(test)] … clippy.toml の allow-*-in-tests で緩和。
+// Clippy 組み込みデフォルト (correctness / style 等) … ここでは触らない (CI の `-D warnings` で昇格)。
+
+// no_std
+// `core` で済む import に `std` を使うことを禁止する
+#![cfg_attr(not(test), deny(clippy::std_instead_of_core))]
+// `alloc` で済む import に `std` を使うことを禁止する
+#![cfg_attr(not(test), deny(clippy::std_instead_of_alloc))]
+// panic
+// panic! を禁止する
+#![cfg_attr(not(test), deny(clippy::panic))]
+// unreachable! を禁止する
+#![cfg_attr(not(test), deny(clippy::unreachable))]
+// unwrap を Result / ? に寄せる
+#![cfg_attr(not(test), deny(clippy::unwrap_used))]
+// expect を明示的なエラー処理に寄せる
+#![cfg_attr(not(test), deny(clippy::expect_used))]
+// cast
+// 黙って桁落ちする as を禁止する
+#![cfg_attr(not(test), deny(clippy::cast_possible_truncation))]
+// 符号付き変換の情報損失を禁止する
+#![cfg_attr(not(test), deny(clippy::cast_sign_loss))]
+// 符号付きから符号なしへのラップを禁止する
+#![cfg_attr(not(test), deny(clippy::cast_possible_wrap))]
+// 浮動小数から整数への精度損失を禁止する
+#![cfg_attr(not(test), deny(clippy::cast_precision_loss))]
+// as より TryFrom / try_into を優先する
+#![cfg_attr(not(test), deny(clippy::checked_conversions))]
+
 extern crate alloc;
 
 pub mod accept;

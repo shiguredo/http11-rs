@@ -125,7 +125,7 @@ impl BodyDecoder {
                 let available = if *remaining >= buf.len() as u64 {
                     buf.len()
                 } else {
-                    *remaining as usize
+                    usize::try_from(*remaining).unwrap_or_default()
                 };
                 if available > 0 {
                     Some(&buf[..available])

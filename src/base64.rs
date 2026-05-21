@@ -137,7 +137,8 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
 
         if bits >= 8 {
             bits -= 8;
-            result.push((buf >> bits) as u8);
+            let byte = u8::try_from(buf >> bits).map_err(|_| Base64Error::InvalidPadding)?;
+            result.push(byte);
             buf &= (1 << bits) - 1;
         }
     }

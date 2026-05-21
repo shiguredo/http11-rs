@@ -551,7 +551,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // ResponseHead を構築
-                            let start_line = self.start_line.take().unwrap();
+                            let start_line = match self.start_line.take() {
+                                Some(start_line) => start_line,
+                                None => {
+                                    return Err(Error::InvalidData(
+                                        "internal decoder state: missing start line".to_string(),
+                                    ));
+                                }
+                            };
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = ResponseHead::from_validated_parts(
@@ -767,7 +774,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // ボディを読む
-        let body_kind = *self.decoded_body_kind.as_ref().unwrap();
+        let body_kind = match self.decoded_body_kind.as_ref() {
+            Some(body_kind) => *body_kind,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing body kind".to_string(),
+                ));
+            }
+        };
         match body_kind {
             BodyKind::Tunnel => {
                 return Err(Error::InvalidData(
@@ -835,7 +849,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // Response を構築
         // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
         // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
-        let head = self.decoded_head.take().unwrap();
+        let head = match self.decoded_head.take() {
+            Some(head) => head,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing head".to_string(),
+                ));
+            }
+        };
         let body = match body_kind {
             BodyKind::None | BodyKind::Tunnel => None,
             BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {

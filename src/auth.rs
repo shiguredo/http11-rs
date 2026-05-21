@@ -991,12 +991,18 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
             if i + 2 >= bytes.len() {
                 return Err(AuthError::InvalidUsernameExtValue);
             }
-            let hi = (bytes[i + 1] as char)
-                .to_digit(16)
-                .ok_or(AuthError::InvalidUsernameExtValue)? as u8;
-            let lo = (bytes[i + 2] as char)
-                .to_digit(16)
-                .ok_or(AuthError::InvalidUsernameExtValue)? as u8;
+            let hi = u8::try_from(
+                (bytes[i + 1] as char)
+                    .to_digit(16)
+                    .ok_or(AuthError::InvalidUsernameExtValue)?,
+            )
+            .map_err(|_| AuthError::InvalidUsernameExtValue)?;
+            let lo = u8::try_from(
+                (bytes[i + 2] as char)
+                    .to_digit(16)
+                    .ok_or(AuthError::InvalidUsernameExtValue)?,
+            )
+            .map_err(|_| AuthError::InvalidUsernameExtValue)?;
             result.push((hi << 4) | lo);
             i += 3;
         } else if is_attr_char(b) {

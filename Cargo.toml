@@ -27,4 +27,24 @@ rust-version = "1.88"
 # 本ライブラリ (workspace ルートを参照)
 shiguredo_http11 = { path = "." }
 
+[workspace.lints.rust]
+# unsafe ブロックを禁止する
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Clippy 組み込みデフォルト (correctness / style 等の warn) はここでは触らない。
+# prek / CI の `cargo clippy ... -- -D warnings` がそれらの warn を deny に昇格する。
+# 以下だけ restriction グループ (単体では allow) を追加で deny する。
+# `core` で済む import に `alloc` を使うことを禁止する
+alloc_instead_of_core = "deny"
+# 理由なし #[allow] を禁止する
+allow_attributes_without_reason = "deny"
+# デバッグ用マクロを本番コードに残さない
+dbg_macro = "deny"
+# 未完成の unimplemented! を残さない
+unimplemented = "deny"
+
 [dependencies]
+
+[lints]
+workspace = true

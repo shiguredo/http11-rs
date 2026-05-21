@@ -111,8 +111,10 @@ impl QValue {
             }
             let mut value = 0u16;
             for (idx, c) in rest.chars().enumerate() {
-                let digit = c.to_digit(10).ok_or(AcceptError::InvalidQValue)? as u16;
-                value += digit * 10u16.pow(2 - idx as u32);
+                let digit = u16::try_from(c.to_digit(10).ok_or(AcceptError::InvalidQValue)?)
+                    .map_err(|_| AcceptError::InvalidQValue)?;
+                let idx = u32::try_from(idx).map_err(|_| AcceptError::InvalidQValue)?;
+                value += digit * 10u16.pow(2 - idx);
             }
             return Ok(QValue(value));
         }

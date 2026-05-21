@@ -10,3 +10,6 @@ proptest = "1.11"
 
 [dev-dependencies]
 shiguredo_http11.workspace = true
+
+[lints]
+workspace = true
