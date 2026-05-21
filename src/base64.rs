@@ -35,23 +35,31 @@ pub(crate) fn encode(input: &[u8]) -> String {
     let mut i = 0;
 
     while i < input.len() {
-        let b0 = input[i];
-        let b1 = if i + 1 < input.len() { input[i + 1] } else { 0 };
-        let b2 = if i + 2 < input.len() { input[i + 2] } else { 0 };
+        let b0 = input.get(i).copied().unwrap_or(0);
+        let b1 = input.get(i + 1).copied().unwrap_or(0);
+        let b2 = input.get(i + 2).copied().unwrap_or(0);
 
         let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
 
-        result.push(BASE64_ALPHABET[(n >> 18 & 0x3F) as usize] as char);
-        result.push(BASE64_ALPHABET[(n >> 12 & 0x3F) as usize] as char);
+        if let Some(&c) = BASE64_ALPHABET.get((n >> 18 & 0x3F) as usize) {
+            result.push(c as char);
+        }
+        if let Some(&c) = BASE64_ALPHABET.get((n >> 12 & 0x3F) as usize) {
+            result.push(c as char);
+        }
 
         if i + 1 < input.len() {
-            result.push(BASE64_ALPHABET[(n >> 6 & 0x3F) as usize] as char);
+            if let Some(&c) = BASE64_ALPHABET.get((n >> 6 & 0x3F) as usize) {
+                result.push(c as char);
+            }
         } else {
             result.push('=');
         }
 
         if i + 2 < input.len() {
-            result.push(BASE64_ALPHABET[(n & 0x3F) as usize] as char);
+            if let Some(&c) = BASE64_ALPHABET.get((n & 0x3F) as usize) {
+                result.push(c as char);
+            }
         } else {
             result.push('=');
         }
@@ -106,7 +114,13 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
     }
 
     // データ部分 (パディング前) と末尾 `=` 個数の整合性検証
-    let data = &normalized[..normalized.len() - pad_count];
+    let data_end = normalized
+        .len()
+        .checked_sub(pad_count)
+        .ok_or(Base64Error::InvalidPadding)?;
+    let data = normalized
+        .get(..data_end)
+        .ok_or(Base64Error::InvalidPadding)?;
     let last_block_chars = data.len() % 4;
     let valid = match pad_count {
         0 => last_block_chars == 0,
@@ -118,7 +132,12 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
         return Err(Base64Error::InvalidPadding);
     }
 
-    let mut result = Vec::with_capacity((data.len() * 3) / 4);
+    let capacity = data
+        .len()
+        .checked_mul(3)
+        .and_then(|n| n.checked_div(4))
+        .unwrap_or(0);
+    let mut result = Vec::with_capacity(capacity);
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
 

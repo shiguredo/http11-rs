@@ -31,7 +31,7 @@ pub(crate) fn detect_scheme(target: &str) -> Option<usize> {
     let bytes = target.as_bytes();
 
     // 最初の文字が ALPHA でなければスキームではない
-    if bytes.is_empty() || !bytes[0].is_ascii_alphabetic() {
+    if !bytes.first().is_some_and(|&b| b.is_ascii_alphabetic()) {
         return None;
     }
 
@@ -44,7 +44,8 @@ pub(crate) fn detect_scheme(target: &str) -> Option<usize> {
     }
 
     // スキーム文字の検証
-    for &b in &bytes[1..colon_pos] {
+    let scheme_bytes = bytes.get(1..colon_pos)?;
+    for &b in scheme_bytes {
         if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
             return None;
         }

@@ -40,14 +40,18 @@ fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
                 0
             }
         };
-        tmp[i] = if nibble < 10 {
-            b'0' + nibble
-        } else {
-            b'a' + nibble - 10
-        };
+        if let Some(slot) = tmp.get_mut(i) {
+            *slot = if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'a' + nibble - 10
+            };
+        }
         remaining >>= 4;
     }
-    buf.extend_from_slice(&tmp[i..]);
+    if let Some(suffix) = tmp.get(i..) {
+        buf.extend_from_slice(suffix);
+    }
 }
 
 /// `usize` を 10 進数 ASCII としてバッファに書き込む
@@ -68,10 +72,14 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
                 0
             }
         };
-        tmp[i] = b'0' + digit;
+        if let Some(slot) = tmp.get_mut(i) {
+            *slot = b'0' + digit;
+        }
         remaining /= 10;
     }
-    buf.extend_from_slice(&tmp[i..]);
+    if let Some(suffix) = tmp.get(i..) {
+        buf.extend_from_slice(suffix);
+    }
 }
 
 /// `encode_request` / `encode_response` の事前確保サイズ上限 (64 MB)
@@ -420,7 +428,9 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
         return Err(EncodeError::DuplicateHostHeader);
     }
 
-    let host_value = host_headers[0];
+    let host_value = host_headers
+        .first()
+        .ok_or(EncodeError::MissingHostHeader)?;
     // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2: 空の field-value は許可)
     if !host_value.is_empty() && Host::parse(host_value).is_err() {
         return Err(EncodeError::InvalidHostHeader {

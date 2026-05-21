@@ -98,12 +98,17 @@ pub(crate) fn is_valid_protocol_version(version: &str) -> bool {
     if slash_pos == 0 {
         return false;
     }
-    if !bytes[..slash_pos].iter().all(|&b| is_token_char(b)) {
+    let Some(token_part) = bytes.get(..slash_pos) else {
+        return false;
+    };
+    if !token_part.iter().all(|&b| is_token_char(b)) {
         return false;
     }
 
     // "/" の後: DIGIT+ "." DIGIT+
-    let after_slash = &bytes[slash_pos + 1..];
+    let Some(after_slash) = bytes.get(slash_pos + 1..) else {
+        return false;
+    };
 
     // "." を探す
     let dot_pos = match after_slash.iter().position(|&b| b == b'.') {
@@ -115,12 +120,17 @@ pub(crate) fn is_valid_protocol_version(version: &str) -> bool {
     if dot_pos == 0 {
         return false;
     }
-    if !after_slash[..dot_pos].iter().all(|b| b.is_ascii_digit()) {
+    let Some(before_dot) = after_slash.get(..dot_pos) else {
+        return false;
+    };
+    if !before_dot.iter().all(|b| b.is_ascii_digit()) {
         return false;
     }
 
     // "." の後: 1 文字以上の DIGIT
-    let after_dot = &after_slash[dot_pos + 1..];
+    let Some(after_dot) = after_slash.get(dot_pos + 1..) else {
+        return false;
+    };
     if after_dot.is_empty() {
         return false;
     }
@@ -188,7 +198,9 @@ pub(crate) fn is_valid_request_target(target: &str) -> bool {
     let mut i = 0;
 
     while i < bytes.len() {
-        let b = bytes[i];
+        let Some(&b) = bytes.get(i) else {
+            break;
+        };
 
         // 制御文字の拒否 (0x00-0x20, 0x7F)
         if b <= 0x20 || b == 0x7F {
@@ -202,11 +214,12 @@ pub(crate) fn is_valid_request_target(target: &str) -> bool {
 
         // パーセントエンコーディングの検証
         if b == b'%' {
-            if i + 2 >= bytes.len() {
+            let Some(&high) = bytes.get(i + 1) else {
                 return false; // 不完全
-            }
-            let high = bytes[i + 1];
-            let low = bytes[i + 2];
+            };
+            let Some(&low) = bytes.get(i + 2) else {
+                return false; // 不完全
+            };
 
             if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
                 return false; // 不正な 16 進数

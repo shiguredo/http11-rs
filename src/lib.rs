@@ -89,6 +89,14 @@
 #![cfg_attr(not(test), deny(clippy::cast_precision_loss))]
 // as より TryFrom / try_into を優先する
 #![cfg_attr(not(test), deny(clippy::checked_conversions))]
+// 範囲外で panic しうるインデックス・スライスを禁止する
+#![cfg_attr(not(test), deny(clippy::indexing_slicing))]
+// Result を返す関数内の panic! / unreachable! 等を禁止する
+#![cfg_attr(not(test), deny(clippy::panic_in_result_fn))]
+// 長さ未検証の refutable スライスパターンを禁止する
+#![cfg_attr(not(test), deny(clippy::index_refutable_slice))]
+// ゼロ除算で panic しうる整数除算を禁止する
+#![cfg_attr(not(test), deny(clippy::integer_division))]
 
 extern crate alloc;
 

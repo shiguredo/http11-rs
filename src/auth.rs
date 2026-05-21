@@ -782,14 +782,20 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
     let mut i = 0;
 
     while i < bytes.len() {
-        while i < bytes.len() && is_ows(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_ows(b) {
+                break;
+            }
             i += 1;
         }
-        if i < bytes.len() && bytes[i] == b',' {
+        if bytes.get(i) == Some(&b',') {
             i += 1;
             continue;
         }
-        while i < bytes.len() && is_ows(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_ows(b) {
+                break;
+            }
             i += 1;
         }
         if i >= bytes.len() {
@@ -797,7 +803,10 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         }
 
         let name_start = i;
-        while i < bytes.len() && is_token_char(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_token_char(b) {
+                break;
+            }
             i += 1;
         }
         if i == name_start {
@@ -805,21 +814,27 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         }
         let name = &input[name_start..i];
 
-        while i < bytes.len() && is_ows(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_ows(b) {
+                break;
+            }
             i += 1;
         }
-        if i >= bytes.len() || bytes[i] != b'=' {
+        if bytes.get(i) != Some(&b'=') {
             return Err(AuthError::InvalidParameter);
         }
         i += 1;
-        while i < bytes.len() && is_ows(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_ows(b) {
+                break;
+            }
             i += 1;
         }
         if i >= bytes.len() {
             return Err(AuthError::InvalidParameter);
         }
 
-        let value = if bytes[i] == b'"' {
+        let value = if bytes.get(i) == Some(&b'"') {
             // 開く DQUOTE をスキップしてサブスライスから char 単位で走査する。
             // bytes[i] == b'"' は ASCII (1 バイト) なので i+1 は valid な char 境界。
             i += 1;
@@ -862,7 +877,10 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             value
         } else {
             let value_start = i;
-            while i < bytes.len() && !is_ows(bytes[i]) && bytes[i] != b',' {
+            while let Some(&b) = bytes.get(i) {
+                if is_ows(b) || b == b',' {
+                    break;
+                }
                 i += 1;
             }
             let token = &input[value_start..i];
@@ -883,13 +901,16 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
             return Err(AuthError::TooManyParameters);
         }
         params.push((key, value));
-        while i < bytes.len() && is_ows(bytes[i]) {
+        while let Some(&b) = bytes.get(i) {
+            if !is_ows(b) {
+                break;
+            }
             i += 1;
         }
         if i < bytes.len() {
             // RFC 9110 Section 11.2 (auth-param 定義)、Section 11.6.3: auth-param *( OWS "," OWS auth-param )
             // パラメータ間のカンマは必須
-            if bytes[i] == b',' {
+            if bytes.get(i) == Some(&b',') {
                 i += 1;
             } else {
                 return Err(AuthError::InvalidParameter);
@@ -986,19 +1007,20 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
     let mut result = alloc::vec::Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        let b = bytes[i];
+        let Some(&b) = bytes.get(i) else {
+            break;
+        };
         if b == b'%' {
-            if i + 2 >= bytes.len() {
-                return Err(AuthError::InvalidUsernameExtValue);
-            }
+            let hi_byte = bytes.get(i + 1).ok_or(AuthError::InvalidUsernameExtValue)?;
+            let lo_byte = bytes.get(i + 2).ok_or(AuthError::InvalidUsernameExtValue)?;
             let hi = u8::try_from(
-                (bytes[i + 1] as char)
+                (*hi_byte as char)
                     .to_digit(16)
                     .ok_or(AuthError::InvalidUsernameExtValue)?,
             )
             .map_err(|_| AuthError::InvalidUsernameExtValue)?;
             let lo = u8::try_from(
-                (bytes[i + 2] as char)
+                (*lo_byte as char)
                     .to_digit(16)
                     .ok_or(AuthError::InvalidUsernameExtValue)?,
             )

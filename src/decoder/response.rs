@@ -439,9 +439,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                        })?;
+                        let line = String::from_utf8(
+                            self.buf
+                                .get(..pos)
+                                .ok_or_else(|| {
+                                    Error::InvalidData(
+                                        "invalid status line bounds".to_string(),
+                                    )
+                                })?
+                                .to_vec(),
+                        )
+                        .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                         self.buf.drain(..pos + 2);
 
                         // CR/LF チェック (埋め込まれた改行を拒否)
@@ -460,18 +468,29 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             )));
                         }
 
+                        let protocol_version = *parts.first().ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid status line: missing protocol version".to_string(),
+                            )
+                        })?;
+                        let status_code_str = *parts.get(1).ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid status line: missing status code".to_string(),
+                            )
+                        })?;
+
                         // プロトコルバージョンの検証
-                        if !is_valid_protocol_version(parts[0]) {
+                        if !is_valid_protocol_version(protocol_version) {
                             return Err(Error::InvalidData(
                                 "invalid status line: invalid protocol version".to_string(),
                             ));
                         }
 
                         // ステータスコードの検証 (RFC 9110 Section 15)
-                        let status_code: u16 = parts[1].parse().map_err(|_| {
+                        let status_code: u16 = status_code_str.parse().map_err(|_| {
                             Error::InvalidData(alloc::format!(
                                 "invalid status line: invalid status code: {}",
-                                parts[1]
+                                status_code_str
                             ))
                         })?;
                         if !is_valid_status_code(status_code) {
@@ -510,10 +529,15 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 Error::InvalidData("missing status line".to_string())
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
-                            let status_code: u16 = parts[1].parse().map_err(|_| {
+                            let status_code_str = *parts.get(1).ok_or_else(|| {
+                                Error::InvalidData(
+                                    "invalid status line: missing status code".to_string(),
+                                )
+                            })?;
+                            let status_code: u16 = status_code_str.parse().map_err(|_| {
                                 Error::InvalidData(alloc::format!(
                                     "invalid status code: {}",
-                                    parts[1]
+                                    status_code_str
                                 ))
                             })?;
 
@@ -562,7 +586,15 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = ResponseHead::from_validated_parts(
-                                parts[0].to_string(),
+                                parts
+                                    .first()
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid status line: missing protocol version"
+                                                .to_string(),
+                                        )
+                                    })?
+                                    .to_string(),
                                 status_code,
                                 parts.get(2).unwrap_or(&"").to_string(),
                                 core::mem::take(&mut self.headers),
@@ -586,10 +618,19 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 });
                             }
 
-                            let line =
-                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                                })?;
+                            let line = String::from_utf8(
+                                self.buf
+                                    .get(..pos)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid header line bounds".to_string(),
+                                        )
+                                    })?
+                                    .to_vec(),
+                            )
+                            .map_err(|e| {
+                                Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                            })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;

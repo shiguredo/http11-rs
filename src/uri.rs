@@ -113,12 +113,12 @@ fn is_query_or_fragment_char(b: u8) -> bool {
 fn validate_percent_encoding(s: &str) -> Result<(), UriError> {
     let bytes = s.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
-            if i + 2 >= bytes.len() {
+    while let Some(&b) = bytes.get(i) {
+        if b == b'%' {
+            let (Some(&high), Some(&low)) = (bytes.get(i + 1), bytes.get(i + 2)) else {
                 return Err(UriError::InvalidPercentEncoding);
-            }
-            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+            };
+            if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
                 return Err(UriError::InvalidPercentEncoding);
             }
             i += 3;
@@ -136,8 +136,7 @@ fn validate_path(path: &str) -> Result<(), UriError> {
     validate_percent_encoding(path)?;
     let bytes = path.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if b == b'%' {
             // パーセントエンコーディングは既に検証済み
             i += 3;
@@ -156,8 +155,7 @@ fn validate_query(query: &str) -> Result<(), UriError> {
     validate_percent_encoding(query)?;
     let bytes = query.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if b == b'%' {
             // パーセントエンコーディングは既に検証済み
             i += 3;
@@ -176,8 +174,7 @@ fn validate_fragment(fragment: &str) -> Result<(), UriError> {
     validate_percent_encoding(fragment)?;
     let bytes = fragment.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if b == b'%' {
             // パーセントエンコーディングは既に検証済み
             i += 3;
@@ -253,7 +250,7 @@ pub fn percent_encode_query(input: &str) -> String {
 
 fn to_hex_char(nibble: u8) -> char {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    HEX[(nibble & 0x0F) as usize] as char
+    *HEX.get((nibble & 0x0F) as usize).unwrap_or(&b'0') as char
 }
 
 /// パーセントデコーディング
@@ -365,10 +362,13 @@ impl Uri {
         // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
         let scheme_end = if let Some(colon_pos) = find_scheme_end(bytes) {
             // スキームの検証
-            if !bytes[0].is_ascii_alphabetic() {
+            if !bytes.first().is_some_and(|&b| b.is_ascii_alphabetic()) {
                 return Err(UriError::InvalidScheme);
             }
-            for &b in &bytes[1..colon_pos] {
+            let scheme_bytes = bytes
+                .get(1..colon_pos)
+                .ok_or(UriError::InvalidScheme)?;
+            for &b in scheme_bytes {
                 if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
                     return Err(UriError::InvalidScheme);
                 }
@@ -380,15 +380,22 @@ impl Uri {
         };
 
         // authority のパース (RFC 3986 Section 3.2)
-        let (authority_start, authority_end, host_end, port) =
-            if pos + 1 < len && bytes[pos] == b'/' && bytes[pos + 1] == b'/' {
+        let (authority_start, authority_end, host_end, port) = if bytes
+            .get(pos)
+            .is_some_and(|&b| b == b'/')
+            && bytes.get(pos + 1).is_some_and(|&b| b == b'/')
+        {
                 pos += 2;
                 let auth_start = pos;
 
                 // authority の終端を探す
-                let auth_end = bytes[pos..]
-                    .iter()
-                    .position(|&b| b == b'/' || b == b'?' || b == b'#')
+                let auth_end = bytes
+                    .get(pos..)
+                    .and_then(|slice| {
+                        slice
+                            .iter()
+                            .position(|&b| b == b'/' || b == b'?' || b == b'#')
+                    })
                     .map(|p| pos + p)
                     .unwrap_or(len);
 
@@ -408,20 +415,20 @@ impl Uri {
 
         // パスのパース (RFC 3986 Section 3.3)
         let path_start = pos;
-        let path_end = bytes[pos..]
-            .iter()
-            .position(|&b| b == b'?' || b == b'#')
+        let path_end = bytes
+            .get(pos..)
+            .and_then(|slice| slice.iter().position(|&b| b == b'?' || b == b'#'))
             .map(|p| pos + p)
             .unwrap_or(len);
         pos = path_end;
 
         // クエリのパース (RFC 3986 Section 3.4)
-        let (query_start, query_end) = if pos < len && bytes[pos] == b'?' {
+        let (query_start, query_end) = if bytes.get(pos).is_some_and(|&b| b == b'?') {
             pos += 1;
             let start = pos;
-            let end = bytes[pos..]
-                .iter()
-                .position(|&b| b == b'#')
+            let end = bytes
+                .get(pos..)
+                .and_then(|slice| slice.iter().position(|&b| b == b'#'))
                 .map(|p| pos + p)
                 .unwrap_or(len);
             pos = end;
@@ -431,7 +438,7 @@ impl Uri {
         };
 
         // フラグメントのパース (RFC 3986 Section 3.5)
-        let fragment_start = if pos < len && bytes[pos] == b'#' {
+        let fragment_start = if bytes.get(pos).is_some_and(|&b| b == b'#') {
             Some(pos + 1)
         } else {
             None
@@ -601,15 +608,14 @@ fn validate_host(host: &str) -> Result<(), UriError> {
 fn validate_reg_name(name: &str) -> Result<(), UriError> {
     let bytes = name.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if is_unreserved(b) || is_sub_delim(b) {
             i += 1;
         } else if b == b'%' {
-            if i + 2 >= bytes.len() {
+            let (Some(&high), Some(&low)) = (bytes.get(i + 1), bytes.get(i + 2)) else {
                 return Err(UriError::InvalidHost);
-            }
-            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+            };
+            if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
                 return Err(UriError::InvalidHost);
             }
             i += 3;
@@ -629,7 +635,11 @@ fn validate_ip_literal(literal: &str) -> Result<(), UriError> {
         return Err(UriError::InvalidHost);
     }
     // IPvFuture: "v" 1*HEXDIG "." 1*( unreserved / sub-delims / ":" )
-    if literal.as_bytes()[0] == b'v' || literal.as_bytes()[0] == b'V' {
+    if literal
+        .as_bytes()
+        .first()
+        .is_some_and(|&b| b == b'v' || b == b'V')
+    {
         return validate_ipv_future(literal);
     }
     // IPv6address
@@ -652,13 +662,18 @@ fn validate_ipv_future(literal: &str) -> Result<(), UriError> {
     if dot_pos <= 1 {
         return Err(UriError::InvalidHost);
     }
-    for &b in &bytes[1..dot_pos] {
+    let hex_part = bytes
+        .get(1..dot_pos)
+        .ok_or(UriError::InvalidHost)?;
+    for &b in hex_part {
         if !b.is_ascii_hexdigit() {
             return Err(UriError::InvalidHost);
         }
     }
     // "." の後に 1 文字以上の ( unreserved / sub-delims / ":" ) が必要
-    let after_dot = &bytes[dot_pos + 1..];
+    let after_dot = bytes
+        .get(dot_pos + 1..)
+        .ok_or(UriError::InvalidHost)?;
     if after_dot.is_empty() {
         return Err(UriError::InvalidHost);
     }
@@ -676,15 +691,14 @@ fn validate_ipv_future(literal: &str) -> Result<(), UriError> {
 fn validate_userinfo(userinfo: &str) -> Result<(), UriError> {
     let bytes = userinfo.as_bytes();
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if is_unreserved(b) || is_sub_delim(b) || b == b':' {
             i += 1;
         } else if b == b'%' {
-            if i + 2 >= bytes.len() {
+            let (Some(&high), Some(&low)) = (bytes.get(i + 1), bytes.get(i + 2)) else {
                 return Err(UriError::InvalidUserinfo);
-            }
-            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
+            };
+            if !high.is_ascii_hexdigit() || !low.is_ascii_hexdigit() {
                 return Err(UriError::InvalidUserinfo);
             }
             i += 3;
@@ -886,13 +900,15 @@ fn remove_dot_segments(path: &str) -> String {
 
         // E: 最初のパスセグメントを出力に移動
         let start = i;
-        if bytes[i] == b'/' {
+        if bytes.get(i).is_some_and(|&b| b == b'/') {
             i += 1;
         }
-        while i < len && bytes[i] != b'/' {
+        while bytes.get(i).is_some_and(|&b| b != b'/') {
             i += 1;
         }
-        output.push(&path[start..i]);
+        if let Some(segment) = path.get(start..i) {
+            output.push(segment);
+        }
     }
 
     output.concat()

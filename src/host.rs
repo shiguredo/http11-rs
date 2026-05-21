@@ -178,18 +178,18 @@ fn is_valid_ipvfuture(input: &str) -> bool {
     if bytes.len() < 3 {
         return false;
     }
-    if bytes[0] != b'v' && bytes[0] != b'V' {
+    if !bytes.first().is_some_and(|&b| b == b'v' || b == b'V') {
         return false;
     }
 
     let mut i = 1;
     let mut hex_len = 0;
-    while i < bytes.len() && is_hexdig(bytes[i]) {
+    while bytes.get(i).is_some_and(|&b| is_hexdig(b)) {
         hex_len += 1;
         i += 1;
     }
 
-    if hex_len == 0 || i >= bytes.len() || bytes[i] != b'.' {
+    if hex_len == 0 || bytes.get(i).is_none_or(|&b| b != b'.') {
         return false;
     }
     i += 1;
@@ -198,8 +198,7 @@ fn is_valid_ipvfuture(input: &str) -> bool {
         return false;
     }
 
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if !is_ipvfuture_char(b) {
             return false;
         }
@@ -220,17 +219,16 @@ fn is_valid_reg_name(input: &str) -> bool {
     }
 
     let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
+    while let Some(&b) = bytes.get(i) {
         if is_unreserved(b) || is_sub_delim(b) {
             i += 1;
             continue;
         }
         if b == b'%' {
-            if i + 2 >= bytes.len() {
+            let (Some(&high), Some(&low)) = (bytes.get(i + 1), bytes.get(i + 2)) else {
                 return false;
-            }
-            if !is_hexdig(bytes[i + 1]) || !is_hexdig(bytes[i + 2]) {
+            };
+            if !is_hexdig(high) || !is_hexdig(low) {
                 return false;
             }
             i += 3;

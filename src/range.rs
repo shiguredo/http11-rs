@@ -507,7 +507,11 @@ impl AcceptRanges {
 
     /// 何も受け入れないかどうか
     pub fn is_none(&self) -> bool {
-        self.units.len() == 1 && self.units[0].eq_ignore_ascii_case("none")
+        self.units.len() == 1
+            && self
+                .units
+                .first()
+                .is_some_and(|u| u.eq_ignore_ascii_case("none"))
     }
 }
 

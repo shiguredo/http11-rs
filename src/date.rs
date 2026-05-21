@@ -208,8 +208,11 @@ impl HttpDate {
 
         // カンマの位置で形式を判別
         if let Some(comma_pos) = input.find(',') {
-            let day_name = &input[..comma_pos];
-            let rest = input[comma_pos + 1..].trim_start();
+            let day_name = input.get(..comma_pos).ok_or(DateError::InvalidFormat)?;
+            let rest = input
+                .get(comma_pos + 1..)
+                .ok_or(DateError::InvalidFormat)?
+                .trim_start();
 
             // IMF-fixdate: Sun, 06 Nov 1994 08:49:37 GMT
             // rfc850-date: Sunday, 06-Nov-94 08:49:37 GMT
@@ -243,8 +246,11 @@ impl HttpDate {
         }
 
         let comma_pos = input.find(',').ok_or(DateError::InvalidFormat)?;
-        let day_name = &input[..comma_pos];
-        let rest = input[comma_pos + 1..].trim_start();
+        let day_name = input.get(..comma_pos).ok_or(DateError::InvalidFormat)?;
+        let rest = input
+            .get(comma_pos + 1..)
+            .ok_or(DateError::InvalidFormat)?
+            .trim_start();
 
         if !rest.contains('-') {
             return Err(DateError::InvalidFormat);
@@ -347,6 +353,11 @@ impl fmt::Display for HttpDate {
     }
 }
 
+/// 分割済みフィールドの n 番目を取得する
+fn field_at<'a>(parts: &'a [&'a str], index: usize) -> Result<&'a str, DateError> {
+    parts.get(index).copied().ok_or(DateError::InvalidFormat)
+}
+
 /// IMF-fixdate 形式をパース
 /// 例: 06 Nov 1994 08:49:37 GMT
 fn parse_imf_fixdate(day_name: &str, rest: &str) -> Result<HttpDate, DateError> {
@@ -358,14 +369,16 @@ fn parse_imf_fixdate(day_name: &str, rest: &str) -> Result<HttpDate, DateError> 
         return Err(DateError::InvalidFormat);
     }
 
-    let day = parts[0].parse::<u8>().map_err(|_| DateError::InvalidDay)?;
-    let month = parse_month(parts[1])?;
-    let year = parts[2]
+    let day = field_at(&parts, 0)?
+        .parse::<u8>()
+        .map_err(|_| DateError::InvalidDay)?;
+    let month = parse_month(field_at(&parts, 1)?)?;
+    let year = field_at(&parts, 2)?
         .parse::<u16>()
         .map_err(|_| DateError::InvalidYear)?;
-    let (hour, minute, second) = parse_time(parts[3])?;
+    let (hour, minute, second) = parse_time(field_at(&parts, 3)?)?;
 
-    if parts[4] != "GMT" {
+    if field_at(&parts, 4)? != "GMT" {
         return Err(DateError::NotGmt);
     }
 
@@ -388,19 +401,19 @@ fn parse_rfc850_inner(
     }
 
     // 日-月-年 をパース
-    let date_parts: Vec<&str> = parts[0].split('-').collect();
+    let date_parts: Vec<&str> = field_at(&parts, 0)?.split('-').collect();
     if date_parts.len() != 3 {
         return Err(DateError::InvalidFormat);
     }
 
-    let day = date_parts[0]
+    let day = field_at(&date_parts, 0)?
         .parse::<u8>()
         .map_err(|_| DateError::InvalidDay)?;
-    let month = parse_month(date_parts[1])?;
+    let month = parse_month(field_at(&date_parts, 1)?)?;
     // RFC 9110 §5.6.7 ABNF では date2 = day "-" month "-" 2DIGIT で
     // 年は 2 桁固定だが、Postel 原則に従い 4 桁年も受理する。
     // 4 桁年は曖昧さがないのでそのまま使い、reference_year は無視する。
-    let raw_year_str = date_parts[2];
+    let raw_year_str = field_at(&date_parts, 2)?;
     let raw_year = raw_year_str
         .parse::<u16>()
         .map_err(|_| DateError::InvalidYear)?;
@@ -410,9 +423,9 @@ fn parse_rfc850_inner(
         raw_year
     };
 
-    let (hour, minute, second) = parse_time(parts[1])?;
+    let (hour, minute, second) = parse_time(field_at(&parts, 1)?)?;
 
-    if parts[2] != "GMT" {
+    if field_at(&parts, 2)? != "GMT" {
         return Err(DateError::NotGmt);
     }
 
@@ -427,11 +440,14 @@ fn parse_asctime(input: &str) -> Result<HttpDate, DateError> {
         return Err(DateError::InvalidFormat);
     }
 
-    let day_of_week = DayOfWeek::from_name(parts[0]).ok_or(DateError::InvalidDayName)?;
-    let month = parse_month(parts[1])?;
-    let day = parts[2].parse::<u8>().map_err(|_| DateError::InvalidDay)?;
-    let (hour, minute, second) = parse_time(parts[3])?;
-    let year = parts[4]
+    let day_of_week =
+        DayOfWeek::from_name(field_at(&parts, 0)?).ok_or(DateError::InvalidDayName)?;
+    let month = parse_month(field_at(&parts, 1)?)?;
+    let day = field_at(&parts, 2)?
+        .parse::<u8>()
+        .map_err(|_| DateError::InvalidDay)?;
+    let (hour, minute, second) = parse_time(field_at(&parts, 3)?)?;
+    let year = field_at(&parts, 4)?
         .parse::<u16>()
         .map_err(|_| DateError::InvalidYear)?;
 
@@ -484,7 +500,7 @@ fn month_name(month: u8) -> &'static str {
 /// 50 years in the future as representing the most recent year in the past
 /// that had the same last two digits.」
 fn interpret_two_digit_year(two_digit: u16, reference_year: u16) -> u16 {
-    let current_century = (reference_year / 100) * 100;
+    let current_century = reference_year.checked_div(100).unwrap_or(0) * 100;
     let candidate = current_century + two_digit;
 
     // 50 年以上未来なら 100 年引く
@@ -502,11 +518,13 @@ fn parse_time(s: &str) -> Result<(u8, u8, u8), DateError> {
         return Err(DateError::InvalidFormat);
     }
 
-    let hour = parts[0].parse::<u8>().map_err(|_| DateError::InvalidHour)?;
-    let minute = parts[1]
+    let hour = field_at(&parts, 0)?
+        .parse::<u8>()
+        .map_err(|_| DateError::InvalidHour)?;
+    let minute = field_at(&parts, 1)?
         .parse::<u8>()
         .map_err(|_| DateError::InvalidMinute)?;
-    let second = parts[2]
+    let second = field_at(&parts, 2)?
         .parse::<u8>()
         .map_err(|_| DateError::InvalidSecond)?;
 

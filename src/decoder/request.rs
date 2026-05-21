@@ -340,9 +340,17 @@ impl<D: Decompressor> RequestDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                        })?;
+                        let line = String::from_utf8(
+                            self.buf
+                                .get(..pos)
+                                .ok_or_else(|| {
+                                    Error::InvalidData(
+                                        "invalid request line bounds".to_string(),
+                                    )
+                                })?
+                                .to_vec(),
+                        )
+                        .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                         self.buf.drain(..pos + 2);
                         if line.contains('\r') || line.contains('\n') {
                             return Err(Error::InvalidData(
@@ -359,15 +367,29 @@ impl<D: Decompressor> RequestDecoder<D> {
                             )));
                         }
 
+                        let method = *parts.first().ok_or_else(|| {
+                            Error::InvalidData("invalid request line: missing method".to_string())
+                        })?;
+                        let request_target = *parts.get(1).ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid request line: missing request-target".to_string(),
+                            )
+                        })?;
+                        let protocol_version = *parts.get(2).ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid request line: missing protocol version".to_string(),
+                            )
+                        })?;
+
                         // メソッド名の検証 (RFC 9110 Section 9)
-                        if !is_valid_method(parts[0]) {
+                        if !is_valid_method(method) {
                             return Err(Error::InvalidData(
                                 "invalid request line: invalid method".to_string(),
                             ));
                         }
 
                         // リクエストターゲットの検証 (RFC 9112 Section 3)
-                        if !is_valid_request_target(parts[1]) {
+                        if !is_valid_request_target(request_target) {
                             return Err(Error::InvalidData(
                                 "invalid request line: invalid request-target".to_string(),
                             ));
@@ -377,18 +399,18 @@ impl<D: Decompressor> RequestDecoder<D> {
                         // decoder 側でも obs-text (0x80-0xFF) を reject する。
                         // is_valid_request_target は受信側互換性のため obs-text を許容するが、
                         // 構築された Request は送信されることを前提とするため、ここで早期に拒否する。
-                        if parts[1].bytes().any(|b| b >= 0x80) {
+                        if request_target.bytes().any(|b| b >= 0x80) {
                             return Err(Error::InvalidData(
                                 "invalid request-target: non-ASCII characters".to_string(),
                             ));
                         }
 
                         // request-target の形式判定と検証 (RFC 9112 Section 3.2)
-                        let request_target_form = parse_request_target_form(parts[1])?;
-                        validate_request_target_for_method(parts[0], &request_target_form)?;
+                        let request_target_form = parse_request_target_form(request_target)?;
+                        validate_request_target_for_method(method, &request_target_form)?;
 
                         // プロトコルバージョンの検証
-                        if !is_valid_protocol_version(parts[2]) {
+                        if !is_valid_protocol_version(protocol_version) {
                             return Err(Error::InvalidData(
                                 "invalid request line: invalid protocol version".to_string(),
                             ));
@@ -430,7 +452,11 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 }
                                 // Host ヘッダー値検証
                                 // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
-                                let (_, host_value) = host_headers[0];
+                                let (_, host_value) = *host_headers.first().ok_or_else(|| {
+                                    Error::InvalidData(
+                                        "HTTP/1.1 request missing Host header".to_string(),
+                                    )
+                                })?;
                                 if !host_value.is_empty()
                                     && crate::host::Host::parse(host_value).is_err()
                                 {
@@ -507,9 +533,32 @@ impl<D: Decompressor> RequestDecoder<D> {
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = RequestHead::from_validated_parts(
-                                parts[0].to_string(),
-                                parts[1].to_string(),
-                                parts[2].to_string(),
+                                parts
+                                    .first()
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid request line: missing method".to_string(),
+                                        )
+                                    })?
+                                    .to_string(),
+                                parts
+                                    .get(1)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid request line: missing request-target"
+                                                .to_string(),
+                                        )
+                                    })?
+                                    .to_string(),
+                                parts
+                                    .get(2)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid request line: missing protocol version"
+                                                .to_string(),
+                                        )
+                                    })?
+                                    .to_string(),
                                 core::mem::take(&mut self.headers),
                             );
 
@@ -531,10 +580,19 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 });
                             }
 
-                            let line =
-                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                                })?;
+                            let line = String::from_utf8(
+                                self.buf
+                                    .get(..pos)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid header line bounds".to_string(),
+                                        )
+                                    })?
+                                    .to_vec(),
+                            )
+                            .map_err(|e| {
+                                Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                            })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;

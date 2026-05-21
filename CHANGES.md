@@ -13,6 +13,10 @@
 
 ### misc
 
+- [UPDATE] `src/lib.rs` に堅牢性向け Clippy lint (`indexing_slicing`, `panic_in_result_fn`, `index_refutable_slice`, `integer_division`) を追加し、パーサ・URI 等のインデックス・スライス・除算を `.get()` / `checked_div` へ置き換える
+  - `todo` は利用するため deny 対象外
+  - @voluntas
+
 ## 2026.5.0
 
 **リリース日**: 2026-05-16
