@@ -411,7 +411,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > u64::try_from(self.limits.max_body_size).unwrap_or(u64::MAX) {
                 return Err(Error::BodyTooLarge {
                     size: usize::try_from(len).unwrap_or(usize::MAX),
                     limit: self.limits.max_body_size,

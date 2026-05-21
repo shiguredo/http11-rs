@@ -122,7 +122,8 @@ impl BodyDecoder {
                 if buf.is_empty() {
                     return None;
                 }
-                let available = if *remaining >= buf.len() as u64 {
+                let buf_len = u64::try_from(buf.len()).unwrap_or(u64::MAX);
+                let available = if *remaining >= buf_len {
                     buf.len()
                 } else {
                     usize::try_from(*remaining).unwrap_or_default()
@@ -170,7 +171,10 @@ impl BodyDecoder {
     ) -> Result<BodyProgress, Error> {
         match phase {
             DecodePhase::BodyContentLength { remaining } => {
-                if (len as u64) > *remaining {
+                let len_u64 = u64::try_from(len).map_err(|_| {
+                    Error::InvalidData("consume_body: len exceeds u64".to_string())
+                })?;
+                if len_u64 > *remaining {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds remaining".to_string(),
                     ));
@@ -182,7 +186,7 @@ impl BodyDecoder {
                 }
 
                 buf.drain(..len);
-                *remaining -= len as u64;
+                *remaining -= len_u64;
                 self.body_consumed =
                     self.body_consumed
                         .checked_add(len)

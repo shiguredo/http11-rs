@@ -13,7 +13,8 @@
 
 ### misc
 
-- [UPDATE] `src/lib.rs` に堅牢性向け Clippy lint (`indexing_slicing`, `panic_in_result_fn`, `index_refutable_slice`, `integer_division`, `integer_division_remainder_used`) を追加し、パーサ・URI 等のインデックス・スライス・除算を `.get()` / `checked_div` / `rem_euclid` へ置き換える
+- [UPDATE] `src/lib.rs` に堅牢性向け Clippy lint (`indexing_slicing`, `panic_in_result_fn`, `index_refutable_slice`, `integer_division`, `integer_division_remainder_used`, `as_conversions`) を追加し、パーサ・URI 等のインデックス・スライス・除算・キャストを `.get()` / `checked_div` / `rem_euclid` / `From` / `TryFrom` / `validate` ヘルパへ置き換える
+  - `cast_*` と `checked_conversions` は `as_conversions` に包含されるため削除する
   - `todo` は利用するため deny 対象外
   - @voluntas
 

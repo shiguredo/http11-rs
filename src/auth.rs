@@ -1014,13 +1014,13 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
             let hi_byte = bytes.get(i + 1).ok_or(AuthError::InvalidUsernameExtValue)?;
             let lo_byte = bytes.get(i + 2).ok_or(AuthError::InvalidUsernameExtValue)?;
             let hi = u8::try_from(
-                (*hi_byte as char)
+                char::from(*hi_byte)
                     .to_digit(16)
                     .ok_or(AuthError::InvalidUsernameExtValue)?,
             )
             .map_err(|_| AuthError::InvalidUsernameExtValue)?;
             let lo = u8::try_from(
-                (*lo_byte as char)
+                char::from(*lo_byte)
                     .to_digit(16)
                     .ok_or(AuthError::InvalidUsernameExtValue)?,
             )

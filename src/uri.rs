@@ -204,7 +204,7 @@ pub fn percent_encode(input: &str) -> String {
     let mut result = String::with_capacity(input.len() * 3);
     for byte in input.bytes() {
         if is_unreserved(byte) {
-            result.push(byte as char);
+            result.push(crate::validate::byte_to_char(byte));
         } else {
             result.push('%');
             result.push(to_hex_char(byte >> 4));
@@ -221,7 +221,7 @@ pub fn percent_encode_path(input: &str) -> String {
     let mut result = String::with_capacity(input.len() * 3);
     for byte in input.bytes() {
         if is_unreserved(byte) || byte == b'/' {
-            result.push(byte as char);
+            result.push(crate::validate::byte_to_char(byte));
         } else {
             result.push('%');
             result.push(to_hex_char(byte >> 4));
@@ -238,7 +238,7 @@ pub fn percent_encode_query(input: &str) -> String {
     let mut result = String::with_capacity(input.len() * 3);
     for byte in input.bytes() {
         if is_unreserved(byte) || byte == b'=' || byte == b'&' {
-            result.push(byte as char);
+            result.push(crate::validate::byte_to_char(byte));
         } else {
             result.push('%');
             result.push(to_hex_char(byte >> 4));
@@ -250,7 +250,10 @@ pub fn percent_encode_query(input: &str) -> String {
 
 fn to_hex_char(nibble: u8) -> char {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    *HEX.get((nibble & 0x0F) as usize).unwrap_or(&b'0') as char
+    char::from(
+        *HEX.get(usize::from(nibble & 0x0F))
+            .unwrap_or(&b'0'),
+    )
 }
 
 /// パーセントデコーディング
@@ -1052,14 +1055,14 @@ fn normalize_percent_encoding(input: &str) -> Result<String, UriError> {
 
             // unreserved 文字はデコード、それ以外は大文字でエンコード
             if is_unreserved(decoded) {
-                result.push(decoded as char);
+                result.push(crate::validate::byte_to_char(decoded));
             } else {
                 result.push('%');
                 result.push(to_hex_char(decoded >> 4));
                 result.push(to_hex_char(decoded & 0x0F));
             }
         } else {
-            result.push(byte as char);
+            result.push(crate::validate::byte_to_char(byte));
         }
     }
 

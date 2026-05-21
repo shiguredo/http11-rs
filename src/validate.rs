@@ -285,8 +285,26 @@ pub(crate) fn is_sub_delim_byte(b: u8) -> bool {
 ///
 /// DQUOTE (`"`) と backslash (`\`) は除く。
 /// CR / LF / NUL / 他の CTL (`U+0001..=U+001F` のうち HTAB 以外、`U+007F`) は不許可。
+/// オクテットを Unicode scalar (U+0000..=U+00FF) として `char` に変換する (obs-text 保持用)
+#[inline]
+pub(crate) fn byte_to_char(byte: u8) -> char {
+    char::from(byte)
+}
+
+/// `char` の Unicode scalar 値 (obs-text 判定用)
+#[inline]
+pub(crate) fn char_scalar(c: char) -> u32 {
+    u32::from(c)
+}
+
+/// ASCII `char` をバイトに変換する (`is_ascii()` 確認後に呼ぶこと)
+#[inline]
+pub(crate) fn ascii_char_to_byte(c: char) -> Option<u8> {
+    u8::try_from(char_scalar(c)).ok()
+}
+
 pub(crate) fn is_qdtext_char(c: char) -> bool {
-    matches!(c, '\t' | ' ' | '!' | '#'..='[' | ']'..='~') || c as u32 >= 0x80
+    matches!(c, '\t' | ' ' | '!' | '#'..='[' | ']'..='~') || char_scalar(c) >= 0x80
 }
 
 /// quoted-pair の右辺 char か確認 (RFC 9110 Section 5.6.4)
@@ -299,7 +317,7 @@ pub(crate) fn is_qdtext_char(c: char) -> bool {
 /// 受信側でも CR / LF を含む quoted-pair を素通りさせると、上位アプリでの再エンコード経路で
 /// response splitting / log injection に至る経路を生むため厳格に reject する。
 pub(crate) fn is_quoted_pair_char(c: char) -> bool {
-    matches!(c, '\t' | ' '..='~') || c as u32 >= 0x80
+    matches!(c, '\t' | ' '..='~') || char_scalar(c) >= 0x80
 }
 
 /// quoted-string パースのエラー種別 (RFC 9110 Section 5.6.4)

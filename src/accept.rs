@@ -129,7 +129,7 @@ impl QValue {
 
     /// f32 に変換
     pub fn as_f32(&self) -> f32 {
-        self.0 as f32 / 1000.0
+        f32::from(self.0) / 1000.0
     }
 }
 

@@ -78,20 +78,11 @@
 #![cfg_attr(not(test), deny(clippy::unwrap_used))]
 // expect を明示的なエラー処理に寄せる
 #![cfg_attr(not(test), deny(clippy::expect_used))]
-// cast
-// 黙って桁落ちする as を禁止する
-#![cfg_attr(not(test), deny(clippy::cast_possible_truncation))]
-// 符号付き変換の情報損失を禁止する
-#![cfg_attr(not(test), deny(clippy::cast_sign_loss))]
-// 符号付きから符号なしへのラップを禁止する
-#![cfg_attr(not(test), deny(clippy::cast_possible_wrap))]
-// 浮動小数から整数への精度損失を禁止する
-#![cfg_attr(not(test), deny(clippy::cast_precision_loss))]
-// as より TryFrom / try_into を優先する
-#![cfg_attr(not(test), deny(clippy::checked_conversions))]
+// すべての as キャストを禁止する (From / TryFrom / validate ヘルパへ。cast_* は包含されるため不要)
+#![cfg_attr(not(test), deny(clippy::as_conversions))]
 // 範囲外で panic しうるインデックス・スライスを禁止する
 #![cfg_attr(not(test), deny(clippy::indexing_slicing))]
-// Result を返す関数内の panic! / unreachable! 等を禁止する
+// Result を返す関数内の panic! / assert! 等を禁止する
 #![cfg_attr(not(test), deny(clippy::panic_in_result_fn))]
 // 長さ未検証の refutable スライスパターンを禁止する
 #![cfg_attr(not(test), deny(clippy::index_refutable_slice))]

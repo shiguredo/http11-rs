@@ -39,26 +39,34 @@ pub(crate) fn encode(input: &[u8]) -> String {
         let b1 = input.get(i + 1).copied().unwrap_or(0);
         let b2 = input.get(i + 2).copied().unwrap_or(0);
 
-        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        let n = (u32::from(b0) << 16) | (u32::from(b1) << 8) | u32::from(b2);
 
-        if let Some(&c) = BASE64_ALPHABET.get((n >> 18 & 0x3F) as usize) {
-            result.push(c as char);
+        if let Some(idx) = usize::try_from(n >> 18 & 0x3F).ok()
+            && let Some(&c) = BASE64_ALPHABET.get(idx)
+        {
+            result.push(char::from(c));
         }
-        if let Some(&c) = BASE64_ALPHABET.get((n >> 12 & 0x3F) as usize) {
-            result.push(c as char);
+        if let Some(idx) = usize::try_from(n >> 12 & 0x3F).ok()
+            && let Some(&c) = BASE64_ALPHABET.get(idx)
+        {
+            result.push(char::from(c));
         }
 
         if i + 1 < input.len() {
-            if let Some(&c) = BASE64_ALPHABET.get((n >> 6 & 0x3F) as usize) {
-                result.push(c as char);
+            if let Some(idx) = usize::try_from(n >> 6 & 0x3F).ok()
+                && let Some(&c) = BASE64_ALPHABET.get(idx)
+            {
+                result.push(char::from(c));
             }
         } else {
             result.push('=');
         }
 
         if i + 2 < input.len() {
-            if let Some(&c) = BASE64_ALPHABET.get((n & 0x3F) as usize) {
-                result.push(c as char);
+            if let Some(idx) = usize::try_from(n & 0x3F).ok()
+                && let Some(&c) = BASE64_ALPHABET.get(idx)
+            {
+                result.push(char::from(c));
             }
         } else {
             result.push('=');
@@ -93,7 +101,8 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
                 if !c.is_ascii() {
                     return Err(Base64Error::InvalidCharacter);
                 }
-                normalized.push(c as u8);
+                let byte = u8::try_from(u32::from(c)).map_err(|_| Base64Error::InvalidCharacter)?;
+                normalized.push(byte);
             }
         }
     }
@@ -143,9 +152,9 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
 
     for &b in data {
         let val = match b {
-            b'A'..=b'Z' => (b - b'A') as u32,
-            b'a'..=b'z' => (b - b'a') as u32 + 26,
-            b'0'..=b'9' => (b - b'0') as u32 + 52,
+            b'A'..=b'Z' => u32::from(b - b'A'),
+            b'a'..=b'z' => u32::from(b - b'a') + 26,
+            b'0'..=b'9' => u32::from(b - b'0') + 52,
             b'+' => 62,
             b'/' => 63,
             _ => return Err(Base64Error::InvalidCharacter),
