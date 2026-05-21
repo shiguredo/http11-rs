@@ -121,7 +121,7 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
     let data = normalized
         .get(..data_end)
         .ok_or(Base64Error::InvalidPadding)?;
-    let last_block_chars = data.len() % 4;
+    let last_block_chars = data.len().rem_euclid(4);
     let valid = match pad_count {
         0 => last_block_chars == 0,
         1 => last_block_chars == 3,

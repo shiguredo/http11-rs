@@ -97,6 +97,8 @@
 #![cfg_attr(not(test), deny(clippy::index_refutable_slice))]
 // ゼロ除算で panic しうる整数除算を禁止する
 #![cfg_attr(not(test), deny(clippy::integer_division))]
+// ゼロ除算で panic しうる整数剰余を禁止する
+#![cfg_attr(not(test), deny(clippy::integer_division_remainder_used))]
 
 extern crate alloc;
 

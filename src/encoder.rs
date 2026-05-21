@@ -65,7 +65,7 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
     let mut remaining = n;
     while remaining > 0 {
         i -= 1;
-        let digit = match u8::try_from(remaining % 10) {
+        let digit = match u8::try_from(remaining.rem_euclid(10)) {
             Ok(d) => d,
             Err(_) => {
                 debug_assert!(false, "decimal digit always fits in u8");
