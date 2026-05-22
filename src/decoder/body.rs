@@ -171,9 +171,8 @@ impl BodyDecoder {
     ) -> Result<BodyProgress, Error> {
         match phase {
             DecodePhase::BodyContentLength { remaining } => {
-                let len_u64 = u64::try_from(len).map_err(|_| {
-                    Error::InvalidData("consume_body: len exceeds u64".to_string())
-                })?;
+                let len_u64 = u64::try_from(len)
+                    .map_err(|_| Error::InvalidData("consume_body: len exceeds u64".to_string()))?;
                 if len_u64 > *remaining {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds remaining".to_string(),
@@ -387,16 +386,16 @@ impl BodyDecoder {
             // RFC 準拠のために処理しているが、内容は破棄する。
             // chunk-ext の quoted-string は obs-text を含む可能性があるため
             // UTF-8 変換せずバイト列として処理する。セミコロンまでを chunk-size として解釈。
-            let line_bytes = buf.get(..pos).ok_or_else(|| {
-                Error::InvalidData("invalid chunk size line bounds".to_string())
-            })?;
+            let line_bytes = buf
+                .get(..pos)
+                .ok_or_else(|| Error::InvalidData("invalid chunk size line bounds".to_string()))?;
 
             // セミコロンの位置を探す (chunk-ext の開始)
             let semi_pos = line_bytes.iter().position(|&b| b == b';');
             let size_end = semi_pos.unwrap_or(pos);
-            let size_bytes = line_bytes.get(..size_end).ok_or_else(|| {
-                Error::InvalidData("invalid chunk size line bounds".to_string())
-            })?;
+            let size_bytes = line_bytes
+                .get(..size_end)
+                .ok_or_else(|| Error::InvalidData("invalid chunk size line bounds".to_string()))?;
 
             // chunk-size = 1*HEXDIG (RFC 9112 Section 7.1)
             // HEXDIG の末尾位置を探す
@@ -415,9 +414,9 @@ impl BodyDecoder {
             }
 
             // HEXDIG の後にバイトがある場合の検証
-            let trailing = size_bytes.get(hex_end..).ok_or_else(|| {
-                Error::InvalidData("invalid chunk size line bounds".to_string())
-            })?;
+            let trailing = size_bytes
+                .get(hex_end..)
+                .ok_or_else(|| Error::InvalidData("invalid chunk size line bounds".to_string()))?;
             if !trailing.is_empty() {
                 if semi_pos.is_some() {
                     // chunk-ext がある場合: HEXDIG と ";" の間は BWS (SP / HTAB) のみ許容
@@ -440,9 +439,9 @@ impl BodyDecoder {
             }
 
             // HEXDIG 部分のみを chunk-size として解釈
-            let hex_bytes = size_bytes.get(..hex_end).ok_or_else(|| {
-                Error::InvalidData("invalid chunk size line bounds".to_string())
-            })?;
+            let hex_bytes = size_bytes
+                .get(..hex_end)
+                .ok_or_else(|| Error::InvalidData("invalid chunk size line bounds".to_string()))?;
             let size_str = core::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
             let chunk_size = usize::from_str_radix(size_str, 16).map_err(|_| {
@@ -1005,17 +1004,13 @@ fn validate_authority_chars(authority: &str) -> Result<(), Error> {
     let bytes = authority.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        let b = *bytes.get(i).ok_or_else(|| {
-            Error::InvalidData("invalid authority: bounds".to_string())
-        })?;
+        let b = *bytes
+            .get(i)
+            .ok_or_else(|| Error::InvalidData("invalid authority: bounds".to_string()))?;
         if b == b'%' {
             if i + 2 >= bytes.len()
-                || !bytes
-                    .get(i + 1)
-                    .is_some_and(|b| b.is_ascii_hexdigit())
-                || !bytes
-                    .get(i + 2)
-                    .is_some_and(|b| b.is_ascii_hexdigit())
+                || !bytes.get(i + 1).is_some_and(|b| b.is_ascii_hexdigit())
+                || !bytes.get(i + 2).is_some_and(|b| b.is_ascii_hexdigit())
             {
                 return Err(Error::InvalidData(
                     "invalid authority: invalid percent-encoding".to_string(),
@@ -1081,9 +1076,9 @@ fn validate_path_chars(path: &str) -> Result<(), Error> {
     let bytes = path.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        let b = *bytes.get(i).ok_or_else(|| {
-            Error::InvalidData("invalid path: bounds".to_string())
-        })?;
+        let b = *bytes
+            .get(i)
+            .ok_or_else(|| Error::InvalidData("invalid path: bounds".to_string()))?;
         if b == b'%' {
             // パーセントエンコーディング検証
             if i + 2 >= bytes.len() {
@@ -1116,9 +1111,9 @@ fn validate_query_chars(query: &str) -> Result<(), Error> {
     let bytes = query.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        let b = *bytes.get(i).ok_or_else(|| {
-            Error::InvalidData("invalid query: bounds".to_string())
-        })?;
+        let b = *bytes
+            .get(i)
+            .ok_or_else(|| Error::InvalidData("invalid query: bounds".to_string()))?;
         if b == b'%' {
             // パーセントエンコーディング検証
             if i + 2 >= bytes.len() {

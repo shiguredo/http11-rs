@@ -344,9 +344,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                             self.buf
                                 .get(..pos)
                                 .ok_or_else(|| {
-                                    Error::InvalidData(
-                                        "invalid request line bounds".to_string(),
-                                    )
+                                    Error::InvalidData("invalid request line bounds".to_string())
                                 })?
                                 .to_vec(),
                         )
@@ -584,9 +582,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 self.buf
                                     .get(..pos)
                                     .ok_or_else(|| {
-                                        Error::InvalidData(
-                                            "invalid header line bounds".to_string(),
-                                        )
+                                        Error::InvalidData("invalid header line bounds".to_string())
                                     })?
                                     .to_vec(),
                             )

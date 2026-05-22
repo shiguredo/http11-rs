@@ -443,9 +443,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.buf
                                 .get(..pos)
                                 .ok_or_else(|| {
-                                    Error::InvalidData(
-                                        "invalid status line bounds".to_string(),
-                                    )
+                                    Error::InvalidData("invalid status line bounds".to_string())
                                 })?
                                 .to_vec(),
                         )
@@ -622,9 +620,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 self.buf
                                     .get(..pos)
                                     .ok_or_else(|| {
-                                        Error::InvalidData(
-                                            "invalid header line bounds".to_string(),
-                                        )
+                                        Error::InvalidData("invalid header line bounds".to_string())
                                     })?
                                     .to_vec(),
                             )

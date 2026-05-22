@@ -250,10 +250,7 @@ pub fn percent_encode_query(input: &str) -> String {
 
 fn to_hex_char(nibble: u8) -> char {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
-    char::from(
-        *HEX.get(usize::from(nibble & 0x0F))
-            .unwrap_or(&b'0'),
-    )
+    char::from(*HEX.get(usize::from(nibble & 0x0F)).unwrap_or(&b'0'))
 }
 
 /// パーセントデコーディング
@@ -368,9 +365,7 @@ impl Uri {
             if !bytes.first().is_some_and(|&b| b.is_ascii_alphabetic()) {
                 return Err(UriError::InvalidScheme);
             }
-            let scheme_bytes = bytes
-                .get(1..colon_pos)
-                .ok_or(UriError::InvalidScheme)?;
+            let scheme_bytes = bytes.get(1..colon_pos).ok_or(UriError::InvalidScheme)?;
             for &b in scheme_bytes {
                 if !b.is_ascii_alphanumeric() && b != b'+' && b != b'-' && b != b'.' {
                     return Err(UriError::InvalidScheme);
@@ -383,11 +378,10 @@ impl Uri {
         };
 
         // authority のパース (RFC 3986 Section 3.2)
-        let (authority_start, authority_end, host_end, port) = if bytes
-            .get(pos)
-            .is_some_and(|&b| b == b'/')
-            && bytes.get(pos + 1).is_some_and(|&b| b == b'/')
-        {
+        let (authority_start, authority_end, host_end, port) =
+            if bytes.get(pos).is_some_and(|&b| b == b'/')
+                && bytes.get(pos + 1).is_some_and(|&b| b == b'/')
+            {
                 pos += 2;
                 let auth_start = pos;
 
@@ -665,18 +659,14 @@ fn validate_ipv_future(literal: &str) -> Result<(), UriError> {
     if dot_pos <= 1 {
         return Err(UriError::InvalidHost);
     }
-    let hex_part = bytes
-        .get(1..dot_pos)
-        .ok_or(UriError::InvalidHost)?;
+    let hex_part = bytes.get(1..dot_pos).ok_or(UriError::InvalidHost)?;
     for &b in hex_part {
         if !b.is_ascii_hexdigit() {
             return Err(UriError::InvalidHost);
         }
     }
     // "." の後に 1 文字以上の ( unreserved / sub-delims / ":" ) が必要
-    let after_dot = bytes
-        .get(dot_pos + 1..)
-        .ok_or(UriError::InvalidHost)?;
+    let after_dot = bytes.get(dot_pos + 1..).ok_or(UriError::InvalidHost)?;
     if after_dot.is_empty() {
         return Err(UriError::InvalidHost);
     }
