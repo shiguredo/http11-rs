@@ -289,7 +289,8 @@ impl SetCookie {
                         //   先頭の "." を 1 つだけ除去し、小文字に変換する。
                         // RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
                         //   Domain attribute は全 label が punycode (LDH) でなければならず、
-                        //   非 LDH を含む値は reject すべき (SHOULD)。
+                        //   非 LDH を含む label があると canonicalization が失敗するため、
+                        //   本実装では reject する。
                         // 上記を統合し、strip 後の値が「LDH と "." のみで構成され、空でなく、
                         // 再び "." で始まらない」ことを検証する。これにより
                         // parse -> to_string -> parse の fixed-point 性も同時に担保される

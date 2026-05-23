@@ -187,8 +187,8 @@ cargo llvm-cov report
 ### RFC について
 
 - RFC 準拠を最優先すること
-  - RFC 7230 は廃止されて RFC 9110 になってる
-  - RFC 7231 は廃止されて RFC 9112 になってる
+  - RFC 7230 は廃止されて RFC 9112 になってる
+  - RFC 7231 は廃止されて RFC 9110 になってる
 - RFC を確認する際は refs/ 以下を利用すること
 - サンプルは RFC に準拠していること
 - obs-text (0x80-FF) は opaque data として保持すること (RFC 9110 Section 5.5)

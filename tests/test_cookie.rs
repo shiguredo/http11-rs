@@ -218,7 +218,7 @@ fn test_set_cookie_domain_multi_leading_dot_rejected() {
 #[test]
 fn test_set_cookie_domain_non_ldh_rejected() {
     // RFC 6265 Section 4.1.1 + RFC 1034 Section 3.5: domain-value は LDH (letter/digit/hyphen)
-    // と "." のみを許容する。RFC 6265bis Section 6.3 で IDN は punycode (LDH) 必須と規定。
+    // と "." のみを許容する。RFC 6265bis Section 5.1.2 で IDN は punycode (LDH) 必須と規定。
 
     // 空白を含む → 無視 (".trim()" は edge のみで内部は残る)
     let cookie = SetCookie::parse("name=value; Domain=foo bar", 2026).unwrap();

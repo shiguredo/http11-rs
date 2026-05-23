@@ -109,7 +109,7 @@ domain-value = <subdomain>
 
 RFC 1034 Section 3.5 + RFC 1123 Section 2.1 の `<subdomain>` 構文は「letter / digit / hyphen を含む label を `.` で連結したもの」であり、空白や制御文字、NUL は許容しない。
 
-RFC 6265bis Section 6.3 (IDNA Dependency):
+RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
 
 > The Domain attribute MUST be either a host or a domain name with all labels in their punycode form... If any label is not in punycode form (i.e., includes characters outside the LDH set), the cookie SHOULD be rejected.
 
@@ -135,9 +135,9 @@ RFC 6265 Section 5.2.3 の strip 規則 (`.` を 1 つだけ削除) 自体は変
     //   = LDH (letter / digit / hyphen) を含む label を "." で連結したもの。
     // RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3:
     //   先頭の "." を 1 つだけ除去し、小文字に変換する。
-    // RFC 6265bis Section 6.3 (IDNA Dependency):
+    // RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
     //   Domain attribute は全 label が punycode (LDH) でなければならず、
-    //   非 LDH を含む値は reject すべき (SHOULD)。
+    //   非 LDH を含む label があると canonicalization が失敗するため、本実装では reject する。
     let d = attr_value.strip_prefix('.').unwrap_or(attr_value);
     if d.is_empty() || d.starts_with('.') || !is_valid_domain_value(d) {
         // 空 / leading dot 複数 / 非 LDH は無視する
@@ -195,7 +195,7 @@ fn is_valid_domain_value(s: &str) -> bool {
 ## 解決方法
 
 - `src/cookie.rs` の `"domain"` 属性ブランチに「strip 後の値が LDH + dot のみで構成され、空でなく、再び `.` で始まらない」ことを検証するロジックを追加した
-- 新規ヘルパー `is_valid_domain_value(s: &str) -> bool` を `src/cookie.rs` に追加し、RFC 6265 Section 4.1.1 + RFC 1034 Section 3.5 + RFC 1123 Section 2.1 + RFC 6265bis Section 6.3 の subdomain 構文 (LDH + dot) を判定する
+- 新規ヘルパー `is_valid_domain_value(s: &str) -> bool` を `src/cookie.rs` に追加し、RFC 6265 Section 4.1.1 + RFC 1034 Section 3.5 + RFC 1123 Section 2.1 + RFC 6265bis Section 5.1.2 の subdomain 構文 (LDH + dot) を判定する
 - `tests/test_cookie.rs` に以下のテストを追加した:
   - `test_set_cookie_domain_multi_leading_dot_rejected`
   - `test_set_cookie_domain_non_ldh_rejected`

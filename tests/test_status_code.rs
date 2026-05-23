@@ -94,7 +94,8 @@ fn test_status_code_representative_values() {
         "Internal Server Error"
     );
 
-    // RFC 2324 / RFC 7168: アポストロフィを含む reason phrase
+    // 418: RFC 9110 Section 15.5.19 は Unused (IANA 予約)。reason phrase は
+    // RFC 9110 の canonical ではなく、RFC 2324/7168 由来の実運用表記を相互運用用に採用。
     assert_eq!(StatusCode::IM_A_TEAPOT.code(), 418);
     assert_eq!(StatusCode::IM_A_TEAPOT.canonical_reason(), "I'm a teapot");
 

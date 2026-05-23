@@ -135,7 +135,7 @@ impl Response {
     /// `is_valid_protocol_version` の既存方針 (RTSP 等の互換のため token を許容) を
     /// 継承するものであり、HTTP として送信する場合は呼び出し側が
     /// `"HTTP/1.1"` を渡す責務がある。
-    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
+    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.2.2 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
     ///
     /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
@@ -506,7 +506,7 @@ impl Response {
     /// RFC 9110 Section 17.5 (Attacks via Protocol Element Length) は
     /// 算術オーバーフロー・DoS の一般的脅威を論じている。
     ///
-    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.1:
+    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.2:
     /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
     /// は本メソッドの責務外であり、呼び出し側で判定する。
     ///

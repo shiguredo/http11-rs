@@ -1209,7 +1209,7 @@ pub(crate) enum TransferEncodingResult {
 
 /// Transfer-Encoding ヘッダーを解析 (リクエスト用)
 ///
-/// RFC 9112 Section 6.1: リクエストでは chunked 以外のエンコーディングを
+/// RFC 9112 Section 6.3 item 4: リクエストでは chunked 以外のエンコーディングを
 /// サーバーがサポートしているか不明なため、chunked のみ許可する
 ///
 /// - chunked のみ → Ok(true)

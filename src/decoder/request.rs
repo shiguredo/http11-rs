@@ -295,7 +295,7 @@ impl<D: Decompressor> RequestDecoder<D> {
     /// HTTP/1.1 完全一致以外で Transfer-Encoding が出現した場合は error 化する。
     /// HTTP/1.2 が将来定義された場合は別途検討する (将来変更される可能性がある)。
     ///
-    /// RFC 9112 Section 6.1: リクエストでは chunked 以外の Transfer-Encoding は拒否
+    /// RFC 9112 Section 6.3 item 4: リクエストでは chunked 以外の Transfer-Encoding は拒否
     fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
         let (transfer_encoding_chunked, content_length) =
             resolve_body_headers_for_request(&self.headers)?;

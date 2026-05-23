@@ -80,7 +80,7 @@ pub(crate) fn is_valid_method(method: &str) -> bool {
 ///   HTTP-version = HTTP-name "/" DIGIT "." DIGIT
 ///   HTTP-name = %s"HTTP"
 ///
-/// RTSP (RFC 7826 Section 20.3):
+/// RTSP (RFC 7826 Section 20.2.2):
 ///   RTSP-version = "RTSP" "/" 1*DIGIT "." 1*DIGIT
 ///
 /// 両方をカバーするため、token "/" DIGIT+ "." DIGIT+ 形式で検証する。
@@ -307,7 +307,7 @@ pub(crate) enum QuotedStringError {
 
 /// 引用符付き文字列をパース (RFC 9110 Section 5.6.4)
 ///
-/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ABNF (RFC 9110 Section 5.6.4):
 /// ```text
 /// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
 /// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
@@ -317,7 +317,8 @@ pub(crate) enum QuotedStringError {
 /// 入力は開く DQUOTE を消費した残り。閉じ DQUOTE までを `qdtext / quoted-pair`
 /// として走査し、検証済み中身と閉じ DQUOTE 以降の残り `&str` を返す。
 ///
-/// CR / LF / NUL は RFC 9110 Section 5.5 (`refs/rfc9110.txt:1606-1615`) で MUST reject。
+/// CR / LF / NUL は RFC 9110 Section 5.5 で MUST either reject the message or replace with SP。
+/// 本実装 (parse_quoted_string) は reject を選択する。
 /// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は同節で MAY retain (safe context 限定)
 /// だが、本ヘルパーを使うヘッダ群は HTTP インターミディアリが解釈・書換する
 /// 標準ヘッダ (Accept / Content-Type / Expect 等) であり safe context に該当しないため
@@ -357,7 +358,7 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 
 /// quoted-string の値文字列をエスケープ (送信側、RFC 9110 Section 5.6.4)
 ///
-/// ABNF (`refs/rfc9110.txt:1786-1794`):
+/// ABNF (RFC 9110 Section 5.6.4):
 /// ```text
 /// quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
 /// qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
@@ -366,12 +367,12 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 ///
 /// quoted-pair が必要な `"` と `\` のみエスケープし、それ以外はそのまま出力する。
 ///
-/// CR / LF / NUL (RFC 9110 Section 5.5 `refs/rfc9110.txt:1606-1611`) および
+/// CR / LF / NUL (RFC 9110 Section 5.5) および
 /// 他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL) は SP に置換する。
 /// RFC 9110 Section 5.5 は CR / LF / NUL に対し "MUST either reject the message
 /// or replace each of those characters with SP" と規定しており、SP 置換は RFC 準拠。
 /// 他の CTL については "recipients MAY retain such characters ... within a safe
-/// context" (`refs/rfc9110.txt:1611-1615`) とされ、本関数の出力先 (WWW-Authenticate /
+/// context" (RFC 9110 Section 5.5) とされ、本関数の出力先 (WWW-Authenticate /
 /// Accept / Content-Type / Expect 等の HTTP 標準ヘッダ) は safe context に該当しない
 /// ため retain せず SP 置換する。
 ///
@@ -502,7 +503,8 @@ mod tests {
 
     #[test]
     fn escape_quotes_replaces_ctl_with_space() {
-        // CR / LF / NUL は MUST replace with SP (RFC 9110 Section 5.5)
+        // CR / LF / NUL は MUST either reject the message or replace with SP (RFC 9110 Section 5.5)。
+        // escape_quotes は SP 置換を選択。
         assert_eq!(escape_quotes("\r"), " ");
         assert_eq!(escape_quotes("\n"), " ");
         assert_eq!(escape_quotes("\0"), " ");

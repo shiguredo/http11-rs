@@ -25,7 +25,7 @@ self.version().ends_with("/1.1")
 ### RFC
 
 - RFC 9112 Section 9.3: HTTP/1.1 message recipients は persistent connection を前提とする
-- RFC 9112 Section 9.1 (HTTP-version の case-sensitive 検査)
+- RFC 9112 Section 2.3 (HTTP-version の case-sensitive 検査)
 - RFC 7826 (RTSP 2.0) は別プロトコルとして persistent connection を独自に定義
 
 ### 影響範囲

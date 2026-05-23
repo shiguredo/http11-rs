@@ -78,10 +78,12 @@ pub enum AuthError {
     ConflictingUsernameField,
     /// `username*` の ext-value が不正 (RFC 8187 Section 3.2.1 / RFC 7616 Section 3.4)
     InvalidUsernameExtValue,
-    /// auth-param が `MAX_AUTH_PARAMS` を超えた (RFC 9110 Section 11.2 auth-param リスト上限)
+    /// auth-param が `MAX_AUTH_PARAMS` (32) を超えた
     ///
-    /// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
-    /// 32 を上限とし、線形重複検出の CPU 消費を有限に抑える。
+    /// RFC 9110 Section 11.2 は各 parameter name の重複禁止 (MUST only occur once per challenge)
+    /// のみ規定し、パラメータ数上限は定義しない。実用パラメータ数 (RFC 7616 Digest = 12 /
+    /// RFC 6750 Bearer = 5) に十分な余裕として 32 を実装上限とし、線形重複検出の CPU 消費を
+    /// 有限に抑える。
     TooManyParameters,
 }
 
