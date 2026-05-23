@@ -30,6 +30,11 @@ impl StatusCode {
     /// `100 Continue` (RFC 9110 Section 15.2.1)
     pub const CONTINUE: Self = Self::new_const(100, "Continue");
     /// `101 Switching Protocols` (RFC 9110 Section 15.2.2)
+    ///
+    /// Upgrade ヘッダー (RFC 9110 Section 7.8) によるプロトコル切替が受理されたときに返す。
+    /// RFC 9931 Section 3 はこの optimistic protocol transition の背景を述べ、
+    /// Section 4 では切替確認前にクライアントがデータを送る場合の security considerations
+    /// (request smuggling 等) を整理している。
     pub const SWITCHING_PROTOCOLS: Self = Self::new_const(101, "Switching Protocols");
     /// `102 Processing` (RFC 2518 Section 10.1, WebDAV)
     ///

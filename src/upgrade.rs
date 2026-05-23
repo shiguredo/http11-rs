@@ -2,7 +2,12 @@
 //!
 //! ## 概要
 //!
-//! RFC 9110 に基づいた Upgrade ヘッダーのパースを提供します。
+//! RFC 9110 Section 7.8 に基づいた Upgrade ヘッダーのパースを提供する。
+//!
+//! RFC 9931 は HTTP/1.1 上の optimistic protocol transition (Upgrade および CONNECT)
+//! の security considerations を論じ、RFC 9112 / RFC 9298 を更新する。
+//! Upgrade 経路については Section 3 (Background)、Section 4 (Possible Security Issues)、
+//! Section 6 (Impact on HTTP Upgrade with Existing Upgrade Tokens) を参照。
 //!
 //! ## 使い方
 //!

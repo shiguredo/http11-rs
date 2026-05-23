@@ -451,7 +451,8 @@ impl<D: Decompressor> RequestDecoder<D> {
                             // CONNECT 受信時はヘッダー終端直後の任意バイト列をトンネルデータと
                             // して扱う必要がある。`BodyKind::None` で Complete 遷移してしまうと
                             // 後続バイトが「次の HTTP リクエスト」として decode_headers で
-                            // parse されはじめ、HTTP Request Smuggling 経路を生む。
+                            // parse されはじめ、HTTP Request Smuggling 経路を生む
+                            // (RFC 9931 Section 4.1 / Section 8)。
                             // ResponseDecoder の 2xx 応答経路と対称に `BodyKind::Tunnel` に
                             // 遷移させ、`take_remaining()` で transparent に転送できるようにする。
                             //

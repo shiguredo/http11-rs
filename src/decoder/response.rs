@@ -353,7 +353,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // item 1 で 1xx/204/304 は既に返っているため、ここに到達するのは
         // status が 200-203, 205-299 でかつ request_method == "CONNECT" の場合のみ。
         // RFC 9110 Section 9.3.6: CONNECT への 2xx はヘッダー終了直後にトンネル
-        // モードへ切り替わる。
+        // モードへ切り替わる。RFC 9931 Section 8 は CONNECT に関する追加要件
+        // (proxy の request smuggling 対策等) を RFC 9112 を更新する形で規定する。
         // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
         if self
             .request_method
