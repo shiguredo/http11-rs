@@ -2,7 +2,9 @@
 
 - Priority: Medium
 - Created: 2026-05-23
-- Model: Opus 4.7
+- Completed: 2026-05-24
+- Model: deepseek v4-pro
+- Branch: feature/add-pbt-construct-validation
 
 ## 目的
 
@@ -201,3 +203,29 @@ fn from_validated_parts_matches_new() {
 
 - 0091（HeaderName / Method / Scheme 導入）に依存
 - decoder との受理集合一致検証は fuzzing で別途対応する
+
+## 解決方法
+
+### 変更内容
+
+#### 戦略追加 (pbt/src/lib.rs)
+- `valid_header_name()`: 1 バイト以上の tchar を生成する戦略
+- `invalid_header_name()`: 空 / 不正文字を含む戦略
+- `valid_method()` / `invalid_method()`: HeaderName と同一の戦略を流用
+- `valid_scheme()`: ALPHA 始まりの scheme 戦略
+- `invalid_scheme()`: 空 / 数字開始 / コロン含有の戦略
+
+#### PBT テスト新設 (pbt/tests/)
+- `prop_header_name.rs`: `new_accepts_valid_names` / `new_rejects_invalid_names` / `as_bytes_returns_original` / `eq_is_case_insensitive`
+- `prop_method.rs`: 上記 + `eq_is_case_sensitive`
+- `prop_scheme.rs`: HeaderName 同様の 4 プロパティ
+
+#### 単体テスト追加 (src/)
+- `src/header_name.rs`: `from_static_matches_new_known_inputs` / `from_validated_parts_matches_new` / `new_rejects_*` / `eq_is_case_insensitive`
+- `src/method.rs`: 同上 + `eq_is_case_sensitive`
+- `src/uri.rs`: Scheme 向け 5 テスト
+
+### テスト結果
+- `cargo test -p pbt` 全 34 テスト + 新設 12 テスト = 全通過
+- `cargo test --doc` 全 doctest 通過
+- ワークスペース全テスト通過

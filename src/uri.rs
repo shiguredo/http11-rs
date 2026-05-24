@@ -1359,4 +1359,40 @@ mod tests {
         let normalized = normalize(&uri).unwrap();
         assert_eq!(normalized.authority(), Some("example.com:8080"));
     }
+
+    // ========================================
+    // Scheme 型の単体テスト
+    // ========================================
+
+    #[test]
+    fn test_scheme_from_static_matches_new() {
+        let schemes: &[&[u8]] = &[b"http", b"https", b"ws", b"wss", b"rtsp"];
+        for &scheme in schemes {
+            assert_eq!(Scheme::new(scheme).unwrap(), Scheme::from_static(scheme));
+        }
+    }
+
+    #[test]
+    fn test_scheme_new_rejects_empty() {
+        assert!(Scheme::new(b"").is_err());
+    }
+
+    #[test]
+    fn test_scheme_new_rejects_digit_start() {
+        assert!(Scheme::new(b"3http").is_err());
+    }
+
+    #[test]
+    fn test_scheme_new_rejects_colon() {
+        assert!(Scheme::new(b"http:").is_err());
+    }
+
+    #[test]
+    fn test_scheme_eq_is_case_insensitive() {
+        let h1 = Scheme::new(b"http").unwrap();
+        let h2 = Scheme::new(b"HTTP").unwrap();
+        let h3 = Scheme::new(b"Http").unwrap();
+        assert_eq!(h1, h2);
+        assert_eq!(h2, h3);
+    }
 }

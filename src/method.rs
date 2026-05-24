@@ -175,3 +175,45 @@ impl From<Method> for String {
         String::from_utf8(method.0.into_owned()).expect("Method is always valid ASCII")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_static_matches_new_known_inputs() {
+        let names: &[&[u8]] = &[b"GET", b"POST"];
+        for &method in names {
+            assert_eq!(Method::new(method).unwrap(), Method::from_static(method));
+        }
+    }
+
+    #[test]
+    fn from_validated_parts_matches_new() {
+        let methods: &[&[u8]] = &[b"GET", b"post", b"Custom"];
+        for &method in methods {
+            let v1 = Method::new(method).unwrap();
+            let v2 = Method::from_validated_bytes(method.to_vec());
+            assert_eq!(v1, v2);
+        }
+    }
+
+    #[test]
+    fn new_rejects_empty() {
+        assert!(Method::new(b"").is_err());
+    }
+
+    #[test]
+    fn new_rejects_invalid_bytes() {
+        assert!(Method::new(b"GET\r").is_err());
+        assert!(Method::new(b"GET\n").is_err());
+        assert!(Method::new(b"GET ").is_err());
+    }
+
+    #[test]
+    fn eq_is_case_sensitive() {
+        let m1 = Method::new(b"GET").unwrap();
+        let m2 = Method::new(b"get").unwrap();
+        assert_ne!(m1, m2);
+    }
+}
