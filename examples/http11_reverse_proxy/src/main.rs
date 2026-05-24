@@ -16,8 +16,8 @@ use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, HttpHead, Request, RequestDecoder, Response,
-    ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
+    BodyKind, BodyProgress, DecoderLimits, HeaderName, HttpHead, Method, Request, RequestDecoder,
+    Response, ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -586,9 +586,12 @@ async fn handle_client(
     if matches!(req_body_kind, BodyKind::Tunnel) {
         info!(method = %req_head.method(), "CONNECT rejected with 405 Method Not Allowed");
         let response = Response::with_status(StatusCode::METHOD_NOT_ALLOWED)
-            .header("Allow", "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH")?
-            .header("Content-Length", "0")?
-            .header("Connection", "close")?;
+            .header(
+                HeaderName::from_static(b"Allow"),
+                "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH",
+            )?
+            .header(HeaderName::from_static(b"Content-Length"), "0")?
+            .header(HeaderName::from_static(b"Connection"), "close")?;
         socket.write_all(&response.encode()?).await?;
         return Ok(());
     }
@@ -637,13 +640,16 @@ async fn handle_client(
     }
 
     // アップストリームへプロキシリクエストを作成
-    let mut upstream_request = Request::new(req_head.method(), req_head.uri())?;
+    let mut upstream_request = Request::new(
+        Method::new(req_head.method().as_bytes()).expect("decoder-validated method"),
+        req_head.uri(),
+    )?;
 
     // Connection ヘッダーに列挙されたヘッダー名を収集
     let connection_headers: Vec<String> = req_head
         .headers()
         .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
+        .filter(|(name, _)| name == "Connection")
         .flat_map(|(_, value)| {
             value
                 .split(',')
@@ -657,21 +663,21 @@ async fn handle_client(
     // Content-Length は Transfer-Encoding 除外後に不整合が生じる可能性があるため除外し、
     // encoder の自動設定に任せる (RFC 9112 Section 6.3 対応)
     for (name, value) in req_head.headers() {
-        if name.eq_ignore_ascii_case("host") {
+        if name == "host" {
             continue;
         }
-        if name.eq_ignore_ascii_case("content-length") {
+        if name == "content-length" {
             continue;
         }
         if is_hop_by_hop_header(name, &connection_headers) {
             continue;
         }
-        upstream_request.add_header(name, value)?;
+        upstream_request.add_header(name.clone(), value)?;
     }
 
-    upstream_request.add_header("Host", upstream_host_header)?;
+    upstream_request.add_header(HeaderName::from_static(b"Host"), upstream_host_header)?;
     // Keep-Alive を使用して接続を再利用
-    upstream_request.add_header("Connection", "keep-alive")?;
+    upstream_request.add_header(HeaderName::from_static(b"Connection"), "keep-alive")?;
     // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
     // BodyKind::None なら upstream にもボディなしで送る (Content-Length 自動付与もしない)。
     let upstream_request = if matches!(req_body_kind, BodyKind::None) {
@@ -845,7 +851,7 @@ async fn stream_response_on_connection(
     let connection_headers: Vec<String> = resp_head
         .headers()
         .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("Connection"))
+        .filter(|(name, _)| name == "Connection")
         .flat_map(|(_, value)| {
             value
                 .split(',')
@@ -871,23 +877,23 @@ async fn stream_response_on_connection(
             continue;
         }
         // Content-Length と Transfer-Encoding は body_kind に基づいて後で設定する
-        if name.eq_ignore_ascii_case("content-length")
-            || name.eq_ignore_ascii_case("transfer-encoding")
-        {
+        if name == "content-length" || name == "transfer-encoding" {
             continue;
         }
-        response_for_headers.add_header(name, value)?;
+        response_for_headers.add_header(name.clone(), value)?;
     }
 
     if let Some(len) = content_length {
-        response_for_headers.add_header("Content-Length", len.to_string())?;
+        response_for_headers
+            .add_header(HeaderName::from_static(b"Content-Length"), len.to_string())?;
         debug!(content_length = len, "Using Content-Length");
     } else if use_chunked {
-        response_for_headers.add_header("Transfer-Encoding", "chunked")?;
+        response_for_headers
+            .add_header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")?;
         debug!("using Transfer-Encoding: chunked");
     } else if is_close_delimited {
         // close-delimited body: 接続が閉じるまでがボディ
-        response_for_headers.add_header("Connection", "close")?;
+        response_for_headers.add_header(HeaderName::from_static(b"Connection"), "close")?;
         debug!("using Connection: close (close-delimited body)");
     }
 
@@ -1020,7 +1026,7 @@ async fn stream_response_on_connection(
 /// (ライブラリ側は encode_chunk に trailer を載せる API を提供していない)。
 async fn write_last_chunk(
     downstream: &mut BufWriter<&mut TcpStream>,
-    trailers: &[(String, String)],
+    trailers: &[(HeaderName, String)],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if trailers.is_empty() {
         downstream.write_all(&encode_chunk(b"")).await?;
@@ -1035,22 +1041,19 @@ async fn write_last_chunk(
     Ok(())
 }
 
-fn is_hop_by_hop_header(name: &str, connection_headers: &[String]) -> bool {
-    const HOP_BY_HOP_HEADERS: &[&str] = &[
-        "connection",
-        "keep-alive",
-        "proxy-authenticate",
-        "proxy-authorization",
-        "proxy-connection",
-        "te",
-        "transfer-encoding",
-        "upgrade",
-    ];
-
-    let name_lower = name.to_ascii_lowercase();
-    if HOP_BY_HOP_HEADERS.contains(&name_lower.as_str()) {
+fn is_hop_by_hop_header(name: &HeaderName, connection_headers: &[String]) -> bool {
+    // HeaderName PartialEq<str> は case-insensitive
+    if name == "connection"
+        || name == "keep-alive"
+        || name == "proxy-authenticate"
+        || name == "proxy-authorization"
+        || name == "proxy-connection"
+        || name == "te"
+        || name == "transfer-encoding"
+        || name == "upgrade"
+    {
         return true;
     }
 
-    connection_headers.contains(&name_lower)
+    connection_headers.contains(&name.as_str().to_ascii_lowercase())
 }

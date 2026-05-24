@@ -2,7 +2,9 @@
 
 - Priority: Medium
 - Created: 2026-05-23
-- Model: Opus 4.7
+- Completed: 2026-05-24
+- Model: deepseek v4-pro
+- Branch: feature/add-compile-time-validated-types
 
 ## 目的
 
@@ -261,3 +263,43 @@ PBT による整合性検証（`from_static` と `new` の結果一致、decoder
 
 - 本 issue 完了後に 0092（trybuild コンパイル時エラーテスト）と 0093（PBT 整合性検証）を着手する
 - `RequestTarget` 型の導入は本 issue のスコープ外（`uri` は `impl Into<String>` のまま維持する）
+
+## 解決方法
+
+### 変更ファイル
+
+#### 新規ファイル
+- `src/header_name.rs`: `HeaderName` 型 (Cow<'static, [u8]>, case-insensitive Eq/Hash, const fn from_static)
+- `src/method.rs`: `Method` 型 (Cow<'static, [u8]>, case-sensitive, const fn from_static, 標準定数 GET/POST/...)
+
+#### コアライブラリ (src/)
+- `src/lib.rs`: `header_name`, `method` モジュール追加、`HeaderName/HeaderNameError/Method/MethodError/Scheme/SchemeError` を re-export
+- `src/uri.rs`: `Scheme` 型追加 (Cow<'static, [u8]>, case-insensitive Eq/Hash, const fn from_static, 標準定数 HTTP/HTTPS/WS/WSS/RTSP)
+- `src/decoder/head.rs`: `HttpHead::headers()` 戻り型を `&[(HeaderName, String)]` に変更、`RequestHead`/`ResponseHead` の内部フィールドを `Method`/`HeaderName` に変更
+- `src/request.rs`: `method: Method` / `headers: Vec<(HeaderName, String)>` に変更、公開 API シグネチャを `Method`/`HeaderName` に変更
+- `src/response.rs`: `headers: Vec<(HeaderName, String)>` に変更、公開 API シグネチャを `HeaderName` に変更
+- `src/encoder.rs`: `validate_headers` シグネチャ変更、`name.as_bytes().len()` / `name == "..."` に更新
+- `src/decoder/request.rs`: 内部ヘッダー格納を `HeaderName::from_validated_bytes` 経由に変更
+- `src/decoder/response.rs`: 同上
+- `src/decoder/body.rs`: `parse_content_length` 等のシグネチャ変更、trailer/trailers を `HeaderName` に変更
+
+#### テスト・PBT・Fuzz (全ファイル)
+- 全テスト (~500 call site) を新 API に追従
+- `Request::new("GET", ...)` → `Request::new(Method::GET, ...)`
+- `.header("Name", ...)` → `.header(HeaderName::from_static(b"Name"), ...)`
+- 不正値テストは `Method::new()` / `HeaderName::new()` のエラー検査に変更
+- PBT の strategy を `Method` / `HeaderName` 型に変更
+
+#### Examples
+- `examples/http11_server/src/main.rs`: 新 API 追従
+- `examples/http11_reverse_proxy/src/main.rs`: 新 API 追従、`is_hop_by_hop_header` シグネチャ変更
+- `examples/http11_client/src/main.rs`, `transport.rs`: 新 API 追従
+- `examples/http11_server_io_uring/src/main.rs`: 新 API 追従
+- `examples/http11_client/tests/`: 新 API 追従
+
+### テスト
+
+- 全ワークスペーステスト通過確認
+- Clippy (-D warnings) 通過確認
+- cargo fmt 通過確認
+- http11_server E2E テスト (26 件) 通過確認

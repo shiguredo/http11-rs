@@ -27,9 +27,11 @@
 //! assert_eq!(decoded, "hello world");
 //! ```
 
+use alloc::borrow::Cow;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
+use core::hash::{Hash, Hasher};
 
 /// URI パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1051,6 +1053,152 @@ fn normalize_percent_encoding(input: &str) -> Result<String, UriError> {
     }
 
     Ok(result)
+}
+
+// ========================================
+// Scheme 型 (RFC 3986 Section 3.1)
+// ========================================
+
+/// URI スキーム (RFC 3986 Section 3.1)
+///
+/// `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`
+///
+/// Eq/Hash は case-insensitive (RFC 3986 Section 3.1 "should accept uppercase
+/// letters as equivalent to lowercase")。
+/// `const fn from_static` では borrowed bytes を変更できないため、
+/// 内部正規化を行わずに保持し、比較時に case-insensitive 判定を行う。
+#[derive(Debug, Clone)]
+pub struct Scheme(Cow<'static, [u8]>);
+
+/// `Scheme` の構築エラー
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum SchemeError {
+    /// 空のスキーム
+    Empty,
+    /// 先頭バイトが ALPHA でない
+    InvalidFirstByte { byte: u8 },
+    /// 不正なバイトを含む
+    InvalidByte { byte: u8, position: usize },
+}
+
+impl fmt::Display for SchemeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SchemeError::Empty => f.write_str("empty scheme"),
+            SchemeError::InvalidFirstByte { byte } => {
+                write!(f, "invalid first byte 0x{:02X} in scheme", byte)
+            }
+            SchemeError::InvalidByte { byte, position } => {
+                write!(
+                    f,
+                    "invalid byte 0x{:02X} at position {} in scheme",
+                    byte, position
+                )
+            }
+        }
+    }
+}
+
+/// scheme 文字であるか (RFC 3986 Section 3.1)
+const fn is_scheme_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'+' | b'-' | b'.')
+}
+
+impl Scheme {
+    pub const HTTP: Self = Self::from_static(b"http");
+    pub const HTTPS: Self = Self::from_static(b"https");
+    pub const WS: Self = Self::from_static(b"ws");
+    pub const WSS: Self = Self::from_static(b"wss");
+    pub const RTSP: Self = Self::from_static(b"rtsp");
+
+    /// ランタイム検査つきで構築する
+    pub fn new(scheme: impl AsRef<[u8]>) -> Result<Self, SchemeError> {
+        let bytes = scheme.as_ref();
+        if bytes.is_empty() {
+            return Err(SchemeError::Empty);
+        }
+        if !bytes[0].is_ascii_alphabetic() {
+            return Err(SchemeError::InvalidFirstByte { byte: bytes[0] });
+        }
+        let mut i = 1;
+        while i < bytes.len() {
+            if !is_scheme_char(bytes[i]) {
+                return Err(SchemeError::InvalidByte {
+                    byte: bytes[i],
+                    position: i,
+                });
+            }
+            i += 1;
+        }
+        Ok(Self(Cow::Owned(bytes.to_vec())))
+    }
+
+    /// コンパイル時検査つきで構築する
+    ///
+    /// 不正な入力はコンパイル時に panic する。
+    /// リテラル定数の構築に使用する。
+    pub const fn from_static(scheme: &'static [u8]) -> Self {
+        if scheme.is_empty() {
+            panic!("Scheme: empty scheme");
+        }
+        if !scheme[0].is_ascii_alphabetic() {
+            panic!("Scheme: first byte must be ALPHA");
+        }
+        let mut i = 1;
+        while i < scheme.len() {
+            if !is_scheme_char(scheme[i]) {
+                panic!("Scheme: invalid byte in scheme");
+            }
+            i += 1;
+        }
+        Self(Cow::Borrowed(scheme))
+    }
+
+    /// 内部バイト列を返す
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
+    }
+
+    /// 文字列として返す (全 scheme 文字は ASCII のため安全)
+    pub fn as_str(&self) -> &str {
+        // SAFETY: scheme 文字は全て ASCII 範囲内であるため UTF-8 として有効
+        unsafe { core::str::from_utf8_unchecked(self.as_bytes()) }
+    }
+}
+
+impl PartialEq for Scheme {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_bytes().eq_ignore_ascii_case(other.as_bytes())
+    }
+}
+
+impl Eq for Scheme {}
+
+impl Hash for Scheme {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for &b in self.as_bytes() {
+            state.write_u8(b.to_ascii_lowercase());
+        }
+    }
+}
+
+impl PartialEq<str> for Scheme {
+    fn eq(&self, other: &str) -> bool {
+        self.as_bytes().eq_ignore_ascii_case(other.as_bytes())
+    }
+}
+
+impl PartialEq<&str> for Scheme {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_bytes().eq_ignore_ascii_case(other.as_bytes())
+    }
+}
+
+impl fmt::Display for Scheme {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[cfg(test)]

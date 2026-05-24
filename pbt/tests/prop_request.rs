@@ -1,7 +1,9 @@
 //! Request 構造体のプロパティテスト (request.rs)
 
 use proptest::prelude::*;
-use shiguredo_http11::{BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder};
+use shiguredo_http11::{
+    BodyKind, BodyProgress, EncodeError, HeaderName, HttpHead, Method, Request, RequestDecoder,
+};
 
 // ========================================
 // Strategy 定義
@@ -25,8 +27,14 @@ fn token_string(max_len: usize) -> impl Strategy<Value = String> {
 }
 
 // HTTP ヘッダー名
-fn header_name() -> impl Strategy<Value = String> {
-    token_string(32)
+fn header_name() -> impl Strategy<Value = HeaderName> {
+    prop_oneof![
+        Just(HeaderName::from_static(b"Content-Type")),
+        Just(HeaderName::from_static(b"Accept")),
+        Just(HeaderName::from_static(b"User-Agent")),
+        Just(HeaderName::from_static(b"Cache-Control")),
+        token_string(32).prop_map(|s| HeaderName::new(s.as_bytes()).expect("valid token")),
+    ]
 }
 
 // HTTP ヘッダー値 (RFC 9110 Section 5.5)
@@ -37,21 +45,21 @@ fn header_name() -> impl Strategy<Value = String> {
 use pbt::header_value;
 
 // HTTP メソッド
-fn http_method() -> impl Strategy<Value = String> {
+fn http_method() -> impl Strategy<Value = Method> {
     prop_oneof![
-        Just("GET".to_string()),
-        Just("POST".to_string()),
-        Just("PUT".to_string()),
-        Just("DELETE".to_string()),
-        Just("HEAD".to_string()),
-        Just("OPTIONS".to_string()),
-        Just("PATCH".to_string()),
+        Just(Method::GET),
+        Just(Method::POST),
+        Just(Method::PUT),
+        Just(Method::DELETE),
+        Just(Method::HEAD),
+        Just(Method::OPTIONS),
+        Just(Method::PATCH),
         // RTSP メソッド
-        Just("DESCRIBE".to_string()),
-        Just("SETUP".to_string()),
-        Just("PLAY".to_string()),
-        Just("PAUSE".to_string()),
-        Just("TEARDOWN".to_string()),
+        Just(Method::new(b"DESCRIBE").expect("valid")),
+        Just(Method::new(b"SETUP").expect("valid")),
+        Just(Method::new(b"PLAY").expect("valid")),
+        Just(Method::new(b"PAUSE").expect("valid")),
+        Just(Method::new(b"TEARDOWN").expect("valid")),
     ]
 }
 
@@ -65,7 +73,7 @@ fn http_uri() -> impl Strategy<Value = String> {
 }
 
 // ヘッダーのリスト
-fn headers() -> impl Strategy<Value = Vec<(String, String)>> {
+fn headers() -> impl Strategy<Value = Vec<(HeaderName, String)>> {
     proptest::collection::vec((header_name(), header_value()), 0..10)
 }
 
@@ -100,13 +108,13 @@ proptest! {
         hdrs in headers(),
         body_data in body()
     ) {
-        let mut request = Request::new(&method, &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
         for (name, value) in &hdrs {
             // Host ヘッダーの重複を避ける
-            if !name.eq_ignore_ascii_case("Host") {
-                request.add_header(name, value).unwrap();
+            if name != "Host" {
+                request.add_header(name.clone(), value).unwrap();
             }
         }
         if !body_data.is_empty() {
@@ -150,7 +158,7 @@ proptest! {
         let expected_header_count = if !body_data.is_empty()
             && !hdrs
                 .iter()
-                .any(|(n, _)| n.eq_ignore_ascii_case("Content-Length"))
+                .any(|(n, _)| n == "Content-Length")
         {
             hdrs.len() + 2  // Host + Content-Length
         } else {
@@ -171,12 +179,13 @@ proptest! {
         uri in http_uri(),
         hdrs in headers()
     ) {
-        let mut request = Request::new(&method, &uri).unwrap();
+        let method_str = method.as_str().to_string();
+        let mut request = Request::new(method, &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
         for (name, value) in &hdrs {
-            if !name.eq_ignore_ascii_case("Host") {
-                request.add_header(name, value).unwrap();
+            if name != "Host" {
+                request.add_header(name.clone(), value).unwrap();
             }
         }
 
@@ -189,7 +198,7 @@ proptest! {
         }
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
 
-        prop_assert_eq!(head.method(), method.as_str());
+        prop_assert_eq!(head.method(), &method_str);
         prop_assert_eq!(head.uri(), uri.as_str());
     }
 }
@@ -202,9 +211,9 @@ proptest! {
         uri in http_uri(),
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let mut request = Request::new(&method, &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
         let request = request.body(body_data.clone());
         let encoded = request.encode().unwrap();
 
@@ -247,7 +256,7 @@ proptest! {
         }
 
         prop_assert!(headers_decoded, "ヘッダーがデコードされるべき");
-        prop_assert_eq!(&decoded_method, &method);
+        prop_assert_eq!(&decoded_method, method.as_str());
         prop_assert_eq!(&decoded_body, &body_data);
     }
 }
@@ -269,9 +278,9 @@ proptest! {
             if i > 0 {
                 decoder.reset();
             }
-            let mut request = Request::new(&methods[i], &uris[i]).unwrap();
+            let mut request = Request::new(methods[i].clone(), &uris[i]).unwrap();
             let host_value = host_for_uri(&uris[i]);
-            request.add_header("Host", &host_value).unwrap();
+            request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
             let encoded = request.encode().unwrap();
             decoder.feed(&encoded).unwrap();
             let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -298,9 +307,9 @@ proptest! {
 
         // リセットして正常なリクエストをデコード
         decoder.reset();
-        let mut request = Request::new(&method, &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).unwrap();
         let host_value = host_for_uri(&uri);
-        request.add_header("Host", &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
         let encoded = request.encode().unwrap();
         decoder.feed(&encoded).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
@@ -317,9 +326,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_new_creates_valid_request(method in http_method(), uri in http_uri()) {
-        let request = Request::new(&method, &uri).unwrap();
+        let request = Request::new(method.clone(), &uri).unwrap();
 
-        prop_assert_eq!(request.method(), &method);
+        prop_assert_eq!(request.method(), method.as_str());
         prop_assert_eq!(request.uri(), &uri);
         prop_assert_eq!(request.version(), "HTTP/1.1");
         prop_assert!(HttpHead::headers(&request).is_empty());
@@ -330,8 +339,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_with_version(method in http_method(), uri in http_uri()) {
-        let request10 = Request::with_version(&method, &uri, "HTTP/1.0").unwrap();
-        let request11 = Request::with_version(&method, &uri, "HTTP/1.1").unwrap();
+        let request10 = Request::with_version(method.clone(), &uri, "HTTP/1.0").unwrap();
+        let request11 = Request::with_version(method, &uri, "HTTP/1.1").unwrap();
 
         prop_assert_eq!(request10.version(), "HTTP/1.0");
         prop_assert_eq!(request11.version(), "HTTP/1.1");
@@ -346,7 +355,7 @@ proptest! {
         name in header_name(),
         value in header_value()
     ) {
-        let request = Request::new(&method, &uri).unwrap().header(&name, &value).unwrap();
+        let request = Request::new(method, &uri).unwrap().header(name.clone(), &value).unwrap();
 
         let headers = HttpHead::headers(&request);
         prop_assert_eq!(headers.len(), 1);
@@ -362,7 +371,7 @@ proptest! {
         uri in http_uri(),
         body_data in body()
     ) {
-        let request = Request::new(&method, &uri).unwrap().body(body_data.clone());
+        let request = Request::new(method, &uri).unwrap().body(body_data.clone());
 
         prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
     }
@@ -375,9 +384,9 @@ proptest! {
         uri in http_uri(),
         value in header_value()
     ) {
-        let request = Request::new(&method, &uri)
+        let request = Request::new(method, &uri)
             .unwrap()
-            .header("Content-Type", &value)
+            .header(HeaderName::from_static(b"Content-Type"), &value)
             .unwrap();
 
         prop_assert_eq!(request.get_header("content-type"), Some(value.as_str()));
@@ -394,11 +403,11 @@ proptest! {
         value1 in header_value(),
         value2 in header_value()
     ) {
-        let request = Request::new(&method, &uri)
+        let request = Request::new(method, &uri)
             .unwrap()
-            .header("X-Custom", &value1)
+            .header(HeaderName::from_static(b"X-Custom"), &value1)
             .unwrap()
-            .header("x-custom", &value2)
+            .header(HeaderName::from_static(b"x-custom"), &value2)
             .unwrap();
 
         let values = request.get_headers("X-CUSTOM");
@@ -421,9 +430,8 @@ proptest! {
         suffix in token_string(8),
     ) {
         let method = format!("{prefix}{infix}{suffix}");
-        let result = Request::new(&method, "/");
-        let is_invalid_method = matches!(result, Err(EncodeError::InvalidMethod { .. }));
-        prop_assert!(is_invalid_method);
+        let result = Method::new(method.as_bytes());
+        prop_assert!(result.is_err(), "Method with CRLF should be rejected");
     }
 }
 
@@ -436,7 +444,7 @@ proptest! {
         suffix in "[a-zA-Z0-9/_.-]{1,16}",
     ) {
         let uri = format!("{prefix}{infix}{suffix}");
-        let result = Request::new("GET", &uri);
+        let result = Request::new(Method::GET, &uri);
         let is_invalid_target = matches!(result, Err(EncodeError::InvalidRequestTarget { .. }));
         prop_assert!(is_invalid_target);
     }
@@ -450,9 +458,9 @@ proptest! {
         infix in prop_oneof![Just("\r\n"), Just("\r"), Just("\n")],
         suffix in header_value(),
     ) {
-        let req = Request::new("GET", "/").unwrap();
+        let req = Request::new(Method::GET, "/").unwrap();
         let value = format!("{prefix}{infix}{suffix}");
-        let result = req.header("X-Test", &value);
+        let result = req.header(HeaderName::from_static(b"X-Test"), &value);
         let is_invalid_value = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
         prop_assert!(is_invalid_value);
     }
@@ -465,11 +473,11 @@ proptest! {
         old_value in header_value(),
         new_value in header_value(),
     ) {
-        let mut req = Request::new("GET", "/").unwrap();
-        req.add_header("X-Test", &old_value).unwrap();
+        let mut req = Request::new(Method::GET, "/").unwrap();
+        req.add_header(HeaderName::from_static(b"X-Test"), &old_value).unwrap();
         // 不正な値で set_header 失敗
         let invalid = format!("{new_value}\r\nEvil: x");
-        let result = req.set_header("X-Test", &invalid);
+        let result = req.set_header(HeaderName::from_static(b"X-Test"), &invalid);
         let is_invalid_value = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
         prop_assert!(is_invalid_value);
         // 既存ヘッダーが消えていない

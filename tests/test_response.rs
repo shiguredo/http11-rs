@@ -3,7 +3,7 @@
 //! 構築時に弾かれるエラー (CRLF 注入、token 違反、status_code 範囲外等) を網羅する。
 //! PBT で生成不可能な特定値を含むケースを担う。
 
-use shiguredo_http11::{EncodeError, HttpHead, Response, StatusCode};
+use shiguredo_http11::{EncodeError, HeaderName, HttpHead, Response, StatusCode};
 
 #[test]
 fn test_response_new_invalid_status_code_zero() {
@@ -42,22 +42,20 @@ fn test_response_new_nul_in_reason_phrase() {
 
 #[test]
 fn test_response_add_header_space_in_name() {
-    let mut r = Response::with_status(StatusCode::OK);
-    let result = r.add_header("Bad Name", "x");
-    assert!(matches!(result, Err(EncodeError::InvalidHeaderName { .. })));
+    let result = HeaderName::new(b"Bad Name");
+    assert!(result.is_err());
 }
 
 #[test]
 fn test_response_add_header_empty_name() {
-    let mut r = Response::with_status(StatusCode::OK);
-    let result = r.add_header("", "x");
-    assert!(matches!(result, Err(EncodeError::InvalidHeaderName { .. })));
+    let result = HeaderName::new(b"");
+    assert!(result.is_err());
 }
 
 #[test]
 fn test_response_add_header_crlf_in_value() {
     let mut r = Response::with_status(StatusCode::OK);
-    let result = r.add_header("X-Header", "value\r\n");
+    let result = r.add_header(HeaderName::from_static(b"X-Header"), "value\r\n");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidHeaderValue { .. })
@@ -67,7 +65,7 @@ fn test_response_add_header_crlf_in_value() {
 #[test]
 fn test_response_add_header_lf_only_in_value() {
     let mut r = Response::with_status(StatusCode::OK);
-    let result = r.add_header("X-Header", "value\n");
+    let result = r.add_header(HeaderName::from_static(b"X-Header"), "value\n");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidHeaderValue { .. })
@@ -77,7 +75,7 @@ fn test_response_add_header_lf_only_in_value() {
 #[test]
 fn test_response_add_header_nul_in_value() {
     let mut r = Response::with_status(StatusCode::OK);
-    let result = r.add_header("X-Header", "val\0ue");
+    let result = r.add_header(HeaderName::from_static(b"X-Header"), "val\0ue");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidHeaderValue { .. })
@@ -88,7 +86,10 @@ fn test_response_add_header_nul_in_value() {
 fn test_response_add_header_empty_value_is_legal() {
     // RFC 9110 Section 5.5: field-value = *field-content, 空値は合法
     let mut r = Response::with_status(StatusCode::OK);
-    assert!(r.add_header("X-Empty", "").is_ok());
+    assert!(
+        r.add_header(HeaderName::from_static(b"X-Empty"), "")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -106,8 +107,10 @@ fn test_response_with_version_crlf() {
 #[test]
 fn test_response_set_header_overwrite() {
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("X-Custom", "first").unwrap();
-    r.set_header("X-Custom", "second").unwrap();
+    r.add_header(HeaderName::from_static(b"X-Custom"), "first")
+        .unwrap();
+    r.set_header(HeaderName::from_static(b"X-Custom"), "second")
+        .unwrap();
     assert_eq!(r.get_headers("X-Custom").len(), 1);
     assert_eq!(r.get_header("X-Custom"), Some("second"));
 }
@@ -115,8 +118,10 @@ fn test_response_set_header_overwrite() {
 #[test]
 fn test_response_set_header_case_insensitive_overwrite() {
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("CONTENT-TYPE", "text/plain").unwrap();
-    r.set_header("Content-Type", "text/html").unwrap();
+    r.add_header(HeaderName::from_static(b"CONTENT-TYPE"), "text/plain")
+        .unwrap();
+    r.set_header(HeaderName::from_static(b"Content-Type"), "text/html")
+        .unwrap();
     assert_eq!(r.get_header("Content-Type"), Some("text/html"));
     assert_eq!(r.get_headers("Content-Type").len(), 1);
 }
@@ -125,8 +130,9 @@ fn test_response_set_header_case_insensitive_overwrite() {
 fn test_response_set_header_atomic_on_validation_failure() {
     // バリデーション失敗時に既存ヘッダーが消えないことを確認 (アトミック性)
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("X-Custom", "first").unwrap();
-    let result = r.set_header("X-Custom", "bad\r\nvalue");
+    r.add_header(HeaderName::from_static(b"X-Custom"), "first")
+        .unwrap();
+    let result = r.set_header(HeaderName::from_static(b"X-Custom"), "bad\r\nvalue");
     assert!(matches!(
         result,
         Err(EncodeError::InvalidHeaderValue { .. })
@@ -137,12 +143,9 @@ fn test_response_set_header_atomic_on_validation_failure() {
 
 #[test]
 fn test_response_set_header_invalid_name() {
-    let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("X-Custom", "first").unwrap();
-    let result = r.set_header("Bad Name", "value");
-    assert!(matches!(result, Err(EncodeError::InvalidHeaderName { .. })));
-    // 既存ヘッダーが保持されていること
-    assert_eq!(r.get_header("X-Custom"), Some("first"));
+    // HeaderName が構築時に検証するため、不正な名前は set_header に到達しない
+    let result = HeaderName::new(b"Bad Name");
+    assert!(result.is_err());
 }
 
 #[test]
@@ -198,7 +201,7 @@ fn test_response_with_status_404() {
 #[test]
 fn test_response_with_status_chains_with_builders() {
     let r = Response::with_status(StatusCode::CREATED)
-        .header("Content-Type", "application/json")
+        .header(HeaderName::from_static(b"Content-Type"), "application/json")
         .unwrap()
         .body(b"{}".to_vec());
     assert_eq!(r.status_code(), 201);
@@ -295,9 +298,9 @@ fn test_response_set_omit_body() {
 fn test_response_add_header_chain() {
     // add_header のチェイン: Result<&mut Self, E> を unwrap で消費して連結
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("X-A", "1")
+    r.add_header(HeaderName::from_static(b"X-A"), "1")
         .unwrap()
-        .add_header("X-B", "2")
+        .add_header(HeaderName::from_static(b"X-B"), "2")
         .unwrap();
     assert_eq!(r.get_headers("X-A"), vec!["1"]);
     assert_eq!(r.get_headers("X-B"), vec!["2"]);
@@ -307,8 +310,8 @@ fn test_response_add_header_chain() {
 fn test_response_add_header_chain_partial_failure() {
     // 先行ヘッダーは成功し、後続のバリデーションエラーは先行を破壊しない
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header("X-A", "1").unwrap();
-    let result = r.add_header("", "bad");
+    r.add_header(HeaderName::from_static(b"X-A"), "1").unwrap();
+    let result = r.add_header(HeaderName::from_static(b"X-B"), "bad\r\nvalue");
     assert!(result.is_err());
     assert_eq!(r.get_headers("X-A"), vec!["1"]);
 }

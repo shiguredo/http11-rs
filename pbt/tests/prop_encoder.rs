@@ -2,9 +2,9 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    EncodeError, Request, RequestEncoder, Response, ResponseEncoder, StatusCode, encode_chunk,
-    encode_chunks, encode_request, encode_request_headers, encode_response,
-    encode_response_headers,
+    EncodeError, HeaderName, Method, Request, RequestEncoder, Response, ResponseEncoder,
+    StatusCode, encode_chunk, encode_chunks, encode_request, encode_request_headers,
+    encode_response, encode_response_headers,
 };
 
 // ========================================
@@ -12,15 +12,15 @@ use shiguredo_http11::{
 // ========================================
 
 // HTTP メソッド
-fn http_method() -> impl Strategy<Value = &'static str> {
+fn http_method() -> impl Strategy<Value = Method> {
     prop_oneof![
-        Just("GET"),
-        Just("POST"),
-        Just("PUT"),
-        Just("DELETE"),
-        Just("HEAD"),
-        Just("OPTIONS"),
-        Just("PATCH"),
+        Just(Method::GET),
+        Just(Method::POST),
+        Just(Method::PUT),
+        Just(Method::DELETE),
+        Just(Method::HEAD),
+        Just(Method::OPTIONS),
+        Just(Method::PATCH),
     ]
 }
 
@@ -35,13 +35,14 @@ fn uri() -> impl Strategy<Value = String> {
 }
 
 // ヘッダー名
-fn header_name() -> impl Strategy<Value = String> {
+fn header_name() -> impl Strategy<Value = HeaderName> {
     prop_oneof![
-        Just("Content-Type".to_string()),
-        Just("Accept".to_string()),
-        Just("User-Agent".to_string()),
-        Just("Cache-Control".to_string()),
-        "[A-Za-z]{1,8}(-[A-Za-z]{1,8})?".prop_map(|s| s),
+        Just(HeaderName::from_static(b"Content-Type")),
+        Just(HeaderName::from_static(b"Accept")),
+        Just(HeaderName::from_static(b"User-Agent")),
+        Just(HeaderName::from_static(b"Cache-Control")),
+        "[A-Za-z]{1,8}(-[A-Za-z]{1,8})?"
+            .prop_map(|s| { HeaderName::new(s.as_bytes()).expect("valid token") }),
     ]
 }
 
@@ -104,9 +105,9 @@ fn body() -> impl Strategy<Value = Vec<u8>> {
 proptest! {
     #[test]
     fn prop_encode_request_basic(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri)
+        let req = Request::new(method.clone(), &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         let encoded = encode_request(&req).unwrap();
 
@@ -127,9 +128,9 @@ proptest! {
     ) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
-            .header(&header_name, &header_value)
+            .header(header_name.clone(), &header_value)
             .unwrap();
         let encoded = encode_request(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -144,7 +145,7 @@ proptest! {
     fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
             .body(data.clone());
         let encoded = encode_request(&req).unwrap();
@@ -183,14 +184,14 @@ proptest! {
         header_name in header_name(),
         header_value in header_value()
     ) {
+        let header_line = format!("{}: {}\r\n", header_name, header_value);
         let res = Response::new(status, phrase)
             .unwrap()
-            .header(&header_name, &header_value)
+            .header(header_name, header_value.as_str())
             .unwrap();
         let encoded = encode_response(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
 
-        let header_line = format!("{}: {}\r\n", header_name, header_value);
         prop_assert!(encoded_str.contains(&header_line));
     }
 }
@@ -220,7 +221,7 @@ proptest! {
     ) {
         let res = Response::new(status, "OK")
             .unwrap()
-            .header("Content-Length", content_length.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), content_length.to_string())
             .unwrap()
             .omit_body(true);
         let encoded = encode_response(&res).unwrap();
@@ -336,9 +337,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri)
+        let req = Request::new(method.clone(), &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         let encoded = encode_request_headers(&req).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -359,7 +360,7 @@ proptest! {
     fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
             .unwrap()
-            .header("Content-Type", "text/html")
+            .header(HeaderName::from_static(b"Content-Type"), "text/html")
             .unwrap();
         let encoded = encode_response_headers(&res).unwrap();
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -406,11 +407,11 @@ proptest! {
     ) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap()
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(
@@ -428,9 +429,9 @@ proptest! {
     ) {
         let res = Response::new(status, "OK")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap()
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_response(&res);
         prop_assert!(matches!(
@@ -451,7 +452,7 @@ proptest! {
     ) {
         let res = Response::new(status, "Info")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap();
         let result = encode_response(&res);
         match result {
@@ -476,7 +477,7 @@ proptest! {
     ) {
         let res = Response::new(status, "Info")
             .unwrap()
-            .header("Content-Length", "0")
+            .header(HeaderName::from_static(b"Content-Length"), "0")
             .unwrap();
         let result = encode_response(&res);
         match result {
@@ -516,7 +517,7 @@ proptest! {
         ]
     ) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Transfer-Encoding", &te_value)
+            .header(HeaderName::from_static(b"Transfer-Encoding"), &te_value)
             .unwrap();
         let result = encode_response(&res);
         match result {
@@ -533,7 +534,7 @@ proptest! {
     #[test]
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_response(&res);
         match result {
@@ -577,9 +578,9 @@ proptest! {
     ) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", &host1)
+            .header(HeaderName::from_static(b"Host"), &host1)
             .unwrap()
-            .header("Host", &host2)
+            .header(HeaderName::from_static(b"Host"), &host2)
             .unwrap();
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
@@ -613,11 +614,11 @@ proptest! {
     ) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap()
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_request_headers(&req);
         prop_assert!(matches!(
@@ -640,9 +641,9 @@ proptest! {
     ) {
         let res = Response::new(status, "OK")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap()
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_response_headers(&res);
         prop_assert!(matches!(
@@ -660,7 +661,7 @@ proptest! {
     ) {
         let res = Response::new(status, "Info")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap();
         let result = encode_response_headers(&res);
         match result {
@@ -682,7 +683,7 @@ proptest! {
     ) {
         let res = Response::new(status, "Info")
             .unwrap()
-            .header("Content-Length", "0")
+            .header(HeaderName::from_static(b"Content-Length"), "0")
             .unwrap();
         let result = encode_response_headers(&res);
         match result {
@@ -706,7 +707,7 @@ proptest! {
         ]
     ) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Transfer-Encoding", &te_value)
+            .header(HeaderName::from_static(b"Transfer-Encoding"), &te_value)
             .unwrap();
         let result = encode_response_headers(&res);
         match result {
@@ -723,7 +724,7 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
-            .header("Content-Length", cl.to_string())
+            .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
             .unwrap();
         let result = encode_response_headers(&res);
         match result {
@@ -745,7 +746,7 @@ proptest! {
     fn prop_request_encode_equals_free_function(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         let via_method = req.encode();
         let via_free = encode_request(&req);
@@ -770,7 +771,7 @@ proptest! {
     fn prop_request_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         let via_method = req.encode_headers();
         let via_free = encode_request_headers(&req);
@@ -787,7 +788,7 @@ proptest! {
     ) {
         let res = Response::new(status, phrase)
             .unwrap()
-            .header("Content-Type", "text/html")
+            .header(HeaderName::from_static(b"Content-Type"), "text/html")
             .unwrap();
         let via_method = res.encode_headers();
         let via_free = encode_response_headers(&res);

@@ -13,15 +13,15 @@
 //! ### クライアント (リクエスト送信、レスポンス受信)
 //!
 //! ```rust
-//! use shiguredo_http11::{EncodeError, Request, ResponseDecoder};
+//! use shiguredo_http11::{EncodeError, HeaderName, Method, Request, ResponseDecoder};
 //!
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // リクエストを作成してエンコード
-//!     let request = Request::new("GET", "/")
+//!     let request = Request::new(Method::GET, "/")
 //!         .unwrap()
-//!         .header("Host", "example.com")
+//!         .header(HeaderName::from_static(b"Host"), "example.com")
 //!         .unwrap()
-//!         .header("Connection", "close")
+//!         .header(HeaderName::from_static(b"Connection"), "close")
 //!         .unwrap();
 //!     request.encode()
 //! }
@@ -38,7 +38,7 @@
 //! ### サーバー (リクエスト受信、レスポンス送信)
 //!
 //! ```rust
-//! use shiguredo_http11::{EncodeError, RequestDecoder, Response, StatusCode};
+//! use shiguredo_http11::{EncodeError, HeaderName, RequestDecoder, Response, StatusCode};
 //!
 //! // リクエストをデコード
 //! let mut decoder = RequestDecoder::new();
@@ -49,7 +49,7 @@
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // レスポンスを作成してエンコード
 //!     let response = Response::with_status(StatusCode::OK)
-//!         .header("Content-Type", "text/plain").unwrap()
+//!         .header(HeaderName::from_static(b"Content-Type"), "text/plain").unwrap()
 //!         .body(b"Hello, World!".to_vec());
 //!     response.encode()
 //! }
@@ -77,10 +77,13 @@ mod decoder;
 pub mod digest_fields;
 mod encoder;
 mod error;
+mod header_name;
+
 pub mod etag;
 pub mod expect;
 pub mod host;
 mod limits;
+mod method;
 pub mod multipart;
 pub mod range;
 mod request;
@@ -101,7 +104,10 @@ pub use encoder::{
     encode_request_headers, encode_response, encode_response_headers,
 };
 pub use error::{EncodeError, Error};
+pub use header_name::{HeaderName, HeaderNameError};
 pub use limits::DecoderLimits;
+pub use method::{Method, MethodError};
 pub use request::Request;
 pub use response::Response;
 pub use status_code::{StatusClass, StatusCode};
+pub use uri::{Scheme, SchemeError};

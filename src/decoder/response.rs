@@ -8,6 +8,7 @@
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
+use crate::header_name::HeaderName;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
 use alloc::string::{String, ToString};
@@ -53,7 +54,7 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     buf: Vec<u8>,
     phase: DecodePhase,
     start_line: Option<String>,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
     /// decode() 用: デコード済みヘッダー
@@ -369,10 +370,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
             // `head.content_length()` / `head.is_chunked()` 経由で値を観測して
             // 下流に再生成し HTTP Response Smuggling の足場とすることを防ぐ。
             // 将来 RFC が改訂されて CONNECT 2xx の framing が変更される可能性がある。
-            self.headers.retain(|(name, _)| {
-                !name.eq_ignore_ascii_case("Transfer-Encoding")
-                    && !name.eq_ignore_ascii_case("Content-Length")
-            });
+            self.headers
+                .retain(|(name, _)| name != "Transfer-Encoding" && name != "Content-Length");
             return Ok(BodyKind::Tunnel);
         }
 
@@ -393,7 +392,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             && self
                 .headers
                 .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("Transfer-Encoding"))
+                .any(|(name, _)| name == "Transfer-Encoding")
         {
             return Err(Error::InvalidData(
                 "Transfer-Encoding is only defined for HTTP/1.1".to_string(),
@@ -587,7 +586,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
-                            self.headers.push((name, value));
+                            self.headers
+                                .push((HeaderName::from_validated_bytes(name.into_bytes()), value));
                         }
                     } else {
                         return Ok(None);

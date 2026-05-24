@@ -15,6 +15,16 @@
 
 - [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
   - @voluntas
+- [ADD] HeaderName / Method / Scheme 型を導入しコンパイル時検査つき構築 API (from_static) を提供する
+  - ヘッダー名は HeaderName (case-insensitive Eq/Hash)、メソッドは Method (case-sensitive)、URI スキームは Scheme (case-insensitive Eq/Hash)
+  - 各型に const 定数 (Method::GET 等、Scheme::HTTP 等) を提供する
+  - @voluntas
+- [CHANGE] HttpHead::headers() の戻り型を &[(String, String)] から &[(HeaderName, String)] に変更する
+  - 破壊的変更。HttpHead を実装する全型 (Request/Response/RequestHead/ResponseHead) に波及する
+  - @voluntas
+- [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl Into<String> から HeaderName/Method に変更する
+  - 破壊的変更。全呼出側で Method::GET / HeaderName::from_static(b"Name") 等への書き換えが必要
+  - @voluntas
 
 ## 2026.5.0
 

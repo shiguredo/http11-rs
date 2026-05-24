@@ -8,7 +8,7 @@
 mod helpers;
 
 use http11_client::{http_request, parse_url};
-use shiguredo_http11::Request;
+use shiguredo_http11::{HeaderName, Method, Request};
 
 /// WebDAV PUT + 静的ファイル配信を有効にした nginx 設定
 ///
@@ -68,13 +68,16 @@ async fn put_10mb_binary_roundtrip() {
     let url = nginx.http_url("/upload/10mb.bin");
     let (_scheme, host, port, path) = parse_url(&url).expect("URL のパースに失敗");
 
-    let put_request = Request::new("PUT", &path)
+    let put_request = Request::new(Method::PUT, &path)
         .expect("Request::new に失敗")
-        .header("Host", &host)
+        .header(HeaderName::from_static(b"Host"), &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header("Content-Type", "application/octet-stream")
+        .header(
+            HeaderName::from_static(b"Content-Type"),
+            "application/octet-stream",
+        )
         .expect("Content-Type ヘッダーの設定に失敗")
-        .header("Connection", "close")
+        .header(HeaderName::from_static(b"Connection"), "close")
         .expect("Connection ヘッダーの設定に失敗")
         .body(body.clone());
 
@@ -95,11 +98,11 @@ async fn put_10mb_binary_roundtrip() {
     );
 
     // GET で取得して検証
-    let get_request = Request::new("GET", &path)
+    let get_request = Request::new(Method::GET, &path)
         .expect("Request::new に失敗")
-        .header("Host", &host)
+        .header(HeaderName::from_static(b"Host"), &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header("Connection", "close")
+        .header(HeaderName::from_static(b"Connection"), "close")
         .expect("Connection ヘッダーの設定に失敗");
 
     let get_method = get_request.method().to_string();
@@ -142,13 +145,16 @@ async fn post_10mb_binary_accepted() {
     let url = nginx.http_url("/sink");
     let (_scheme, host, port, path) = parse_url(&url).expect("URL のパースに失敗");
 
-    let request = Request::new("POST", &path)
+    let request = Request::new(Method::POST, &path)
         .expect("Request::new に失敗")
-        .header("Host", &host)
+        .header(HeaderName::from_static(b"Host"), &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header("Content-Type", "application/octet-stream")
+        .header(
+            HeaderName::from_static(b"Content-Type"),
+            "application/octet-stream",
+        )
         .expect("Content-Type ヘッダーの設定に失敗")
-        .header("Connection", "close")
+        .header(HeaderName::from_static(b"Connection"), "close")
         .expect("Connection ヘッダーの設定に失敗")
         .body(body);
 
@@ -209,13 +215,16 @@ server {
     let url = nginx.http_url("/sink");
     let (_scheme, host, port, path) = parse_url(&url).expect("URL のパースに失敗");
 
-    let request = Request::new("POST", &path)
+    let request = Request::new(Method::POST, &path)
         .expect("Request::new に失敗")
-        .header("Host", &host)
+        .header(HeaderName::from_static(b"Host"), &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header("Content-Type", "application/octet-stream")
+        .header(
+            HeaderName::from_static(b"Content-Type"),
+            "application/octet-stream",
+        )
         .expect("Content-Type ヘッダーの設定に失敗")
-        .header("Connection", "close")
+        .header(HeaderName::from_static(b"Connection"), "close")
         .expect("Connection ヘッダーの設定に失敗")
         .body(body);
 
