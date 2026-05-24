@@ -22,6 +22,9 @@
 - [CHANGE] HttpHead::headers() の戻り型を &[(String, String)] から &[(HeaderName, String)] に変更する
   - 破壊的変更。HttpHead を実装する全型 (Request/Response/RequestHead/ResponseHead) に波及する
   - @voluntas
+- [ADD] HeaderName::from_static / Method::from_static / Scheme::from_static に compile_fail doctest を追加する
+  - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
+  - @voluntas
 - [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl Into<String> から HeaderName/Method に変更する
   - 破壊的変更。全呼出側で Method::GET / HeaderName::from_static(b"Name") 等への書き換えが必要
   - @voluntas

@@ -1138,6 +1138,38 @@ impl Scheme {
     ///
     /// 不正な入力はコンパイル時に panic する。
     /// リテラル定数の構築に使用する。
+    ///
+    /// # 正常系
+    ///
+    /// ```
+    /// use shiguredo_http11::Scheme;
+    ///
+    /// const HTTPS: Scheme = Scheme::from_static(b"https");
+    /// const HTTP: Scheme = Scheme::from_static(b"http");
+    /// ```
+    ///
+    /// # 不正リテラルの compile-fail 例
+    ///
+    /// 空のスキームは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Scheme =
+    ///     shiguredo_http11::Scheme::from_static(b"");
+    /// ```
+    ///
+    /// 数字始まりのスキームは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Scheme =
+    ///     shiguredo_http11::Scheme::from_static(b"3http");
+    /// ```
+    ///
+    /// コロンを含むスキームは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Scheme =
+    ///     shiguredo_http11::Scheme::from_static(b"http:");
+    /// ```
     pub const fn from_static(scheme: &'static [u8]) -> Self {
         if scheme.is_empty() {
             panic!("Scheme: empty scheme");

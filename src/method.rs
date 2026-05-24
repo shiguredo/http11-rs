@@ -81,6 +81,39 @@ impl Method {
     ///
     /// 不正な入力はコンパイル時に panic する。
     /// リテラル定数の構築に使用する。
+    ///
+    /// # 正常系
+    ///
+    /// ```
+    /// use shiguredo_http11::Method;
+    ///
+    /// const GET: Method = Method::from_static(b"GET");
+    /// const POST: Method = Method::from_static(b"POST");
+    /// const CUSTOM: Method = Method::from_static(b"WebDAV-MOVE");
+    /// ```
+    ///
+    /// # 不正リテラルの compile-fail 例
+    ///
+    /// 空のメソッドは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Method =
+    ///     shiguredo_http11::Method::from_static(b"");
+    /// ```
+    ///
+    /// CR を含むメソッドは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Method =
+    ///     shiguredo_http11::Method::from_static(b"GET\r");
+    /// ```
+    ///
+    /// LF を含むメソッドは不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::Method =
+    ///     shiguredo_http11::Method::from_static(b"GET\n");
+    /// ```
     pub const fn from_static(method: &'static [u8]) -> Self {
         if method.is_empty() {
             panic!("Method: empty method");
