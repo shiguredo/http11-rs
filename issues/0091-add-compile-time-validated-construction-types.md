@@ -6,38 +6,53 @@
 
 ## 目的
 
-HTTP/1.1 のヘッダー名・メソッド・URI スキームは、利用者コードでリテラル定数として
-書かれることが圧倒的に多い。これらにランタイム検査つきの構築 API
-(`new() -> Result`) と、リテラル定数向けの `const fn from_static` を併設し、
-**RFC 違反のリテラルをコンパイル時に検出可能**にする。
+HTTP/1.1 のヘッダー名・メソッド・URI スキームは、RFC 9110 上すべて `token = 1*tchar`（または `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )`）の構文を持つ。現在の API は `&str` / `impl Into<String>` でこれらを受け取り、ランタイム検査（`is_valid_header_name` / `is_valid_method`）を `EncodeError` 経由で返している。
 
-これは shiguredo_http11 の差別化要素となり、他の HTTP/1.1 ライブラリには無い特徴。
+これらに専用の構築型を導入し、`new() -> Result` と `const fn from_static` の二経路を提供することで、リテラル定数の不正（CR / LF / NUL 混入等）をコンパイル時に検出可能にする。
+
+## RFC 準拠の文字種ポリシー
+
+RFC 9110 Section 5.6.2 の定義:
+
+```
+token = 1*tchar
+tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+        / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+        / DIGIT / ALPHA
+```
+
+`ALPHA = %x41-5A / %x61-7A`（大文字 A-Z と小文字 a-z の両方を含む）。
+
+各型の文字種ポリシーは RFC の ABNF 文法に基づき、以下のとおりとする:
+
+| 型 | ABNF | 受理する文字 | 内部正規化 | Eq/Hash |
+|---|---|---|---|---|
+| `HeaderName` | `field-name = token` | 全 tchar（大文字含む） | 小文字化 | case-insensitive |
+| `Method` | `method = token` | 全 tchar（小文字含む） | なし（case-sensitive） | case-sensitive |
+| `Scheme` | `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )` | 全 scheme 文字（大文字含む） | 小文字化 | case-insensitive |
+
+- `HeaderName`: RFC 9110 Section 5.1 "Field names are case-insensitive" に従い、case-insensitive な `Eq` / `Hash` を手動実装する。大文字を含む入力（`b"Host"`）は受理し、そのまま保持する（`const fn` では borrowed bytes を変更できないため）。`as_bytes()` は格納されたバイト列をそのまま返す（正規化済みとは限らない）。
+- `Method`: RFC 9110 Section 9.1 "The method token is case-sensitive" に従い、case-preserving で保持し `derive(Eq, Hash)` を使用する。標準メソッドの const 定数は convention に従い大文字で提供するが、`from_static(b"get")` も受理する（あくまで `b"GET"` とは異なるメソッドとして扱われる）。
+- `Scheme`: RFC 3986 Section 3.1 "should accept uppercase letters as equivalent to lowercase" に従い、case-insensitive な `Eq` / `Hash` を手動実装する。大文字を含む入力は受理しそのまま保持する。
 
 ## 優先度根拠
 
 Medium。
-
-- High ではない理由: 既存の `Request::header(name, value)` / `Request::new(method, target)`
-  はランタイム検査 (`Result<Self, EncodeError>`) を既に行っており、本質的な安全性は
-  確保されている。本 issue は「リテラル定数のミスをコンパイル時に検出する」上乗せ
-- Low ではない理由: 「リテラル定数で書かれるヘッダー名・メソッドの RFC 違反を
-  コンパイル時に検出できる」差別化を打ち出すために必要。後発で導入するほど破壊的変更
-  コストが膨らむ
+- High ではない理由: 既存のランタイム検査で安全性は確保されている。本 issue は「リテラル定数ミスのコンパイル時検出」の上乗せ。
+- Low ではない理由: 後発で導入するほど破壊的変更コストが膨らむ。また「リテラル定数で書かれるヘッダー名・メソッドの RFC 違反をコンパイル時に検出できる」点は差別化要素となる。
 
 ## 現状
 
-現状の構築 API はすべてランタイム検査:
-
-- `Request::new(method: &str, target: &str) -> Result<Self, EncodeError>` (`src/request.rs`)
-- `Request::header(self, name: &str, value: &str) -> Result<Self, EncodeError>` (`src/request.rs`)
-- `Response::header` も同様
-
-問題点:
-
-- `Request::header("Host", "example.com")` のように、リテラルでも `?` が必要
-  (大文字 "Host" は許容されているが、CRLF を含むリテラル等のミスもランタイムでしか検出できない)
-- 利用者が同じヘッダー名リテラルを複数箇所で書く際、タイプミスがランタイムまで露見しない
-- 「他のライブラリにない、コンパイル時に RFC 違反に気付ける」差別化を打ち出していない
+- `Request::new(method: impl Into<String>, uri: impl Into<String>) -> Result<Self, EncodeError>` (`src/request.rs:73`)
+- `Request::header(name: impl Into<String>, value: impl Into<String>) -> Result<Self, EncodeError>` (`src/request.rs:213`)
+- `Request::add_header(&mut self, name: impl Into<String>, value: impl Into<String>)` (`src/request.rs:265`)
+- `Request::set_header(&mut self, name: impl Into<String>, value: impl Into<String>)` (`src/request.rs:298`)
+- `Response::header(name: impl Into<String>, value: impl Into<String>)` (`src/response.rs`)
+- `Response::add_header(&mut self, name: impl Into<String>, value: impl Into<String>)` (`src/response.rs`)
+- `Response::set_header(&mut self, name: impl Into<String>, value: impl Into<String>)` (`src/response.rs`)
+- `RequestHead::new(method: &str, uri: &str)`, `RequestHead::header(name: &str, value: &str)` (`src/decoder/head.rs:187,215`)
+- `ResponseHead::header(name: &str, value: &str)` (`src/decoder/head.rs:377`)
+- `HttpHead::headers()` の戻り型は `&[(String, String)]`（trait、`src/decoder/head.rs:17`）
 
 ## 設計方針
 
@@ -45,10 +60,18 @@ Medium。
 
 ```rust
 // src/header_name.rs (新規)
-/// HTTP ヘッダー名 (RFC 9110 §5.1)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// HTTP ヘッダー名 (RFC 9110 Section 5.1, field-name = token)
+///
+/// Eq/Hash は case-insensitive（手動実装）。
+/// `const fn from_static` では borrowed bytes を変更できないため、
+/// 内部正規化を行わずに保持し、比較時に case-insensitive 判定を行う。
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct HeaderName(Cow<'static, [u8]>);
 
+// PartialEq, Eq, Hash は case-insensitive な手動実装
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum HeaderNameError {
     Empty,
@@ -56,24 +79,21 @@ pub enum HeaderNameError {
 }
 
 impl HeaderName {
-    /// ランタイム値から検査つきで構築する
     pub fn new(name: impl AsRef<[u8]>) -> Result<Self, HeaderNameError>;
-
-    /// 静的バイト列から検査つきで構築する (const fn)
-    /// 不正リテラルはコンパイル時 panic (= コンパイルエラー)
     pub const fn from_static(name: &'static [u8]) -> Self;
-
     pub fn as_bytes(&self) -> &[u8];
-
-    /// 検査済みバイト列から検査をスキップして構築する (decoder 専用)
     pub(crate) fn from_validated_parts(name: Cow<'static, [u8]>) -> Self;
 }
 
 // src/method.rs (新規)
-/// HTTP メソッド (RFC 9110 §9)
+/// HTTP メソッド (RFC 9110 Section 9.1, method = token)
+///
+/// case-sensitive。Eq/Hash も case-sensitive。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub struct Method(Cow<'static, [u8]>);
 
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum MethodError {
     Empty,
@@ -86,7 +106,6 @@ impl Method {
     pub fn as_bytes(&self) -> &[u8];
     pub(crate) fn from_validated_parts(method: Cow<'static, [u8]>) -> Self;
 
-    /// 標準メソッド定数 (全て const)
     pub const GET: Self = Self::from_static(b"GET");
     pub const POST: Self = Self::from_static(b"POST");
     pub const PUT: Self = Self::from_static(b"PUT");
@@ -98,11 +117,19 @@ impl Method {
     pub const PATCH: Self = Self::from_static(b"PATCH");
 }
 
-// src/uri.rs に追加 (新規ファイルではなく既存 uri.rs に追加)
-/// URI スキーム (RFC 3986 §3.1)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+// src/uri.rs に追加
+/// URI スキーム (RFC 3986 Section 3.1)
+///
+/// Eq/Hash は case-insensitive（手動実装）。
+/// `const fn from_static` では borrowed bytes を変更できないため、
+/// 内部正規化を行わずに保持し、比較時に case-insensitive 判定を行う。
+#[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Scheme(Cow<'static, [u8]>);
 
+// PartialEq, Eq, Hash は case-insensitive な手動実装
+
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum SchemeError {
     Empty,
@@ -126,90 +153,111 @@ impl Scheme {
 
 ### 既存 API の書き換え
 
-破壊的変更前提。`&str` を受ける引数を新型に置き換える。
+`name: impl Into<String>` の引数を `name: HeaderName` に、`method: impl Into<String>` を `method: Method` に置き換える。
 
 ```rust
 // 変更前
 impl Request {
-    pub fn new(method: &str, target: &str) -> Result<Self, EncodeError>;
-    pub fn header(self, name: &str, value: &str) -> Result<Self, EncodeError>;
+    pub fn new(method: impl Into<String>, uri: impl Into<String>) -> Result<Self, EncodeError>;
+    pub fn header(self, name: impl Into<String>, value: impl Into<String>) -> Result<Self, EncodeError>;
 }
 
 // 変更後
 impl Request {
-    pub fn new(method: Method, target: RequestTarget) -> Self;
-    pub fn header(self, name: HeaderName, value: impl AsRef<[u8]>) -> Result<Self, EncodeError>;
+    pub fn new(method: Method, uri: impl Into<String>) -> Result<Self, EncodeError>;
+    pub fn header(self, name: HeaderName, value: impl Into<String>) -> Result<Self, EncodeError>;
 }
 ```
 
-検査済みの `Method` / `HeaderName` を受け取るため、`Request::new` 自体は
-`Result` を返す必要がなくなる。`header` の `value` は値の RFC 制約上ランタイム検査が必要なため
-`Result` を維持する。
+- `Request::new` の `uri` は `String` のまま維持する（`RequestTarget` 型は本 issue のスコープ外。別 issue で対応する）
+- `header` の `value` 引数は `impl Into<String>` を維持する（`value` の search には `&str` のままの方が内部実装との整合性が取れる）
+- `add_header` / `set_header` も同様に変更する
+- `RequestHead` / `ResponseHead` の対応する API も全て同様に変更する（`src/decoder/head.rs`）
+- `HttpHead::headers()` の戻り型は `&[(HeaderName, String)]` に変更する（破壊的変更。後方互換なしの `[CHANGE]` に分類）
 
 ### コンパイル時検査の例
 
 ```rust
-// OK
-const HOST: HeaderName = HeaderName::from_static(b"host");
-const REQ_LINE_METHOD: Method = Method::GET;
+// OK: コンパイル時に受理される正当なリテラル
+const HOST: HeaderName = HeaderName::from_static(b"host");    // 小文字
+const HOST_UC: HeaderName = HeaderName::from_static(b"Host"); // 大文字、内部で小文字正規化
+const GET: Method = Method::from_static(b"GET");
+const CUSTOM: Method = Method::from_static(b"WebDAV-MOVE");   // 拡張メソッド
+const HTTP: Scheme = Scheme::from_static(b"http");
+const HTTPS_UC: Scheme = Scheme::from_static(b"HTTPS");       // 大文字、内部で小文字正規化
 
-// NG: コンパイル時に "header name byte 'H' (0x48) at position 0 is uppercase" で fail
-const BAD_NAME: HeaderName = HeaderName::from_static(b"Host");
-
-// NG: コンパイル時に "header name contains CR at position 4" で fail
-const INJECT: HeaderName = HeaderName::from_static(b"host\r\nX-Inject");
-
-// NG: コンパイル時に "method contains lowercase byte at position 0" で fail
-const BAD_METHOD: Method = Method::from_static(b"get");
+// NG: コンパイル時に panic
+// HeaderName: 空 / CR / LF / NUL / 区切り文字 ( ) , / : ; < = > ? @ [ \ ] { } / DQUOTE
+const EMPTY_NAME: HeaderName = HeaderName::from_static(b"");
+const CR_INJECT: HeaderName = HeaderName::from_static(b"host\r\nX-Inject: evil");
+// Method: 空 / CR / LF / NUL / 区切り文字
+const EMPTY_METHOD: Method = Method::from_static(b"");
+const CR_METHOD: Method = Method::from_static(b"GET\r");
+// Scheme: 空 / 数字開始 / 不正文字
+const DIGIT_START: Scheme = Scheme::from_static(b"3http");
+const COLON_SCHEME: Scheme = Scheme::from_static(b"http:");
 ```
 
 ### `const fn` の制約への対応
 
-http11 は `#![cfg_attr(not(test), no_std)]` で `alloc::string::String` / `alloc::vec::Vec`
-を使うが、`const fn` 内で `Vec`/`String` を生成することはできない。
+- 内部表現は `Cow<'static, [u8]>` を使用。`from_static` は `Cow::Borrowed`、`new` は `Cow::Owned`（ランタイム）
+- `const fn` 内の検査は `while` ループでバイト走査（`for` は const 不可）
+- エラーは `panic!`（const 文脈で動作）。MSRV 1.88 で `const Try` (`?`) は未安定だが `panic!` は const 可能
+- `HeaderName` / `Scheme` の case-insensitive `Eq` / `Hash` は手動実装する。`const fn from_static` は borrowed bytes を変更できないため、正規化は構築時ではなく比較時に行う（`PartialEq::eq` 内で `eq_ignore_ascii_case` を使用）
 
-対応:
-- 新型は `Cow<'static, [u8]>` を内部表現にする
-  - `from_static` 経路: `Cow::Borrowed(&'static [u8])` (`const fn` で生成可能)
-  - `new` 経路: `Cow::Owned(Vec::from(bytes))` (ランタイム)
-- `const fn` 内では `panic!` で fail。MSRV 1.88 で `const Try` (`?`) は未安定だが
-  `panic!` は const 文脈で動作する
-- `const fn` 内の検査ロジックは while ループで bytes を走査 (for は const 不可)
+### `HttpHead` トレイトの変更
 
-### Cargo features の検討
+`HttpHead::headers()` の戻り型を `&[(String, String)]` から `&[(HeaderName, String)]` に変更する。
 
-`const fn from_static` を使う利用者は `core::panic` で fail するため、
-ライブラリ側の追加 feature は不要。ただし `trybuild` ベースのテストは
-`#[cfg(test)]` 配下に置く (別 issue で対応)。
+- これは `HttpHead` を実装するすべての型（`Request`, `Response`, `RequestHead`, `ResponseHead`）に波及する破壊的変更
+- トレイトの各メソッドで `name.eq_ignore_ascii_case(...)` していた箇所は、`HeaderName` の case-insensitive `Eq` を利用できるようになる
+- `encoder.rs` の `name.as_bytes()` は `HeaderName::as_bytes()` に置き換える
+
+### decoder 経路
+
+decoder はパース時に `String` として保持しているヘッダー名・メソッドを、`from_validated_parts` 経由で `Cow::Owned(Vec<u8>)` に変換して渡す。
+
+- `decoder/head.rs` の `RequestHead` / `ResponseHead` の内部フィールドを `String` から `HeaderName` / `Method` に変更する
+- `RequestHead::method` (`String`) → `Method`
+- `RequestHead::headers` (`Vec<(String, String)>`) → `Vec<(HeaderName, String)>`
+- decoder で `parts[0].to_string().into_bytes()` → `Cow::Owned` → `Method::from_validated_parts`
+- 追加アロケーションは発生するが、decoder 経路は既に `to_string()` でアロケーションしているため差分は `String → Vec<u8>` の 1 回のみ
 
 ## 完了条件
 
-- `src/header_name.rs` / `src/method.rs` が新設され、`HeaderName` / `Method` が
-  `new` (Result) と `from_static` (const fn) を提供している
+- `src/header_name.rs` / `src/method.rs` が新設され、各型が `new` (Result) と `from_static` (const fn) を提供している
 - `src/uri.rs` に `Scheme` 型が追加され、同様の API を持つ
-- `Method` / `Scheme` に標準値の `const` 定数 (GET/POST/.../HTTP/HTTPS/...) が提供されている
-- `Request::new` / `Request::header` / `Response::header` / `Response::with_status` 等の
-  公開 API が新型を受け取るように変更されている
-- decoder 経路は `from_validated_parts` 経由で構築している
-- 不正なリテラルを `from_static` に渡したサンプルが doc 内で `compile_fail` 属性で示されている
-- `CHANGES.md` の `## develop` に `[CHANGE]` と `[ADD]` のエントリが追加されている
+- `Method` / `Scheme` に標準値の `const` 定数が提供されている
+- 以下の公開 API が新型を受け取るように変更されている:
+  - `Request::new`, `header`, `add_header`, `set_header`
+  - `Response::header`, `add_header`, `set_header`
+  - `RequestHead::new`, `with_version`, `header`, `add_header`
+  - `ResponseHead::header`, `add_header`
+- `HttpHead::headers()` の戻り型が `&[(HeaderName, String)]` に変更されている
+- decoder 経路が `from_validated_parts` 経由で構築している
+- encoder が `HeaderName::as_bytes()` を使用している
+- `pub(crate) mod header_name` / `pub(crate) mod method` で始め、安定後に `pub mod` に昇格させるか否かは別途判断する
+- `CHANGES.md` の `## develop` に `[CHANGE]`（HttpHead 戻り型変更、API 破壊）と `[ADD]`（新規型 + `from_static`）のエントリが追加されている
 - 既存の全テスト・PBT・fuzz が通る
-- 既存 examples が新 API に追従して動作する
+- examples が新 API に追従して動作する
 
 ## 解決方法
 
 実装順:
 
-1. `src/header_name.rs` 新設 (`HeaderName` + エラー型 + `const fn from_static`)
-2. `src/method.rs` 新設 (`Method` + エラー型 + `const fn from_static` + 標準定数)
-3. `src/uri.rs` に `Scheme` 追加 (同上)
-4. `src/decoder/` で `from_validated_parts` 経由で構築するよう書き換え
-5. `src/request.rs` / `src/response.rs` の公開 API を新型に置き換え
-6. `examples/`, `tests/`, `pbt/`, `fuzz/` を新 API に追従
+1. `src/header_name.rs` 新設（`HeaderName` + エラー型 + `const fn from_static`）
+2. `src/method.rs` 新設（`Method` + エラー型 + `const fn from_static` + 標準定数）
+3. `src/uri.rs` に `Scheme` 追加
+4. `src/decoder/head.rs` の `RequestHead` / `ResponseHead` の内部フィールド型変更
+5. `src/decoder/` で `from_validated_parts` 経由の構築に書き換え
+6. `HttpHead::headers()` の戻り型変更と全実装の追従
+7. `src/request.rs` / `src/response.rs` の公開 API を新型に置き換え
+8. `src/encoder.rs` を `HeaderName::as_bytes()` に書き換え
+9. `examples/`, `tests/`, `pbt/`, `fuzz/` を新 API に追従
 
-PBT による整合性検証 (`from_static` と `new` の結果一致、decoder と `new` の受理集合一致) は
-別 issue で対応する。
+PBT による整合性検証（`from_static` と `new` の結果一致、decoder と `new` の受理集合一致）は別 issue（0093）で対応する。
 
 ## 関連
 
-- 本 issue 完了後に 0092 (trybuild) / 0093 (PBT 整合性) を着手する
+- 本 issue 完了後に 0092（trybuild コンパイル時エラーテスト）と 0093（PBT 整合性検証）を着手する
+- `RequestTarget` 型の導入は本 issue のスコープ外（`uri` は `impl Into<String>` のまま維持する）
