@@ -51,7 +51,7 @@ jobs:
       - run: cargo test -p http11_client -p http11_server
 
   slack_notify:
-    needs: [ ci, e2e-test ]
+    needs: [ci, e2e-test]
     timeout-minutes: 5
     runs-on: ubuntu-slim
     if: ${{ always() }}
