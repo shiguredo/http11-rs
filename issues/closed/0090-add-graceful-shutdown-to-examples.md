@@ -2,7 +2,9 @@
 
 - Priority: Medium
 - Created: 2026-05-15
+- Completed: 2026-05-24
 - Model: deepseek v4-pro
+- Branch: feature/add-graceful-shutdown
 
 ## 目的
 
@@ -164,3 +166,35 @@ graceful shutdown のコードパス検証は以下の方針とする:
 - `CHANGES.md` の `## develop` の `### misc` に `[UPDATE]` エントリが追加されていること
   - エントリ例: `- [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する`
   - 担当者: `- @voluntas`
+
+## 解決方法
+
+### 変更ファイル
+
+- `examples/http11_server/Cargo.toml`: tokio features に `signal` を追加
+- `examples/http11_server/src/main.rs`: graceful shutdown を実装
+- `examples/http11_reverse_proxy/Cargo.toml`: tokio features に `signal` を追加、`tokio-util` 依存を追加
+- `examples/http11_reverse_proxy/src/main.rs`: graceful shutdown を実装
+
+### http11_server の変更内容
+
+- `tokio::spawn` を `JoinSet::spawn` に置き換え、全接続タスクを管理
+- `shutdown_signal()` ヘルパーで CTRL+C / SIGTERM を待ち受け
+- `tokio::select!` で accept とシグナル受信を競合させる
+- シグナル受信後 `Arc<AtomicBool>` で shutdown 状態を伝播
+- `serve_request` → `build_response` → `add_connection_headers` の経路で `Connection: close` を付与
+- 30 秒タイムアウト後に `JoinSet::abort_all()` で残存タスクを破棄
+- TLS half-close の制約をコードコメントで明記
+
+### http11_reverse_proxy の変更内容
+
+- `tokio::spawn` を `JoinSet::spawn` に置き換え
+- クリーンアップタスクに `CancellationToken` を導入し停止可能にした
+- `ConnectionPool::drain()` メソッドを追加し shutdown 時に idle 接続を破棄
+- `shutdown_signal()` ヘルパーで CTRL+C / SIGTERM を待ち受け
+- シグナル受信後: cancel_token.cancel() → pool.drain() → JoinSet 待機 (30 秒タイムアウト)
+
+### テスト
+
+- 既存の `examples/http11_server/tests/` の全テスト (26 件) が通過することを確認
+- graceful shutdown 自体の自動テストは issue の設計方針どおり将来検討とする

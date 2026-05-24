@@ -32,6 +32,8 @@ tokio = { version = "1.52", features = [
   "net",
   # マルチスレッドランタイム
   "rt-multi-thread",
+  # シグナルハンドリング (ctrl_c / SIGTERM)
+  "signal",
   # 同期プリミティブ
   "sync",
   # タイマー
@@ -42,6 +44,8 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
   # 暗号ライブラリバックエンド
   "aws_lc_rs",
 ] }
+# CancellationToken (graceful shutdown 用)
+tokio-util = "0.7"
 # ログ出力
 tracing = "0.1"
 # ログのフォーマットとサブスクライバ

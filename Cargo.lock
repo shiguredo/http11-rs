@@ -817,6 +817,7 @@ dependencies = [
  "shiguredo_http11",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
