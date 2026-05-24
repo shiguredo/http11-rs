@@ -31,7 +31,7 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{EncodeError, HeaderName, HttpHead, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
@@ -1008,7 +1008,7 @@ fn build_response(
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+        .find(|(name, _)| name == "Accept-Encoding")
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
@@ -1055,10 +1055,10 @@ fn build_response(
             // HEAD リクエストの /echo は空のボディで Content-Length: 0 を返す
             if is_head {
                 let head_response = Response::with_status(StatusCode::OK)
-                    .header("Date", &date)?
-                    .header("Content-Type", "text/plain; charset=utf-8")?
-                    .header("Content-Length", "0")?
-                    .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
+                    .header(HeaderName::from_static(b"Date"), &date)?
+                    .header(HeaderName::from_static(b"Content-Type"), "text/plain; charset=utf-8")?
+                    .header(HeaderName::from_static(b"Content-Length"), "0")?
+                    .header(HeaderName::from_static(b"Server"), "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
                     .omit_body(true);
                 return add_connection_headers(head_response, should_keep_alive);
             }
@@ -1137,14 +1137,17 @@ fn build_compressed_response(
     };
 
     let mut response = Response::with_status(status)
-        .header("Date", date)?
-        .header("Content-Type", content_type)?
-        .header("Content-Length", final_body.len().to_string())?
-        .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
-        .header("Vary", "Accept-Encoding")?;
+        .header(HeaderName::from_static(b"Date"), date)?
+        .header(HeaderName::from_static(b"Content-Type"), content_type)?
+        .header(
+            HeaderName::from_static(b"Content-Length"),
+            final_body.len().to_string(),
+        )?
+        .header(HeaderName::from_static(b"Server"), "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
+        .header(HeaderName::from_static(b"Vary"), "Accept-Encoding")?;
 
     if let Some(enc) = content_encoding {
-        response = response.header("Content-Encoding", enc)?;
+        response = response.header(HeaderName::from_static(b"Content-Encoding"), enc)?;
     }
 
     Ok(response.body(final_body).omit_body(is_head))
@@ -1162,7 +1165,7 @@ fn add_connection_headers(
     if should_keep_alive {
         Ok(response)
     } else {
-        response.header("Connection", "close")
+        response.header(HeaderName::from_static(b"Connection"), "close")
     }
 }
 

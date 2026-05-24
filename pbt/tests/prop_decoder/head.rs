@@ -2,7 +2,7 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    BodyKind, HttpHead, RequestDecoder, ResponseDecoder, ResponseHead, StatusClass,
+    BodyKind, HeaderName, HttpHead, RequestDecoder, ResponseDecoder, ResponseHead, StatusClass,
 };
 
 use super::{
@@ -21,12 +21,12 @@ fn make_response_head(
     version: &str,
     status_code: u16,
     reason_phrase: &str,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
 ) -> ResponseHead {
     let mut head = ResponseHead::with_version(version, status_code, reason_phrase)
         .expect("テスト入力は valid な version / status_code / reason_phrase 前提");
     for (name, value) in headers {
-        head.add_header(&name, &value)
+        head.add_header(name, &value)
             .expect("テスト入力は valid な header name / value 前提");
     }
     head
@@ -488,7 +488,7 @@ proptest! {
             " ".repeat(leading_spaces),
             " ".repeat(trailing_spaces)
         );
-        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), te_value)]);
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![(HeaderName::from_static(b"Transfer-Encoding"), te_value)]);
         prop_assert!(head.is_chunked());
     }
 }
@@ -507,7 +507,7 @@ proptest! {
             // "other, chunked" → 最後が chunked → true
             format!("{}, chunked", other_token)
         };
-        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), te_value)]);
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![(HeaderName::from_static(b"Transfer-Encoding"), te_value)]);
         if chunked_first {
             prop_assert!(!head.is_chunked());
         } else {
@@ -522,7 +522,7 @@ proptest! {
         token in transfer_encoding_token().prop_filter("not chunked", |t| !t.eq_ignore_ascii_case("chunked"))
     ) {
         // chunked 以外のトークンのみの場合は false
-        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Transfer-Encoding".to_string(), token)]);
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![(HeaderName::from_static(b"Transfer-Encoding"), token)]);
         prop_assert!(!head.is_chunked());
     }
 }
@@ -573,7 +573,7 @@ proptest! {
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "close" トークンがあれば false
-        let head = make_response_head(version, 200, "OK", vec![("Connection".to_string(), "close".to_string())]);
+        let head = make_response_head(version, 200, "OK", vec![(HeaderName::from_static(b"Connection"), "close".to_string())]);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -584,7 +584,7 @@ proptest! {
         version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")]
     ) {
         // "keep-alive" トークンがあれば true
-        let head = make_response_head(version, 200, "OK", vec![("Connection".to_string(), "keep-alive".to_string())]);
+        let head = make_response_head(version, 200, "OK", vec![(HeaderName::from_static(b"Connection"), "keep-alive".to_string())]);
         prop_assert!(head.is_keep_alive());
     }
 }
@@ -614,7 +614,7 @@ proptest! {
         } else {
             "close, keep-alive".to_string()
         };
-        let head = make_response_head("HTTP/1.1", 200, "OK", vec![("Connection".to_string(), conn_value)]);
+        let head = make_response_head("HTTP/1.1", 200, "OK", vec![(HeaderName::from_static(b"Connection"), conn_value)]);
         prop_assert!(!head.is_keep_alive());
     }
 }
@@ -630,8 +630,8 @@ proptest! {
         header_count in 2..5usize
     ) {
         // 複数の Connection: keep-alive ヘッダーがある場合は true
-        let headers: Vec<(String, String)> = (0..header_count)
-            .map(|_| ("Connection".to_string(), "keep-alive".to_string()))
+        let headers: Vec<(HeaderName, String)> = (0..header_count)
+            .map(|_| (HeaderName::from_static(b"Connection"), "keep-alive".to_string()))
             .collect();
         let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(head.is_keep_alive());
@@ -644,10 +644,10 @@ proptest! {
         keep_alive_count in 1..4usize
     ) {
         // 最初に keep-alive、後に close がある場合は false (close 優先)
-        let mut headers: Vec<(String, String)> = (0..keep_alive_count)
-            .map(|_| ("Connection".to_string(), "keep-alive".to_string()))
+        let mut headers: Vec<(HeaderName, String)> = (0..keep_alive_count)
+            .map(|_| (HeaderName::from_static(b"Connection"), "keep-alive".to_string()))
             .collect();
-        headers.push(("Connection".to_string(), "close".to_string()));
+        headers.push((HeaderName::from_static(b"Connection"), "close".to_string()));
 
         let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(!head.is_keep_alive());
@@ -660,9 +660,9 @@ proptest! {
         keep_alive_count in 1..4usize
     ) {
         // 最初に close、後に keep-alive がある場合も false (close 優先)
-        let mut headers: Vec<(String, String)> = vec![("Connection".to_string(), "close".to_string())];
+        let mut headers: Vec<(HeaderName, String)> = vec![(HeaderName::from_static(b"Connection"), "close".to_string())];
         for _ in 0..keep_alive_count {
-            headers.push(("Connection".to_string(), "keep-alive".to_string()));
+            headers.push((HeaderName::from_static(b"Connection"), "keep-alive".to_string()));
         }
 
         let head = make_response_head("HTTP/1.1", 200, "OK", headers);
@@ -678,12 +678,12 @@ proptest! {
     ) {
         // 複数のヘッダーに分散した keep-alive と close
         // close がどの位置にあっても false
-        let mut headers: Vec<(String, String)> = vec![
-            ("Connection".to_string(), "keep-alive".to_string()),
-            ("Connection".to_string(), "keep-alive".to_string()),
-            ("Connection".to_string(), "keep-alive".to_string()),
+        let mut headers: Vec<(HeaderName, String)> = vec![
+            (HeaderName::from_static(b"Connection"), "keep-alive".to_string()),
+            (HeaderName::from_static(b"Connection"), "keep-alive".to_string()),
+            (HeaderName::from_static(b"Connection"), "keep-alive".to_string()),
         ];
-        headers[close_position] = ("Connection".to_string(), "close".to_string());
+        headers[close_position] = (HeaderName::from_static(b"Connection"), "close".to_string());
 
         let head = make_response_head(version, 200, "OK", headers);
         prop_assert!(!head.is_keep_alive());
@@ -698,7 +698,7 @@ proptest! {
     ) {
         // Connection ヘッダーはあるが keep-alive も close もない場合
         // デフォルト動作（HTTP/1.1 は true、HTTP/1.0 は false）
-        let headers = vec![("Connection".to_string(), other_token)];
+        let headers = vec![(HeaderName::from_static(b"Connection"), other_token)];
 
         let head = make_response_head(version, 200, "OK", headers);
 
@@ -719,8 +719,8 @@ proptest! {
     #[test]
     fn prop_is_chunked_multiple_te_headers(count in 2..5usize) {
         // 複数の Transfer-Encoding: chunked ヘッダー → 最後のトークンが chunked → true
-        let headers: Vec<(String, String)> = (0..count)
-            .map(|_| ("Transfer-Encoding".to_string(), "chunked".to_string()))
+        let headers: Vec<(HeaderName, String)> = (0..count)
+            .map(|_| (HeaderName::from_static(b"Transfer-Encoding"), "chunked".to_string()))
             .collect();
         let head = make_response_head("HTTP/1.1", 200, "OK", headers);
         prop_assert!(head.is_chunked());
@@ -735,7 +735,7 @@ proptest! {
         invalid_value in "[a-zA-Z]{1,8}"
     ) {
         let head = make_response_head("HTTP/1.1", 200, "OK", vec![
-                ("Content-Length".to_string(), invalid_value),
+                (HeaderName::from_static(b"Content-Length"), invalid_value),
             ]);
         prop_assert!(head.content_length().is_err());
     }

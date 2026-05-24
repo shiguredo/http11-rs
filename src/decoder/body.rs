@@ -7,6 +7,7 @@
 //!   非 UTF-8 バイト列を含む場合はエラーとして拒否される。
 
 use crate::error::Error;
+use crate::header_name::HeaderName;
 use crate::limits::DecoderLimits;
 use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::trailer::is_prohibited_trailer_field;
@@ -60,7 +61,7 @@ pub enum BodyProgress {
     /// 呼び出し側はループを抜けてネットワーク I/O に戻る。
     NeedData,
     /// 完了（トレーラーがある場合は含む）
-    Complete { trailers: Vec<(String, String)> },
+    Complete { trailers: Vec<(HeaderName, String)> },
 }
 
 /// ボディデコーダー (内部用)
@@ -69,7 +70,7 @@ pub enum BodyProgress {
 #[derive(Debug)]
 pub(crate) struct BodyDecoder {
     /// トレーラーヘッダー
-    trailers: Vec<(String, String)>,
+    trailers: Vec<(HeaderName, String)>,
     /// ボディ内での消費済みバイト数
     body_consumed: usize,
     /// トレーラー数
@@ -536,7 +537,8 @@ impl BodyDecoder {
                         )));
                     }
 
-                    self.trailers.push((name, value));
+                    self.trailers
+                        .push((HeaderName::from_validated_bytes(name.into_bytes()), value));
                     self.trailer_count += 1;
                     advanced = true;
                 }
@@ -556,10 +558,10 @@ impl BodyDecoder {
 ///
 /// `Trailer:` ヘッダーは複数行あり得る。各行はカンマ区切りトークンリスト。
 /// 空要素は RFC 9110 Section 5.6.1.2 に従い無視する。
-pub(crate) fn collect_declared_trailers(headers: &[(String, String)]) -> Vec<String> {
+pub(crate) fn collect_declared_trailers(headers: &[(HeaderName, String)]) -> Vec<String> {
     let mut declared = Vec::new();
     for (name, value) in headers {
-        if !name.eq_ignore_ascii_case("Trailer") {
+        if name != "Trailer" {
             continue;
         }
         for token in value.split(',') {
@@ -1216,12 +1218,12 @@ pub(crate) enum TransferEncodingResult {
 /// - chunked 以外がある → Err (RFC: 400 Bad Request)
 /// - Transfer-Encoding なし → Ok(false)
 pub(crate) fn parse_transfer_encoding_for_request(
-    headers: &[(String, String)],
+    headers: &[(HeaderName, String)],
 ) -> Result<bool, Error> {
     let mut chunked_count = 0;
 
     for (name, value) in headers {
-        if name.eq_ignore_ascii_case("Transfer-Encoding") {
+        if name == "Transfer-Encoding" {
             for token in value.split(',') {
                 // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
                 // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
@@ -1272,14 +1274,14 @@ pub(crate) fn parse_transfer_encoding_for_request(
 /// - chunked がないか最後でない → Other (close-delimited)
 /// - Transfer-Encoding なし → None
 pub(crate) fn parse_transfer_encoding_for_response(
-    headers: &[(String, String)],
+    headers: &[(HeaderName, String)],
 ) -> Result<TransferEncodingResult, Error> {
     // すべての Transfer-Encoding ヘッダーを連結してトークンリストを作成
     let mut all_tokens: Vec<String> = Vec::new();
     let mut chunked_count = 0;
 
     for (name, value) in headers {
-        if name.eq_ignore_ascii_case("Transfer-Encoding") {
+        if name == "Transfer-Encoding" {
             for token in value.split(',') {
                 // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) に準拠して SP / HTAB のみ除去する。
                 // str::trim() は Unicode 空白 (NBSP / U+2028 等) を除去してしまい、前段プロキシ
@@ -1330,10 +1332,10 @@ pub(crate) fn parse_transfer_encoding_for_response(
 }
 
 /// Content-Length ヘッダーを解析
-pub(crate) fn parse_content_length(headers: &[(String, String)]) -> Result<Option<u64>, Error> {
+pub(crate) fn parse_content_length(headers: &[(HeaderName, String)]) -> Result<Option<u64>, Error> {
     let mut value: Option<u64> = None;
     for (name, raw_value) in headers {
-        if name.eq_ignore_ascii_case("Content-Length") {
+        if name == "Content-Length" {
             let parsed = parse_content_length_value(raw_value)?;
             if let Some(prev) = value {
                 if prev != parsed {
@@ -1391,7 +1393,7 @@ fn parse_content_length_value(input: &str) -> Result<u64, Error> {
 /// - Transfer-Encoding と Content-Length の両方がある場合はエラー
 /// - リクエストでは chunked 以外の Transfer-Encoding は拒否
 pub(crate) fn resolve_body_headers_for_request(
-    headers: &[(String, String)],
+    headers: &[(HeaderName, String)],
 ) -> Result<(bool, Option<u64>), Error> {
     let transfer_encoding_chunked = parse_transfer_encoding_for_request(headers)?;
     let content_length = parse_content_length(headers)?;
@@ -1425,7 +1427,7 @@ pub(crate) fn resolve_body_headers_for_request(
 ///
 /// chunked が最後でない場合は close-delimited として扱う (TE のみ存在時)。
 pub(crate) fn resolve_body_headers_for_response(
-    headers: &[(String, String)],
+    headers: &[(HeaderName, String)],
 ) -> Result<(TransferEncodingResult, Option<u64>), Error> {
     let te_result = parse_transfer_encoding_for_response(headers)?;
     let content_length = parse_content_length(headers)?;

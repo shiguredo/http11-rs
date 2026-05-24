@@ -12,7 +12,9 @@
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
+use crate::header_name::HeaderName;
 use crate::limits::DecoderLimits;
+use crate::method::Method;
 use crate::request::Request;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -58,7 +60,7 @@ pub struct RequestDecoder<D: Decompressor = NoCompression> {
     buf: Vec<u8>,
     phase: DecodePhase,
     start_line: Option<String>,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
     /// decode() 用: デコード済みヘッダー
@@ -415,7 +417,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 let host_headers: Vec<_> = self
                                     .headers
                                     .iter()
-                                    .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
+                                    .filter(|(name, _)| name == "Host")
                                     .collect();
                                 if host_headers.is_empty() {
                                     return Err(Error::InvalidData(
@@ -462,12 +464,15 @@ impl<D: Decompressor> RequestDecoder<D> {
                             // RFC は CONNECT リクエスト側の Content-Length / Transfer-Encoding
                             // を MUST NOT としていない (MUST NOT は 2xx レスポンス側の制約)
                             // ため、それらヘッダーが付いていても即エラーにはしない。
-                            let method = start_line_ref.split(' ').next().unwrap_or("");
-                            let body_kind = if method == "CONNECT" {
-                                BodyKind::Tunnel
-                            } else {
-                                self.determine_body_kind(version)?
-                            };
+                            let method_name = start_line_ref.split(' ').next().unwrap_or("");
+                            let body_kind =
+                                if Method::from_validated_bytes(method_name.as_bytes().to_vec())
+                                    == "CONNECT"
+                                {
+                                    BodyKind::Tunnel
+                                } else {
+                                    self.determine_body_kind(version)?
+                                };
 
                             // ヘッダー完了、ボディフェーズに遷移
                             // RFC 9112: リクエストは close-delimited を使わない
@@ -508,7 +513,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = RequestHead::from_validated_parts(
-                                parts[0].to_string(),
+                                Method::from_validated_bytes(parts[0].as_bytes().to_vec()),
                                 parts[1].to_string(),
                                 parts[2].to_string(),
                                 core::mem::take(&mut self.headers),
@@ -539,7 +544,8 @@ impl<D: Decompressor> RequestDecoder<D> {
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
-                            self.headers.push((name, value));
+                            self.headers
+                                .push((HeaderName::from_validated_bytes(name.into_bytes()), value));
                         }
                     } else {
                         return Ok(None);

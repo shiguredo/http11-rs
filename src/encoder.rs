@@ -1,13 +1,14 @@
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
+use crate::header_name::HeaderName;
 use crate::host::Host;
 use crate::request::Request;
 use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::response::Response;
 use crate::validate::{
-    is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_reason_phrase,
-    is_valid_request_target, is_valid_status_code, trim_ows,
+    is_valid_field_value, is_valid_reason_phrase, is_valid_request_target, is_valid_status_code,
+    trim_ows,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -114,7 +115,7 @@ fn estimate_request_capacity(request: &Request) -> Option<usize> {
     total = total.checked_add(4)?;
     // 各ヘッダー: name + ": " + value + CRLF (固定 4)
     for (name, value) in HttpHead::headers(request) {
-        total = total.checked_add(name.len())?;
+        total = total.checked_add(name.as_bytes().len())?;
         total = total.checked_add(value.len())?;
         total = total.checked_add(4)?;
     }
@@ -141,7 +142,7 @@ fn estimate_response_capacity(response: &Response) -> Option<usize> {
     total = total.checked_add(response.reason_phrase().len())?;
     total = total.checked_add(4)?;
     for (name, value) in HttpHead::headers(response) {
-        total = total.checked_add(name.len())?;
+        total = total.checked_add(name.as_bytes().len())?;
         total = total.checked_add(value.len())?;
         total = total.checked_add(4)?;
     }
@@ -171,13 +172,6 @@ fn allocate_encode_buffer(estimated: Option<usize>) -> Vec<u8> {
 
 /// リクエストフィールドのバリデーション
 fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
-    // メソッドの検証
-    if !is_valid_method(request.method()) {
-        return Err(EncodeError::InvalidMethod {
-            method: request.method().to_string(),
-        });
-    }
-
     // リクエストターゲットの検証
     if !is_valid_request_target(request.uri()) {
         return Err(EncodeError::InvalidRequestTarget {
@@ -367,14 +361,11 @@ fn validate_response_fields(response: &Response) -> Result<(), EncodeError> {
 }
 
 /// ヘッダー名と値のバリデーション
-fn validate_headers(headers: &[(String, String)]) -> Result<(), EncodeError> {
+fn validate_headers(headers: &[(HeaderName, String)]) -> Result<(), EncodeError> {
     for (name, value) in headers {
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName { name: name.clone() });
-        }
         if !is_valid_field_value(value) {
             return Err(EncodeError::InvalidHeaderValue {
-                name: name.clone(),
+                name: name.clone().into(),
                 value: value.clone(),
             });
         }
@@ -395,7 +386,7 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
 
     let host_headers: Vec<&str> = HttpHead::headers(request)
         .iter()
-        .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
+        .filter(|(name, _)| *name == "Host")
         .map(|(_, value)| value.as_str())
         .collect();
 
@@ -562,12 +553,12 @@ fn reject_http_without_authority_prefix(uri: &str) -> Result<(), EncodeError> {
 /// 2. 複数ヘッダーの値が一致することを検証 → 不一致なら DuplicateContentLength
 /// 3. 検証済みの値を Option<u64> で返す
 fn validate_content_length_headers(
-    headers: &[(String, String)],
+    headers: &[(HeaderName, String)],
 ) -> Result<Option<u64>, EncodeError> {
     let mut result: Option<u64> = None;
 
     for (name, value) in headers {
-        if !name.eq_ignore_ascii_case("Content-Length") {
+        if name != "Content-Length" {
             continue;
         }
         // RFC 9110 Section 5.6.3 OWS = *( SP / HTAB ) のみ除去する。
@@ -1287,6 +1278,8 @@ impl<C: Compressor> RequestEncoder<C> {
 #[cfg(test)]
 mod capacity_tests {
     use super::*;
+    use crate::header_name::HeaderName;
+    use crate::method::Method;
     use crate::request::Request;
     use crate::response::Response;
     use crate::status_code::StatusCode;
@@ -1315,18 +1308,18 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_simple_get() {
-        let req = Request::new("GET", "/")
+        let req = Request::new(Method::GET, "/")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         assert_request_capacity_sufficient(&req);
     }
 
     #[test]
     fn test_request_capacity_post_with_body_auto_content_length() {
-        let req = Request::new("POST", "/api")
+        let req = Request::new(Method::POST, "/api")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
@@ -1334,11 +1327,11 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_post_with_explicit_content_length() {
-        let req = Request::new("POST", "/api")
+        let req = Request::new(Method::POST, "/api")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
-            .header("Content-Length", "11")
+            .header(HeaderName::from_static(b"Content-Length"), "11")
             .unwrap()
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
@@ -1346,11 +1339,11 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_post_with_transfer_encoding_no_auto() {
-        let req = Request::new("POST", "/api")
+        let req = Request::new(Method::POST, "/api")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap()
             .body(b"hello".to_vec());
         assert_request_capacity_sufficient(&req);
@@ -1358,14 +1351,14 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_many_headers() {
-        let mut req = Request::new("GET", "/")
+        let mut req = Request::new(Method::GET, "/")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         for i in 0..50 {
             req = req
                 .header(
-                    alloc::format!("X-Custom-{i}"),
+                    HeaderName::new(alloc::format!("x-custom-{i}")).unwrap(),
                     alloc::format!("value-{i}-with-some-padding"),
                 )
                 .unwrap();
@@ -1375,9 +1368,9 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_empty_body_auto_content_length_zero() {
-        let req = Request::new("POST", "/")
+        let req = Request::new(Method::POST, "/")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap()
             .body(Vec::new());
         assert_request_capacity_sufficient(&req);
@@ -1385,9 +1378,9 @@ mod capacity_tests {
 
     #[test]
     fn test_request_capacity_no_body() {
-        let req = Request::new("GET", "/path/to/resource?q=1")
+        let req = Request::new(Method::GET, "/path/to/resource?q=1")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         assert_request_capacity_sufficient(&req);
     }
@@ -1410,7 +1403,7 @@ mod capacity_tests {
     #[test]
     fn test_response_capacity_omit_body_with_content_length() {
         let res = Response::with_status(StatusCode::OK)
-            .header("Content-Length", "100")
+            .header(HeaderName::from_static(b"Content-Length"), "100")
             .unwrap()
             .omit_body(true);
         assert_response_capacity_sufficient(&res);
@@ -1419,7 +1412,7 @@ mod capacity_tests {
     #[test]
     fn test_response_capacity_with_transfer_encoding() {
         let res = Response::with_status(StatusCode::OK)
-            .header("Transfer-Encoding", "chunked")
+            .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
             .unwrap();
         assert_response_capacity_sufficient(&res);
     }
@@ -1430,7 +1423,7 @@ mod capacity_tests {
         for i in 0..50 {
             res = res
                 .header(
-                    alloc::format!("X-Custom-{i}"),
+                    HeaderName::new(alloc::format!("x-custom-{i}")).unwrap(),
                     alloc::format!("value-{i}-with-some-padding"),
                 )
                 .unwrap();
@@ -1455,9 +1448,9 @@ mod capacity_tests {
         // ここではオーバーフロー時のフォールバックパス (`Vec::new()`) が
         // パニックしないことを通常入力で確認する。
         // 実際のオーバーフロー検出は fuzz_encode_request で網羅する。
-        let req = Request::new("GET", "/")
+        let req = Request::new(Method::GET, "/")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         let _ = encode_request(&req).unwrap();
     }

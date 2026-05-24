@@ -32,8 +32,8 @@ use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use shiguredo_http11::{
-    BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder, RequestHead, Response,
-    StatusCode,
+    BodyKind, BodyProgress, EncodeError, HeaderName, HttpHead, Method, Request, RequestDecoder,
+    RequestHead, Response, StatusCode,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
@@ -375,8 +375,8 @@ async fn serve_request(
             "CONNECT rejected (not implemented)"
         );
         let response = Response::with_status(StatusCode::NOT_IMPLEMENTED)
-            .header("Content-Length", "0")?
-            .header("Connection", "close")?;
+            .header(HeaderName::from_static(b"Content-Length"), "0")?
+            .header(HeaderName::from_static(b"Connection"), "close")?;
         writer.write_all(&response.encode()?).await?;
         writer.flush().await?;
         return Ok(false);
@@ -385,9 +385,13 @@ async fn serve_request(
     // examples は外部 crate のため `from_raw_parts` 使用不可。
     // 構築時バリデーション付きの Request::with_version 経由で再構築する。
     // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
-    let mut request = Request::with_version(h.method(), h.uri(), h.version())?;
+    let mut request = Request::with_version(
+        Method::new(h.method().as_bytes()).expect("decoder-validated method"),
+        h.uri(),
+        h.version(),
+    )?;
     for (name, value) in h.headers() {
-        request.add_header(name, value)?;
+        request.add_header(name.clone(), value)?;
     }
     let request = if let Some(body) = state.body.take() {
         request.body(body)
@@ -652,7 +656,7 @@ fn build_response(
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+        .find(|(name, _)| name == "Accept-Encoding")
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
@@ -700,10 +704,13 @@ fn build_response(
             // (実際の GET レスポンスはリクエストに依存するため)
             if is_head {
                 let head_response = Response::with_status(StatusCode::OK)
-                    .header("Date", &date)?
-                    .header("Content-Type", "text/plain; charset=utf-8")?
-                    .header("Content-Length", "0")?
-                    .header("Server", "shiguredo_http11/0.1.0")?
+                    .header(HeaderName::from_static(b"Date"), &date)?
+                    .header(
+                        HeaderName::from_static(b"Content-Type"),
+                        "text/plain; charset=utf-8",
+                    )?
+                    .header(HeaderName::from_static(b"Content-Length"), "0")?
+                    .header(HeaderName::from_static(b"Server"), "shiguredo_http11/0.1.0")?
                     .omit_body(true);
                 return add_connection_headers(head_response, should_keep_alive, shutting_down);
             }
@@ -782,14 +789,17 @@ fn build_compressed_response(
     };
 
     let mut response = Response::with_status(status)
-        .header("Date", date)?
-        .header("Content-Type", content_type)?
-        .header("Content-Length", final_body.len().to_string())?
-        .header("Server", "shiguredo_http11/0.1.0")?
-        .header("Vary", "Accept-Encoding")?;
+        .header(HeaderName::from_static(b"Date"), date)?
+        .header(HeaderName::from_static(b"Content-Type"), content_type)?
+        .header(
+            HeaderName::from_static(b"Content-Length"),
+            final_body.len().to_string(),
+        )?
+        .header(HeaderName::from_static(b"Server"), "shiguredo_http11/0.1.0")?
+        .header(HeaderName::from_static(b"Vary"), "Accept-Encoding")?;
 
     if let Some(enc) = content_encoding {
-        response = response.header("Content-Encoding", enc)?;
+        response = response.header(HeaderName::from_static(b"Content-Encoding"), enc)?;
     }
 
     Ok(response.body(final_body).omit_body(is_head))
@@ -812,7 +822,7 @@ fn add_connection_headers(
     if should_keep_alive && !shutting_down {
         Ok(response)
     } else {
-        response.header("Connection", "close")
+        response.header(HeaderName::from_static(b"Connection"), "close")
     }
 }
 

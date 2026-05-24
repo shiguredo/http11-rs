@@ -1,9 +1,9 @@
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
+use crate::header_name::HeaderName;
 use crate::status_code::{StatusClass, StatusCode};
 use crate::validate::{
-    is_valid_field_value, is_valid_header_name, is_valid_protocol_version, is_valid_reason_phrase,
-    is_valid_status_code,
+    is_valid_field_value, is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -36,7 +36,7 @@ pub struct Response {
     version: String,
     status_code: u16,
     reason_phrase: String,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body: Option<Vec<u8>>,
     // ボディ送信を抑止するフラグ (HEAD レスポンス用)
     //
@@ -55,7 +55,7 @@ impl HttpHead for Response {
         &self.version
     }
 
-    fn headers(&self) -> &[(String, String)] {
+    fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 }
@@ -198,7 +198,7 @@ impl Response {
         version: String,
         status_code: u16,
         reason_phrase: String,
-        headers: Vec<(String, String)>,
+        headers: Vec<(HeaderName, String)>,
         body: Option<Vec<u8>>,
     ) -> Self {
         // debug ビルドのみで契約を検査する。release では検証スキップ (decoder 経路の最適化)。
@@ -217,9 +217,9 @@ impl Response {
             "from_raw_parts: invalid reason_phrase: {reason_phrase:?}"
         );
         debug_assert!(
-            headers.iter().all(|(n, v)| {
-                crate::validate::is_valid_header_name(n) && crate::validate::is_valid_field_value(v)
-            }),
+            headers
+                .iter()
+                .all(|(_, v)| crate::validate::is_valid_field_value(v)),
             "from_raw_parts: invalid header(s)"
         );
         Self {
@@ -266,7 +266,7 @@ impl Response {
     /// シーケンスのみ表現可能。
     pub fn header(
         mut self,
-        name: impl Into<String>,
+        name: HeaderName,
         value: impl Into<String>,
     ) -> Result<Self, EncodeError> {
         // add_header は Result<&mut Self, EncodeError> を返す。? 演算子の脱糖は
@@ -309,16 +309,15 @@ impl Response {
     /// 受け付けるためのトレードオフである。
     pub fn add_header(
         &mut self,
-        name: impl Into<String>,
+        name: HeaderName,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
-        let name = name.into();
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.to_string(),
+                value,
+            });
         }
         self.headers.push((name, value));
         Ok(self)
@@ -342,19 +341,18 @@ impl Response {
     /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
     pub fn set_header(
         &mut self,
-        name: impl Into<String>,
+        name: HeaderName,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
         // アトミック性のため、バリデーションを先に行う。
-        let name = name.into();
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.to_string(),
+                value,
+            });
         }
-        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        self.headers.retain(|(n, _)| n != &name);
         self.headers.push((name, value));
         Ok(self)
     }

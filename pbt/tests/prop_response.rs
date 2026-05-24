@@ -1,7 +1,9 @@
 //! Response 構造体のプロパティテスト
 
 use proptest::prelude::*;
-use shiguredo_http11::{EncodeError, HttpHead, Response, ResponseDecoder, StatusClass, StatusCode};
+use shiguredo_http11::{
+    EncodeError, HeaderName, HttpHead, Response, ResponseDecoder, StatusClass, StatusCode,
+};
 
 // ========================================
 // Strategy 定義
@@ -118,8 +120,8 @@ fn reason_phrase() -> impl Strategy<Value = String> {
     ]
 }
 
-fn header_name() -> impl Strategy<Value = String> {
-    "[A-Za-z][A-Za-z0-9-]{0,31}".prop_map(|s| s)
+fn header_name() -> impl Strategy<Value = HeaderName> {
+    "[A-Za-z][A-Za-z0-9-]{0,31}".prop_map(|s| HeaderName::new(s.as_bytes()).expect("valid token"))
 }
 
 // HTTP ヘッダー値 (RFC 9110 Section 5.5)
@@ -220,7 +222,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_header_builder(code in status_code(), name in header_name(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap().header(&name, &value).unwrap();
+        let response = Response::new(code, "OK").unwrap().header(name.clone(), &value).unwrap();
 
         prop_assert_eq!(HttpHead::headers(&response).len(), 1);
         prop_assert_eq!(&HttpHead::headers(&response)[0].0, &name);
@@ -234,7 +236,7 @@ proptest! {
     fn prop_response_header_builder_chain(code in status_code(), headers in proptest::collection::vec((header_name(), header_value()), 1..5)) {
         let mut response = Response::new(code, "OK").unwrap();
         for (name, value) in &headers {
-            response = response.header(name, value).unwrap();
+            response = response.header(name.clone(), value).unwrap();
         }
 
         prop_assert_eq!(HttpHead::headers(&response).len(), headers.len());
@@ -273,7 +275,7 @@ proptest! {
     #[test]
     fn prop_response_get_header_case_insensitive(code in status_code(), value in header_value()) {
         let response = Response::new(code, "OK").unwrap()
-            .header("Content-Type", &value).unwrap();
+            .header(HeaderName::from_static(b"Content-Type"), &value).unwrap();
 
         prop_assert_eq!(response.get_header("Content-Type"), Some(value.as_str()));
         prop_assert_eq!(response.get_header("content-type"), Some(value.as_str()));
@@ -287,10 +289,9 @@ proptest! {
     fn prop_response_get_headers_multiple(code in status_code(), values in proptest::collection::vec(header_value(), 1..5)) {
         let mut response = Response::new(code, "OK").unwrap();
         for value in &values {
-            response = response.header("Set-Cookie", value).unwrap();
+            response = response.header(HeaderName::from_static(b"Set-Cookie"), value).unwrap();
         }
-
-        let headers = response.get_headers("Set-Cookie");
+        let headers = response.get_headers("set-cookie");
         prop_assert_eq!(headers.len(), values.len());
         for (i, value) in values.iter().enumerate() {
             prop_assert_eq!(headers[i], value.as_str());
@@ -303,7 +304,7 @@ proptest! {
     #[test]
     fn prop_response_get_headers_case_insensitive(code in status_code(), value in header_value()) {
         let response = Response::new(code, "OK").unwrap()
-            .header("Set-Cookie", &value).unwrap();
+            .header(HeaderName::from_static(b"Set-Cookie"), &value).unwrap();
 
         prop_assert_eq!(response.get_headers("set-cookie").len(), 1);
         prop_assert_eq!(response.get_headers("SET-COOKIE").len(), 1);
@@ -314,11 +315,11 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_has_header(code in status_code(), name in header_name(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap().header(&name, &value).unwrap();
+        let response = Response::new(code, "OK").unwrap().header(name.clone(), &value).unwrap();
 
-        prop_assert!(response.has_header(&name));
-        prop_assert!(response.has_header(&name.to_lowercase()));
-        prop_assert!(response.has_header(&name.to_uppercase()));
+        prop_assert!(response.has_header(name.as_str()));
+        prop_assert!(response.has_header(&name.as_str().to_lowercase()));
+        prop_assert!(response.has_header(&name.as_str().to_uppercase()));
         prop_assert!(!response.has_header("X-Not-Exists"));
     }
 }
@@ -331,7 +332,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_connection_header(code in status_code(), conn_value in prop_oneof![Just("keep-alive"), Just("close"), Just("Keep-Alive"), Just("Close")]) {
-        let response = Response::new(code, "OK").unwrap().header("Connection", conn_value).unwrap();
+        let response = Response::new(code, "OK").unwrap().header(HeaderName::from_static(b"Connection"), conn_value).unwrap();
 
         prop_assert_eq!(response.connection(), Some(conn_value));
     }
@@ -346,7 +347,7 @@ proptest! {
     #[test]
     fn prop_response_content_length(code in status_code(), len in 0usize..1_000_000) {
         let response = Response::new(code, "OK").unwrap()
-            .header("Content-Length", len.to_string()).unwrap();
+            .header(HeaderName::from_static(b"Content-Length"), len.to_string()).unwrap();
 
         prop_assert_eq!(response.content_length().unwrap(), Some(len as u64));
     }
@@ -440,14 +441,10 @@ fn invalid_header_name() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_response_invalid_header_name(
-        code in status_code(),
         name in invalid_header_name(),
-        value in header_value(),
     ) {
-        let mut response = Response::new(code, "OK").unwrap();
-        let result = response.add_header(&name, &value);
-        let is_invalid = matches!(result, Err(EncodeError::InvalidHeaderName { .. }));
-        prop_assert!(is_invalid);
+        let result = HeaderName::new(name.as_bytes());
+        prop_assert!(result.is_err());
     }
 }
 
@@ -469,7 +466,7 @@ proptest! {
     ) {
         let value = format!("good{bad_char}bad");
         let mut response = Response::new(code, "OK").unwrap();
-        let result = response.add_header(&name, &value);
+        let result = response.add_header(name.clone(), &value);
         let is_invalid = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
         prop_assert!(is_invalid);
     }
@@ -544,7 +541,7 @@ proptest! {
         // 1 つ目だけは add_header(..)?... のチェイン形式で呼べないので unwrap で受ける
         // ここでは for ループで unwrap するが、内部的には Result<&mut Self, _> を消費している。
         for (name, value) in &headers {
-            response.add_header(name.as_str(), value.as_str()).unwrap();
+            response.add_header(name.clone(), value.as_str()).unwrap();
         }
         prop_assert_eq!(HttpHead::headers(&response).len(), headers.len());
         for (i, (name, value)) in headers.iter().enumerate() {
@@ -564,12 +561,12 @@ proptest! {
     ) {
         // &str
         let mut r1 = Response::new(code, "OK").unwrap();
-        r1.add_header(name.as_str(), value.as_str()).unwrap();
+        r1.add_header(name.clone(), value.as_str()).unwrap();
         // String (ムーブ)
         let mut r2 = Response::new(code, "OK").unwrap();
         r2.add_header(name.clone(), value.clone()).unwrap();
-        prop_assert_eq!(r1.get_header(&name), Some(value.as_str()));
-        prop_assert_eq!(r2.get_header(&name), Some(value.as_str()));
+        prop_assert_eq!(r1.get_header(name.as_str()), Some(value.as_str()));
+        prop_assert_eq!(r2.get_header(name.as_str()), Some(value.as_str()));
     }
 }
 

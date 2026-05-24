@@ -386,7 +386,7 @@ fn test_chunked_trailer_whitelist_accepts_declared_field() {
         match decoder.progress().unwrap() {
             shiguredo_http11::BodyProgress::Complete { trailers } => {
                 assert_eq!(trailers.len(), 1);
-                assert!(trailers[0].0.eq_ignore_ascii_case("X-Checksum"));
+                assert!(trailers[0].0 == "X-Checksum");
                 assert_eq!(trailers[0].1, "abc123");
                 break;
             }
