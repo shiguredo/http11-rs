@@ -33,15 +33,25 @@ fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
     let mut remaining = n;
     while remaining > 0 {
         i -= 1;
-        let nibble = (remaining & 0xF) as u8;
-        tmp[i] = if nibble < 10 {
-            b'0' + nibble
-        } else {
-            b'a' + nibble - 10
+        let nibble = match u8::try_from(remaining & 0xF) {
+            Ok(n) => n,
+            Err(_) => {
+                debug_assert!(false, "low 4 bits always fit in u8");
+                0
+            }
         };
+        if let Some(slot) = tmp.get_mut(i) {
+            *slot = if nibble < 10 {
+                b'0' + nibble
+            } else {
+                b'a' + nibble - 10
+            };
+        }
         remaining >>= 4;
     }
-    buf.extend_from_slice(&tmp[i..]);
+    if let Some(suffix) = tmp.get(i..) {
+        buf.extend_from_slice(suffix);
+    }
 }
 
 /// `usize` を 10 進数 ASCII としてバッファに書き込む
@@ -55,10 +65,21 @@ fn write_usize_decimal(buf: &mut Vec<u8>, n: usize) {
     let mut remaining = n;
     while remaining > 0 {
         i -= 1;
-        tmp[i] = b'0' + (remaining % 10) as u8;
+        let digit = match u8::try_from(remaining.rem_euclid(10)) {
+            Ok(d) => d,
+            Err(_) => {
+                debug_assert!(false, "decimal digit always fits in u8");
+                0
+            }
+        };
+        if let Some(slot) = tmp.get_mut(i) {
+            *slot = b'0' + digit;
+        }
         remaining /= 10;
     }
-    buf.extend_from_slice(&tmp[i..]);
+    if let Some(suffix) = tmp.get(i..) {
+        buf.extend_from_slice(suffix);
+    }
 }
 
 /// `encode_request` / `encode_response` の事前確保サイズ上限 (64 MB)
@@ -407,7 +428,7 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
         return Err(EncodeError::DuplicateHostHeader);
     }
 
-    let host_value = host_headers[0];
+    let host_value = host_headers.first().ok_or(EncodeError::MissingHostHeader)?;
     // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2: 空の field-value は許可)
     if !host_value.is_empty() && Host::parse(host_value).is_err() {
         return Err(EncodeError::InvalidHostHeader {
@@ -647,7 +668,8 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     if !request.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
     {
-        let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length =
+            u64::try_from(request.body_bytes().map(<[u8]>::len).unwrap_or(0)).unwrap_or(u64::MAX);
         if header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
@@ -764,7 +786,8 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
         && !response.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
     {
-        let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length =
+            u64::try_from(response.body_bytes().map(<[u8]>::len).unwrap_or(0)).unwrap_or(u64::MAX);
         let should_validate = body_will_be_encoded || body_length != 0;
         if should_validate && header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
@@ -779,7 +802,7 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // ステータス行: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
-    write_usize_decimal(&mut buf, response.status_code() as usize);
+    write_usize_decimal(&mut buf, usize::from(response.status_code()));
     buf.push(b' ');
     buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");
@@ -946,7 +969,8 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
         && !request.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
     {
-        let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length =
+            u64::try_from(request.body_bytes().map(<[u8]>::len).unwrap_or(0)).unwrap_or(u64::MAX);
         if header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
@@ -1044,7 +1068,8 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
         && !response.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
     {
-        let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
+        let body_length =
+            u64::try_from(response.body_bytes().map(<[u8]>::len).unwrap_or(0)).unwrap_or(u64::MAX);
         if header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
@@ -1058,7 +1083,7 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
     // ステータス行: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
     buf.extend_from_slice(HttpHead::version(response).as_bytes());
     buf.push(b' ');
-    write_usize_decimal(&mut buf, response.status_code() as usize);
+    write_usize_decimal(&mut buf, usize::from(response.status_code()));
     buf.push(b' ');
     buf.extend_from_slice(response.reason_phrase().as_bytes());
     buf.extend_from_slice(b"\r\n");

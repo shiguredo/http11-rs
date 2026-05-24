@@ -3,7 +3,10 @@
 //! 複数のヘッダーモジュールの単体テストで再利用するため、CTL 集合や obs-text
 //! 境界値を 1 箇所に定義する。tests/test_<module>.rs から `mod helpers;` で取り込む。
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared helper constants; not every test uses every item"
+)]
 
 /// HTAB (0x09) を **除いた** ASCII CTL (0x00-0x1F) と DEL (0x7F) の網羅集合
 ///

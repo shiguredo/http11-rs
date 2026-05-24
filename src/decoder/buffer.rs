@@ -6,6 +6,7 @@
 //! リスクを排除する。
 
 use crate::error::Error;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 /// `&[u8]` 由来のバイト列を内部バッファ末尾に追加する
@@ -110,7 +111,11 @@ pub(super) fn mut_buf<'a>(
     let old = buf.len();
     buf.resize(new_size, 0);
     *pending = len;
-    Ok(&mut buf[old..])
+    buf.get_mut(old..).ok_or_else(|| {
+        Error::InvalidData(String::from(
+            "internal buffer state: mut_buf slice out of bounds",
+        ))
+    })
 }
 
 /// 直前の `mut_buf` で確保した枠のうち、実際に書き込まれた `len` バイトを確定する

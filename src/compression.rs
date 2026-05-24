@@ -231,7 +231,9 @@ impl Compressor for NoCompression {
         }
 
         let len = input.len().min(output.len());
-        output[..len].copy_from_slice(&input[..len]);
+        if let (Some(out_slice), Some(in_slice)) = (output.get_mut(..len), input.get(..len)) {
+            out_slice.copy_from_slice(in_slice);
+        }
 
         if len < input.len() {
             Ok(CompressionStatus::OutputFull {
@@ -269,7 +271,9 @@ impl Decompressor for NoCompression {
         output: &mut [u8],
     ) -> Result<CompressionStatus, CompressionError> {
         let len = input.len().min(output.len());
-        output[..len].copy_from_slice(&input[..len]);
+        if let (Some(out_slice), Some(in_slice)) = (output.get_mut(..len), input.get(..len)) {
+            out_slice.copy_from_slice(in_slice);
+        }
 
         if len < input.len() {
             Ok(CompressionStatus::OutputFull {

@@ -202,9 +202,9 @@ fn split_etag_list_raw(input: &str) -> Vec<&str> {
     let bytes = input.as_bytes();
 
     for i in 0..bytes.len() {
-        match bytes[i] {
-            b'"' => in_quotes = !in_quotes,
-            b',' if !in_quotes => {
+        match bytes.get(i) {
+            Some(&b'"') => in_quotes = !in_quotes,
+            Some(&b',') if !in_quotes => {
                 parts.push(&input[start..i]);
                 start = i + 1;
             }

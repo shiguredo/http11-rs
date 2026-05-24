@@ -197,10 +197,12 @@ impl StatusCode {
         );
         // 上の assert で 100..=599 を保証済みのため非ゼロ。`NonZeroU16::new`
         // が `Some` を返さないケースは到達不能。
-        let code = match NonZeroU16::new(code) {
-            Some(c) => c,
-            None => panic!("unreachable: status code is non-zero"),
-        };
+        // 100..=599 は非ゼロのため `new` は常に `Some`
+        #[allow(
+            clippy::unwrap_used,
+            reason = "100..=599 implies non-zero for NonZeroU16::new"
+        )]
+        let code = NonZeroU16::new(code).unwrap();
         Self {
             code,
             canonical_reason,
@@ -312,16 +314,7 @@ impl StatusCode {
     /// 必ず分類が定まる (戻り値は `Option` ではない)。
     #[must_use]
     pub const fn class(&self) -> StatusClass {
-        // `code` は `new_const` の assert で 100..=599 が保証されているため
-        // `from_status_code` は常に `Some` を返す。`const fn` 内では
-        // `Option::expect` / `unreachable!()` のいずれも const 非互換なため、
-        // match で明示的に分岐し、到達不能な `None` アームは `panic!()` に留める。
-        // Rust 2024 の const fn では `panic!()` が const 互換な唯一の
-        // フォールバック手段である。
-        match StatusClass::from_status_code(self.code.get()) {
-            Some(c) => c,
-            None => panic!("StatusCode constraint violation: code out of 100..=599"),
-        }
+        StatusClass::from_validated_status_code(self.code.get())
     }
 }
 
@@ -367,13 +360,30 @@ impl StatusClass {
     /// 範囲外の値 (`0..=99`, `600..=65535`) は `None` を返す。
     #[must_use]
     pub const fn from_status_code(code: u16) -> Option<Self> {
-        Some(match code {
-            100..=199 => StatusClass::Informational,
-            200..=299 => StatusClass::Successful,
-            300..=399 => StatusClass::Redirection,
-            400..=499 => StatusClass::ClientError,
-            500..=599 => StatusClass::ServerError,
-            _ => return None,
-        })
+        if code < 100 || code > 599 {
+            return None;
+        }
+        Some(Self::from_validated_status_code(code))
+    }
+
+    /// 100..=599 のステータスコードから `StatusClass` を生成する。
+    ///
+    /// 呼び出し側が範囲を保証している内部 API 用。範囲外の `code` は到達不能。
+    #[must_use]
+    pub(crate) const fn from_validated_status_code(code: u16) -> Self {
+        if code < 200 {
+            StatusClass::Informational
+        } else if code < 300 {
+            StatusClass::Successful
+        } else if code < 400 {
+            StatusClass::Redirection
+        } else if code < 500 {
+            StatusClass::ClientError
+        } else if code < 600 {
+            StatusClass::ServerError
+        } else {
+            debug_assert!(false, "status code must be in 100..=599");
+            StatusClass::ServerError
+        }
     }
 }

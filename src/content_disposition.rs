@@ -473,10 +473,13 @@ fn percent_decode(s: &str) -> Result<String, ContentDispositionError> {
             bytes.push(byte);
         } else {
             // RFC 8187 Section 3.2: パーセントエンコード以外は attr-char のみ許可
-            if !c.is_ascii() || !is_attr_char(c as u8) {
+            let Some(byte) = crate::validate::ascii_char_to_byte(c) else {
+                return Err(ContentDispositionError::InvalidExtValue);
+            };
+            if !is_attr_char(byte) {
                 return Err(ContentDispositionError::InvalidExtValue);
             }
-            bytes.push(c as u8);
+            bytes.push(byte);
         }
     }
 
@@ -488,7 +491,7 @@ fn encode_ext_value(s: &str) -> String {
     let mut result = String::new();
     for byte in s.bytes() {
         if is_attr_char(byte) {
-            result.push(byte as char);
+            result.push(crate::validate::byte_to_char(byte));
         } else {
             result.push('%');
             result.push_str(&alloc::format!("{:02X}", byte));

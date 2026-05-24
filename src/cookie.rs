@@ -274,7 +274,9 @@ impl SetCookie {
                         let bytes = attr_value.as_bytes();
                         if let Some(&first) = bytes.first()
                             && (first.is_ascii_digit() || first == b'-')
-                            && bytes[1..].iter().all(|b| b.is_ascii_digit())
+                            && bytes
+                                .get(1..)
+                                .is_some_and(|rest| rest.iter().all(|b| b.is_ascii_digit()))
                             && let Ok(age) = attr_value.parse::<i64>()
                         {
                             // RFC 6265 Section 5.2.2: 負の Max-Age は 0 として扱う

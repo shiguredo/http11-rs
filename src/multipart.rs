@@ -350,7 +350,7 @@ impl MultipartParser {
                     // `start` は `pos` 以上に揃える (pos が前進した場合に
                     // scan_offset が古い値のまま残っているケースを吸収)。
                     let start = self.pos.max(self.boundary_scan_offset);
-                    let view = &self.buffer[start..];
+                    let view = self.buffer.get(start..).ok_or(MultipartError::Incomplete)?;
                     if let Some(rel_pos) = find_bytes(view, &self.first_delimiter) {
                         let after_delim = start + rel_pos + self.first_delimiter.len();
                         // 直後 2 バイトで終端 (`--`) / 通常パート開始 (`\r\n`) を判定する。
@@ -366,9 +366,7 @@ impl MultipartParser {
                             // SP / HTAB を寛容に受理する。
                             // 将来 RFC 改訂で transport-padding が拡張される可能性がある。
                             let mut padded = after_delim;
-                            while padded < self.buffer.len()
-                                && matches!(self.buffer[padded], b' ' | b'\t')
-                            {
+                            while matches!(self.buffer.get(padded), Some(&b' ') | Some(&b'\t')) {
                                 padded += 1;
                             }
                             if self.buffer.len() < padded + 2 {
@@ -379,7 +377,10 @@ impl MultipartParser {
                                     (start + rel_pos).min(self.buffer.len());
                                 return Err(MultipartError::Incomplete);
                             }
-                            let head = &self.buffer[padded..padded + 2];
+                            let head = self
+                                .buffer
+                                .get(padded..padded + 2)
+                                .ok_or(MultipartError::Incomplete)?;
                             if head == b"\r\n" {
                                 self.pos = padded + 2;
                                 // 状態遷移したので scan_offset を pos に揃える
@@ -415,10 +416,16 @@ impl MultipartParser {
                 }
                 ParserState::InPart => {
                     // ヘッダーとボディの区切りを `buffer[pos..]` から相対位置で探す
-                    let view = &self.buffer[self.pos..];
+                    let view = self
+                        .buffer
+                        .get(self.pos..)
+                        .ok_or(MultipartError::Incomplete)?;
                     if let Some(header_end_rel) = find_bytes(view, b"\r\n\r\n") {
                         let header_end = self.pos + header_end_rel;
-                        let header_bytes = &self.buffer[self.pos..header_end];
+                        let header_bytes = self
+                            .buffer
+                            .get(self.pos..header_end)
+                            .ok_or(MultipartError::Incomplete)?;
                         let body_start = header_end + 4;
 
                         // ヘッダーをパース
@@ -466,26 +473,35 @@ impl MultipartParser {
                         // 前回失敗位置 `boundary_scan_offset` から再開して断片
                         // 入力時の O(N²·M) 再走査を回避する (body_start 以上に揃える)。
                         let search_start = body_start.max(self.boundary_scan_offset);
-                        let body_view = &self.buffer[search_start..];
+                        let body_view = self
+                            .buffer
+                            .get(search_start..)
+                            .ok_or(MultipartError::Incomplete)?;
                         if let Some(body_end_rel) = find_bytes(body_view, &self.inner_delimiter) {
                             let body_end = search_start + body_end_rel;
                             // パートのボディは所有権移転で 1 回だけコピーする
-                            let body = self.buffer[body_start..body_end].to_vec();
+                            let body = self
+                                .buffer
+                                .get(body_start..body_end)
+                                .ok_or(MultipartError::Incomplete)?
+                                .to_vec();
 
                             // 終了境界または次パート区切りを判定。
                             // 内部デリミタ直後に transport-padding (SP/HTAB) をスキップする。
                             let after_delim = body_end + self.inner_delimiter.len();
                             let mut padded = after_delim;
-                            while padded < self.buffer.len()
-                                && matches!(self.buffer[padded], b' ' | b'\t')
-                            {
+                            while matches!(self.buffer.get(padded), Some(&b' ') | Some(&b'\t')) {
                                 padded += 1;
                             }
                             if self.buffer.len() >= padded + 2 {
-                                if &self.buffer[padded..padded + 2] == b"--" {
+                                let head = self
+                                    .buffer
+                                    .get(padded..padded + 2)
+                                    .ok_or(MultipartError::Incomplete)?;
+                                if head == b"--" {
                                     self.finished = true;
                                     self.state = ParserState::Finished;
-                                } else if &self.buffer[padded..padded + 2] == b"\r\n" {
+                                } else if head == b"\r\n" {
                                     self.pos = padded + 2;
                                 } else {
                                     // RFC 2046 Section 5.1.1 違反
@@ -502,7 +518,8 @@ impl MultipartParser {
 
                             // 累積コピー量を amortized O(N) に抑える前詰め
                             // 発動条件は `pos` が物理バッファの過半を超えたときのみ
-                            if self.pos > self.buffer.len() / 2 {
+                            let half = self.buffer.len().checked_div(2).unwrap_or(0);
+                            if self.pos > half {
                                 let drained = self.pos;
                                 self.buffer.drain(..drained);
                                 self.pos = 0;
@@ -535,8 +552,7 @@ impl MultipartParser {
                     // `pos` は `inner_delimiter` の直後または transport-padding の
                     // 途中を指す。まず transport-padding をスキップする。
                     let mut padded = self.pos;
-                    while padded < self.buffer.len() && matches!(self.buffer[padded], b' ' | b'\t')
-                    {
+                    while matches!(self.buffer.get(padded), Some(&b' ') | Some(&b'\t')) {
                         padded += 1;
                     }
                     if self.buffer.len() < padded + 2 {
@@ -545,7 +561,10 @@ impl MultipartParser {
                         self.pos = padded;
                         return Err(MultipartError::Incomplete);
                     }
-                    let head = &self.buffer[padded..padded + 2];
+                    let head = self
+                        .buffer
+                        .get(padded..padded + 2)
+                        .ok_or(MultipartError::Incomplete)?;
                     if head == b"--" {
                         self.finished = true;
                         self.state = ParserState::Finished;
@@ -726,16 +745,16 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         return None;
     }
 
-    let first = needle[0];
-    let max_start = haystack.len() - needle.len();
+    let first = *needle.first()?;
+    let max_start = haystack.len().checked_sub(needle.len())?;
     let mut i = 0;
     while i <= max_start {
         // 次の最初のバイト一致点までジャンプ
-        let remaining = &haystack[i..=max_start];
+        let remaining = haystack.get(i..=max_start)?;
         match remaining.iter().position(|&b| b == first) {
             Some(offset) => {
                 i += offset;
-                if &haystack[i..i + needle.len()] == needle {
+                if haystack.get(i..i + needle.len()) == Some(needle) {
                     return Some(i);
                 }
                 i += 1;

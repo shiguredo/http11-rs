@@ -412,7 +412,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > u64::try_from(self.limits.max_body_size).unwrap_or(u64::MAX) {
                 return Err(Error::BodyTooLarge {
                     size: usize::try_from(len).unwrap_or(usize::MAX),
                     limit: self.limits.max_body_size,
@@ -440,9 +440,15 @@ impl<D: Decompressor> ResponseDecoder<D> {
             match &self.phase {
                 DecodePhase::StartLine => {
                     if let Some(pos) = find_line(&self.buf) {
-                        let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                            Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                        })?;
+                        let line = String::from_utf8(
+                            self.buf
+                                .get(..pos)
+                                .ok_or_else(|| {
+                                    Error::InvalidData("invalid status line bounds".to_string())
+                                })?
+                                .to_vec(),
+                        )
+                        .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                         self.buf.drain(..pos + 2);
 
                         // CR/LF チェック (埋め込まれた改行を拒否)
@@ -461,18 +467,29 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             )));
                         }
 
+                        let protocol_version = *parts.first().ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid status line: missing protocol version".to_string(),
+                            )
+                        })?;
+                        let status_code_str = *parts.get(1).ok_or_else(|| {
+                            Error::InvalidData(
+                                "invalid status line: missing status code".to_string(),
+                            )
+                        })?;
+
                         // プロトコルバージョンの検証
-                        if !is_valid_protocol_version(parts[0]) {
+                        if !is_valid_protocol_version(protocol_version) {
                             return Err(Error::InvalidData(
                                 "invalid status line: invalid protocol version".to_string(),
                             ));
                         }
 
                         // ステータスコードの検証 (RFC 9110 Section 15)
-                        let status_code: u16 = parts[1].parse().map_err(|_| {
+                        let status_code: u16 = status_code_str.parse().map_err(|_| {
                             Error::InvalidData(alloc::format!(
                                 "invalid status line: invalid status code: {}",
-                                parts[1]
+                                status_code_str
                             ))
                         })?;
                         if !is_valid_status_code(status_code) {
@@ -511,10 +528,15 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 Error::InvalidData("missing status line".to_string())
                             })?;
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
-                            let status_code: u16 = parts[1].parse().map_err(|_| {
+                            let status_code_str = *parts.get(1).ok_or_else(|| {
+                                Error::InvalidData(
+                                    "invalid status line: missing status code".to_string(),
+                                )
+                            })?;
+                            let status_code: u16 = status_code_str.parse().map_err(|_| {
                                 Error::InvalidData(alloc::format!(
                                     "invalid status code: {}",
-                                    parts[1]
+                                    status_code_str
                                 ))
                             })?;
 
@@ -552,11 +574,26 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // ResponseHead を構築
-                            let start_line = self.start_line.take().unwrap();
+                            let start_line = match self.start_line.take() {
+                                Some(start_line) => start_line,
+                                None => {
+                                    return Err(Error::InvalidData(
+                                        "internal decoder state: missing start line".to_string(),
+                                    ));
+                                }
+                            };
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = ResponseHead::from_validated_parts(
-                                parts[0].to_string(),
+                                parts
+                                    .first()
+                                    .ok_or_else(|| {
+                                        Error::InvalidData(
+                                            "invalid status line: missing protocol version"
+                                                .to_string(),
+                                        )
+                                    })?
+                                    .to_string(),
                                 status_code,
                                 parts.get(2).unwrap_or(&"").to_string(),
                                 core::mem::take(&mut self.headers),
@@ -580,10 +617,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                 });
                             }
 
-                            let line =
-                                String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
-                                    Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
-                                })?;
+                            let line = String::from_utf8(
+                                self.buf
+                                    .get(..pos)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData("invalid header line bounds".to_string())
+                                    })?
+                                    .to_vec(),
+                            )
+                            .map_err(|e| {
+                                Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
+                            })?;
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
@@ -768,7 +812,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // ボディを読む
-        let body_kind = *self.decoded_body_kind.as_ref().unwrap();
+        let body_kind = match self.decoded_body_kind.as_ref() {
+            Some(body_kind) => *body_kind,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing body kind".to_string(),
+                ));
+            }
+        };
         match body_kind {
             BodyKind::Tunnel => {
                 return Err(Error::InvalidData(
@@ -836,7 +887,14 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // Response を構築
         // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
         // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
-        let head = self.decoded_head.take().unwrap();
+        let head = match self.decoded_head.take() {
+            Some(head) => head,
+            None => {
+                return Err(Error::InvalidData(
+                    "internal decoder state: missing head".to_string(),
+                ));
+            }
+        };
         let body = match body_kind {
             BodyKind::None | BodyKind::Tunnel => None,
             BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {

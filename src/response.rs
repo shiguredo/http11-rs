@@ -117,8 +117,13 @@ impl Response {
         // - version: リテラル `"HTTP/1.1"` は `is_valid_protocol_version` を通過する
         // - status_code: `StatusCode` は 100..=599 範囲内 (`new_const` の assert 済み)
         // - canonical_reason: IANA 登録の ASCII 文字列で `is_valid_reason_phrase` を通過する
-        Self::with_version("HTTP/1.1", status.code(), status.canonical_reason())
-            .expect("StatusCode constants are always valid by construction")
+        Self::from_raw_parts(
+            String::from("HTTP/1.1"),
+            status.code(),
+            String::from(status.canonical_reason()),
+            Vec::new(),
+            None,
+        )
     }
 
     /// カスタムバージョンでレスポンスを作成
@@ -444,8 +449,7 @@ impl Response {
     #[must_use]
     pub fn status_class(&self) -> StatusClass {
         // `Response` は構築時に 100..=599 が保証されているため必ず `Some` を返す。
-        StatusClass::from_status_code(self.status_code())
-            .expect("Response::status_code is validated to 100..=599 at construction")
+        StatusClass::from_validated_status_code(self.status_code())
     }
 
     /// Connection ヘッダーの値を取得 (RFC 9110 Section 7.6.1)

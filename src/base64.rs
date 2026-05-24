@@ -35,23 +35,39 @@ pub(crate) fn encode(input: &[u8]) -> String {
     let mut i = 0;
 
     while i < input.len() {
-        let b0 = input[i];
-        let b1 = if i + 1 < input.len() { input[i + 1] } else { 0 };
-        let b2 = if i + 2 < input.len() { input[i + 2] } else { 0 };
+        let b0 = input.get(i).copied().unwrap_or(0);
+        let b1 = input.get(i + 1).copied().unwrap_or(0);
+        let b2 = input.get(i + 2).copied().unwrap_or(0);
 
-        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        let n = (u32::from(b0) << 16) | (u32::from(b1) << 8) | u32::from(b2);
 
-        result.push(BASE64_ALPHABET[(n >> 18 & 0x3F) as usize] as char);
-        result.push(BASE64_ALPHABET[(n >> 12 & 0x3F) as usize] as char);
+        if let Some(idx) = usize::try_from(n >> 18 & 0x3F).ok()
+            && let Some(&c) = BASE64_ALPHABET.get(idx)
+        {
+            result.push(char::from(c));
+        }
+        if let Some(idx) = usize::try_from(n >> 12 & 0x3F).ok()
+            && let Some(&c) = BASE64_ALPHABET.get(idx)
+        {
+            result.push(char::from(c));
+        }
 
         if i + 1 < input.len() {
-            result.push(BASE64_ALPHABET[(n >> 6 & 0x3F) as usize] as char);
+            if let Some(idx) = usize::try_from(n >> 6 & 0x3F).ok()
+                && let Some(&c) = BASE64_ALPHABET.get(idx)
+            {
+                result.push(char::from(c));
+            }
         } else {
             result.push('=');
         }
 
         if i + 2 < input.len() {
-            result.push(BASE64_ALPHABET[(n & 0x3F) as usize] as char);
+            if let Some(idx) = usize::try_from(n & 0x3F).ok()
+                && let Some(&c) = BASE64_ALPHABET.get(idx)
+            {
+                result.push(char::from(c));
+            }
         } else {
             result.push('=');
         }
@@ -85,7 +101,8 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
                 if !c.is_ascii() {
                     return Err(Base64Error::InvalidCharacter);
                 }
-                normalized.push(c as u8);
+                let byte = u8::try_from(u32::from(c)).map_err(|_| Base64Error::InvalidCharacter)?;
+                normalized.push(byte);
             }
         }
     }
@@ -106,8 +123,14 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
     }
 
     // データ部分 (パディング前) と末尾 `=` 個数の整合性検証
-    let data = &normalized[..normalized.len() - pad_count];
-    let last_block_chars = data.len() % 4;
+    let data_end = normalized
+        .len()
+        .checked_sub(pad_count)
+        .ok_or(Base64Error::InvalidPadding)?;
+    let data = normalized
+        .get(..data_end)
+        .ok_or(Base64Error::InvalidPadding)?;
+    let last_block_chars = data.len().rem_euclid(4);
     let valid = match pad_count {
         0 => last_block_chars == 0,
         1 => last_block_chars == 3,
@@ -118,15 +141,20 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
         return Err(Base64Error::InvalidPadding);
     }
 
-    let mut result = Vec::with_capacity((data.len() * 3) / 4);
+    let capacity = data
+        .len()
+        .checked_mul(3)
+        .and_then(|n| n.checked_div(4))
+        .unwrap_or(0);
+    let mut result = Vec::with_capacity(capacity);
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
 
     for &b in data {
         let val = match b {
-            b'A'..=b'Z' => (b - b'A') as u32,
-            b'a'..=b'z' => (b - b'a') as u32 + 26,
-            b'0'..=b'9' => (b - b'0') as u32 + 52,
+            b'A'..=b'Z' => u32::from(b - b'A'),
+            b'a'..=b'z' => u32::from(b - b'a') + 26,
+            b'0'..=b'9' => u32::from(b - b'0') + 52,
             b'+' => 62,
             b'/' => 63,
             _ => return Err(Base64Error::InvalidCharacter),
@@ -137,7 +165,8 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
 
         if bits >= 8 {
             bits -= 8;
-            result.push((buf >> bits) as u8);
+            let byte = u8::try_from(buf >> bits).map_err(|_| Base64Error::InvalidPadding)?;
+            result.push(byte);
             buf &= (1 << bits) - 1;
         }
     }
