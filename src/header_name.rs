@@ -195,3 +195,56 @@ impl From<HeaderName> for String {
         String::from_utf8(name.0.into_owned()).expect("HeaderName is always valid ASCII")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_static_matches_new_known_inputs() {
+        let names: &[&[u8]] = &[b"host", b"content-type", b"x-custom-header"];
+        for &name in names {
+            assert_eq!(
+                HeaderName::new(name).unwrap(),
+                HeaderName::from_static(name)
+            );
+        }
+    }
+
+    #[test]
+    fn from_validated_parts_matches_new() {
+        let names: &[&[u8]] = &[b"host", b"Content-Type", b"X-Custom"];
+        for &name in names {
+            let v1 = HeaderName::new(name).unwrap();
+            let v2 = HeaderName::from_validated_bytes(name.to_vec());
+            assert_eq!(v1, v2);
+        }
+    }
+
+    #[test]
+    fn new_rejects_empty() {
+        assert!(HeaderName::new(b"").is_err());
+    }
+
+    #[test]
+    fn new_rejects_invalid_bytes() {
+        assert!(HeaderName::new(b"host name").is_err());
+        assert!(HeaderName::new(b"host:name").is_err());
+        assert!(HeaderName::new(b"host\r\nname").is_err());
+    }
+
+    #[test]
+    fn as_bytes_returns_original() {
+        let h = HeaderName::new(b"Host").unwrap();
+        assert_eq!(h.as_bytes(), b"Host");
+    }
+
+    #[test]
+    fn eq_is_case_insensitive() {
+        let h1 = HeaderName::new(b"host").unwrap();
+        let h2 = HeaderName::new(b"HOST").unwrap();
+        let h3 = HeaderName::new(b"Host").unwrap();
+        assert_eq!(h1, h2);
+        assert_eq!(h2, h3);
+    }
+}

@@ -23,6 +23,10 @@
   - 破壊的変更。HttpHead を実装する全型 (Request/Response/RequestHead/ResponseHead) に波及する
   - @voluntas
 - [ADD] HeaderName::from_static / Method::from_static / Scheme::from_static に compile_fail doctest を追加する
+- [ADD] HeaderName / Method / Scheme の構築時検査の PBT 整合性検証を追加する
+  - pbt/src/lib.rs に valid_* / invalid_* 戦略 6 種を追加する
+  - pbt/tests/prop_header_name.rs / prop_method.rs / prop_scheme.rs を新設する
+  - @voluntas
   - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
   - @voluntas
 - [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl Into<String> から HeaderName/Method に変更する
