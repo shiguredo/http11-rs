@@ -2,7 +2,9 @@
 
 - Priority: Medium
 - Created: 2026-05-23
-- Model: Opus 4.7
+- Completed: 2026-05-24
+- Model: deepseek v4-pro
+- Branch: feature/add-compile-fail-doctests
 
 ## 目的
 
@@ -217,3 +219,17 @@ pub const fn from_static(bytes: &'static [u8]) -> Self {
 - 0091（HeaderName / Method / Scheme 導入）に依存
 - 0091 完了後に着手する
 - shiguredo/http2-rs の `stream_id.rs` が先行実装
+
+## 解決方法
+
+### 変更内容
+
+以下の `from_static` メソッドの doc comment に compile-pass / compile-fail doctest を追加した:
+
+1. `src/header_name.rs`: `HeaderName::from_static` に compile-pass 例 (小文字/大文字) + compile-fail 例 (空/CRLF 注入/NUL/コロン/空白) を追加
+2. `src/method.rs`: `Method::from_static` に compile-pass 例 (GET/POST/拡張メソッド) + compile-fail 例 (空/CR/LF) を追加
+3. `src/uri.rs`: `Scheme::from_static` に compile-pass 例 (http/https) + compile-fail 例 (空/数字開始/コロン) を追加
+
+### テスト
+
+`cargo test --doc` で全 11 件の `compile_fail` doctest が期待通りコンパイル失敗 (= テスト成功) することを確認した。正常系 doctest (55 件) も全通過。

@@ -72,6 +72,52 @@ impl HeaderName {
     ///
     /// 不正な入力はコンパイル時に panic する。
     /// リテラル定数の構築に使用する。
+    ///
+    /// # 正常系
+    ///
+    /// ```
+    /// use shiguredo_http11::HeaderName;
+    ///
+    /// const HOST: HeaderName = HeaderName::from_static(b"host");
+    /// const CONTENT_TYPE: HeaderName = HeaderName::from_static(b"Content-Type");
+    /// ```
+    ///
+    /// # 不正リテラルの compile-fail 例
+    ///
+    /// 空のヘッダー名は不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::HeaderName =
+    ///     shiguredo_http11::HeaderName::from_static(b"");
+    /// ```
+    ///
+    /// CRLF 注入を含むヘッダー名は不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::HeaderName =
+    ///     shiguredo_http11::HeaderName::from_static(b"host\r\nX-Inject: evil");
+    /// ```
+    ///
+    /// NUL バイトを含むヘッダー名は不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::HeaderName =
+    ///     shiguredo_http11::HeaderName::from_static(b"host\0");
+    /// ```
+    ///
+    /// コロンを含むヘッダー名は不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::HeaderName =
+    ///     shiguredo_http11::HeaderName::from_static(b"host:name");
+    /// ```
+    ///
+    /// 空白を含むヘッダー名は不正:
+    ///
+    /// ```compile_fail
+    /// const _: shiguredo_http11::HeaderName =
+    ///     shiguredo_http11::HeaderName::from_static(b"host name");
+    /// ```
     pub const fn from_static(name: &'static [u8]) -> Self {
         if name.is_empty() {
             panic!("HeaderName: empty header name");
