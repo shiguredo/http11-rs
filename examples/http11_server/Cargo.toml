@@ -31,6 +31,8 @@ tokio = { version = "1.52", features = [
   "net",
   # マルチスレッドランタイム
   "rt-multi-thread",
+  # シグナルハンドリング (ctrl_c / SIGTERM)
+  "signal",
   # タイマー
   "time",
 ] }

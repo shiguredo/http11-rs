@@ -13,6 +13,9 @@
 
 ### misc
 
+- [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
+  - @voluntas
+
 ## 2026.5.0
 
 **リリース日**: 2026-05-16

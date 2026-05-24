@@ -10,6 +10,8 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
+use tokio_util::sync::CancellationToken;
+
 use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
@@ -20,6 +22,7 @@ use shiguredo_http11::{
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, error, info};
@@ -315,6 +318,16 @@ impl ConnectionPool {
         let connections: usize = self.idle_connections.values().map(|v| v.len()).sum();
         (endpoints, connections)
     }
+
+    /// プール内の全 idle 接続を破棄し、drain した接続数を返す
+    ///
+    /// Shutdown 時に呼び出す。接続は drop することで OS レベルでクローズされる。
+    /// TLS close_notify は tokio_rustls の Drop 実装に委ねる。
+    fn drain(&mut self) -> usize {
+        let count: usize = self.idle_connections.values().map(|v| v.len()).sum();
+        self.idle_connections.clear();
+        count
+    }
 }
 
 /// 新規接続を作成（ロック外で実行）。scheme で plaintext / TLS を分岐する (issue 0050)。
@@ -339,6 +352,33 @@ async fn create_connection(
 
 /// 共有可能な接続プール
 type SharedPool = Arc<Mutex<ConnectionPool>>;
+
+/// Graceful shutdown タイムアウト (秒)
+const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+
+/// CTRL+C (SIGINT) または SIGTERM (Unix) を待ち受ける
+///
+/// RFC 9112 Section 9.5: graceful close を意図する server はシグナルを監視し
+/// 適切に応答すべき (SHOULD)。
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -418,17 +458,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool_config.clone(),
     )));
 
-    // 定期的なクリーンアップタスク
+    // 定期的なクリーンアップタスク (CancellationToken で停止可能)
+    let cancel_token = CancellationToken::new();
+    let mut tasks: JoinSet<()> = JoinSet::new();
+
     let cleanup_pool = pool.clone();
-    tokio::spawn(async move {
+    let cleanup_cancel = cancel_token.clone();
+    tasks.spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
-            interval.tick().await;
-            let mut pool = cleanup_pool.lock().await;
-            pool.cleanup_expired();
-            let (hosts, conns) = pool.stats();
-            debug!(hosts, connections = conns, "Pool cleanup done");
+            tokio::select! {
+                _ = cleanup_cancel.cancelled() => break,
+                _ = interval.tick() => {
+                    let mut pool = cleanup_pool.lock().await;
+                    pool.cleanup_expired();
+                    let (hosts, conns) = pool.stats();
+                    debug!(hosts, connections = conns, "Pool cleanup done");
+                }
+            }
         }
+        debug!("Cleanup task stopped");
     });
 
     let addr = format!("0.0.0.0:{}", port);
@@ -442,17 +491,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Connection pool enabled"
     );
 
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
     loop {
-        let (socket, _) = listener.accept().await?;
-        let upstream = upstream.clone();
-        let upstream_host_header = upstream_host_header.clone();
-        let pool = pool.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle_client(socket, &upstream, &upstream_host_header, pool).await {
-                error!(error = %e, "Client handler error");
+        tokio::select! {
+            result = listener.accept() => {
+                let (socket, _) = result?;
+                let upstream = upstream.clone();
+                let upstream_host_header = upstream_host_header.clone();
+                let pool = pool.clone();
+                tasks.spawn(async move {
+                    if let Err(e) = handle_client(socket, &upstream, &upstream_host_header, pool).await {
+                        error!(error = %e, "Client handler error");
+                    }
+                });
             }
-        });
+            _ = &mut shutdown => break,
+        }
     }
+
+    // Graceful shutdown
+    info!("Shutting down gracefully, waiting for active connections");
+
+    // クリーンアップタスクを停止する
+    cancel_token.cancel();
+
+    // 接続プール内の idle 接続を drain する
+    let drained = pool.lock().await.drain();
+    info!(drained_connections = drained, "Connection pool drained");
+
+    // 実行中タスク (クリーンアップ + クライアント接続) の完了を待機する
+    let timeout = Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+    if tokio::time::timeout(timeout, async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await
+    .is_err()
+    {
+        info!("Shutdown timeout reached, aborting remaining tasks");
+        tasks.abort_all();
+        // abort 後の JoinError は期待動作のため無視する
+        while tasks.join_next().await.is_some() {}
+    }
+
+    info!("Reverse proxy stopped");
+    Ok(())
 }
 
 async fn handle_client(
