@@ -411,9 +411,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > self.limits.max_body_size {
                 return Err(Error::BodyTooLarge {
-                    size: usize::try_from(len).unwrap_or(usize::MAX),
+                    size: len,
                     limit: self.limits.max_body_size,
                 });
             }
@@ -811,12 +811,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             .len()
                             .checked_add(len)
                             .ok_or(Error::BodyTooLarge {
-                                size: usize::MAX,
+                                size: u64::MAX,
                                 limit: self.limits.max_body_size,
                             })?;
-                    if new_size > self.limits.max_body_size {
+                    if (new_size as u64) > self.limits.max_body_size {
                         return Err(Error::BodyTooLarge {
-                            size: new_size,
+                            size: new_size as u64,
                             limit: self.limits.max_body_size,
                         });
                     }

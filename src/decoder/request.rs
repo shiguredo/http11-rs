@@ -316,9 +316,9 @@ impl<D: Decompressor> RequestDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > self.limits.max_body_size {
                 return Err(Error::BodyTooLarge {
-                    size: usize::try_from(len).unwrap_or(usize::MAX),
+                    size: len,
                     limit: self.limits.max_body_size,
                 });
             }

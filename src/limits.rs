@@ -8,7 +8,7 @@ pub struct DecoderLimits {
     /// 最大ヘッダー行長 (デフォルト: 8KB)
     pub max_header_line_size: usize,
     /// 最大ボディサイズ (デフォルト: 10MB)
-    pub max_body_size: usize,
+    pub max_body_size: u64,
     /// 最大チャンクサイズ行長 (デフォルト: 64バイト)
     ///
     /// chunked 転送エンコーディングのチャンクサイズ行の最大長。
@@ -34,7 +34,7 @@ impl DecoderLimits {
     ///
     /// # 警告
     ///
-    /// すべての上限を `usize::MAX` に設定する。
+    /// ボディサイズ上限を `u64::MAX`、それ以外を `usize::MAX` に設定する。
     /// 未信頼入力に対して使用すると、メモリを無制限に消費して OOM を引き起こす可能性がある。
     /// 信頼済み入力またはテスト用途にのみ使用すること。
     pub fn unlimited() -> Self {
@@ -42,7 +42,7 @@ impl DecoderLimits {
             max_buffer_size: usize::MAX,
             max_headers_count: usize::MAX,
             max_header_line_size: usize::MAX,
-            max_body_size: usize::MAX,
+            max_body_size: u64::MAX,
             max_chunk_line_size: usize::MAX,
         }
     }

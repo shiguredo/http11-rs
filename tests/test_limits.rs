@@ -26,6 +26,6 @@ fn test_decoder_limits_unlimited_values() {
     assert_eq!(limits.max_buffer_size, usize::MAX);
     assert_eq!(limits.max_headers_count, usize::MAX);
     assert_eq!(limits.max_header_line_size, usize::MAX);
-    assert_eq!(limits.max_body_size, usize::MAX);
+    assert_eq!(limits.max_body_size, u64::MAX);
     assert_eq!(limits.max_chunk_line_size, usize::MAX);
 }

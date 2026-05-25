@@ -264,7 +264,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_decoder_exact_body_size(
-        extra_bytes in 0..10usize
+        extra_bytes in 0u64..10
     ) {
         let max_size = 100;
         let limits = DecoderLimits {
@@ -273,7 +273,7 @@ proptest! {
         };
         let mut decoder = RequestDecoder::with_limits(limits);
         let body_size = max_size + extra_bytes;
-        let body = "x".repeat(body_size);
+        let body = "x".repeat(body_size as usize);
         let data = format!("POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
         decoder.feed(data.as_bytes()).unwrap();
         if extra_bytes == 0 {
@@ -328,7 +328,7 @@ proptest! {
     #[test]
     fn prop_request_decoder_limits_getter(
         max_buffer_size in 100..1000usize,
-        max_body_size in 100..1000usize
+        max_body_size in 100u64..1000
     ) {
         let limits = DecoderLimits {
             max_buffer_size,

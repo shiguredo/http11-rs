@@ -2,6 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/change-chunked-body-consumed-u64
 
@@ -98,3 +99,13 @@ Content-Length パス (body.rs:129, 186) が既にこのパターン (`len as u6
 - Content-Length / Chunked / CloseDelimited の全パスでコンパイルが通り正しく動作すること
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
 - `CHANGES.md` に `[CHANGE]` として破壊的変更を記載すること
+
+## 解決方法
+
+- `src/decoder/phase.rs`: `BodyChunkedData { remaining: usize }` → `u64` に変更
+- `src/decoder/body.rs`: `body_consumed: usize` → `u64`、`usize::from_str_radix` → `u64::from_str_radix`、全 `checked_add(len)` → `checked_add(len as u64)`、`BodyTooLarge` の `usize::MAX` → `u64::MAX`
+- `src/limits.rs`: `max_body_size: usize` → `u64`、`unlimited()` の `usize::MAX` → `u64::MAX`
+- `src/error.rs`: `BodyTooLarge { size: usize, limit: usize }` → `u64`
+- `src/decoder/request.rs` / `response.rs`: BodyTooLarge の型整合を修正
+- `tests/test_decoder/body.rs`: u32::MAX 超チャンクサイズ、BodyTooLarge u64 型確認、unlimited テスト 3 件追加
+- PBT / fuzz の型修正 (prop_decoder, fuzz_decoder_limits)

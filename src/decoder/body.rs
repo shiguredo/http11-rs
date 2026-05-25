@@ -72,7 +72,7 @@ pub(crate) struct BodyDecoder {
     /// トレーラーヘッダー
     trailers: Vec<(HeaderName, String)>,
     /// ボディ内での消費済みバイト数
-    body_consumed: usize,
+    body_consumed: u64,
     /// トレーラー数
     trailer_count: usize,
     /// `Trailer:` ヘッダーで sender が事前申告した trailer フィールド名 (ASCII 小文字化済み)
@@ -139,7 +139,7 @@ impl BodyDecoder {
                 if buf.is_empty() {
                     return None;
                 }
-                let available = buf.len().min(*remaining);
+                let available = (buf.len() as u64).min(*remaining) as usize;
                 if available > 0 {
                     Some(&buf[..available])
                 } else {
@@ -186,9 +186,9 @@ impl BodyDecoder {
                 *remaining -= len as u64;
                 self.body_consumed =
                     self.body_consumed
-                        .checked_add(len)
+                        .checked_add(len as u64)
                         .ok_or(Error::BodyTooLarge {
-                            size: usize::MAX,
+                            size: u64::MAX,
                             limit: limits.max_body_size,
                         })?;
 
@@ -225,7 +225,7 @@ impl BodyDecoder {
                 }
             }
             DecodePhase::BodyChunkedData { remaining } => {
-                if len > *remaining {
+                if (len as u64) > *remaining {
                     return Err(Error::InvalidData(
                         "consume_body: len exceeds chunk remaining".to_string(),
                     ));
@@ -242,12 +242,12 @@ impl BodyDecoder {
                 }
 
                 buf.drain(..len);
-                *remaining -= len;
+                *remaining -= len as u64;
                 self.body_consumed =
                     self.body_consumed
-                        .checked_add(len)
+                        .checked_add(len as u64)
                         .ok_or(Error::BodyTooLarge {
-                            size: usize::MAX,
+                            size: u64::MAX,
                             limit: limits.max_body_size,
                         })?;
 
@@ -326,13 +326,13 @@ impl BodyDecoder {
                 }
 
                 // max_body_size チェック (加算前にオーバーフロー検出)
-                let new_size = self
-                    .body_consumed
-                    .checked_add(len)
-                    .ok_or(Error::BodyTooLarge {
-                        size: usize::MAX,
-                        limit: limits.max_body_size,
-                    })?;
+                let new_size =
+                    self.body_consumed
+                        .checked_add(len as u64)
+                        .ok_or(Error::BodyTooLarge {
+                            size: u64::MAX,
+                            limit: limits.max_body_size,
+                        })?;
                 if new_size > limits.max_body_size {
                     return Err(Error::BodyTooLarge {
                         size: new_size,
@@ -434,7 +434,7 @@ impl BodyDecoder {
             let hex_bytes = &size_bytes[..hex_end];
             let size_str = core::str::from_utf8(hex_bytes)
                 .map_err(|_| Error::InvalidData("invalid chunk size: not ASCII".to_string()))?;
-            let chunk_size = usize::from_str_radix(size_str, 16).map_err(|_| {
+            let chunk_size = u64::from_str_radix(size_str, 16).map_err(|_| {
                 Error::InvalidData(alloc::format!("invalid chunk size: {}", size_str))
             })?;
 
@@ -454,7 +454,7 @@ impl BodyDecoder {
                     self.body_consumed
                         .checked_add(chunk_size)
                         .ok_or(Error::BodyTooLarge {
-                            size: usize::MAX,
+                            size: u64::MAX,
                             limit: limits.max_body_size,
                         })?;
                 if new_size > limits.max_body_size {
