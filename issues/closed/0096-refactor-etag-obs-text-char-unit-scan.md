@@ -2,6 +2,7 @@
 
 - Priority: Low
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/refactor-etag-obs-text-char-scan
 
@@ -91,3 +92,9 @@ for c in tag.chars() {
 - `tag.bytes()` による etagc 文字検証が残存していないこと (`split_etag_list_raw` の ASCII デリミタ走査は除外)
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
 - obs-text (U+0080 以上) を含む ETag のラウンドトリップテストが追加されていること
+
+## 解決方法
+
+- `src/etag.rs` の `is_etagc(b: u8) -> bool` を `is_etagc_char(c: char) -> bool` に変更した
+- `EntityTag::parse` / `strong` / `weak` の走査を `tag.bytes()` から `tag.chars()` に変更した
+- `tests/test_etag.rs` に obs-text ラウンドトリップ、マルチバイト文字、CR/LF/NUL 拒否の単体テスト 4 件を追加した

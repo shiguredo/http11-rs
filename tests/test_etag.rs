@@ -85,3 +85,50 @@ fn test_etag_list_display() {
     let any = parse_etag_list("*").unwrap();
     assert_eq!(any.to_string(), "*");
 }
+
+// ========================================
+// obs-text (U+0080 以上) の char 単位走査検証
+// ========================================
+
+#[test]
+fn test_etag_obs_text_parse() {
+    // obs-text (U+0080 以上) を含む ETag が正常にパースされる
+    let etag = EntityTag::parse("\"v\u{00A9}\"").unwrap();
+    assert!(etag.is_strong());
+    assert_eq!(etag.tag(), "v\u{00A9}");
+}
+
+#[test]
+fn test_etag_obs_text_roundtrip() {
+    // obs-text を含む ETag の Display → 再パースのラウンドトリップ
+    let etag = EntityTag::parse("\"v\u{00A9}\"").unwrap();
+    let displayed = etag.to_string();
+    let reparsed = EntityTag::parse(&displayed).unwrap();
+    assert_eq!(etag.tag(), reparsed.tag());
+    assert_eq!(etag.is_weak(), reparsed.is_weak());
+}
+
+#[test]
+fn test_etag_multibyte_char_parse() {
+    // マルチバイト文字 (U+3042 "あ") を含む ETag のパース
+    let etag = EntityTag::parse("\"v\u{3042}\"").unwrap();
+    assert_eq!(etag.tag(), "v\u{3042}");
+
+    // strong/weak ビルダーでも受理される
+    let strong = EntityTag::strong("v\u{3042}").unwrap();
+    assert_eq!(strong.tag(), "v\u{3042}");
+    let weak = EntityTag::weak("v\u{3042}").unwrap();
+    assert_eq!(weak.tag(), "v\u{3042}");
+    assert!(weak.is_weak());
+}
+
+#[test]
+fn test_etag_cr_lf_nul_rejected() {
+    // CR/LF/NUL を含む ETag タグは InvalidCharacter エラー
+    assert!(EntityTag::strong("v\r").is_err());
+    assert!(EntityTag::strong("v\n").is_err());
+    assert!(EntityTag::strong("v\0").is_err());
+    assert!(EntityTag::weak("v\r").is_err());
+    assert!(EntityTag::weak("v\n").is_err());
+    assert!(EntityTag::weak("v\0").is_err());
+}

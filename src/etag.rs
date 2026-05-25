@@ -102,8 +102,8 @@ impl EntityTag {
         let tag = &rest[1..1 + end_quote];
 
         // タグの文字を検証 (etagc: %x21 / %x23-7E / obs-text)
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -122,8 +122,8 @@ impl EntityTag {
 
     /// 新しい Strong ETag を作成
     pub fn strong(tag: &str) -> Result<Self, ETagError> {
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -135,8 +135,8 @@ impl EntityTag {
 
     /// 新しい Weak ETag を作成
     pub fn weak(tag: &str) -> Result<Self, ETagError> {
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -186,10 +186,11 @@ impl fmt::Display for EntityTag {
     }
 }
 
-/// etagc 文字 (RFC 9110)
+/// etagc 文字 (RFC 9110 Section 8.8.3)
 /// %x21 / %x23-7E / obs-text
-fn is_etagc(b: u8) -> bool {
-    b == 0x21 || (0x23..=0x7E).contains(&b) || b >= 0x80
+/// obs-text は Unicode scalar U+0080..=U+10FFFF として char 単位で受理する
+fn is_etagc_char(c: char) -> bool {
+    c == '\x21' || ('\x23'..='\x7E').contains(&c) || c > '\x7F'
 }
 
 /// ETag リストを引用符を考慮してカンマ分割する
