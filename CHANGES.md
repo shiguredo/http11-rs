@@ -11,6 +11,10 @@
 
 ## develop
 
+- [CHANGE] `BodyChunkedData { remaining }` / `body_consumed` / `max_body_size` / `BodyTooLarge { size, limit }` を `usize` から `u64` に統一する
+  - 32-bit 環境で u32::MAX を超えるチャンクサイズが RFC 9112 Section 7.1 MUST 違反となる問題を解消する
+  - `DecoderLimits::max_body_size` と `Error::BodyTooLarge` のフィールドが `u64` に変更される破壊的変更
+  - @voluntas
 - [FIX] ヘッダーパースモジュールの `str::trim()` を `trim_ows()` に統一し Unicode 空白 (NBSP 等) を OWS として除去しない RFC 9110 Section 5.6.3 準拠にする
   - @voluntas
 

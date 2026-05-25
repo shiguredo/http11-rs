@@ -16,7 +16,7 @@ pub enum Error {
     /// ヘッダー行が長すぎる
     HeaderLineTooLong { size: usize, limit: usize },
     /// ボディサイズ超過
-    BodyTooLarge { size: usize, limit: usize },
+    BodyTooLarge { size: u64, limit: u64 },
     /// チャンクサイズ行が長すぎる
     ChunkLineTooLong { size: usize, limit: usize },
     /// 圧縮/展開エラー

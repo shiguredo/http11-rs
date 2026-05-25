@@ -25,7 +25,7 @@ fn build_limits(input: &FuzzLimits) -> DecoderLimits {
         max_buffer_size: input.max_buffer_size as usize,
         max_headers_count: input.max_headers_count as usize,
         max_header_line_size: input.max_header_line_size as usize,
-        max_body_size: input.max_body_size as usize,
+        max_body_size: input.max_body_size as u64,
         max_chunk_line_size: 64,
     }
 }

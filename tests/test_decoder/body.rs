@@ -726,3 +726,70 @@ mod peek_body_decompressed {
         assert!(result.is_none(), "進展なしのときは None になるべき");
     }
 }
+
+// ========================================
+// chunked チャンクサイズ u64 統一の検証
+// ========================================
+
+#[test]
+fn test_chunked_size_exceeds_u32_max() {
+    // u32::MAX を超えるチャンクサイズのパースは成功し、max_body_size 超過で BodyTooLarge
+    use shiguredo_http11::Error;
+
+    let limits = DecoderLimits {
+        max_body_size: 100,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = RequestDecoder::with_limits(limits);
+
+    let request = "POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFFF\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    // decode() でヘッダー + チャンクサイズ処理を一括実行
+    let result = decoder.decode();
+    assert!(
+        matches!(result, Err(Error::BodyTooLarge { .. })),
+        "BodyTooLarge を期待したが {:?} だった",
+        result
+    );
+}
+
+#[test]
+fn test_body_too_large_fields_are_u64() {
+    // BodyTooLarge のフィールドが u64 であることをパターンマッチで確認
+    use shiguredo_http11::Error;
+
+    let limits = DecoderLimits {
+        max_body_size: 5,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = RequestDecoder::with_limits(limits);
+
+    let request = "POST / HTTP/1.1\r\nHost: x\r\nContent-Length: 10\r\n\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    let result = decoder.decode();
+    match result {
+        Err(Error::BodyTooLarge { size, limit }) => {
+            let _size: u64 = size;
+            let _limit: u64 = limit;
+            assert_eq!(limit, 5u64);
+            assert_eq!(size, 10u64);
+        }
+        other => panic!("BodyTooLarge を期待したが {:?} だった", other),
+    }
+}
+
+#[test]
+fn test_unlimited_accepts_large_chunk_size() {
+    // DecoderLimits::unlimited() で u32::MAX 超のチャンクサイズが通過すること
+    let mut decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
+
+    let request = "POST / HTTP/1.1\r\nHost: x\r\nTransfer-Encoding: chunked\r\n\r\nFFFFFFFE1\r\n";
+    decoder.feed(request.as_bytes()).unwrap();
+
+    // decode() はヘッダー処理後、チャンクサイズのパースに成功し Ok(None) (ボディデータ待ち)
+    let result = decoder.decode();
+    assert!(result.is_ok(), "エラーを期待しないが {:?} だった", result);
+    assert!(result.unwrap().is_none());
+}
