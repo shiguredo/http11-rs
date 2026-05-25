@@ -27,6 +27,8 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテ�
 - no_std 対応
   - <https://docs.rust-embedded.org/book/intro/no-std.html>
 - 依存ライブラリ 0
+- 構築型 (`HeaderName` / `Method` / `Scheme`) によるコンパイル時検査
+  - `from_static(b"...")` でリテラルの構文違反をコンパイル時に検出
 - 圧縮/展開トレイト (`Compressor` / `Decompressor`) の提供
   - ライブラリ本体は圧縮実装を含まず、利用者が任意の実装を組み込める
 
@@ -35,15 +37,15 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテ�
 ### クライアント (リクエスト送信、レスポンス受信)
 
 ```rust
-use shiguredo_http11::{Request, ResponseDecoder};
+use shiguredo_http11::{HeaderName, Method, Request, ResponseDecoder};
 
 // リクエストを作成してエンコード
-// Request::new / header は構築時バリデーション (CRLF/NUL 拒否) を行うため
-// `Result<Self, EncodeError>` を返す。
+// Request::new は Method 型、header は HeaderName 型を受け取る。
+// 構築時バリデーション (CRLF/NUL 拒否) を行うため `Result<Self, EncodeError>` を返す。
 // encode() は意味論違反 (Host 欠落等) の検出のため `Result<Vec<u8>, EncodeError>` を返す。
-let request = Request::new("GET", "/")?
-    .header("Host", "example.com")?
-    .header("Connection", "close")?;
+let request = Request::new(Method::GET, "/")?
+    .header(HeaderName::from_static(b"Host"), "example.com")?
+    .header(HeaderName::from_static(b"Connection"), "close")?;
 let bytes = request.encode()?;
 // bytes を送信...
 
@@ -59,7 +61,7 @@ let mut decoder = ResponseDecoder::new();
 ### サーバー (リクエスト受信、レスポンス送信)
 
 ```rust
-use shiguredo_http11::{RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{HeaderName, RequestDecoder, Response, StatusCode};
 
 // リクエストをデコード
 let mut decoder = RequestDecoder::new();
@@ -75,7 +77,7 @@ let mut decoder = RequestDecoder::new();
 // 任意の reason phrase が必要な場合は `Response::new(code, phrase)` を使う
 // (`Result<Self, EncodeError>` を返す)。
 let response = Response::with_status(StatusCode::OK)
-    .header("Content-Type", "text/plain")?
+    .header(HeaderName::from_static(b"Content-Type"), "text/plain")?
     .body(b"Hello, World!".to_vec());
 let bytes = response.encode()?;
 // bytes を送信...
@@ -97,9 +99,9 @@ let bytes = response.encode()?;
 受信済みの値を書き換えるミューテーター (`&mut self` を取り `Result<&mut Self, _>` /
 `&mut Self` を返す) も提供しています。
 
-- `add_header(name, value)` - ヘッダーを末尾に追加
+- `add_header(HeaderName, value)` - ヘッダーを末尾に追加
   - チェイン可能
-- `set_header(name, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加
+- `set_header(HeaderName, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加
   - チェイン可能
 - `set_body(data)` / `clear_body()` - ボディの差し替え / クリア
 - `set_omit_body(bool)` - ボディ送信抑止フラグの設定
@@ -134,17 +136,17 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 HEAD リクエストへのレスポンスは、RFC 9110 Section 9.3.2 に基づき GET と同じヘッダーを返しますがボディは送信しません。
 
 ```rust
-use shiguredo_http11::{Request, Response, ResponseDecoder, StatusCode};
+use shiguredo_http11::{HeaderName, Method, Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: HEAD リクエストへのレスポンス
 // RFC 9110 Section 9.3.2: GET と同じヘッダーを返すがボディは送信しない
 // Request のフィールドは非公開のためアクセサ method() を使う
-let is_head = request.method().eq_ignore_ascii_case("HEAD");
+let is_head = request.method() == &Method::HEAD;
 
 let body = b"Hello, World!";
 let mut response = Response::with_status(StatusCode::OK)
-    .header("Content-Type", "text/plain")?
-    .header("Content-Length", &body.len().to_string())?
+    .header(HeaderName::from_static(b"Content-Type"), "text/plain")?
+    .header(HeaderName::from_static(b"Content-Length"), &body.len().to_string())?
     .omit_body(is_head);
 
 if !is_head {
@@ -153,8 +155,8 @@ if !is_head {
 let bytes = response.encode()?;
 
 // クライアント側: HEAD レスポンスの受信
-let request = Request::new("HEAD", "/")?
-    .header("Host", "example.com")?;
+let request = Request::new(Method::HEAD, "/")?
+    .header(HeaderName::from_static(b"Host"), "example.com")?;
 let bytes = request.encode()?;
 // bytes を送信...
 
@@ -172,10 +174,10 @@ decoder.set_request_method("HEAD"); // HEAD レスポンスではボディなし
 ヘッダーのみをエンコードし、後からボディをチャンクで送信できます。
 
 ```rust
-use shiguredo_http11::{Response, StatusCode, encode_chunk};
+use shiguredo_http11::{HeaderName, Response, StatusCode, encode_chunk};
 
 let response = Response::with_status(StatusCode::OK)
-    .header("Transfer-Encoding", "chunked")?;
+    .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")?;
 let headers = response.encode_headers()?;
 // headers を送信...
 
