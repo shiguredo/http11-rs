@@ -2,6 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/change-multipart-boundary-validation
 
@@ -103,3 +104,13 @@ fuzz ターゲットは `new` が `Err` を返す場合に early return し、�
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
 - 不正 boundary のテストが追加されていること
 - `CHANGES.md` に `[CHANGE]` として破壊的変更を記載すること
+
+## 解決方法
+
+- `MultipartParser::new` に `is_valid_boundary` 検証を追加し、戻り値を `Result<Self, MultipartError>` に変更した
+- `MultipartParser::try_new` を削除した
+- `MultipartBuilder::with_boundary` に `is_valid_boundary` 検証を追加し、戻り値を `Result<Self, MultipartError>` に変更した
+- `MultipartBuilder::try_with_boundary` を削除した
+- crate 内の全呼び出し箇所 (~75 箇所) に `.unwrap()` または `if let Ok(...)` パターンを追加した
+- `tests/test_multipart.rs` に boundary 検証テスト 6 件を追加した
+- fuzz ターゲットは `Err` 時 early return パターンに修正した

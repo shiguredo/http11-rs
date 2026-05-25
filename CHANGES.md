@@ -11,6 +11,9 @@
 
 ## develop
 
+- [CHANGE] `MultipartParser::new` / `MultipartBuilder::with_boundary` に boundary 検証を追加し `Result` 返却に変更する
+  - `try_new` / `try_with_boundary` を削除し、`new` / `with_boundary` に統合する
+  - @voluntas
 - [CHANGE] `BodyChunkedData { remaining }` / `body_consumed` / `max_body_size` / `BodyTooLarge { size, limit }` を `usize` から `u64` に統一する
   - 32-bit 環境で u32::MAX を超えるチャンクサイズが RFC 9112 Section 7.1 MUST 違反となる問題を解消する
   - `DecoderLimits::max_body_size` と `Error::BodyTooLarge` のフィールドが `u64` に変更される破壊的変更

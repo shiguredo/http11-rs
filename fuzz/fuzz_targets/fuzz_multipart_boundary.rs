@@ -2,12 +2,12 @@
 //!
 //! 既存の `fuzz_multipart` は boundary が 4 種固定 (`"boundary"` 等) のため、
 //! 攻撃者が `Content-Type: multipart/form-data; boundary=...` で制御し得る
-//! boundary 文字列の経路 (`MultipartParser::try_new` の `InvalidBoundary` 判定、
+//! boundary 文字列の経路 (`MultipartParser::new` の `InvalidBoundary` 判定、
 //! delimiter 構築時の境界長 / 特殊文字、body と boundary の偶発衝突) を
 //! 踏めていない。
 //!
 //! 本 target は boundary 文字列も任意化し、以下を検証する:
-//! - `MultipartParser::new` / `try_new` が任意 boundary でパニックしないこと
+//! - `MultipartParser::new` が任意 boundary でパニックしないこと
 //! - `with_max_buffer_size` 経路でも `feed` が制御範囲内で `BufferOverflow` を
 //!   返し、パニックしないこと
 //! - `next_part` の巡回 + アクセサ呼び出しがパニックしないこと
@@ -66,14 +66,15 @@ fuzz_target!(|input: FuzzInput| {
     // OOM を避けるため上限を 1MB に clamp する
     let max_buffer_size = (max_buffer_size as usize).min(1024 * 1024);
 
-    // パターン 1: `try_new` 経路 (RFC 2046 Section 5.1.1 検証あり)
-    if let Ok(mut parser) = MultipartParser::try_new(&boundary) {
+    // パターン 1: `new` 経路 (RFC 2046 Section 5.1.1 検証あり)
+    if let Ok(mut parser) = MultipartParser::new(&boundary) {
         parser = parser.with_max_buffer_size(max_buffer_size);
         drive(&mut parser, &data, split_size);
     }
 
-    // パターン 2: `new` 経路 (検証なし、攻撃者が boundary に bare CTL や
-    // RFC 2046 違反文字を埋め込む経路を再現する)
-    let mut parser = MultipartParser::new(&boundary).with_max_buffer_size(max_buffer_size);
-    drive(&mut parser, &data, split_size);
+    // パターン 2: 任意 boundary の経路 (検証に引っかかる境界は早期リターン)
+    if let Ok(mut parser) = MultipartParser::new(&boundary) {
+        parser = parser.with_max_buffer_size(max_buffer_size);
+        drive(&mut parser, &data, split_size);
+    }
 });

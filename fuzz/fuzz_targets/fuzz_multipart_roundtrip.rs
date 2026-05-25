@@ -33,7 +33,7 @@ enum FuzzPart {
 
 #[derive(Arbitrary, Debug)]
 struct FuzzInput {
-    /// boundary。`try_with_boundary` を通れば valid path、そうでなければ early return。
+    /// boundary。`with_boundary` での検証に通れば処理、通らなければ early return。
     boundary: String,
     parts: Vec<FuzzPart>,
     /// parser feed の分割サイズ (1..=64 で正規化)
@@ -115,19 +115,20 @@ fuzz_target!(|input: FuzzInput| {
     let parts = normalize_parts(parts);
     let split_size = ((split_hint as usize) % 64).max(1);
 
-    // パターン 1: `try_with_boundary` を通った valid path
-    if let Ok(builder) = MultipartBuilder::try_with_boundary(&boundary) {
+    // パターン 1: `with_boundary` を通った valid path
+    if let Ok(builder) = MultipartBuilder::with_boundary(&boundary) {
         let payload = build_payload(builder, &parts);
-        if let Ok(mut parser) = MultipartParser::try_new(&boundary) {
+        if let Ok(mut parser) = MultipartParser::new(&boundary) {
             drive_parser(&mut parser, &payload, split_size);
         }
     }
 
-    // パターン 2: `with_boundary` (検証なし) で組み立て、`new` で parse する
-    // attacker controlled boundary 経路。build 側 / parse 側どちらでも
+    // パターン 2: attacker controlled boundary 経路。build 側 / parse 側どちらでも
     // パニックしないことを確認する。
-    let builder = MultipartBuilder::with_boundary(&boundary);
-    let payload = build_payload(builder, &parts);
-    let mut parser = MultipartParser::new(&boundary);
-    drive_parser(&mut parser, &payload, split_size);
+    if let Ok(builder) = MultipartBuilder::with_boundary(&boundary) {
+        let payload = build_payload(builder, &parts);
+        if let Ok(mut parser) = MultipartParser::new(&boundary) {
+            drive_parser(&mut parser, &payload, split_size);
+        }
+    }
 });
