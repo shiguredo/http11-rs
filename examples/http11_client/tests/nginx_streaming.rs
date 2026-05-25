@@ -71,9 +71,9 @@ async fn fetch_with_headers(
     let (_scheme, host, port, request_path) = parse_url(&url).expect("URL のパースに失敗");
     let mut request = Request::new(method, &request_path)
         .expect("Request::new に失敗")
-        .header(HeaderName::from_static(b"Host"), &host)
+        .header("Host", &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header(HeaderName::from_static(b"User-Agent"), "http11_client-test")
+        .header("User-Agent", "http11_client-test")
         .expect("User-Agent ヘッダーの設定に失敗");
     for &(name, value) in extra_headers {
         request = request

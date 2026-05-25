@@ -1,7 +1,7 @@
 //! HTTP メソッド型 (RFC 9110 Section 9.1, method = token)
 
 use alloc::borrow::Cow;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -9,33 +9,85 @@ use core::fmt;
 ///
 /// case-sensitive (RFC 9110 Section 9.1 "The method token is case-sensitive")。
 /// Eq/Hash も case-sensitive。
+///
+/// # 構築経路
+///
+/// | 用途 | API | 不正 token 時 |
+/// |---|---|---|
+/// | builder (`'static` リテラル) | `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` | `Err(MethodError)` |
+/// | 動的入力 | `Method::new()` | `Err(MethodError)` |
+/// | `const` 定数 (compile-time 拒否) | `Method::from_static(b"...")` | コンパイル時 panic |
+///
+/// # 非 `'static` な `&str` について
+///
+/// `TryFrom<&'static str>` のみ実装しているため、非 `'static` な `&str` は
+/// コンパイルエラーになる。動的な文字列を使う場合は `Method::new()` で
+/// 構築した値を渡すこと。
+///
+/// ```compile_fail
+/// use shiguredo_http11::Method;
+///
+/// fn make_method(m: &str) -> Method {
+///     m.try_into().unwrap() // コンパイルエラー: &str は &'static str ではない
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Method(Cow<'static, [u8]>);
 
 /// `Method` の構築エラー
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MethodError {
     /// 空のメソッド
-    Empty,
+    Empty { input: String },
     /// 不正なバイトを含む
-    InvalidByte { byte: u8, position: usize },
+    InvalidByte {
+        byte: u8,
+        position: usize,
+        input: String,
+    },
+}
+
+impl MethodError {
+    /// エラーの原因となった入力文字列への参照を返す
+    pub fn input(&self) -> &str {
+        match self {
+            MethodError::Empty { input } => input,
+            MethodError::InvalidByte { input, .. } => input,
+        }
+    }
+
+    /// エラーの原因となった入力文字列を消費して返す
+    pub fn into_input(self) -> String {
+        match self {
+            MethodError::Empty { input } => input,
+            MethodError::InvalidByte { input, .. } => input,
+        }
+    }
 }
 
 impl fmt::Display for MethodError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MethodError::Empty => f.write_str("empty method"),
-            MethodError::InvalidByte { byte, position } => {
+            MethodError::Empty { input } => {
+                write!(f, "empty method: {:?}", input)
+            }
+            MethodError::InvalidByte {
+                byte,
+                position,
+                input,
+            } => {
                 write!(
                     f,
-                    "invalid byte 0x{:02X} at position {} in method",
-                    byte, position
+                    "invalid byte 0x{:02X} at position {} in method: {:?}",
+                    byte, position, input
                 )
             }
         }
     }
 }
+
+impl core::error::Error for MethodError {}
 
 /// RFC 9110 Section 5.6.2 tchar 判定 (const 文脈で使用可能)
 const fn is_tchar(b: u8) -> bool {
@@ -62,7 +114,9 @@ impl Method {
     pub fn new(method: impl AsRef<[u8]>) -> Result<Self, MethodError> {
         let bytes = method.as_ref();
         if bytes.is_empty() {
-            return Err(MethodError::Empty);
+            return Err(MethodError::Empty {
+                input: String::from_utf8_lossy(bytes).into_owned(),
+            });
         }
         let mut i = 0;
         while i < bytes.len() {
@@ -70,6 +124,7 @@ impl Method {
                 return Err(MethodError::InvalidByte {
                     byte: bytes[i],
                     position: i,
+                    input: String::from_utf8_lossy(bytes).into_owned(),
                 });
             }
             i += 1;
@@ -146,6 +201,51 @@ impl Method {
     }
 }
 
+impl TryFrom<&'static str> for Method {
+    type Error = MethodError;
+
+    fn try_from(s: &'static str) -> Result<Self, Self::Error> {
+        let bytes = s.as_bytes();
+        if bytes.is_empty() {
+            return Err(MethodError::Empty {
+                input: s.to_string(),
+            });
+        }
+        for (i, &b) in bytes.iter().enumerate() {
+            if !is_tchar(b) {
+                return Err(MethodError::InvalidByte {
+                    byte: b,
+                    position: i,
+                    input: s.to_string(),
+                });
+            }
+        }
+        Ok(Self(Cow::Borrowed(bytes)))
+    }
+}
+
+impl TryFrom<&'static [u8]> for Method {
+    type Error = MethodError;
+
+    fn try_from(bytes: &'static [u8]) -> Result<Self, Self::Error> {
+        if bytes.is_empty() {
+            return Err(MethodError::Empty {
+                input: String::from_utf8_lossy(bytes).into_owned(),
+            });
+        }
+        for (i, &b) in bytes.iter().enumerate() {
+            if !is_tchar(b) {
+                return Err(MethodError::InvalidByte {
+                    byte: b,
+                    position: i,
+                    input: String::from_utf8_lossy(bytes).into_owned(),
+                });
+            }
+        }
+        Ok(Self(Cow::Borrowed(bytes)))
+    }
+}
+
 impl PartialEq<str> for Method {
     fn eq(&self, other: &str) -> bool {
         self.as_bytes() == other.as_bytes()
@@ -200,12 +300,15 @@ mod tests {
 
     #[test]
     fn new_rejects_empty() {
-        assert!(Method::new(b"").is_err());
+        let err = Method::new(b"").unwrap_err();
+        assert_eq!(err.input(), "");
     }
 
     #[test]
     fn new_rejects_invalid_bytes() {
-        assert!(Method::new(b"GET\r").is_err());
+        let err = Method::new(b"GET\r").unwrap_err();
+        assert_eq!(err.input(), "GET\r");
+
         assert!(Method::new(b"GET\n").is_err());
         assert!(Method::new(b"GET ").is_err());
     }
@@ -215,5 +318,43 @@ mod tests {
         let m1 = Method::new(b"GET").unwrap();
         let m2 = Method::new(b"get").unwrap();
         assert_ne!(m1, m2);
+    }
+
+    #[test]
+    fn try_from_static_str_valid() {
+        let m: Method = "GET".try_into().unwrap();
+        assert_eq!(m.as_str(), "GET");
+        assert_eq!(m.as_bytes(), b"GET");
+    }
+
+    #[test]
+    fn try_from_static_str_empty() {
+        let err = Method::try_from("").unwrap_err();
+        assert_eq!(err.input(), "");
+    }
+
+    #[test]
+    fn try_from_static_str_invalid() {
+        let err = Method::try_from("GET ").unwrap_err();
+        assert_eq!(err.input(), "GET ");
+    }
+
+    #[test]
+    fn try_from_static_bytes_valid() {
+        let m: Method = (b"POST" as &'static [u8]).try_into().unwrap();
+        assert_eq!(m.as_str(), "POST");
+    }
+
+    #[test]
+    fn into_input_ownership() {
+        let err = Method::try_from("GET ").unwrap_err();
+        let input = err.into_input();
+        assert_eq!(input, "GET ");
+    }
+
+    #[test]
+    fn error_implements_std_error() {
+        let err = Method::try_from("").unwrap_err();
+        let _: &dyn core::error::Error = &err;
     }
 }

@@ -29,8 +29,21 @@
   - @voluntas
   - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
   - @voluntas
-- [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl Into<String> から HeaderName/Method に変更する
-  - 破壊的変更。全呼出側で Method::GET / HeaderName::from_static(b"Name") 等への書き換えが必要
+- [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl TryInto<HeaderName> / impl TryInto<Method> に変更する
+  - builder で `"Host"` / `"GET"` 等の `'static str` リテラルを直接渡せるようになる
+  - 既存の HeaderName / Method / Method::GET 渡しは引き続きコンパイル可能（identity TryFrom impl による）
+  - 不正リテラルは Err(EncodeError) で返す（panic しない）
+  - @voluntas
+- [ADD] HeaderNameError / MethodError に input フィールドを追加し、原因入力文字列をエラーに保持する
+  - input() / into_input() アクセサで参照・所有権移動の両方を提供する
+  - core::error::Error を実装する
+  - @voluntas
+- [ADD] TryFrom<&'static str> / TryFrom<&'static [u8]> を HeaderName / Method に実装する
+  - Erfolg 時は Cow::Borrowed で zero-alloc
+  - 非 'static な &str はコンパイルエラー（compile-fail doctest で担保）
+  - @voluntas
+- [ADD] TryFrom / new() の受理集合一致を PBT で検証する
+  - prop_header_name.rs / prop_method.rs に等価性テストを追加する
   - @voluntas
 
 ## 2026.5.0

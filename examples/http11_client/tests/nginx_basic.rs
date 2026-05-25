@@ -10,7 +10,7 @@
 mod helpers;
 
 use http11_client::{http_request, parse_url};
-use shiguredo_http11::{HeaderName, HttpHead, Method, Request};
+use shiguredo_http11::{HttpHead, Method, Request};
 
 /// nginx に対して 1 リクエスト送って Response を返す共通ヘルパー
 ///
@@ -24,11 +24,11 @@ async fn fetch(
     let (_scheme, host, port, request_path) = parse_url(&url).expect("URL のパースに失敗");
     let request = Request::new(method, &request_path)
         .expect("Request::new に失敗")
-        .header(HeaderName::from_static(b"Host"), &host)
+        .header("Host", &host)
         .expect("Host ヘッダーの設定に失敗")
-        .header(HeaderName::from_static(b"User-Agent"), "http11_client-test")
+        .header("User-Agent", "http11_client-test")
         .expect("User-Agent ヘッダーの設定に失敗")
-        .header(HeaderName::from_static(b"Connection"), "close")
+        .header("Connection", "close")
         .expect("Connection ヘッダーの設定に失敗");
     let request_method = request.method().to_string();
     let request_bytes = request.encode().expect("encode に失敗");

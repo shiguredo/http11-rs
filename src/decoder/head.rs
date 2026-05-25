@@ -184,12 +184,20 @@ impl RequestHead {
     /// テスト用途や、別経路で受信したヘッダー情報から `RequestHead` を構築したい
     /// 場合に利用する。`RequestDecoder` 経由で得た `RequestHead` には呼び出す
     /// 必要はない。
-    pub fn new(method: Method, uri: &str) -> Result<Self, EncodeError> {
+    pub fn new(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: &str,
+    ) -> Result<Self, EncodeError> {
         Self::with_version(method, uri, "HTTP/1.1")
     }
 
     /// 新しい `RequestHead` をバージョン指定付きで作成する (バリデート付き)
-    pub fn with_version(method: Method, uri: &str, version: &str) -> Result<Self, EncodeError> {
+    pub fn with_version(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: &str,
+        version: &str,
+    ) -> Result<Self, EncodeError> {
+        let method: Method = method.try_into().map_err(Into::into)?;
         if !is_valid_request_target(uri) {
             return Err(EncodeError::InvalidRequestTarget { uri: uri.into() });
         }
@@ -207,13 +215,22 @@ impl RequestHead {
     }
 
     /// ヘッダーを追加する (バリデート付き、ビルダー)
-    pub fn header(mut self, name: HeaderName, value: &str) -> Result<Self, EncodeError> {
+    pub fn header(
+        mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
         Ok(self)
     }
 
     /// ヘッダーを追加する (バリデート付き、可変借用)
-    pub fn add_header(&mut self, name: HeaderName, value: &str) -> Result<&mut Self, EncodeError> {
+    pub fn add_header(
+        &mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         if !is_valid_field_value(value) {
             return Err(EncodeError::InvalidHeaderValue {
                 name: name.as_str().into(),
@@ -361,13 +378,22 @@ impl ResponseHead {
     }
 
     /// ヘッダーを追加する (バリデート付き、ビルダー)
-    pub fn header(mut self, name: HeaderName, value: &str) -> Result<Self, EncodeError> {
+    pub fn header(
+        mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
         Ok(self)
     }
 
     /// ヘッダーを追加する (バリデート付き、可変借用)
-    pub fn add_header(&mut self, name: HeaderName, value: &str) -> Result<&mut Self, EncodeError> {
+    pub fn add_header(
+        &mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         if !is_valid_field_value(value) {
             return Err(EncodeError::InvalidHeaderValue {
                 name: name.as_str().into(),

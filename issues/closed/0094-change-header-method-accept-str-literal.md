@@ -2,6 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/add-header-accepts-str-literal
 
@@ -294,3 +295,26 @@ pub fn add_header(
 - PBT で `TryFrom<&'static str>` と `new()` の受理集合一致が検証されている
 - 既存テスト・PBT・doctest が全て通過
 - `CHANGES.md` の `## develop` エントリが最終形に更新されている
+
+## 解決方法
+
+### 実装概要
+
+`TryFrom<&'static str>` / `TryFrom<&'static [u8]>` を `HeaderName` / `Method` に実装し、builder API のシグネチャを `impl TryInto<HeaderName>` / `impl TryInto<Method>` に拡張した。これにより `"GET"` / `"Host"` 等のリテラルを builder に直接渡せるようになった。
+
+identity `TryFrom<T> for T` は `core` のブランケット impl (`TryFrom<U> for T where U: Into<T>`) と競合するため実装せず、代わりに builder 側で `N: TryInto<HeaderName>, N::Error: Into<EncodeError>` 制約を使う方針に変更した。`HeaderName` / `Method` 値は blanket impl 経由で `Error = Infallible` として `TryInto` を実装する。`From<Infallible> for EncodeError` を追加し、エラー型を統一した。
+
+### 変更ファイル
+
+- `src/header_name.rs`: `HeaderNameError` に `input: String` フィールド追加、`core::error::Error` impl、`input()`/`into_input()` アクセサ、`TryFrom<&'static str>` / `TryFrom<&'static [u8]>` impl、compile-fail doctest（非 `'static` 拒否）、型 doc（3 レーン説明）
+- `src/method.rs`: 同様の変更
+- `src/error.rs`: `From<HeaderNameError>` / `From<MethodError>` / `From<Infallible>` for `EncodeError` を追加
+- `src/request.rs`: `new` / `with_version` / `header` / `add_header` / `set_header` のシグネチャを `impl TryInto<_>` に変更
+- `src/response.rs`: `header` / `add_header` / `set_header` のシグネチャを `impl TryInto<HeaderName>` に変更
+- `src/decoder/head.rs`: `RequestHead` (`new`/`with_version`/`header`/`add_header`) と `ResponseHead` (`header`/`add_header`) のシグネチャを変更。`value` パラメータは `&str` のまま維持
+- `pbt/tests/prop_header_name.rs`: `TryFrom<&'static [u8]>` / `TryFrom<&'static str>` と `new()` の受理集合一致 PBT を追加
+- `pbt/tests/prop_method.rs`: 同様
+- `examples/`: `HeaderName::from_static(b"...")` → `"..."`、`Request::new(Method::GET,` → `Request::new("GET",` に書き換え。不要になった import を削除
+- `src/lib.rs`: crate レベル doc のコード例を新リテラル形式に更新
+- `skills/shiguredo-http11/SKILL.md`: builder コード例を新リテラル形式に更新
+- `CHANGES.md`: 0091 の `[CHANGE]` エントリを最終形で上書き、`[ADD]` エントリを追加

@@ -39,4 +39,34 @@ proptest! {
             prop_assert_ne!(m1, m2);
         }
     }
+
+    /// TryFrom<&'static [u8]> と new() の受理集合が一致する
+    #[test]
+    fn try_from_static_bytes_acceptance_equals_new(method in valid_method()) {
+        let static_bytes: &'static [u8] = Box::leak(method.clone().into_boxed_slice());
+        let r1 = Method::new(&method);
+        let r2: Result<Method, _> = static_bytes.try_into();
+        prop_assert!(r1.is_ok());
+        prop_assert!(r2.is_ok());
+        let b1 = r1.unwrap().as_bytes().to_vec();
+        let b2 = r2.unwrap().as_bytes().to_vec();
+        prop_assert_eq!(b1, b2);
+    }
+
+    /// TryFrom<&'static str> と new() の受理集合が一致する（valid な入力）
+    #[test]
+    fn try_from_static_str_acceptance_equals_new(method in valid_method()) {
+        if method.is_empty() {
+            return Ok(());
+        }
+        let method_str = String::from_utf8_lossy(&method).into_owned();
+        let static_str: &'static str = Box::leak(method_str.into_boxed_str());
+        let r1 = Method::new(&method);
+        let r2: Result<Method, _> = static_str.try_into();
+        prop_assert!(r1.is_ok());
+        prop_assert!(r2.is_ok());
+        let b1 = r1.unwrap().as_bytes().to_vec();
+        let b2 = r2.unwrap().as_bytes().to_vec();
+        prop_assert_eq!(b1, b2);
+    }
 }

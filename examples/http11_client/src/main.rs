@@ -17,7 +17,7 @@
 
 use http11_client::decompressor::supported_encodings;
 use http11_client::{http_request, https_request, parse_url};
-use shiguredo_http11::{HeaderName, HttpHead, Method, Request, Response};
+use shiguredo_http11::{HttpHead, Request, Response};
 use tracing::info;
 
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -57,19 +57,16 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     info!(host, port, "Connecting");
 
-    let mut request = Request::new(Method::GET, &path)?
-        .header(HeaderName::from_static(b"Host"), &host)?
-        .header(
-            HeaderName::from_static(b"User-Agent"),
-            "shiguredo_http11/0.1.0",
-        )?
-        .header(HeaderName::from_static(b"Accept"), "*/*")?
-        .header(HeaderName::from_static(b"Connection"), "close")?;
+    let mut request = Request::new("GET", &path)?
+        .header("Host", &host)?
+        .header("User-Agent", "shiguredo_http11/0.1.0")?
+        .header("Accept", "*/*")?
+        .header("Connection", "close")?;
 
     // 有効な圧縮形式があれば Accept-Encoding を追加
     let encodings = supported_encodings();
     if !encodings.is_empty() {
-        request = request.header(HeaderName::from_static(b"Accept-Encoding"), encodings)?;
+        request = request.header("Accept-Encoding", encodings)?;
     }
 
     let request_method = request.method().to_string();
