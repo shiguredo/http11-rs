@@ -5,6 +5,8 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
+use crate::validate::is_token_char;
+
 /// HTTP メソッド (RFC 9110 Section 9.1, method = token)
 ///
 /// case-sensitive (RFC 9110 Section 9.1 "The method token is case-sensitive")。
@@ -89,15 +91,6 @@ impl fmt::Display for MethodError {
 
 impl core::error::Error for MethodError {}
 
-/// RFC 9110 Section 5.6.2 tchar 判定 (const 文脈で使用可能)
-const fn is_tchar(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.'
-        | b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
 impl Method {
     /// 標準メソッド定数
     pub const GET: Self = Self::from_static(b"GET");
@@ -120,7 +113,7 @@ impl Method {
         }
         let mut i = 0;
         while i < bytes.len() {
-            if !is_tchar(bytes[i]) {
+            if !is_token_char(bytes[i]) {
                 return Err(MethodError::InvalidByte {
                     byte: bytes[i],
                     position: i,
@@ -175,7 +168,7 @@ impl Method {
         }
         let mut i = 0;
         while i < method.len() {
-            if !is_tchar(method[i]) {
+            if !is_token_char(method[i]) {
                 panic!("Method: invalid byte in method");
             }
             i += 1;
@@ -196,7 +189,7 @@ impl Method {
 
     /// 検証済みのバイト列から構築する (crate 内部用)
     pub(crate) fn from_validated_bytes(method: Vec<u8>) -> Self {
-        debug_assert!(!method.is_empty() && method.iter().all(|&b| is_tchar(b)));
+        debug_assert!(!method.is_empty() && method.iter().all(|&b| is_token_char(b)));
         Self(Cow::Owned(method))
     }
 }
@@ -212,7 +205,7 @@ impl TryFrom<&'static str> for Method {
             });
         }
         for (i, &b) in bytes.iter().enumerate() {
-            if !is_tchar(b) {
+            if !is_token_char(b) {
                 return Err(MethodError::InvalidByte {
                     byte: b,
                     position: i,
@@ -234,7 +227,7 @@ impl TryFrom<&'static [u8]> for Method {
             });
         }
         for (i, &b) in bytes.iter().enumerate() {
-            if !is_tchar(b) {
+            if !is_token_char(b) {
                 return Err(MethodError::InvalidByte {
                     byte: b,
                     position: i,

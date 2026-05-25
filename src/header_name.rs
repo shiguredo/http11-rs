@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::hash::{Hash, Hasher};
 
+use crate::validate::is_token_char;
+
 /// HTTP ヘッダー名 (RFC 9110 Section 5.1, field-name = token)
 ///
 /// Eq/Hash は case-insensitive (RFC 9110 Section 5.1 "Field names are case-insensitive")。
@@ -91,15 +93,6 @@ impl fmt::Display for HeaderNameError {
 
 impl core::error::Error for HeaderNameError {}
 
-/// RFC 9110 Section 5.6.2 tchar 判定 (const 文脈で使用可能)
-const fn is_tchar(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.'
-        | b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'
-    )
-}
-
 impl HeaderName {
     /// ランタイム検査つきで構築する
     pub fn new(name: impl AsRef<[u8]>) -> Result<Self, HeaderNameError> {
@@ -111,7 +104,7 @@ impl HeaderName {
         }
         let mut i = 0;
         while i < bytes.len() {
-            if !is_tchar(bytes[i]) {
+            if !is_token_char(bytes[i]) {
                 return Err(HeaderNameError::InvalidByte {
                     byte: bytes[i],
                     position: i,
@@ -179,7 +172,7 @@ impl HeaderName {
         }
         let mut i = 0;
         while i < name.len() {
-            if !is_tchar(name[i]) {
+            if !is_token_char(name[i]) {
                 panic!("HeaderName: invalid byte in header name");
             }
             i += 1;
@@ -200,7 +193,7 @@ impl HeaderName {
 
     /// 検証済みのバイト列から構築する (crate 内部用)
     pub(crate) fn from_validated_bytes(name: Vec<u8>) -> Self {
-        debug_assert!(!name.is_empty() && name.iter().all(|&b| is_tchar(b)));
+        debug_assert!(!name.is_empty() && name.iter().all(|&b| is_token_char(b)));
         Self(Cow::Owned(name))
     }
 }
@@ -216,7 +209,7 @@ impl TryFrom<&'static str> for HeaderName {
             });
         }
         for (i, &b) in bytes.iter().enumerate() {
-            if !is_tchar(b) {
+            if !is_token_char(b) {
                 return Err(HeaderNameError::InvalidByte {
                     byte: b,
                     position: i,
@@ -238,7 +231,7 @@ impl TryFrom<&'static [u8]> for HeaderName {
             });
         }
         for (i, &b) in bytes.iter().enumerate() {
-            if !is_tchar(b) {
+            if !is_token_char(b) {
                 return Err(HeaderNameError::InvalidByte {
                     byte: b,
                     position: i,

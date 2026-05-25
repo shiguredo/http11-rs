@@ -2,6 +2,7 @@
 
 - Priority: Low
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/refactor-unify-is-tchar
 
@@ -77,3 +78,11 @@ issue 0064 で `is_valid_token` / `is_token_char` の 12 重複定義を `valida
 - `host.rs` のローカル文字種判定関数が `validate.rs` の関数を使用していること
 - `is_valid_method` が削除され、使用箇所が `is_valid_token` に置換されていること
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
+
+## 解決方法
+
+- `validate.rs` の `is_token_char` を `const fn` に変更した
+- `header_name.rs` / `method.rs` のローカル `is_tchar` を削除し `crate::validate::is_token_char` で置換した
+- `host.rs` の `is_unreserved` / `is_sub_delim` を削除し `crate::validate::is_unreserved_byte` / `is_sub_delim_byte` で置換した
+- `host.rs` の `is_hexdig` を削除し `b.is_ascii_hexdigit()` にインライン化した
+- `validate.rs` の `is_valid_method` を削除し使用箇所を `is_valid_token` に置換した

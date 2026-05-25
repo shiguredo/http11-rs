@@ -19,7 +19,7 @@ use crate::request::Request;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
+use crate::validate::{is_valid_protocol_version, is_valid_request_target, is_valid_token};
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line, parse_header_line,
@@ -362,7 +362,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                         }
 
                         // メソッド名の検証 (RFC 9110 Section 9)
-                        if !is_valid_method(parts[0]) {
+                        if !is_valid_token(parts[0]) {
                             return Err(Error::InvalidData(
                                 "invalid request line: invalid method".to_string(),
                             ));

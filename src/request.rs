@@ -57,7 +57,7 @@ impl Request {
     /// 失敗時は最初に検出されたエラーを返す。
     ///
     /// `method` は RFC 9110 Section 9.1 の `method = token` (RFC 9110 Section 5.6.2) を要求する。
-    /// 検証には既存の `is_valid_method` (validate.rs:70) を流用する。
+    /// 検証には既存の `is_valid_token` (validate.rs:30) を流用する。
     /// `uri` は request-target として、CRLF (RFC 9112 Section 3.2: whitespace 禁止) および
     /// NUL (RFC 9110 Section 5.5: CR/LF/NUL are invalid and dangerous) を含まないことを要求する
     /// (構文レベルのバリデーション)。request-target 形式 (origin/absolute/authority/asterisk)
@@ -144,7 +144,7 @@ impl Request {
     /// # 不変条件 (呼び出し側の責務)
     ///
     /// 呼び出し側 (decoder) は以下の不変条件をすべて満たすフィールドのみを渡すこと:
-    /// - `method`: `is_valid_method` を通過済み (RFC 9110 Section 9.1: method = token)
+    /// - `method`: `is_valid_token` を通過済み (RFC 9110 Section 9.1: method = token)
     /// - `uri`: `is_valid_request_target` を通過済み。加えて encoder 側の
     ///   obs-text 拒否 (0x80-0xFF 非含有) を満たすこと
     /// - `version`: `is_valid_protocol_version` を通過済み

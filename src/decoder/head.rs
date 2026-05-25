@@ -272,7 +272,7 @@ impl RequestHead {
     /// `RequestDecoder` 内部からの構築用 (バリデーションスキップ)
     ///
     /// `RequestDecoder::decode_headers` は start-line / ヘッダーをデコード時に
-    /// 各フィールドをバリデート済み (`is_valid_method` / `is_valid_request_target` /
+    /// 各フィールドをバリデート済み (`is_valid_token` / `is_valid_request_target` /
     /// `is_valid_protocol_version` / `is_valid_header_name` / `is_valid_field_value`)
     /// であるため、ここで再検証は不要。
     ///
