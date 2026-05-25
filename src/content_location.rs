@@ -88,38 +88,3 @@ impl fmt::Display for ContentLocation {
         write!(f, "{}", self.uri)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_absolute() {
-        let cl = ContentLocation::parse("https://example.com/path").unwrap();
-        assert_eq!(cl.uri().as_str(), "https://example.com/path");
-    }
-
-    #[test]
-    fn parse_relative() {
-        let cl = ContentLocation::parse("/assets/logo.png").unwrap();
-        assert_eq!(cl.uri().path(), "/assets/logo.png");
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(ContentLocation::parse("").is_err());
-        assert!(ContentLocation::parse("http://[::1").is_err());
-    }
-
-    #[test]
-    fn parse_fragment_rejected() {
-        assert_eq!(
-            ContentLocation::parse("https://example.com/path#frag"),
-            Err(ContentLocationError::FragmentNotAllowed)
-        );
-        assert_eq!(
-            ContentLocation::parse("/path#frag"),
-            Err(ContentLocationError::FragmentNotAllowed)
-        );
-    }
-}

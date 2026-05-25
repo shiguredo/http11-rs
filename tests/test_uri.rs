@@ -1,6 +1,8 @@
 //! URI のユニットテスト
 
-use shiguredo_http11::uri::{Uri, UriError, normalize, percent_decode, resolve};
+use shiguredo_http11::uri::{
+    Scheme, Uri, UriError, normalize, percent_decode, percent_encode, resolve,
+};
 
 // ========================================
 // UriError のテスト
@@ -533,4 +535,155 @@ fn test_uri_empty_port() {
     assert_eq!(uri.host(), Some("example.com:"));
     assert_eq!(uri.port(), None);
     assert_eq!(uri.path(), "/path");
+}
+
+// ========================================
+// src/uri.rs のインラインテストを移動 (test_remove_dot_segments は remove_dot_segments が非公開のため移動不可)
+// ========================================
+
+#[test]
+fn test_percent_encode() {
+    assert_eq!(percent_encode("hello"), "hello");
+    assert_eq!(percent_encode("hello world"), "hello%20world");
+    assert_eq!(percent_encode("foo=bar"), "foo%3Dbar");
+    assert_eq!(percent_encode("日本語"), "%E6%97%A5%E6%9C%AC%E8%AA%9E");
+}
+
+#[test]
+fn test_percent_decode() {
+    assert_eq!(percent_decode("hello").unwrap(), "hello");
+    assert_eq!(percent_decode("hello%20world").unwrap(), "hello world");
+    assert_eq!(
+        percent_decode("%E6%97%A5%E6%9C%AC%E8%AA%9E").unwrap(),
+        "日本語"
+    );
+}
+
+#[test]
+fn test_percent_decode_invalid() {
+    assert!(percent_decode("%").is_err());
+    assert!(percent_decode("%2").is_err());
+    assert!(percent_decode("%GG").is_err());
+}
+
+#[test]
+fn test_uri_parse_full() {
+    let uri =
+        Uri::parse("https://user:pass@example.com:8080/path/to/resource?query=value#fragment")
+            .unwrap();
+    assert_eq!(uri.scheme(), Some("https"));
+    assert_eq!(uri.authority(), Some("user:pass@example.com:8080"));
+    assert_eq!(uri.host(), Some("example.com"));
+    assert_eq!(uri.port(), Some(8080));
+    assert_eq!(uri.path(), "/path/to/resource");
+    assert_eq!(uri.query(), Some("query=value"));
+    assert_eq!(uri.fragment(), Some("fragment"));
+}
+
+#[test]
+fn test_uri_parse_simple() {
+    let uri = Uri::parse("http://example.com").unwrap();
+    assert_eq!(uri.scheme(), Some("http"));
+    assert_eq!(uri.host(), Some("example.com"));
+    assert_eq!(uri.port(), None);
+    assert_eq!(uri.path(), "");
+    assert_eq!(uri.query(), None);
+    assert_eq!(uri.fragment(), None);
+}
+
+#[test]
+fn test_uri_parse_path_only() {
+    let uri = Uri::parse("/path/to/resource").unwrap();
+    assert_eq!(uri.scheme(), None);
+    assert_eq!(uri.host(), None);
+    assert_eq!(uri.path(), "/path/to/resource");
+}
+
+#[test]
+fn test_uri_parse_relative() {
+    let uri = Uri::parse("../other/path").unwrap();
+    assert_eq!(uri.scheme(), None);
+    assert!(uri.is_relative());
+    assert_eq!(uri.path(), "../other/path");
+}
+
+#[test]
+fn test_uri_parse_ipv6() {
+    let uri = Uri::parse("http://[::1]:8080/path").unwrap();
+    assert_eq!(uri.host(), Some("[::1]"));
+    assert_eq!(uri.port(), Some(8080));
+}
+
+#[test]
+fn test_origin_form() {
+    let uri = Uri::parse("http://example.com/path?query").unwrap();
+    assert_eq!(uri.origin_form(), "/path?query");
+
+    let uri = Uri::parse("http://example.com").unwrap();
+    assert_eq!(uri.origin_form(), "/");
+}
+
+#[test]
+fn test_resolve() {
+    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+
+    let resolved = resolve(&base, &Uri::parse("../d").unwrap()).unwrap();
+    assert_eq!(resolved.path(), "/a/d");
+
+    let resolved = resolve(&base, &Uri::parse("/absolute").unwrap()).unwrap();
+    assert_eq!(resolved.path(), "/absolute");
+
+    let resolved = resolve(&base, &Uri::parse("relative").unwrap()).unwrap();
+    assert_eq!(resolved.path(), "/a/b/relative");
+}
+
+#[test]
+fn test_normalize_authority_userinfo_preserved() {
+    let uri = Uri::parse("http://UserName:PassWord@EXAMPLE.COM/path").unwrap();
+    let normalized = normalize(&uri).unwrap();
+    assert_eq!(
+        normalized.authority(),
+        Some("UserName:PassWord@example.com")
+    );
+}
+
+#[test]
+fn test_normalize_authority_without_userinfo() {
+    let uri = Uri::parse("http://EXAMPLE.COM:8080/path").unwrap();
+    let normalized = normalize(&uri).unwrap();
+    assert_eq!(normalized.authority(), Some("example.com:8080"));
+}
+
+// Scheme 型の単体テスト
+
+#[test]
+fn test_scheme_from_static_matches_new() {
+    let schemes: &[&[u8]] = &[b"http", b"https", b"ws", b"wss", b"rtsp"];
+    for &scheme in schemes {
+        assert_eq!(Scheme::new(scheme).unwrap(), Scheme::from_static(scheme));
+    }
+}
+
+#[test]
+fn test_scheme_new_rejects_empty() {
+    assert!(Scheme::new(b"").is_err());
+}
+
+#[test]
+fn test_scheme_new_rejects_digit_start() {
+    assert!(Scheme::new(b"3http").is_err());
+}
+
+#[test]
+fn test_scheme_new_rejects_colon() {
+    assert!(Scheme::new(b"http:").is_err());
+}
+
+#[test]
+fn test_scheme_eq_is_case_insensitive() {
+    let h1 = Scheme::new(b"http").unwrap();
+    let h2 = Scheme::new(b"HTTP").unwrap();
+    let h3 = Scheme::new(b"Http").unwrap();
+    assert_eq!(h1, h2);
+    assert_eq!(h2, h3);
 }

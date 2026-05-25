@@ -1043,58 +1043,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_basic_auth_parse_empty() {
-        assert!(BasicAuth::parse("").is_err());
-    }
-
-    #[test]
-    fn test_basic_auth_parse_not_basic() {
-        assert!(BasicAuth::parse("Bearer token").is_err());
-        assert!(BasicAuth::parse("Digest abc").is_err());
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_empty() {
-        assert!(WwwAuthenticate::parse("").is_err());
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_not_basic() {
-        assert!(WwwAuthenticate::parse("Digest realm=\"test\"").is_err());
-    }
-
-    #[test]
-    fn test_digest_auth_missing_param() {
-        let header = "Digest username=\"Mufasa\", realm=\"test\"";
-        assert!(DigestAuth::parse(header).is_err());
-    }
-
-    #[test]
-    fn test_bearer_token_parse_non_ascii() {
-        // マルチバイト UTF-8 文字を含む入力でパニックしないことを確認
-        // Fuzzing で発見されたクラッシュケース: バイト [228, 167, 167, 10, 228, 167, 167]
-        let input = "䧧\n䧧";
-        let result = BearerToken::parse(input);
-        assert!(result.is_err());
-
-        // 6 バイト未満のマルチバイト文字
-        let input2 = "日本語";
-        let result2 = BearerToken::parse(input2);
-        assert!(result2.is_err());
-
-        // 6 バイト以上だがバイト境界が文字境界でない場合
-        let input3 = "あいう"; // 9 バイト
-        let result3 = BearerToken::parse(input3);
-        assert!(result3.is_err());
-    }
-
-    #[test]
-    fn test_digest_auth_non_ascii_input() {
-        let input = ")ϓ )ϓ";
-        assert!(DigestAuth::parse(input).is_err());
-    }
-
-    #[test]
     fn test_token68_equals_only_at_end() {
         // 末尾の = は OK (Base64 パディング)
         assert!(is_token68("Zm8="));

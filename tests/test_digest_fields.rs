@@ -1,6 +1,8 @@
 //! Digest Fields のユニットテスト
 
-use shiguredo_http11::digest_fields::{ContentDigest, DigestFieldsError, WantContentDigest};
+use shiguredo_http11::digest_fields::{
+    ContentDigest, DigestFieldsError, ReprDigest, WantContentDigest, WantReprDigest,
+};
 
 // ========================================
 // DigestFieldsError のテスト
@@ -184,4 +186,44 @@ fn test_digest_leading_comma_accepted() {
 fn test_digest_empty_only_error() {
     let result = ContentDigest::parse(",");
     assert!(result.is_err());
+}
+
+// ========================================
+// src/digest_fields.rs のインラインテストを移動
+// ========================================
+
+#[test]
+fn parse_content_digest() {
+    let digest = ContentDigest::parse("sha-256=:YWJj:").unwrap();
+    assert_eq!(digest.items().len(), 1);
+    assert_eq!(digest.items()[0].algorithm(), "sha-256");
+    assert_eq!(digest.items()[0].value().bytes(), b"abc");
+}
+
+#[test]
+fn parse_repr_digest_multiple() {
+    let digest = ReprDigest::parse("sha-256=:YWJj:, sha-512=:Zg==:").unwrap();
+    assert_eq!(digest.items().len(), 2);
+}
+
+#[test]
+fn parse_want_digest() {
+    let want = WantContentDigest::parse("sha-512=3, sha-256=10, unixsum=0").unwrap();
+    assert_eq!(want.items().len(), 3);
+    assert_eq!(want.get("sha-256"), Some(10));
+    assert_eq!(want.get("unixsum"), Some(0));
+}
+
+#[test]
+fn parse_invalid() {
+    assert!(ContentDigest::parse("").is_err());
+    assert!(ContentDigest::parse("sha-256=YWJj").is_err());
+    assert!(ContentDigest::parse("sha-256=:bad*:").is_err());
+    assert!(WantReprDigest::parse("sha-256=11").is_err());
+}
+
+#[test]
+fn display() {
+    let digest = ContentDigest::parse("sha-256=:YWJj:").unwrap();
+    assert_eq!(digest.to_string(), "sha-256=:YWJj:");
 }

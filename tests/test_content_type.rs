@@ -251,3 +251,161 @@ fn test_content_type_sp_htab_stripped_as_ows() {
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
 }
+
+// ========================================
+// src/content_type.rs のインラインテストを移動
+// ========================================
+
+#[test]
+fn test_parse_simple() {
+    let ct = ContentType::parse("text/html").unwrap();
+    assert_eq!(ct.media_type(), "text");
+    assert_eq!(ct.subtype(), "html");
+    assert_eq!(ct.mime_type(), "text/html");
+    assert!(ct.parameters().is_empty());
+}
+
+#[test]
+fn test_parse_with_charset() {
+    let ct = ContentType::parse("text/html; charset=utf-8").unwrap();
+    assert_eq!(ct.media_type(), "text");
+    assert_eq!(ct.subtype(), "html");
+    assert_eq!(ct.charset(), Some("utf-8"));
+}
+
+#[test]
+fn test_parse_with_quoted_charset() {
+    let ct = ContentType::parse("text/html; charset=\"utf-8\"").unwrap();
+    assert_eq!(ct.charset(), Some("utf-8"));
+}
+
+#[test]
+fn test_parse_multipart() {
+    let ct = ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary").unwrap();
+    assert!(ct.is_form_data());
+    assert_eq!(ct.boundary(), Some("----WebKitFormBoundary"));
+}
+
+#[test]
+fn test_parse_case_insensitive() {
+    let ct = ContentType::parse("TEXT/HTML; CHARSET=UTF-8").unwrap();
+    assert_eq!(ct.media_type(), "text");
+    assert_eq!(ct.subtype(), "html");
+    assert_eq!(ct.charset(), Some("UTF-8")); // 値は大文字小文字を保持
+}
+
+#[test]
+fn test_parse_multiple_parameters() {
+    let ct = ContentType::parse("text/plain; charset=utf-8; boundary=something").unwrap();
+    assert_eq!(ct.charset(), Some("utf-8"));
+    assert_eq!(ct.boundary(), Some("something"));
+}
+
+#[test]
+fn test_parse_json() {
+    let ct = ContentType::parse("application/json").unwrap();
+    assert!(ct.is_json());
+}
+
+#[test]
+fn test_parse_form_urlencoded() {
+    let ct = ContentType::parse("application/x-www-form-urlencoded").unwrap();
+    assert!(ct.is_form_urlencoded());
+}
+
+#[test]
+fn test_parse_with_spaces() {
+    let ct = ContentType::parse("  text/html  ;  charset = utf-8  ").unwrap();
+    assert_eq!(ct.media_type(), "text");
+    assert_eq!(ct.subtype(), "html");
+}
+
+#[test]
+fn test_parse_quoted_with_escape() {
+    let ct = ContentType::parse("text/plain; name=\"hello\\\"world\"").unwrap();
+    assert_eq!(ct.parameter("name"), Some("hello\"world"));
+}
+
+#[test]
+fn test_parse_empty() {
+    assert!(ContentType::parse("").is_err());
+}
+
+#[test]
+fn test_parse_no_subtype() {
+    assert!(ContentType::parse("text").is_err());
+}
+
+#[test]
+fn test_parse_empty_subtype() {
+    assert!(ContentType::parse("text/").is_err());
+}
+
+#[test]
+fn test_display() {
+    let ct = ContentType::new("text", "html").with_parameter("charset", "utf-8");
+    assert_eq!(ct.to_string(), "text/html; charset=utf-8");
+}
+
+#[test]
+fn test_display_quoted() {
+    let ct = ContentType::new("text", "plain").with_parameter("name", "hello world");
+    assert_eq!(ct.to_string(), "text/plain; name=\"hello world\"");
+}
+
+#[test]
+fn test_is_text() {
+    assert!(ContentType::parse("text/plain").unwrap().is_text());
+    assert!(ContentType::parse("text/html").unwrap().is_text());
+    assert!(!ContentType::parse("application/json").unwrap().is_text());
+}
+
+#[test]
+fn test_is_multipart() {
+    assert!(
+        ContentType::parse("multipart/form-data")
+            .unwrap()
+            .is_multipart()
+    );
+    assert!(
+        ContentType::parse("multipart/mixed")
+            .unwrap()
+            .is_multipart()
+    );
+    assert!(!ContentType::parse("text/plain").unwrap().is_multipart());
+}
+
+// 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
+
+#[test]
+fn test_invalid_token_parameter_value() {
+    assert!(ContentType::parse("text/plain; charset=hello@world").is_err());
+}
+
+#[test]
+fn test_invalid_token_parameter_value_space() {
+    assert!(ContentType::parse("text/plain; charset=hello world").is_err());
+}
+
+#[test]
+fn test_valid_token_parameter_value() {
+    let ct = ContentType::parse("text/plain; charset=utf-8").unwrap();
+    assert_eq!(ct.charset(), Some("utf-8"));
+}
+
+#[test]
+fn test_valid_token_parameter_value_complex() {
+    let ct = ContentType::parse("application/octet-stream; name=file-v1.0_test").unwrap();
+    assert_eq!(ct.parameter("name"), Some("file-v1.0_test"));
+}
+
+#[test]
+fn test_quoted_special_chars() {
+    let ct = ContentType::parse("text/plain; charset=\"hello@world\"").unwrap();
+    assert_eq!(ct.charset(), Some("hello@world"));
+}
+
+#[test]
+fn test_empty_token_parameter_value() {
+    assert!(ContentType::parse("text/plain; charset=").is_err());
+}
