@@ -433,3 +433,22 @@ fn test_set_cookie_path_empty_is_none() {
     let cookie = SetCookie::parse("name=value; Path=", 2026).unwrap();
     assert!(cookie.path().is_none());
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_cookie_pair_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、cookie 名のトークン検証で失敗する
+    let result = Cookie::parse("\u{00A0}name=value");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_set_cookie_nbsp_in_attribute_not_stripped() {
+    // 属性名の前後の NBSP は OWS として除去されない
+    let cookie = SetCookie::parse("name=value; \u{00A0}Path=/", 2026).unwrap();
+    // NBSP が属性名の一部として残り、Path として認識されない
+    assert!(cookie.path().is_none());
+}

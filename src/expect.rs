@@ -33,7 +33,7 @@ use core::fmt;
 
 use crate::validate::{
     QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
-    split_with_quotes,
+    split_with_quotes, trim_ows,
 };
 
 /// Expect パースエラー
@@ -88,18 +88,18 @@ impl Expect {
     ///
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, ExpectError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut items = Vec::new();
         for part in split_with_quotes(input, ',') {
-            let part = part.trim();
+            let part = trim_ows(&part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if part.is_empty() {
                 continue;
             }
 
             let (token, value) = if let Some((token, value)) = part.split_once('=') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if token.is_empty() {
                     return Err(ExpectError::InvalidFormat);
                 }
@@ -182,14 +182,14 @@ impl fmt::Display for Expectation {
 }
 
 fn parse_value(input: &str) -> Result<String, ExpectError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ExpectError::InvalidValue);
     }
 
     if let Some(rest) = input.strip_prefix('"') {
         let (value, remaining) = parse_quoted_string(rest)?;
-        if !remaining.trim().is_empty() {
+        if !trim_ows(remaining).is_empty() {
             return Err(ExpectError::InvalidValue);
         }
         Ok(value)

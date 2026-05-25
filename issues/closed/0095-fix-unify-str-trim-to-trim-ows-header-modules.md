@@ -2,6 +2,7 @@
 
 - Priority: High
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/fix-unify-str-trim-to-trim-ows
 
@@ -132,3 +133,26 @@ date.rs は `trim_ows_start` の新規関数を使用する箇所であり、HTA
 - `validate.rs` に `trim_ows_start` が追加されていること
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
 - Unicode 空白を含むヘッダー値が OWS として除去されず field-value の一部として保持されることを確認する単体テストが追加されていること (対象: auth, cookie, content_type, range, content_disposition, date の 6 モジュール)
+
+## 解決方法
+
+- `src/validate.rs` に `pub(crate) fn trim_ows_start(s: &str) -> &str` を追加した
+- 以下 16 モジュールの `.trim()` を `trim_ows()` に、`.trim_start()` を `trim_ows_start()` に置換した (合計 78 箇所):
+  - `src/auth.rs` (10 箇所)
+  - `src/content_type.rs` (12 箇所)
+  - `src/range.rs` (13 箇所)
+  - `src/content_disposition.rs` (7 箇所)
+  - `src/digest_fields.rs` (6 箇所)
+  - `src/expect.rs` (5 箇所)
+  - `src/cookie.rs` (4 箇所)
+  - `src/cache.rs` (5 箇所)
+  - `src/date.rs` (4 箇所)
+  - `src/etag.rs` (3 箇所)
+  - `src/content_encoding.rs` (2 箇所)
+  - `src/content_language.rs` (2 箇所)
+  - `src/content_location.rs` (1 箇所)
+  - `src/multipart.rs` (2 箇所)
+  - `src/accept.rs` (1 箇所)
+  - `src/conditional.rs` (1 箇所)
+- 6 モジュール (auth, cookie, content_type, range, content_disposition, date) に NBSP が OWS として除去されないことを確認する単体テストを追加した
+- `src/decoder/body.rs:765` の `.trim()` は除外 (OWS 除去ではなくバリデーション用途)

@@ -301,3 +301,28 @@ fn test_new_bytes_max_range_none_length() {
     assert_eq!(cr.length(), None);
     assert_eq!(cr.to_string(), "bytes 0-18446744073709551615/*");
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_range_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、unit のトークン検証で失敗する
+    let result = Range::parse("\u{00A0}bytes=0-100");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_range_trailing_nbsp_not_stripped() {
+    // 末尾の NBSP も OWS として除去されない
+    let result = Range::parse("bytes=0-100\u{00A0}");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_range_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として正しく除去される
+    let range = Range::parse(" \tbytes=0-100\t ").unwrap();
+    assert_eq!(range.unit(), "bytes");
+}

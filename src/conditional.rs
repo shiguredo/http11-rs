@@ -27,6 +27,7 @@
 
 use crate::date::{DateError, HttpDate};
 use crate::etag::{ETagList, EntityTag, parse_etag_list};
+use crate::validate::trim_ows;
 use core::fmt;
 
 /// 条件付きリクエストエラー
@@ -229,7 +230,7 @@ impl IfRange {
     /// `reference_year` は RFC 850 形式の 2 桁年解決に使う現在年
     /// (RFC 9110 §5.6.7)。
     pub fn parse(input: &str, reference_year: u16) -> Result<Self, ConditionalError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ConditionalError::Empty);
         }

@@ -326,3 +326,28 @@ fn test_content_disposition_filename_quoted_pair_rejects_cr_lf_nul() {
         );
     }
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_content_disposition_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、disposition type の検証で失敗する
+    let result = ContentDisposition::parse("\u{00A0}attachment");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_content_disposition_trailing_nbsp_not_stripped() {
+    // 末尾の NBSP も OWS として除去されない
+    let result = ContentDisposition::parse("attachment\u{00A0}");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_content_disposition_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として正しく除去される
+    let cd = ContentDisposition::parse(" \tattachment\t ").unwrap();
+    assert_eq!(cd.disposition_type(), DispositionType::Attachment);
+}

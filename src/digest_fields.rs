@@ -22,7 +22,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::base64;
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Digest Fields パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -286,14 +286,14 @@ fn parse_dictionary<T>(
     input: &str,
     value_parser: fn(&str) -> Result<T, DigestFieldsError>,
 ) -> Result<Vec<(String, T)>, DigestFieldsError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(DigestFieldsError::Empty);
     }
 
     let mut entries = Vec::new();
     for part in input.split(',') {
-        let part = part.trim();
+        let part = trim_ows(part);
         if part.is_empty() {
             // RFC 9110 Section 5.6.1.2: empty list element MUST be ignored
             continue;
@@ -302,7 +302,7 @@ fn parse_dictionary<T>(
         let (algorithm, value) = part
             .split_once('=')
             .ok_or(DigestFieldsError::InvalidFormat)?;
-        let algorithm = algorithm.trim();
+        let algorithm = trim_ows(algorithm);
         if algorithm.is_empty() {
             return Err(DigestFieldsError::InvalidAlgorithm);
         }
@@ -321,7 +321,7 @@ fn parse_dictionary<T>(
 }
 
 fn parse_byte_sequence(input: &str) -> Result<DigestValue, DigestFieldsError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     let rest = input
         .strip_prefix(':')
         .ok_or(DigestFieldsError::InvalidByteSequence)?;
@@ -329,7 +329,7 @@ fn parse_byte_sequence(input: &str) -> Result<DigestValue, DigestFieldsError> {
         .find(':')
         .ok_or(DigestFieldsError::InvalidByteSequence)?;
     let encoded = &rest[..end];
-    if !rest[end + 1..].trim().is_empty() {
+    if !trim_ows(&rest[end + 1..]).is_empty() {
         return Err(DigestFieldsError::InvalidByteSequence);
     }
     let bytes = base64::decode(encoded).map_err(|_| DigestFieldsError::InvalidBase64)?;
@@ -337,7 +337,7 @@ fn parse_byte_sequence(input: &str) -> Result<DigestValue, DigestFieldsError> {
 }
 
 fn parse_preference(input: &str) -> Result<u8, DigestFieldsError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(DigestFieldsError::InvalidPreference);
     }

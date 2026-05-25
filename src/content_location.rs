@@ -14,6 +14,7 @@
 //! ```
 
 use crate::uri::Uri;
+use crate::validate::trim_ows;
 use core::fmt;
 
 /// Content-Location パースエラー
@@ -51,7 +52,7 @@ pub struct ContentLocation {
 impl ContentLocation {
     /// Content-Location ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, ContentLocationError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentLocationError::Empty);
         }

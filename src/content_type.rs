@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::validate::{
-    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string, trim_ows,
 };
 
 /// Content-Type パースエラー
@@ -102,7 +102,7 @@ impl ContentType {
     /// assert_eq!(ct.charset(), Some("utf-8"));
     /// ```
     pub fn parse(input: &str) -> Result<Self, ContentTypeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentTypeError::Empty);
         }
@@ -220,23 +220,23 @@ impl fmt::Display for ContentType {
 /// セミコロンで分割 (最初のセミコロンのみ)
 fn split_at_semicolon(input: &str) -> (&str, &str) {
     if let Some(pos) = input.find(';') {
-        (input[..pos].trim(), input[pos + 1..].trim())
+        (trim_ows(&input[..pos]), trim_ows(&input[pos + 1..]))
     } else {
-        (input.trim(), "")
+        (trim_ows(input), "")
     }
 }
 
 /// メディアタイプをパース
 fn parse_media_type(input: &str) -> Result<(&str, &str), ContentTypeError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ContentTypeError::InvalidMediaType);
     }
 
     let slash_pos = input.find('/').ok_or(ContentTypeError::InvalidMediaType)?;
 
-    let media_type = input[..slash_pos].trim();
-    let subtype = input[slash_pos + 1..].trim();
+    let media_type = trim_ows(&input[..slash_pos]);
+    let subtype = trim_ows(&input[slash_pos + 1..]);
 
     if media_type.is_empty() || subtype.is_empty() {
         return Err(ContentTypeError::InvalidMediaType);
@@ -253,24 +253,24 @@ fn parse_media_type(input: &str) -> Result<(&str, &str), ContentTypeError> {
 /// パラメータをパース
 fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeError> {
     let mut parameters = Vec::new();
-    let mut rest = input.trim();
+    let mut rest = trim_ows(input);
 
     while !rest.is_empty() {
         // セミコロンをスキップ
-        rest = rest.trim_start_matches(';').trim();
+        rest = trim_ows(rest.trim_start_matches(';'));
         if rest.is_empty() {
             break;
         }
 
         // name=value をパース
         let eq_pos = rest.find('=').ok_or(ContentTypeError::InvalidParameter)?;
-        let name = rest[..eq_pos].trim();
+        let name = trim_ows(&rest[..eq_pos]);
 
         if name.is_empty() || !is_valid_token(name) {
             return Err(ContentTypeError::InvalidParameter);
         }
 
-        rest = rest[eq_pos + 1..].trim();
+        rest = trim_ows(&rest[eq_pos + 1..]);
 
         // 値をパース (引用符付きまたはトークン)
         let (value, remaining) = if let Some(after_quote) = rest.strip_prefix('"') {
@@ -280,7 +280,7 @@ fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeErr
         };
 
         parameters.push((name.to_ascii_lowercase(), value));
-        rest = remaining.trim_start_matches(';').trim();
+        rest = trim_ows(remaining.trim_start_matches(';'));
     }
 
     Ok(parameters)

@@ -19,6 +19,7 @@
 //! assert_eq!(date.to_string(), "Sun, 06 Nov 1994 08:49:37 GMT");
 //! ```
 
+use crate::validate::{trim_ows, trim_ows_start};
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -201,7 +202,7 @@ impl HttpDate {
     /// 時刻を取得できないため、ライブラリ側で基準年を持たず呼び出し側に
     /// 委ねる設計としている。
     pub fn parse(input: &str) -> Result<Self, DateError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(DateError::Empty);
         }
@@ -209,7 +210,7 @@ impl HttpDate {
         // カンマの位置で形式を判別
         if let Some(comma_pos) = input.find(',') {
             let day_name = &input[..comma_pos];
-            let rest = input[comma_pos + 1..].trim_start();
+            let rest = trim_ows_start(&input[comma_pos + 1..]);
 
             // IMF-fixdate: Sun, 06 Nov 1994 08:49:37 GMT
             // rfc850-date: Sunday, 06-Nov-94 08:49:37 GMT
@@ -237,14 +238,14 @@ impl HttpDate {
     /// 受理したい場合は [`HttpDate::parse`] を先に試し、`Rfc850Date`
     /// エラーで本関数にフォールバックする。
     pub fn parse_rfc850(input: &str, reference_year: u16) -> Result<Self, DateError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(DateError::Empty);
         }
 
         let comma_pos = input.find(',').ok_or(DateError::InvalidFormat)?;
         let day_name = &input[..comma_pos];
-        let rest = input[comma_pos + 1..].trim_start();
+        let rest = trim_ows_start(&input[comma_pos + 1..]);
 
         if !rest.contains('-') {
             return Err(DateError::InvalidFormat);

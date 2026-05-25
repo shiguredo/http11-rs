@@ -34,7 +34,8 @@ use core::fmt;
 
 use crate::base64;
 use crate::validate::{
-    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_token_char, is_valid_token,
+    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_token_char, is_valid_token, trim_ows,
+    trim_ows_start,
 };
 
 /// Basic 認証エラー
@@ -168,7 +169,7 @@ impl BasicAuth {
     /// assert_eq!(auth.password(), "password");
     /// ```
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -277,7 +278,7 @@ impl WwwAuthenticate {
     /// assert_eq!(auth.realm(), "example.com");
     /// ```
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -348,7 +349,7 @@ pub struct DigestAuth {
 impl DigestAuth {
     /// Digest Authorization ヘッダー値をパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -462,7 +463,7 @@ pub struct DigestChallenge {
 impl DigestChallenge {
     /// Digest チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -520,7 +521,7 @@ pub struct BearerToken {
 impl BearerToken {
     /// Bearer Authorization ヘッダー値をパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -575,7 +576,7 @@ pub struct BearerChallenge {
 impl BearerChallenge {
     /// Bearer チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -622,7 +623,7 @@ pub enum Authorization {
 impl Authorization {
     /// Authorization ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -669,7 +670,7 @@ pub enum AuthChallenge {
 impl AuthChallenge {
     /// チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -759,7 +760,7 @@ impl fmt::Display for ProxyAuthenticate {
 }
 
 fn strip_scheme<'a>(input: &'a str, scheme: &str) -> Option<&'a str> {
-    let input = input.trim_start();
+    let input = trim_ows_start(input);
     let scheme_len = scheme.len();
     if input.len() <= scheme_len {
         return None;
@@ -775,7 +776,7 @@ fn strip_scheme<'a>(input: &'a str, scheme: &str) -> Option<&'a str> {
     if !rest.starts_with(' ') && !rest.starts_with('\t') {
         return None;
     }
-    Some(rest.trim_start())
+    Some(trim_ows_start(rest))
 }
 
 fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {

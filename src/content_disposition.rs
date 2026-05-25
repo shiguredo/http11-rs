@@ -23,7 +23,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token};
+use crate::validate::{
+    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token, trim_ows,
+};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +158,7 @@ impl ContentDisposition {
     /// assert_eq!(cd.filename(), Some("report.pdf"));
     /// ```
     pub fn parse(input: &str) -> Result<Self, ContentDispositionError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentDispositionError::Empty);
         }
@@ -168,7 +170,7 @@ impl ContentDisposition {
         let type_str = parts
             .first()
             .ok_or(ContentDispositionError::InvalidFormat)?;
-        let disposition_type = DispositionType::from_str(type_str.trim())?;
+        let disposition_type = DispositionType::from_str(trim_ows(type_str))?;
 
         let mut cd = ContentDisposition {
             disposition_type,
@@ -183,14 +185,14 @@ impl ContentDisposition {
         let mut seen_params = Vec::new();
 
         for part in parts.iter().skip(1) {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }
 
             if let Some(eq_pos) = part.find('=') {
-                let param_name = part[..eq_pos].trim().to_ascii_lowercase();
-                let param_value = part[eq_pos + 1..].trim();
+                let param_name = trim_ows(&part[..eq_pos]).to_ascii_lowercase();
+                let param_value = trim_ows(&part[eq_pos + 1..]);
 
                 // 重複パラメータチェック
                 if seen_params.iter().any(|n: &String| n == &param_name) {
@@ -376,7 +378,7 @@ fn split_params(input: &str) -> Vec<String> {
 /// RFC 9110 Section 5.6.6: パラメータ値がトークンの場合、
 /// トークン文字 (tchar) のみで構成されている必要がある
 fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
-    let value = value.trim();
+    let value = trim_ows(value);
 
     if value.starts_with('"') {
         // 引用符で始まる場合
@@ -433,7 +435,7 @@ fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
 /// 形式: charset'language'value
 /// 例: UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.txt
 fn parse_ext_value(value: &str) -> Result<String, ContentDispositionError> {
-    let value = value.trim();
+    let value = trim_ows(value);
 
     // charset'language'value の形式
     let first_quote = value

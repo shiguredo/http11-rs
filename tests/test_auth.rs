@@ -338,3 +338,31 @@ fn test_basic_realm_quoted_pair_rejects_cr_lf_nul() {
         );
     }
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_basic_auth_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、スキーム検出に失敗する
+    let result = BasicAuth::parse("\u{00A0}Basic dXNlcjpwYXNz");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_bearer_token_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、スキーム検出に失敗する
+    let result = BearerToken::parse("\u{00A0}Bearer token123");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_basic_auth_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として除去される
+    let result = BasicAuth::parse(" \tBasic dXNlcjpwYXNz\t ");
+    assert!(result.is_ok());
+    let auth = result.unwrap();
+    assert_eq!(auth.username(), "user");
+    assert_eq!(auth.password(), "pass");
+}
