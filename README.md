@@ -37,12 +37,13 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテ�
 ### クライアント (リクエスト送信、レスポンス受信)
 
 ```rust
-use shiguredo_http11::{Request, ResponseDecoder};
+use shiguredo_http11::{Method, Request, ResponseDecoder};
 
 // リクエストを作成してエンコード
+// new は Method 型または "GET" 等の 'static str リテラルを受け取る
 // 構築時バリデーション (CRLF/NUL 拒否) を行うため `Result<Self, EncodeError>` を返す。
 // encode() は意味論違反 (Host 欠落等) の検出のため `Result<Vec<u8>, EncodeError>` を返す。
-let request = Request::new("GET", "/")?
+let request = Request::new(Method::GET, "/")?
     .header("Host", "example.com")?
     .header("Connection", "close")?;
 let bytes = request.encode()?;
@@ -136,7 +137,7 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 HEAD リクエストへのレスポンスは、RFC 9110 Section 9.3.2 に基づき GET と同じヘッダーを返しますがボディは送信しません。
 
 ```rust
-use shiguredo_http11::{HeaderName, Method, Request, Response, ResponseDecoder, StatusCode};
+use shiguredo_http11::{Method, Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: HEAD リクエストへのレスポンス
 // RFC 9110 Section 9.3.2: GET と同じヘッダーを返すがボディは送信しない
@@ -155,7 +156,7 @@ if !is_head {
 let bytes = response.encode()?;
 
 // クライアント側: HEAD レスポンスの受信
-let request = Request::new("HEAD", "/")?
+let request = Request::new(Method::HEAD, "/")?
     .header("Host", "example.com")?;
 let bytes = request.encode()?;
 // bytes を送信...

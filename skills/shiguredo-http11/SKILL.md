@@ -162,13 +162,12 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ### クライアント実装
 
 ```rust
-use shiguredo_http11::{HeaderName, Method, Request, ResponseDecoder};
+use shiguredo_http11::{Method, Request, ResponseDecoder};
 use std::io::Read;
 
 // リクエスト作成
-// Request::new は Method 型、header は HeaderName 型を受け取る
 // 構築時バリデーション (CRLF/NUL 拒否) を行い Result<_, EncodeError> を返す
-let request = Request::new("GET", "/")?
+let request = Request::new(Method::GET, "/")?
     .header("Host", "example.com")?
     .header("Connection", "close")?;
 let bytes = request.encode()?;
@@ -200,7 +199,7 @@ loop {
 ### サーバー実装
 
 ```rust
-use shiguredo_http11::{HeaderName, RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{RequestDecoder, Response, StatusCode};
 use std::io::Read;
 
 // リクエストデコード: 内部バッファに直接 read してコピーを排除
@@ -240,7 +239,7 @@ let bytes = response.encode()?;
 HEAD リクエストへのレスポンスは GET と同じヘッダーを返すがボディは送信しない (RFC 9110 Section 9.3.2)。
 
 ```rust
-use shiguredo_http11::{HeaderName, Method, Request, Response, ResponseDecoder, StatusCode};
+use shiguredo_http11::{Method, Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: Response::omit_body() でボディ送信を抑止
 let is_head = request.method() == &Method::HEAD;
@@ -385,7 +384,7 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 ### Chunked Transfer Encoding
 
 ```rust
-use shiguredo_http11::{HeaderName, Response, StatusCode, encode_chunk};
+use shiguredo_http11::{Response, StatusCode, encode_chunk};
 
 let response = Response::with_status(StatusCode::OK)
     .header("Transfer-Encoding", "chunked")?;
@@ -405,9 +404,9 @@ send(&encode_chunk(b"")); // 終端チャンク
 `encode()` / `encode_headers()` は構築時バリデーション後の意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合等) を `Result<Vec<u8>, EncodeError>` で返す。
 
 ```rust
-use shiguredo_http11::{EncodeError, HeaderName, Method, Request};
+use shiguredo_http11::{EncodeError, Method, Request};
 
-let request = Request::new("GET", "/")?;  // Host ヘッダーなし
+let request = Request::new(Method::GET, "/")?;  // Host ヘッダーなし
 match request.encode() {
     Ok(bytes) => { /* 送信 */ }
     Err(EncodeError::MissingHostHeader) => {
