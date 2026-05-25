@@ -421,7 +421,7 @@ impl fmt::Display for LanguageRange {
 
 fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
     let mut parts = split_with_quotes(input, ';').into_iter();
-    let media = parts.next().unwrap_or_default().trim().to_string();
+    let media = trim_ows(&parts.next().unwrap_or_default()).to_string();
     let (media_type, subtype) = parse_media_range(&media)?;
 
     let mut params = Vec::new();

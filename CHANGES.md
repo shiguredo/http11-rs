@@ -11,6 +11,9 @@
 
 ## develop
 
+- [FIX] ヘッダーパースモジュールの `str::trim()` を `trim_ows()` に統一し Unicode 空白 (NBSP 等) を OWS として除去しない RFC 9110 Section 5.6.3 準拠にする
+  - @voluntas
+
 ### misc
 
 - [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する

@@ -257,3 +257,30 @@ fn test_date_rfc850_4digit_year() {
     let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026).unwrap();
     assert_eq!(date.year(), 1994);
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_date_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、日付パースに失敗する
+    let result = HttpDate::parse("\u{00A0}Sun, 06 Nov 1994 08:49:37 GMT");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_date_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として正しく除去される
+    let date = HttpDate::parse(" \tSun, 06 Nov 1994 08:49:37 GMT\t ").unwrap();
+    assert_eq!(date.year(), 1994);
+}
+
+#[test]
+fn test_date_rfc850_nbsp_after_comma_not_stripped() {
+    // カンマ直後の NBSP は trim_ows_start で除去されない。
+    // ここでは先頭の NBSP が trim_ows で除去されず、
+    // 曜日名のパースに失敗することを確認する
+    let result = HttpDate::parse_rfc850("\u{00A0}Sunday, 06-Nov-94 08:49:37 GMT", 2026);
+    assert!(result.is_err());
+}

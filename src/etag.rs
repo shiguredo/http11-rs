@@ -20,6 +20,7 @@
 //! assert_eq!(etag.tag(), "abc123");
 //! ```
 
+use crate::validate::trim_ows;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -79,7 +80,7 @@ impl EntityTag {
     /// assert!(etag.is_weak());
     /// ```
     pub fn parse(input: &str) -> Result<Self, ETagError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ETagError::Empty);
         }
@@ -220,7 +221,7 @@ fn split_etag_list_raw(input: &str) -> Vec<&str> {
 /// カンマ区切りの ETag リストをパースします。
 /// `*` (ワイルドカード) もサポートします。
 pub fn parse_etag_list(input: &str) -> Result<ETagList, ETagError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ETagError::Empty);
     }
@@ -231,7 +232,7 @@ pub fn parse_etag_list(input: &str) -> Result<ETagList, ETagError> {
 
     let mut etags = Vec::new();
     for part in split_etag_list_raw(input) {
-        let part = part.trim();
+        let part = trim_ows(part);
         if !part.is_empty() {
             etags.push(EntityTag::parse(part)?);
         }

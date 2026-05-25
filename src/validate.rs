@@ -418,6 +418,21 @@ pub(crate) fn trim_ows(s: &str) -> &str {
     &s[start..end]
 }
 
+/// OWS (Optional Whitespace) を先頭のみ除去 (RFC 9110 Section 5.6.3)
+///
+/// OWS = *( SP / HTAB )
+///
+/// `str::trim_start()` は Unicode 空白を除去するため、RFC 準拠の SP / HTAB のみ
+/// を除去する本関数を使用する。
+pub(crate) fn trim_ows_start(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let start = bytes
+        .iter()
+        .position(|&b| b != b' ' && b != b'\t')
+        .unwrap_or(bytes.len());
+    &s[start..]
+}
+
 /// クォートを考慮したカンマ区切り分割
 ///
 /// delimiter (通常は `,`) で文字列を分割するが、引用符 (`"`) 内の

@@ -28,7 +28,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Range パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,15 +147,15 @@ impl Range {
     /// let range = Range::parse("bytes=-500").unwrap();
     /// ```
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         // unit=ranges の形式
         let eq_pos = input.find('=').ok_or(RangeError::InvalidFormat)?;
-        let unit = input[..eq_pos].trim();
-        let ranges_str = input[eq_pos + 1..].trim();
+        let unit = trim_ows(&input[..eq_pos]);
+        let ranges_str = trim_ows(&input[eq_pos + 1..]);
 
         // RFC 9110 Section 14.1: range-unit = token
         if !is_valid_token(unit) {
@@ -164,7 +164,7 @@ impl Range {
 
         let mut ranges = Vec::new();
         for part in ranges_str.split(',') {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }
@@ -214,8 +214,8 @@ impl fmt::Display for Range {
 fn parse_range_spec(s: &str) -> Result<RangeSpec, RangeError> {
     let dash_pos = s.find('-').ok_or(RangeError::InvalidRange)?;
 
-    let start_str = s[..dash_pos].trim();
-    let end_str = s[dash_pos + 1..].trim();
+    let start_str = trim_ows(&s[..dash_pos]);
+    let end_str = trim_ows(&s[dash_pos + 1..]);
 
     if start_str.is_empty() && end_str.is_empty() {
         return Err(RangeError::InvalidRange);
@@ -287,15 +287,15 @@ pub struct ContentRange {
 impl ContentRange {
     /// Content-Range ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         // unit range/length の形式
         let space_pos = input.find(' ').ok_or(RangeError::InvalidFormat)?;
-        let unit = input[..space_pos].trim();
-        let rest = input[space_pos + 1..].trim();
+        let unit = trim_ows(&input[..space_pos]);
+        let rest = trim_ows(&input[space_pos + 1..]);
 
         // RFC 9110 Section 14.1: range-unit = token
         if !is_valid_token(unit) {
@@ -304,8 +304,8 @@ impl ContentRange {
 
         // range/length
         let slash_pos = rest.find('/').ok_or(RangeError::InvalidFormat)?;
-        let range_str = rest[..slash_pos].trim();
-        let length_str = rest[slash_pos + 1..].trim();
+        let range_str = trim_ows(&rest[..slash_pos]);
+        let length_str = trim_ows(&rest[slash_pos + 1..]);
 
         let complete_length = if length_str == "*" {
             None
@@ -449,14 +449,14 @@ pub struct AcceptRanges {
 impl AcceptRanges {
     /// Accept-Ranges ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         let units: Vec<String> = input
             .split(',')
-            .map(|s| s.trim().to_string())
+            .map(|s| trim_ows(s).to_string())
             .filter(|s| !s.is_empty())
             .collect();
 

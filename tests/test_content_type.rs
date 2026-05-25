@@ -225,3 +225,29 @@ fn test_content_type_empty_quoted_value_roundtrip() {
     let reparsed = ContentType::parse(&displayed).unwrap();
     assert_eq!(reparsed.parameter("ext"), Some(""));
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_content_type_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、media type の検証で失敗する
+    let result = ContentType::parse("\u{00A0}text/html");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_content_type_trailing_nbsp_not_stripped() {
+    // 末尾の NBSP も OWS として除去されない
+    let result = ContentType::parse("text/html\u{00A0}");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_content_type_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として正しく除去される
+    let ct = ContentType::parse(" \ttext/html\t ").unwrap();
+    assert_eq!(ct.media_type(), "text");
+    assert_eq!(ct.subtype(), "html");
+}

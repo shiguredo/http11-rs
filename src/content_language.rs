@@ -17,7 +17,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_language_tag;
+use crate::validate::{is_valid_language_tag, trim_ows};
 
 /// Content-Language パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,11 +58,11 @@ impl ContentLanguage {
     ///
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, ContentLanguageError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut tags = Vec::new();
         for part in input.split(',') {
-            let tag = part.trim();
+            let tag = trim_ows(part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if tag.is_empty() {
                 continue;

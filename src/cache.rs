@@ -23,6 +23,7 @@
 //! ```
 
 use crate::date::{DateError, HttpDate};
+use crate::validate::trim_ows;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -111,7 +112,7 @@ impl CacheControl {
     /// assert!(cc.is_public());
     /// ```
     pub fn parse(input: &str) -> Result<Self, CacheError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             // 空文字列はデフォルトの CacheControl として扱う
             return Ok(CacheControl::new());
@@ -120,14 +121,14 @@ impl CacheControl {
         let mut cc = CacheControl::new();
 
         for directive in input.split(',') {
-            let directive = directive.trim();
+            let directive = trim_ows(directive);
             if directive.is_empty() {
                 continue;
             }
 
             if let Some((name, value)) = directive.split_once('=') {
-                let name = name.trim().to_lowercase();
-                let raw_value = value.trim();
+                let name = trim_ows(name).to_lowercase();
+                let raw_value = trim_ows(value);
                 // RFC 9110 Section 5.6.4 quoted-string は両端を DQUOTE で囲む。
                 // 片端のみ DQUOTE がある partial quote (`max-age="3600`) は ABNF 違反のため reject する。
                 let value = if let Some(stripped) = raw_value.strip_prefix('"') {
@@ -429,7 +430,7 @@ impl Age {
     /// assert_eq!(age.seconds(), 120);
     /// ```
     pub fn parse(input: &str) -> Result<Self, CacheError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(CacheError::Empty);
         }

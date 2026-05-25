@@ -252,8 +252,8 @@ impl SetCookie {
             }
 
             if let Some(eq_pos) = part.find('=') {
-                let attr_name = part[..eq_pos].trim();
-                let attr_value = part[eq_pos + 1..].trim();
+                let attr_name = trim_ows(&part[..eq_pos]);
+                let attr_value = trim_ows(&part[eq_pos + 1..]);
 
                 match attr_name.to_ascii_lowercase().as_str() {
                     "expires" => {
@@ -480,8 +480,8 @@ impl fmt::Display for SetCookie {
 fn parse_cookie_pair(pair: &str) -> Result<(&str, &str), CookieError> {
     let eq_pos = pair.find('=').ok_or(CookieError::InvalidFormat)?;
 
-    let name = pair[..eq_pos].trim();
-    let value = pair[eq_pos + 1..].trim();
+    let name = trim_ows(&pair[..eq_pos]);
+    let value = trim_ows(&pair[eq_pos + 1..]);
 
     if name.is_empty() {
         return Err(CookieError::InvalidName);

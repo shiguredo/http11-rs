@@ -27,7 +27,7 @@
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
-use crate::validate::is_token_char;
+use crate::validate::{is_token_char, trim_ows};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -434,8 +434,8 @@ impl MultipartParser {
                                 continue;
                             }
                             if let Some((name, value)) = line.split_once(':') {
-                                let name = name.trim();
-                                let value = value.trim();
+                                let name = trim_ows(name);
+                                let value = trim_ows(value);
 
                                 if name.eq_ignore_ascii_case("Content-Disposition") {
                                     content_disposition = ContentDisposition::parse(value).ok();
