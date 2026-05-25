@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 /// token = 1*tchar
 /// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
 ///         DIGIT / ALPHA / "^" / "_" / "`" / "|" / "~"
-pub(crate) fn is_token_char(b: u8) -> bool {
+pub(crate) const fn is_token_char(b: u8) -> bool {
     matches!(
         b,
         b'!' | b'#' | b'$' | b'%' | b'&' | b'\'' | b'*' | b'+' | b'-' | b'.' |
@@ -62,16 +62,6 @@ pub(crate) fn is_valid_field_vchar(b: u8) -> bool {
 /// シーケンスを含むヘッダー値は拒否される。現時点ではこの制限を維持する。
 pub(crate) fn is_valid_field_value(value: &str) -> bool {
     value.bytes().all(is_valid_field_vchar)
-}
-
-/// メソッド名が有効か確認
-///
-/// RFC 9110 Section 9.1: method = token
-/// token = 1*tchar (RFC 9110 Section 5.6.2)
-///
-/// RTSP (RFC 7826) の GET_PARAMETER, SET_PARAMETER なども tchar で表現可能。
-pub(crate) fn is_valid_method(method: &str) -> bool {
-    !method.is_empty() && method.bytes().all(is_token_char)
 }
 
 /// プロトコルバージョンが有効か確認

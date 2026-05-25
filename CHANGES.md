@@ -53,6 +53,8 @@
 - [ADD] TryFrom / new() の受理集合一致を PBT で検証する
   - prop_header_name.rs / prop_method.rs に等価性テストを追加する
   - @voluntas
+- [UPDATE] `is_tchar` / `is_unreserved` / `is_sub_delim` / `is_valid_method` の重複定義を `validate.rs` に一元化する
+  - @voluntas
 - [UPDATE] `src/` 内の 17 モジュールのインラインテストを `tests/test_<module>.rs` に外部化する (第 2 弾)
   - PBT 重複ラウンドトリップテスト 4 件を削除する
   - @voluntas
