@@ -54,7 +54,7 @@ fn test_multipart_part_headers() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     let part = parser.next_part().unwrap().unwrap();
@@ -72,7 +72,7 @@ fn test_multipart_part_body_str_non_utf8() {
         \xff\xfe\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     let part = parser.next_part().unwrap().unwrap();
@@ -88,10 +88,11 @@ fn test_multipart_part_body_str_non_utf8() {
 #[test]
 fn test_multipart_parser_finished_returns_none() {
     let body = MultipartBuilder::with_boundary("boundary")
+        .unwrap()
         .text_field("field", "value")
         .build();
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(&body).unwrap();
 
     let _ = parser.next_part().unwrap(); // part を取得
@@ -105,7 +106,7 @@ fn test_multipart_parser_finished_returns_none() {
 // 空のパーサー
 #[test]
 fn test_multipart_parser_empty() {
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
 
     // データを feed しないと Incomplete
     assert!(matches!(
@@ -119,7 +120,7 @@ fn test_multipart_parser_empty() {
 fn test_multipart_parser_invalid_header() {
     let body = b"--boundary\r\n\xff\xfe: value\r\n\r\ntest\r\n--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(matches!(
@@ -133,7 +134,7 @@ fn test_multipart_parser_invalid_header() {
 fn test_multipart_parser_end_boundary_only() {
     let body = b"--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(parser.next_part().unwrap().is_none());
@@ -150,7 +151,7 @@ fn test_multipart_parser_end_boundary_only() {
 fn test_multipart_parser_end_boundary_at_buffer_tail_without_crlf() {
     let body = b"--boundary--";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(
@@ -166,7 +167,7 @@ fn test_multipart_parser_part_then_end_boundary_at_tail() {
     let body =
         b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     let part = parser
@@ -198,7 +199,7 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
         --boundary--\r\n";
 
     // bulk parser (一括 feed)
-    let mut bulk = MultipartParser::new("boundary");
+    let mut bulk = MultipartParser::new("boundary").unwrap();
     bulk.feed(body).unwrap();
     let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
     while let Some(part) = bulk.next_part().unwrap() {
@@ -206,7 +207,7 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
     }
 
     // byte-by-byte parser (1 バイトずつ feed → 都度 next_part を試す)
-    let mut bb = MultipartParser::new("boundary");
+    let mut bb = MultipartParser::new("boundary").unwrap();
     let mut bb_parts: Vec<Vec<u8>> = Vec::new();
     for &b in body {
         bb.feed(&[b]).unwrap();
@@ -247,7 +248,7 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
 // パートを取り出した上で is_finished() == true に遷移する
 #[test]
 fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     // inner_delimiter (\r\n--boundary) の直後まで送る。残り 2 バイト (`--`) は別 chunk。
     parser
         .feed(
@@ -276,7 +277,7 @@ fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
 // 次パート区切り (`\r\n`) の手前で chunk が切れた後に補給すると次パートが正しく取り出せる
 #[test]
 fn test_multipart_parser_next_part_split_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
@@ -309,7 +310,7 @@ fn test_multipart_parser_next_part_split_after_inner_delimiter() {
 // もう 1 バイト補給すると終端と判定する
 #[test]
 fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
@@ -333,7 +334,7 @@ fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
 // InvalidPart を返す
 #[test]
 fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
@@ -355,7 +356,7 @@ fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
 
 // `--<boundary>X` で X が CRLF / `--` / SP / HTAB のいずれでもない場合は InvalidPart
 fn assert_invalid_after_dash_boundary(extra: &[u8]) {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     let mut input: Vec<u8> = b"--b".to_vec();
     input.extend_from_slice(extra);
     input
@@ -408,7 +409,7 @@ fn test_multipart_parser_dash_boundary_followed_by_non_ascii_is_rejected() {
 // SP / HTAB の transport-padding を伴う dash-boundary は寛容受理する
 #[test]
 fn test_multipart_parser_dash_boundary_with_space_padding_is_accepted() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     parser
         .feed(b"--b \t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
         .unwrap();
@@ -421,7 +422,7 @@ fn test_multipart_parser_dash_boundary_with_space_padding_is_accepted() {
 
 #[test]
 fn test_multipart_parser_dash_boundary_with_tab_padding_is_accepted() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     parser
         .feed(b"--b\t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
         .unwrap();
@@ -433,7 +434,7 @@ fn test_multipart_parser_dash_boundary_with_tab_padding_is_accepted() {
 // transport-padding 中で buffer が尽きたケースは Incomplete を返し、追加 feed 後に再開できる
 #[test]
 fn test_multipart_parser_dash_boundary_incomplete_during_transport_padding() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     parser.feed(b"--b  ").unwrap();
     assert!(matches!(
         parser.next_part(),
@@ -460,7 +461,7 @@ fn test_multipart_missing_content_disposition() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(matches!(
@@ -476,7 +477,7 @@ fn test_multipart_empty_headers_missing_content_disposition() {
     // 空ヘッダーセクションは \r\n\r\n として表現する
     let body = b"--boundary\r\n\r\n\r\nvalue\r\n--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(matches!(
@@ -493,7 +494,7 @@ fn test_multipart_invalid_content_disposition_type() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(matches!(
@@ -505,7 +506,9 @@ fn test_multipart_invalid_content_disposition_type() {
 // バッファ上限超過で BufferOverflow を返す
 #[test]
 fn test_multipart_parser_buffer_overflow() {
-    let mut parser = MultipartParser::new("boundary").with_max_buffer_size(10);
+    let mut parser = MultipartParser::new("boundary")
+        .unwrap()
+        .with_max_buffer_size(10);
 
     let result = parser.feed(b"12345678901"); // 11 バイト > 10 バイト上限
     assert!(matches!(
@@ -520,7 +523,9 @@ fn test_multipart_parser_buffer_overflow() {
 // バッファ上限以下では feed が成功する
 #[test]
 fn test_multipart_parser_buffer_within_limit() {
-    let mut parser = MultipartParser::new("boundary").with_max_buffer_size(100);
+    let mut parser = MultipartParser::new("boundary")
+        .unwrap()
+        .with_max_buffer_size(100);
     assert!(parser.feed(b"hello").is_ok());
 }
 
@@ -532,7 +537,7 @@ fn test_multipart_missing_name_parameter() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary");
+    let mut parser = MultipartParser::new("boundary").unwrap();
     parser.feed(body).unwrap();
 
     assert!(matches!(
@@ -548,7 +553,7 @@ fn test_multipart_missing_name_parameter() {
 /// 内部デリミタ + transport-padding + CRLF が正しく処理されること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     parser
         .feed(
             b"--b\r\n\
@@ -576,7 +581,7 @@ fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
 /// 内部デリミタ + transport-padding + close-delimiter が正しく処理されること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_close() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     parser
         .feed(
             b"--b\r\n\
@@ -597,7 +602,7 @@ fn test_multipart_parser_inner_delimiter_transport_padding_close() {
 /// transport-padding 途中で feed が切れた場合も正常に継続できること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_incomplete() {
-    let mut parser = MultipartParser::new("b");
+    let mut parser = MultipartParser::new("b").unwrap();
     // 最初のパート + inner delimiter + transport-padding 途中で feed を切る
     parser
         .feed(b"--b\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b ")
@@ -624,4 +629,45 @@ fn test_multipart_parser_inner_delimiter_transport_padding_incomplete() {
 
     assert!(matches!(parser.next_part(), Ok(None)));
     assert!(parser.is_finished());
+}
+
+// ========================================
+// boundary バリデーションのテスト
+// ========================================
+
+#[test]
+fn test_multipart_parser_new_empty_boundary_rejected() {
+    // 空 boundary は無効
+    assert!(MultipartParser::new("").is_err());
+}
+
+#[test]
+fn test_multipart_parser_new_too_long_boundary_rejected() {
+    // 71 文字以上は無効
+    let long = "a".repeat(71);
+    assert!(MultipartParser::new(&long).is_err());
+}
+
+#[test]
+fn test_multipart_parser_new_invalid_char_rejected() {
+    // 禁止文字を含む boundary は無効
+    assert!(MultipartParser::new("abc\x00def").is_err());
+}
+
+#[test]
+fn test_multipart_parser_new_valid_boundary_accepted() {
+    // 有効な boundary は成功
+    assert!(MultipartParser::new("----boundary123").is_ok());
+}
+
+#[test]
+fn test_multipart_builder_with_boundary_invalid_rejected() {
+    // MultipartBuilder でも同様に検証される
+    assert!(MultipartBuilder::with_boundary("").is_err());
+    assert!(MultipartBuilder::with_boundary(&"a".repeat(71)).is_err());
+}
+
+#[test]
+fn test_multipart_builder_with_boundary_valid_accepted() {
+    assert!(MultipartBuilder::with_boundary("valid-boundary").is_ok());
 }

@@ -48,11 +48,11 @@ fn valid_mime_type() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_multipart_text_field_roundtrip(name in valid_field_name(), value in valid_text_value()) {
-        let body = MultipartBuilder::with_boundary("test-boundary")
+        let body = MultipartBuilder::with_boundary("test-boundary").unwrap()
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new("test-boundary");
+        let mut parser = MultipartParser::new("test-boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -73,12 +73,12 @@ proptest! {
         name2 in valid_field_name(),
         value2 in "[a-zA-Z0-9]{0,16}"
     ) {
-        let body = MultipartBuilder::with_boundary("boundary")
+        let body = MultipartBuilder::with_boundary("boundary").unwrap()
             .text_field(&name1, &value1)
             .text_field(&name2, &value2)
             .build();
 
-        let mut parser = MultipartParser::new("boundary");
+        let mut parser = MultipartParser::new("boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
@@ -101,11 +101,11 @@ proptest! {
         filename in valid_filename(),
         data in proptest::collection::vec(any::<u8>(), 0..64)
     ) {
-        let body = MultipartBuilder::with_boundary("file-boundary")
+        let body = MultipartBuilder::with_boundary("file-boundary").unwrap()
             .file_field(&name, &filename, "application/octet-stream", &data)
             .build();
 
-        let mut parser = MultipartParser::new("file-boundary");
+        let mut parser = MultipartParser::new("file-boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -172,11 +172,11 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_parser_is_finished(name in valid_field_name(), value in valid_text_value()) {
-        let body = MultipartBuilder::with_boundary("boundary")
+        let body = MultipartBuilder::with_boundary("boundary").unwrap()
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new("boundary");
+        let mut parser = MultipartParser::new("boundary").unwrap();
         parser.feed(&body).unwrap();
 
         prop_assert!(!parser.is_finished());
@@ -209,7 +209,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_builder_with_boundary(boundary in valid_boundary()) {
-        let builder = MultipartBuilder::with_boundary(&boundary);
+        let builder = MultipartBuilder::with_boundary(&boundary).unwrap();
 
         prop_assert_eq!(builder.boundary(), boundary.as_str());
         prop_assert!(builder.content_type().contains(&boundary));
@@ -220,7 +220,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_builder_content_type(boundary in valid_boundary()) {
-        let builder = MultipartBuilder::with_boundary(&boundary);
+        let builder = MultipartBuilder::with_boundary(&boundary).unwrap();
         let content_type = builder.content_type();
         let expected_boundary = format!("boundary={}", boundary);
 
@@ -241,11 +241,11 @@ proptest! {
         name in valid_field_name(),
         value in valid_text_value()
     ) {
-        let body = MultipartBuilder::with_boundary(&boundary)
+        let body = MultipartBuilder::with_boundary(&boundary).unwrap()
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new(&boundary);
+        let mut parser = MultipartParser::new(&boundary).unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -264,12 +264,12 @@ proptest! {
         filename in valid_filename(),
         data in proptest::collection::vec(any::<u8>(), 0..32)
     ) {
-        let body = MultipartBuilder::with_boundary("mixed-boundary")
+        let body = MultipartBuilder::with_boundary("mixed-boundary").unwrap()
             .text_field(&text_name, &text_value)
             .file_field(&file_name, &filename, "application/octet-stream", &data)
             .build();
 
-        let mut parser = MultipartParser::new("mixed-boundary");
+        let mut parser = MultipartParser::new("mixed-boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
@@ -293,12 +293,12 @@ proptest! {
         name2 in valid_field_name(),
         filename2 in valid_filename()
     ) {
-        let body = MultipartBuilder::with_boundary("files-boundary")
+        let body = MultipartBuilder::with_boundary("files-boundary").unwrap()
             .file_field(&name1, &filename1, "text/plain", b"content1")
             .file_field(&name2, &filename2, "image/png", b"content2")
             .build();
 
-        let mut parser = MultipartParser::new("files-boundary");
+        let mut parser = MultipartParser::new("files-boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
@@ -313,11 +313,11 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_empty_value_roundtrip(name in valid_field_name()) {
-        let body = MultipartBuilder::with_boundary("boundary")
+        let body = MultipartBuilder::with_boundary("boundary").unwrap()
             .text_field(&name, "")
             .build();
 
-        let mut parser = MultipartParser::new("boundary");
+        let mut parser = MultipartParser::new("boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -330,11 +330,11 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_empty_file_roundtrip(name in valid_field_name(), filename in valid_filename()) {
-        let body = MultipartBuilder::with_boundary("boundary")
+        let body = MultipartBuilder::with_boundary("boundary").unwrap()
             .file_field(&name, &filename, "application/octet-stream", &[])
             .build();
 
-        let mut parser = MultipartParser::new("boundary");
+        let mut parser = MultipartParser::new("boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -352,7 +352,7 @@ proptest! {
             !matches!(*b, b'\r' | b'-' | b' ' | b'\t')
         })
     ) {
-        let mut parser = MultipartParser::new("b");
+        let mut parser = MultipartParser::new("b").unwrap();
         let mut input: Vec<u8> = b"--b".to_vec();
         input.push(invalid_byte);
         // ダミーの後続データ (boundary 直後判定が走るのに十分な長さを確保)
@@ -379,13 +379,13 @@ proptest! {
         value2 in valid_text_value(),
         split in 1usize..200,
     ) {
-        let body = MultipartBuilder::with_boundary("boundary")
+        let body = MultipartBuilder::with_boundary("boundary").unwrap()
             .text_field(&name1, &value1)
             .text_field(&name2, &value2)
             .build();
 
         // bulk feed
-        let mut bulk = MultipartParser::new("boundary");
+        let mut bulk = MultipartParser::new("boundary").unwrap();
         bulk.feed(&body).unwrap();
         let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
         while let Some(part) = bulk.next_part().unwrap() {
@@ -395,7 +395,7 @@ proptest! {
 
         // chunk-split feed
         let split = split.min(body.len().saturating_sub(1)).max(1);
-        let mut split_parser = MultipartParser::new("boundary");
+        let mut split_parser = MultipartParser::new("boundary").unwrap();
         split_parser.feed(&body[..split]).unwrap();
         let mut split_parts: Vec<Vec<u8>> = Vec::new();
         loop {
