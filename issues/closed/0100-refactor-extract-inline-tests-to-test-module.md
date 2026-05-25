@@ -2,6 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/refactor-extract-inline-tests
 
@@ -83,3 +84,11 @@ CLAUDE.md テスト規約違反が 21 ファイルに及ぶ。テストの重複
 - PBT 重複のラウンドトリップテストが削除されていること
 - インラインテストと `tests/test_<module>.rs` の間の重複が解消されていること
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること
+
+## 解決方法
+
+- 17 ファイルから 227 件のインラインテストを `tests/test_<module>.rs` に外部化した
+- 4 件の PBT 重複ラウンドトリップテストを削除した (cache.rs: 3 件、expect.rs: 1 件)
+- `tests/test_header_name.rs` と `tests/test_method.rs` を新設した
+- private/pub(crate) アクセスが必要な 4 件のテストは inline に残した (auth.rs, header_name.rs, method.rs, uri.rs に各 1 件)
+- 正当な例外 (base64.rs, encoder.rs, multipart.rs, validate.rs) は変更なし

@@ -276,3 +276,53 @@ fn test_expect_unterminated_quote() {
         Err(ExpectError::UnterminatedQuote),
     );
 }
+
+// ========================================
+// src/expect.rs のインラインテストを移動 (PBT重複分を除く)
+// ========================================
+
+#[test]
+fn parse_simple() {
+    let expect = Expect::parse("100-continue").unwrap();
+    assert!(expect.has_100_continue());
+    assert_eq!(expect.items().len(), 1);
+}
+
+#[test]
+fn parse_extension() {
+    let expect = Expect::parse("foo=bar, 100-continue").unwrap();
+    assert_eq!(expect.items().len(), 2);
+    assert_eq!(expect.items()[0].token(), "foo");
+    assert_eq!(expect.items()[0].value(), Some("bar"));
+}
+
+#[test]
+fn parse_quoted_value() {
+    let expect = Expect::parse("token=\"va\\\\lue\"").unwrap();
+    assert_eq!(expect.items()[0].value(), Some("va\\lue"));
+}
+
+#[test]
+fn parse_invalid() {
+    assert!(Expect::parse("bad value").is_err());
+    assert!(Expect::parse("token=").is_err());
+}
+
+/// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
+#[test]
+fn parse_empty_elements() {
+    let expect = Expect::parse("").unwrap();
+    assert!(expect.items().is_empty());
+
+    let expect = Expect::parse(",").unwrap();
+    assert!(expect.items().is_empty());
+
+    let expect = Expect::parse("100-continue,,foo=bar").unwrap();
+    assert_eq!(expect.items().len(), 2);
+}
+
+#[test]
+fn display() {
+    let expect = Expect::parse("foo=bar, 100-continue").unwrap();
+    assert_eq!(expect.to_string(), "foo=bar, 100-continue");
+}

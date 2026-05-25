@@ -53,6 +53,9 @@
 - [ADD] TryFrom / new() の受理集合一致を PBT で検証する
   - prop_header_name.rs / prop_method.rs に等価性テストを追加する
   - @voluntas
+- [UPDATE] `src/` 内の 17 モジュールのインラインテストを `tests/test_<module>.rs` に外部化する (第 2 弾)
+  - PBT 重複ラウンドトリップテスト 4 件を削除する
+  - @voluntas
 - [UPDATE] `etag.rs` の obs-text 走査をバイト単位 (`is_etagc(u8)`) から char 単位 (`is_etagc_char(char)`) に統一する
   - @voluntas
 - [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
