@@ -2,6 +2,7 @@
 
 - Priority: Low
 - Created: 2026-05-25
+- Completed: 2026-05-25
 - Model: Opus 4.7
 - Branch: feature/fix-changes-md-ordering
 
@@ -51,3 +52,10 @@ CLAUDE.md 規約: 「エントリは種別の順番を守って記載するこ�
 - `## develop` セクションが `[CHANGE]` → `[ADD]` → `[UPDATE]` → `[FIX]` → `### misc` の順で構成されていること
 - `### misc` 内のエントリも種別順に並んでいること
 - `### misc` 内に公開 API の `[CHANGE]` / `[ADD]` が含まれていないこと
+
+## 解決方法
+
+- `### misc` 内の公開 API エントリ (`[CHANGE] HttpHead::headers()`, `[CHANGE] Request/Response ヘッダー名変更`, `[ADD] HeaderName/Method/Scheme 導入`, `[ADD] HeaderNameError/MethodError`, `[ADD] TryFrom`) を `## develop` の最上位に移動した
+- 最上位を CHANGE → ADD → FIX の順に並べ替えた
+- `### misc` 内を ADD → UPDATE の順に並べ替えた
+- `### misc` にはテスト追加 / サンプル変更 / リファクタリングのみ残した

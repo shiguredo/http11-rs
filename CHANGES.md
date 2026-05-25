@@ -18,33 +18,17 @@
   - 32-bit 環境で u32::MAX を超えるチャンクサイズが RFC 9112 Section 7.1 MUST 違反となる問題を解消する
   - `DecoderLimits::max_body_size` と `Error::BodyTooLarge` のフィールドが `u64` に変更される破壊的変更
   - @voluntas
-- [FIX] ヘッダーパースモジュールの `str::trim()` を `trim_ows()` に統一し Unicode 空白 (NBSP 等) を OWS として除去しない RFC 9110 Section 5.6.3 準拠にする
-  - @voluntas
-
-### misc
-
-- [UPDATE] `etag.rs` の obs-text 走査をバイト単位 (`is_etagc(u8)`) から char 単位 (`is_etagc_char(char)`) に統一する
-  - @voluntas
-- [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
-  - @voluntas
-- [ADD] HeaderName / Method / Scheme 型を導入しコンパイル時検査つき構築 API (from_static) を提供する
-  - ヘッダー名は HeaderName (case-insensitive Eq/Hash)、メソッドは Method (case-sensitive)、URI スキームは Scheme (case-insensitive Eq/Hash)
-  - 各型に const 定数 (Method::GET 等、Scheme::HTTP 等) を提供する
-  - @voluntas
 - [CHANGE] HttpHead::headers() の戻り型を &[(String, String)] から &[(HeaderName, String)] に変更する
   - 破壊的変更。HttpHead を実装する全型 (Request/Response/RequestHead/ResponseHead) に波及する
-  - @voluntas
-- [ADD] HeaderName::from_static / Method::from_static / Scheme::from_static に compile_fail doctest を追加する
-- [ADD] HeaderName / Method / Scheme の構築時検査の PBT 整合性検証を追加する
-  - pbt/src/lib.rs に valid_* / invalid_* 戦略 6 種を追加する
-  - pbt/tests/prop_header_name.rs / prop_method.rs / prop_scheme.rs を新設する
-  - @voluntas
-  - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
   - @voluntas
 - [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl TryInto<HeaderName> / impl TryInto<Method> に変更する
   - builder で `"Host"` / `"GET"` 等の `'static str` リテラルを直接渡せるようになる
   - 既存の HeaderName / Method / Method::GET 渡しは引き続きコンパイル可能（identity TryFrom impl による）
   - 不正リテラルは Err(EncodeError) で返す（panic しない）
+  - @voluntas
+- [ADD] HeaderName / Method / Scheme 型を導入しコンパイル時検査つき構築 API (from_static) を提供する
+  - ヘッダー名は HeaderName (case-insensitive Eq/Hash)、メソッドは Method (case-sensitive)、URI スキームは Scheme (case-insensitive Eq/Hash)
+  - 各型に const 定数 (Method::GET 等、Scheme::HTTP 等) を提供する
   - @voluntas
 - [ADD] HeaderNameError / MethodError に input フィールドを追加し、原因入力文字列をエラーに保持する
   - input() / into_input() アクセサで参照・所有権移動の両方を提供する
@@ -54,8 +38,24 @@
   - Erfolg 時は Cow::Borrowed で zero-alloc
   - 非 'static な &str はコンパイルエラー（compile-fail doctest で担保）
   - @voluntas
+- [FIX] ヘッダーパースモジュールの `str::trim()` を `trim_ows()` に統一し Unicode 空白 (NBSP 等) を OWS として除去しない RFC 9110 Section 5.6.3 準拠にする
+  - @voluntas
+
+### misc
+
+- [ADD] HeaderName::from_static / Method::from_static / Scheme::from_static に compile_fail doctest を追加する
+  - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
+  - @voluntas
+- [ADD] HeaderName / Method / Scheme の構築時検査の PBT 整合性検証を追加する
+  - pbt/src/lib.rs に valid_* / invalid_* 戦略 6 種を追加する
+  - pbt/tests/prop_header_name.rs / prop_method.rs / prop_scheme.rs を新設する
+  - @voluntas
 - [ADD] TryFrom / new() の受理集合一致を PBT で検証する
   - prop_header_name.rs / prop_method.rs に等価性テストを追加する
+  - @voluntas
+- [UPDATE] `etag.rs` の obs-text 走査をバイト単位 (`is_etagc(u8)`) から char 単位 (`is_etagc_char(char)`) に統一する
+  - @voluntas
+- [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
   - @voluntas
 
 ## 2026.5.0
