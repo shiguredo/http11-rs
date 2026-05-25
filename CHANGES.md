@@ -16,6 +16,8 @@
 
 ### misc
 
+- [UPDATE] `etag.rs` の obs-text 走査をバイト単位 (`is_etagc(u8)`) から char 単位 (`is_etagc_char(char)`) に統一する
+  - @voluntas
 - [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
   - @voluntas
 - [ADD] HeaderName / Method / Scheme 型を導入しコンパイル時検査つき構築 API (from_static) を提供する
