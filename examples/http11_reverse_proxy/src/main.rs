@@ -586,12 +586,9 @@ async fn handle_client(
     if matches!(req_body_kind, BodyKind::Tunnel) {
         info!(method = %req_head.method(), "CONNECT rejected with 405 Method Not Allowed");
         let response = Response::with_status(StatusCode::METHOD_NOT_ALLOWED)
-            .header(
-                HeaderName::from_static(b"Allow"),
-                "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH",
-            )?
-            .header(HeaderName::from_static(b"Content-Length"), "0")?
-            .header(HeaderName::from_static(b"Connection"), "close")?;
+            .header("Allow", "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH")?
+            .header("Content-Length", "0")?
+            .header("Connection", "close")?;
         socket.write_all(&response.encode()?).await?;
         return Ok(());
     }
@@ -675,9 +672,9 @@ async fn handle_client(
         upstream_request.add_header(name.clone(), value)?;
     }
 
-    upstream_request.add_header(HeaderName::from_static(b"Host"), upstream_host_header)?;
+    upstream_request.add_header("Host", upstream_host_header)?;
     // Keep-Alive を使用して接続を再利用
-    upstream_request.add_header(HeaderName::from_static(b"Connection"), "keep-alive")?;
+    upstream_request.add_header("Connection", "keep-alive")?;
     // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
     // BodyKind::None なら upstream にもボディなしで送る (Content-Length 自動付与もしない)。
     let upstream_request = if matches!(req_body_kind, BodyKind::None) {
@@ -884,16 +881,14 @@ async fn stream_response_on_connection(
     }
 
     if let Some(len) = content_length {
-        response_for_headers
-            .add_header(HeaderName::from_static(b"Content-Length"), len.to_string())?;
+        response_for_headers.add_header("Content-Length", len.to_string())?;
         debug!(content_length = len, "Using Content-Length");
     } else if use_chunked {
-        response_for_headers
-            .add_header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")?;
+        response_for_headers.add_header("Transfer-Encoding", "chunked")?;
         debug!("using Transfer-Encoding: chunked");
     } else if is_close_delimited {
         // close-delimited body: 接続が閉じるまでがボディ
-        response_for_headers.add_header(HeaderName::from_static(b"Connection"), "close")?;
+        response_for_headers.add_header("Connection", "close")?;
         debug!("using Connection: close (close-delimited body)");
     }
 

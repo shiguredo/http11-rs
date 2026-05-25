@@ -13,15 +13,15 @@
 //! ### クライアント (リクエスト送信、レスポンス受信)
 //!
 //! ```rust
-//! use shiguredo_http11::{EncodeError, HeaderName, Method, Request, ResponseDecoder};
+//! use shiguredo_http11::{EncodeError, Request, ResponseDecoder};
 //!
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // リクエストを作成してエンコード
-//!     let request = Request::new(Method::GET, "/")
+//!     let request = Request::new("GET", "/")
 //!         .unwrap()
-//!         .header(HeaderName::from_static(b"Host"), "example.com")
+//!         .header("Host", "example.com")
 //!         .unwrap()
-//!         .header(HeaderName::from_static(b"Connection"), "close")
+//!         .header("Connection", "close")
 //!         .unwrap();
 //!     request.encode()
 //! }
@@ -38,7 +38,7 @@
 //! ### サーバー (リクエスト受信、レスポンス送信)
 //!
 //! ```rust
-//! use shiguredo_http11::{EncodeError, HeaderName, RequestDecoder, Response, StatusCode};
+//! use shiguredo_http11::{EncodeError, RequestDecoder, Response, StatusCode};
 //!
 //! // リクエストをデコード
 //! let mut decoder = RequestDecoder::new();
@@ -49,7 +49,7 @@
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // レスポンスを作成してエンコード
 //!     let response = Response::with_status(StatusCode::OK)
-//!         .header(HeaderName::from_static(b"Content-Type"), "text/plain").unwrap()
+//!         .header("Content-Type", "text/plain").unwrap()
 //!         .body(b"Hello, World!".to_vec());
 //!     response.encode()
 //! }

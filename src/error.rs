@@ -239,3 +239,25 @@ impl fmt::Display for EncodeError {
 }
 
 impl core::error::Error for EncodeError {}
+
+impl From<crate::header_name::HeaderNameError> for EncodeError {
+    fn from(e: crate::header_name::HeaderNameError) -> Self {
+        EncodeError::InvalidHeaderName {
+            name: e.into_input(),
+        }
+    }
+}
+
+impl From<crate::method::MethodError> for EncodeError {
+    fn from(e: crate::method::MethodError) -> Self {
+        EncodeError::InvalidMethod {
+            method: e.into_input(),
+        }
+    }
+}
+
+impl From<core::convert::Infallible> for EncodeError {
+    fn from(never: core::convert::Infallible) -> Self {
+        match never {}
+    }
+}

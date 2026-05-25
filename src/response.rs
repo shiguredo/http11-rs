@@ -266,12 +266,9 @@ impl Response {
     /// シーケンスのみ表現可能。
     pub fn header(
         mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<Self, EncodeError> {
-        // add_header は Result<&mut Self, EncodeError> を返す。? 演算子の脱糖は
-        // Ok(v) => v, Err(e) => return Err(e) であり、成功値 v: &mut Self は
-        // ; で破棄され NLL により借用が終了するため、後続の Ok(self) はコンパイル可能。
         self.add_header(name, value)?;
         Ok(self)
     }
@@ -309,9 +306,10 @@ impl Response {
     /// 受け付けるためのトレードオフである。
     pub fn add_header(
         &mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
         if !is_valid_field_value(&value) {
             return Err(EncodeError::InvalidHeaderValue {
@@ -341,9 +339,10 @@ impl Response {
     /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
     pub fn set_header(
         &mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         // アトミック性のため、バリデーションを先に行う。
         let value = value.into();
         if !is_valid_field_value(&value) {

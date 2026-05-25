@@ -34,10 +34,10 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 | 型 | 説明 | 主要 API |
 |----|------|---------|
-| `HeaderName` | HTTP ヘッダー名 (RFC 9110 Section 5.1, field-name = token)。Eq/Hash は case-insensitive | `from_static(b"Name")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()` |
-| `HeaderNameError` | `HeaderName` の構築エラー | `Empty`, `InvalidByte { byte, position }` |
-| `Method` | HTTP メソッド (RFC 9110 Section 9.1, method = token)。Eq/Hash は case-sensitive | `from_static(b"METHOD")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()` |
-| `MethodError` | `Method` の構築エラー | `Empty`, `InvalidByte { byte, position }` |
+| `HeaderName` | HTTP ヘッダー名 (RFC 9110 Section 5.1, field-name = token)。Eq/Hash は case-insensitive | `from_static(b"Name")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()`, `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` (builder 用) |
+| `HeaderNameError` | `HeaderName` の構築エラー | `Empty { input }`, `InvalidByte { byte, position, input }`, `input()`, `into_input()` |
+| `Method` | HTTP メソッド (RFC 9110 Section 9.1, method = token)。Eq/Hash は case-sensitive | `from_static(b"METHOD")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()`, `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` (builder 用) |
+| `MethodError` | `Method` の構築エラー | `Empty { input }`, `InvalidByte { byte, position, input }`, `input()`, `into_input()` |
 | `Scheme` | URI スキーム (RFC 3986 Section 3.1)。Eq/Hash は case-insensitive | `from_static(b"scheme")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()` |
 | `SchemeError` | `Scheme` の構築エラー | `Empty`, `InvalidByte { byte, position }` |
 
@@ -46,6 +46,8 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 **Scheme の標準定数**: `Scheme::HTTP`, `Scheme::HTTPS`, `Scheme::WS`, `Scheme::WSS`, `Scheme::RTSP`
 
 `from_static` はバイトリテラル (`b"..."`) を受け取る `const fn` であり、不正な入力はコンパイル時に panic する。ランタイムで動的に構築する場合は `new()` を使い `Result` をハンドリングする。
+
+builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直接渡せる (`TryFrom<&'static str>` による)。非 `'static` な `&str` はコンパイルエラーになるため、動的入力は `new()` で構築した値を渡す。
 
 ### エンコード用 (送信側)
 
@@ -60,7 +62,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 
 `encode()` / `encode_headers()` は意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合、1xx/204/205 へのボディ等) を `Result<Vec<u8>, EncodeError>` で返す。構築時バリデーションを通過した値でも encode 時に検出されるため、呼び出し側は `?` 等で伝播する。
 
-`Request` / `Response` のヘッダー名引数は `HeaderName` 型、メソッド引数は `Method` 型を取る。値引数 (`value` / `uri` / `version` / `reason_phrase` / `body`) は `impl Into<String>` / `impl Into<Vec<u8>>` を受け、`String` や `Vec<u8>` をムーブで渡せる。`&str` / `&[u8]` も従来どおり利用可能。
+`Request` / `Response` のヘッダー名引数は `"Host"` 等の `'static str` リテラル、`HeaderName` 型、のいずれかを渡せる (`impl TryInto<HeaderName>`)。メソッド引数は `"GET"` 等のリテラル、`Method` 定数 (`Method::GET`) のいずれかを渡せる (`impl TryInto<Method>`)。値引数 (`value` / `uri` / `version` / `reason_phrase` / `body`) は `impl Into<String>` / `impl Into<Vec<u8>>` を受け、`String` や `Vec<u8>` をムーブで渡せる。`&str` / `&[u8]` も従来どおり利用可能。
 
 ### デコード用 (受信側)
 
@@ -166,9 +168,9 @@ use std::io::Read;
 // リクエスト作成
 // Request::new は Method 型、header は HeaderName 型を受け取る
 // 構築時バリデーション (CRLF/NUL 拒否) を行い Result<_, EncodeError> を返す
-let request = Request::new(Method::GET, "/")?
-    .header(HeaderName::from_static(b"Host"), "example.com")?
-    .header(HeaderName::from_static(b"Connection"), "close")?;
+let request = Request::new("GET", "/")?
+    .header("Host", "example.com")?
+    .header("Connection", "close")?;
 let bytes = request.encode()?;
 // bytes をネットワークに送信...
 
@@ -227,7 +229,7 @@ let request = loop {
 // カスタムバージョンや任意の reason phrase が必要な場合は
 // `Response::new` / `with_version` を使う (Result<_, EncodeError> を返す)。
 let response = Response::with_status(StatusCode::OK)
-    .header(HeaderName::from_static(b"Content-Type"), "text/plain")?
+    .header("Content-Type", "text/plain")?
     .body(b"Hello, World!".to_vec());
 let bytes = response.encode()?;
 // bytes をネットワークに送信...
@@ -244,8 +246,8 @@ use shiguredo_http11::{HeaderName, Method, Request, Response, ResponseDecoder, S
 let is_head = request.method() == &Method::HEAD;
 let body = b"Hello, World!";
 let mut response = Response::with_status(StatusCode::OK)
-    .header(HeaderName::from_static(b"Content-Type"), "text/plain")?
-    .header(HeaderName::from_static(b"Content-Length"), &body.len().to_string())?
+    .header("Content-Type", "text/plain")?
+    .header("Content-Length", &body.len().to_string())?
     .omit_body(is_head);
 if !is_head {
     response = response.body(body.to_vec());
@@ -386,7 +388,7 @@ if let BodyKind::ContentLength(_) | BodyKind::Chunked = body_kind {
 use shiguredo_http11::{HeaderName, Response, StatusCode, encode_chunk};
 
 let response = Response::with_status(StatusCode::OK)
-    .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")?;
+    .header("Transfer-Encoding", "chunked")?;
 
 // ヘッダーを送信
 let headers = response.encode_headers()?;
@@ -405,7 +407,7 @@ send(&encode_chunk(b"")); // 終端チャンク
 ```rust
 use shiguredo_http11::{EncodeError, HeaderName, Method, Request};
 
-let request = Request::new(Method::GET, "/")?;  // Host ヘッダーなし
+let request = Request::new("GET", "/")?;  // Host ヘッダーなし
 match request.encode() {
     Ok(bytes) => { /* 送信 */ }
     Err(EncodeError::MissingHostHeader) => {

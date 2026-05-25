@@ -69,7 +69,11 @@ impl Request {
     ///
     /// version は `"HTTP/1.1"` 固定のため、`is_valid_protocol_version` は呼び出さない
     /// (固定値が常に検証を通過するため)。
-    pub fn new(method: Method, uri: impl Into<String>) -> Result<Self, EncodeError> {
+    pub fn new(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: impl Into<String>,
+    ) -> Result<Self, EncodeError> {
+        let method: Method = method.try_into().map_err(Into::into)?;
         let uri = uri.into();
         if !is_valid_request_target(&uri) {
             return Err(EncodeError::InvalidRequestTarget { uri });
@@ -106,10 +110,11 @@ impl Request {
     /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.2.2 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
     pub fn with_version(
-        method: Method,
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
         uri: impl Into<String>,
         version: impl Into<String>,
     ) -> Result<Self, EncodeError> {
+        let method: Method = method.try_into().map_err(Into::into)?;
         let uri = uri.into();
         let version = version.into();
         if !is_valid_request_target(&uri) {
@@ -199,7 +204,7 @@ impl Request {
     /// MUST either reject or replace と定義されているため拒否する。
     pub fn header(
         mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
@@ -251,9 +256,10 @@ impl Request {
     /// 受け付けるためのトレードオフである (Response 側と同方針)。
     pub fn add_header(
         &mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
         if !is_valid_field_value(&value) {
             return Err(EncodeError::InvalidHeaderValue {
@@ -283,9 +289,10 @@ impl Request {
     /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
     pub fn set_header(
         &mut self,
-        name: HeaderName,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
         if !is_valid_field_value(&value) {
             return Err(EncodeError::InvalidHeaderValue {
