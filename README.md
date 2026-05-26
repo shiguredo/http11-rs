@@ -443,7 +443,7 @@ loop {
 
 各サンプルは `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` を組み合わせた **ストリーミング API の実装例** になっています。一括 `decode()` API ではなく、断片入力に対応した経路で実装されています。
 
-io_uring サンプル (`examples/http11_server_io_uring`) のみワークスペースから除外されています (Linux 専用かつ追加カーネル要件があるため)。それ以外の 3 サンプルはルートの `cargo` コマンドからそのまま実行できます。
+サンプルはルートの `cargo` コマンドからそのまま実行できます。
 
 ### http11_client
 
@@ -527,45 +527,6 @@ curl http://localhost:8888/
   - アイドル 60 秒 / 最大生存 300 秒
 - hop-by-hop ヘッダーの処理
 - HEAD リクエスト対応
-
-### http11_server_io_uring
-
-io_uring + kTLS を使った HTTPS サーバーの例です。Linux 専用です。
-
-ワークスペースから除外されているため、サブクレートのディレクトリへ移動するか `--manifest-path` を指定して実行する必要があります。
-
-```bash
-cargo run --manifest-path examples/http11_server_io_uring/Cargo.toml -- --cert cert.pem --key key.pem
-```
-
-**前提条件:**
-
-- Linux カーネル 6.7 以上
-  - io_uring setsockopt サポート
-- `CONFIG_TLS=y` または `CONFIG_TLS=m`
-  - `modprobe tls` でロード済み
-
-**オプション:**
-
-- `-p, --port <PORT>`: リッスンポート
-  - デフォルト: `8443`
-- `--cert <PATH>`: 証明書ファイル
-  - PEM 形式
-  - 必須
-- `--key <PATH>`: 秘密鍵ファイル
-  - PEM 形式
-  - 必須
-
-**機能:**
-
-- io_uring SQPOLL モード
-- kTLS (Kernel TLS) によるカーネルレベル暗号化
-- HEAD リクエスト対応
-  - RFC 9110 Section 9.3.2
-- Keep-Alive 対応
-  - 最大リクエスト数 1000
-- Accept-Encoding に基づく圧縮
-  - 優先度: `zstd` > `br` > `gzip`
 
 ## Agent Skills
 
