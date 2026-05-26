@@ -12,7 +12,7 @@ pub(crate) enum DecodePhase {
     /// ボディ読み取り中 (Chunked) - チャンクサイズ待ち
     BodyChunkedSize,
     /// ボディ読み取り中 (Chunked) - チャンクデータ待ち
-    BodyChunkedData { remaining: usize },
+    BodyChunkedData { remaining: u64 },
     /// ボディ読み取り中 (Chunked) - チャンクデータ後の CRLF 待ち
     BodyChunkedDataCrlf,
     /// トレーラーヘッダー待ち
@@ -22,7 +22,9 @@ pub(crate) enum DecodePhase {
     /// トンネルモード (CONNECT 2xx レスポンス用)
     ///
     /// RFC 9112 Section 6.3: CONNECT メソッドへの 2xx レスポンスは
-    /// トンネルモードに切り替わる。この状態では decode_headers() / decode() は使えない。
+    /// トンネルモードに切り替わる。RFC 9931 Section 8 は CONNECT に関する追加要件
+    /// (proxy に対する request smuggling 対策等) を RFC 9112 を更新する形で規定する。
+    /// この状態では decode_headers() / decode() は使えない。
     /// take_remaining() でバッファ残りデータを取り出す必要がある。
     Tunnel,
     /// 完了

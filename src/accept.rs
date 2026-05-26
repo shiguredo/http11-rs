@@ -421,7 +421,7 @@ impl fmt::Display for LanguageRange {
 
 fn parse_media_range_item(input: &str) -> Result<MediaRange, AcceptError> {
     let mut parts = split_with_quotes(input, ';').into_iter();
-    let media = parts.next().unwrap_or_default().trim().to_string();
+    let media = trim_ows(&parts.next().unwrap_or_default()).to_string();
     let (media_type, subtype) = parse_media_range(&media)?;
 
     let mut params = Vec::new();
@@ -593,79 +593,4 @@ fn needs_quoting(s: &str) -> bool {
     // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
     // のため必ず引用符が必要。
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_accept_simple() {
-        let accept = Accept::parse("text/html").unwrap();
-        assert_eq!(accept.items().len(), 1);
-        let item = &accept.items()[0];
-        assert_eq!(item.media_type(), "text");
-        assert_eq!(item.subtype(), "html");
-        assert_eq!(item.qvalue().value(), 1000);
-    }
-
-    #[test]
-    fn parse_accept_wildcard() {
-        let accept = Accept::parse("text/*; q=0.5").unwrap();
-        let item = &accept.items()[0];
-        assert_eq!(item.subtype(), "*");
-        assert_eq!(item.qvalue().value(), 500);
-    }
-
-    #[test]
-    fn parse_accept_with_params() {
-        let accept = Accept::parse("text/html; level=1; q=0.7").unwrap();
-        let item = &accept.items()[0];
-        assert_eq!(item.parameters()[0].0, "level");
-        assert_eq!(item.parameters()[0].1, "1");
-        assert_eq!(item.qvalue().value(), 700);
-    }
-
-    #[test]
-    fn parse_accept_invalid_q() {
-        assert!(Accept::parse("text/html;q=1.5").is_err());
-    }
-
-    #[test]
-    fn parse_accept_charset() {
-        let ac = AcceptCharset::parse("utf-8, iso-8859-1;q=0.5").unwrap();
-        assert_eq!(ac.items().len(), 2);
-        assert_eq!(ac.items()[1].qvalue().value(), 500);
-    }
-
-    #[test]
-    fn parse_accept_encoding() {
-        let ae = AcceptEncoding::parse("gzip, identity;q=0.2").unwrap();
-        assert_eq!(ae.items()[0].coding(), "gzip");
-        assert_eq!(ae.items()[1].qvalue().value(), 200);
-    }
-
-    #[test]
-    fn parse_accept_language() {
-        let al = AcceptLanguage::parse("en-US, ja;q=0.8").unwrap();
-        assert_eq!(al.items()[0].language(), "en-US");
-        assert_eq!(al.items()[1].qvalue().value(), 800);
-    }
-
-    #[test]
-    fn display_accept() {
-        let accept = Accept::parse("text/html; q=0.5").unwrap();
-        assert_eq!(accept.to_string(), "text/html; q=0.5");
-    }
-
-    #[test]
-    fn parse_accept_language_primary_subtag_alpha_only() {
-        // BCP 47/RFC 5646: 先頭サブタグは ALPHA のみ
-        // 数字で始まる言語タグは不正
-        assert!(AcceptLanguage::parse("123").is_err());
-        assert!(AcceptLanguage::parse("1ab").is_err());
-        // 後続サブタグは ALPHA / DIGIT OK
-        let al = AcceptLanguage::parse("en-123").unwrap();
-        assert_eq!(al.items()[0].language(), "en-123");
-    }
 }

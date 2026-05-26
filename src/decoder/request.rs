@@ -12,12 +12,14 @@
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
+use crate::header_name::HeaderName;
 use crate::limits::DecoderLimits;
+use crate::method::Method;
 use crate::request::Request;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use crate::validate::{is_valid_method, is_valid_protocol_version, is_valid_request_target};
+use crate::validate::{is_valid_protocol_version, is_valid_request_target, is_valid_token};
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line, parse_header_line,
@@ -58,7 +60,7 @@ pub struct RequestDecoder<D: Decompressor = NoCompression> {
     buf: Vec<u8>,
     phase: DecodePhase,
     start_line: Option<String>,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
     /// decode() 用: デコード済みヘッダー
@@ -295,7 +297,7 @@ impl<D: Decompressor> RequestDecoder<D> {
     /// HTTP/1.1 完全一致以外で Transfer-Encoding が出現した場合は error 化する。
     /// HTTP/1.2 が将来定義された場合は別途検討する (将来変更される可能性がある)。
     ///
-    /// RFC 9112 Section 6.1: リクエストでは chunked 以外の Transfer-Encoding は拒否
+    /// RFC 9112 Section 6.3 item 4: リクエストでは chunked 以外の Transfer-Encoding は拒否
     fn determine_body_kind(&self, version: &str) -> Result<BodyKind, Error> {
         let (transfer_encoding_chunked, content_length) =
             resolve_body_headers_for_request(&self.headers)?;
@@ -314,9 +316,9 @@ impl<D: Decompressor> RequestDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > self.limits.max_body_size {
                 return Err(Error::BodyTooLarge {
-                    size: usize::try_from(len).unwrap_or(usize::MAX),
+                    size: len,
                     limit: self.limits.max_body_size,
                 });
             }
@@ -360,7 +362,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                         }
 
                         // メソッド名の検証 (RFC 9110 Section 9)
-                        if !is_valid_method(parts[0]) {
+                        if !is_valid_token(parts[0]) {
                             return Err(Error::InvalidData(
                                 "invalid request line: invalid method".to_string(),
                             ));
@@ -415,7 +417,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                 let host_headers: Vec<_> = self
                                     .headers
                                     .iter()
-                                    .filter(|(name, _)| name.eq_ignore_ascii_case("Host"))
+                                    .filter(|(name, _)| name == "Host")
                                     .collect();
                                 if host_headers.is_empty() {
                                     return Err(Error::InvalidData(
@@ -451,7 +453,8 @@ impl<D: Decompressor> RequestDecoder<D> {
                             // CONNECT 受信時はヘッダー終端直後の任意バイト列をトンネルデータと
                             // して扱う必要がある。`BodyKind::None` で Complete 遷移してしまうと
                             // 後続バイトが「次の HTTP リクエスト」として decode_headers で
-                            // parse されはじめ、HTTP Request Smuggling 経路を生む。
+                            // parse されはじめ、HTTP Request Smuggling 経路を生む
+                            // (RFC 9931 Section 4.1 / Section 8)。
                             // ResponseDecoder の 2xx 応答経路と対称に `BodyKind::Tunnel` に
                             // 遷移させ、`take_remaining()` で transparent に転送できるようにする。
                             //
@@ -461,12 +464,15 @@ impl<D: Decompressor> RequestDecoder<D> {
                             // RFC は CONNECT リクエスト側の Content-Length / Transfer-Encoding
                             // を MUST NOT としていない (MUST NOT は 2xx レスポンス側の制約)
                             // ため、それらヘッダーが付いていても即エラーにはしない。
-                            let method = start_line_ref.split(' ').next().unwrap_or("");
-                            let body_kind = if method == "CONNECT" {
-                                BodyKind::Tunnel
-                            } else {
-                                self.determine_body_kind(version)?
-                            };
+                            let method_name = start_line_ref.split(' ').next().unwrap_or("");
+                            let body_kind =
+                                if Method::from_validated_bytes(method_name.as_bytes().to_vec())
+                                    == "CONNECT"
+                                {
+                                    BodyKind::Tunnel
+                                } else {
+                                    self.determine_body_kind(version)?
+                                };
 
                             // ヘッダー完了、ボディフェーズに遷移
                             // RFC 9112: リクエストは close-delimited を使わない
@@ -507,7 +513,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = RequestHead::from_validated_parts(
-                                parts[0].to_string(),
+                                Method::from_validated_bytes(parts[0].as_bytes().to_vec()),
                                 parts[1].to_string(),
                                 parts[2].to_string(),
                                 core::mem::take(&mut self.headers),
@@ -538,7 +544,8 @@ impl<D: Decompressor> RequestDecoder<D> {
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
-                            self.headers.push((name, value));
+                            self.headers
+                                .push((HeaderName::from_validated_bytes(name.into_bytes()), value));
                         }
                     } else {
                         return Ok(None);

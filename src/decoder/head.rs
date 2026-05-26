@@ -1,10 +1,12 @@
 //! HTTP ヘッダー型の定義
 
 use crate::error::{EncodeError, Error};
+use crate::header_name::HeaderName;
+use crate::method::Method;
 use crate::status_code::StatusClass;
 use crate::validate::{
-    is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_protocol_version,
-    is_valid_reason_phrase, is_valid_request_target, is_valid_status_code, trim_ows,
+    is_valid_field_value, is_valid_protocol_version, is_valid_reason_phrase,
+    is_valid_request_target, is_valid_status_code, trim_ows,
 };
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,13 +17,13 @@ pub trait HttpHead {
     fn version(&self) -> &str;
 
     /// ヘッダーリストを取得
-    fn headers(&self) -> &[(String, String)];
+    fn headers(&self) -> &[(HeaderName, String)];
 
     /// ヘッダーを取得 (大文字小文字を区別しない)
     fn get_header(&self, name: &str) -> Option<&str> {
         self.headers()
             .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .find(|(n, _)| n == name)
             .map(|(_, v)| v.as_str())
     }
 
@@ -29,16 +31,14 @@ pub trait HttpHead {
     fn get_headers(&self, name: &str) -> Vec<&str> {
         self.headers()
             .iter()
-            .filter(|(n, _)| n.eq_ignore_ascii_case(name))
+            .filter(|(n, _)| n == name)
             .map(|(_, v)| v.as_str())
             .collect()
     }
 
     /// ヘッダーが存在するか確認
     fn has_header(&self, name: &str) -> bool {
-        self.headers()
-            .iter()
-            .any(|(n, _)| n.eq_ignore_ascii_case(name))
+        self.headers().iter().any(|(n, _)| n == name)
     }
 
     /// Connection ヘッダーの値を取得 (RFC 9110 Section 7.6.1)
@@ -82,7 +82,7 @@ pub trait HttpHead {
         let mut has_keep_alive = false;
         // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
         for (name, value) in self.headers() {
-            if !name.eq_ignore_ascii_case("Connection") {
+            if name != "Connection" {
                 continue;
             }
             // カンマ区切りトークンリストとして解析
@@ -140,7 +140,7 @@ pub trait HttpHead {
         let mut last_token: Option<&str> = None;
         // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
         for (name, value) in self.headers() {
-            if !name.eq_ignore_ascii_case("Transfer-Encoding") {
+            if name != "Transfer-Encoding" {
                 continue;
             }
             // OWS は SP / HTAB のみ (RFC 9110 Section 5.6.3) なので trim_ows を使う。
@@ -169,13 +169,13 @@ pub trait HttpHead {
 #[non_exhaustive]
 pub struct RequestHead {
     /// HTTP メソッド (GET, POST, etc.)
-    pub(crate) method: String,
+    pub(crate) method: Method,
     /// リクエスト URI
     pub(crate) uri: String,
     /// HTTP バージョン (HTTP/1.1 等)
     pub(crate) version: String,
     /// ヘッダー
-    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) headers: Vec<(HeaderName, String)>,
 }
 
 impl RequestHead {
@@ -184,17 +184,20 @@ impl RequestHead {
     /// テスト用途や、別経路で受信したヘッダー情報から `RequestHead` を構築したい
     /// 場合に利用する。`RequestDecoder` 経由で得た `RequestHead` には呼び出す
     /// 必要はない。
-    pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError> {
+    pub fn new(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: &str,
+    ) -> Result<Self, EncodeError> {
         Self::with_version(method, uri, "HTTP/1.1")
     }
 
     /// 新しい `RequestHead` をバージョン指定付きで作成する (バリデート付き)
-    pub fn with_version(method: &str, uri: &str, version: &str) -> Result<Self, EncodeError> {
-        if !is_valid_method(method) {
-            return Err(EncodeError::InvalidMethod {
-                method: method.into(),
-            });
-        }
+    pub fn with_version(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: &str,
+        version: &str,
+    ) -> Result<Self, EncodeError> {
+        let method: Method = method.try_into().map_err(Into::into)?;
         if !is_valid_request_target(uri) {
             return Err(EncodeError::InvalidRequestTarget { uri: uri.into() });
         }
@@ -204,7 +207,7 @@ impl RequestHead {
             });
         }
         Ok(Self {
-            method: method.into(),
+            method,
             uri: uri.into(),
             version: version.into(),
             headers: Vec::new(),
@@ -212,30 +215,36 @@ impl RequestHead {
     }
 
     /// ヘッダーを追加する (バリデート付き、ビルダー)
-    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+    pub fn header(
+        mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
         Ok(self)
     }
 
     /// ヘッダーを追加する (バリデート付き、可変借用)
-    pub fn add_header(&mut self, name: &str, value: &str) -> Result<&mut Self, EncodeError> {
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName { name: name.into() });
-        }
+    pub fn add_header(
+        &mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         if !is_valid_field_value(value) {
             return Err(EncodeError::InvalidHeaderValue {
-                name: name.into(),
+                name: name.as_str().into(),
                 value: value.into(),
             });
         }
-        self.headers.push((name.into(), value.into()));
+        self.headers.push((name, value.into()));
         Ok(self)
     }
 
     /// HTTP メソッドを取得
     #[must_use]
     pub fn method(&self) -> &str {
-        &self.method
+        self.method.as_str()
     }
 
     /// リクエスト URI を取得
@@ -256,14 +265,14 @@ impl RequestHead {
     ///
     /// RFC 9110 Section 5。順序は受信順を保持する。
     #[must_use]
-    pub fn headers(&self) -> &[(String, String)] {
+    pub fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 
     /// `RequestDecoder` 内部からの構築用 (バリデーションスキップ)
     ///
     /// `RequestDecoder::decode_headers` は start-line / ヘッダーをデコード時に
-    /// 各フィールドをバリデート済み (`is_valid_method` / `is_valid_request_target` /
+    /// 各フィールドをバリデート済み (`is_valid_token` / `is_valid_request_target` /
     /// `is_valid_protocol_version` / `is_valid_header_name` / `is_valid_field_value`)
     /// であるため、ここで再検証は不要。
     ///
@@ -271,12 +280,11 @@ impl RequestHead {
     /// 衝突するが、本関数は unsafe ではない (整合性責任が呼出側にある点だけが
     /// 共通)。
     pub(crate) fn from_validated_parts(
-        method: String,
+        method: Method,
         uri: String,
         version: String,
-        headers: Vec<(String, String)>,
+        headers: Vec<(HeaderName, String)>,
     ) -> Self {
-        debug_assert!(is_valid_method(&method), "method must be valid token");
         debug_assert!(
             is_valid_request_target(&uri),
             "uri must be valid request-target"
@@ -285,11 +293,7 @@ impl RequestHead {
             is_valid_protocol_version(&version),
             "version must be valid HTTP-version"
         );
-        for (name, value) in &headers {
-            debug_assert!(
-                is_valid_header_name(name),
-                "header name must be valid token"
-            );
+        for (_, value) in &headers {
             debug_assert!(is_valid_field_value(value), "header value must be valid");
         }
         Self {
@@ -306,7 +310,7 @@ impl HttpHead for RequestHead {
         &self.version
     }
 
-    fn headers(&self) -> &[(String, String)] {
+    fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 }
@@ -330,7 +334,7 @@ pub struct ResponseHead {
     /// ステータスフレーズ (OK, Not Found, etc.)
     pub(crate) reason_phrase: String,
     /// ヘッダー
-    pub(crate) headers: Vec<(String, String)>,
+    pub(crate) headers: Vec<(HeaderName, String)>,
 }
 
 impl ResponseHead {
@@ -374,23 +378,29 @@ impl ResponseHead {
     }
 
     /// ヘッダーを追加する (バリデート付き、ビルダー)
-    pub fn header(mut self, name: &str, value: &str) -> Result<Self, EncodeError> {
+    pub fn header(
+        mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
         Ok(self)
     }
 
     /// ヘッダーを追加する (バリデート付き、可変借用)
-    pub fn add_header(&mut self, name: &str, value: &str) -> Result<&mut Self, EncodeError> {
-        if !is_valid_header_name(name) {
-            return Err(EncodeError::InvalidHeaderName { name: name.into() });
-        }
+    pub fn add_header(
+        &mut self,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
+        value: &str,
+    ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         if !is_valid_field_value(value) {
             return Err(EncodeError::InvalidHeaderValue {
-                name: name.into(),
+                name: name.as_str().into(),
                 value: value.into(),
             });
         }
-        self.headers.push((name.into(), value.into()));
+        self.headers.push((name, value.into()));
         Ok(self)
     }
 
@@ -431,7 +441,7 @@ impl ResponseHead {
     ///
     /// RFC 9110 Section 5。順序は受信順を保持する。
     #[must_use]
-    pub fn headers(&self) -> &[(String, String)] {
+    pub fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 
@@ -447,7 +457,7 @@ impl ResponseHead {
         version: String,
         status_code: u16,
         reason_phrase: String,
-        headers: Vec<(String, String)>,
+        headers: Vec<(HeaderName, String)>,
     ) -> Self {
         debug_assert!(
             is_valid_protocol_version(&version),
@@ -461,11 +471,7 @@ impl ResponseHead {
             reason_phrase.is_empty() || is_valid_reason_phrase(&reason_phrase),
             "reason_phrase must be valid or empty"
         );
-        for (name, value) in &headers {
-            debug_assert!(
-                is_valid_header_name(name),
-                "header name must be valid token"
-            );
+        for (_, value) in &headers {
             debug_assert!(is_valid_field_value(value), "header value must be valid");
         }
         Self {
@@ -482,7 +488,7 @@ impl HttpHead for ResponseHead {
         &self.version
     }
 
-    fn headers(&self) -> &[(String, String)] {
+    fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 }

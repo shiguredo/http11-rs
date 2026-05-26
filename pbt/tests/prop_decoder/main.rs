@@ -7,16 +7,17 @@ mod request_target;
 mod response;
 
 use proptest::prelude::*;
+use shiguredo_http11::Method;
 
-pub(crate) fn http_method() -> impl Strategy<Value = String> {
+pub(crate) fn http_method() -> impl Strategy<Value = Method> {
     prop_oneof![
-        Just("GET".to_string()),
-        Just("POST".to_string()),
-        Just("PUT".to_string()),
-        Just("DELETE".to_string()),
-        Just("HEAD".to_string()),
-        Just("OPTIONS".to_string()),
-        Just("PATCH".to_string()),
+        Just(Method::GET),
+        Just(Method::POST),
+        Just(Method::PUT),
+        Just(Method::DELETE),
+        Just(Method::HEAD),
+        Just(Method::OPTIONS),
+        Just(Method::PATCH),
     ]
 }
 

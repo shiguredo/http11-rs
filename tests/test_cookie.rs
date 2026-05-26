@@ -218,7 +218,7 @@ fn test_set_cookie_domain_multi_leading_dot_rejected() {
 #[test]
 fn test_set_cookie_domain_non_ldh_rejected() {
     // RFC 6265 Section 4.1.1 + RFC 1034 Section 3.5: domain-value は LDH (letter/digit/hyphen)
-    // と "." のみを許容する。RFC 6265bis Section 6.3 で IDN は punycode (LDH) 必須と規定。
+    // と "." のみを許容する。RFC 6265bis Section 5.1.2 で IDN は punycode (LDH) 必須と規定。
 
     // 空白を含む → 無視 (".trim()" は edge のみで内部は残る)
     let cookie = SetCookie::parse("name=value; Domain=foo bar", 2026).unwrap();
@@ -432,4 +432,176 @@ fn test_set_cookie_max_age_negative_clamped_to_zero() {
 fn test_set_cookie_path_empty_is_none() {
     let cookie = SetCookie::parse("name=value; Path=", 2026).unwrap();
     assert!(cookie.path().is_none());
+}
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_cookie_pair_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、cookie 名のトークン検証で失敗する
+    let result = Cookie::parse("\u{00A0}name=value");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_set_cookie_nbsp_in_attribute_not_stripped() {
+    // 属性名の前後の NBSP は OWS として除去されない
+    let cookie = SetCookie::parse("name=value; \u{00A0}Path=/", 2026).unwrap();
+    // NBSP が属性名の一部として残り、Path として認識されない
+    assert!(cookie.path().is_none());
+}
+
+// ========================================
+// src/cookie.rs のインラインテストを移動
+// ========================================
+
+#[test]
+fn test_cookie_parse_single() {
+    let cookies = Cookie::parse("session=abc123").unwrap();
+    assert_eq!(cookies.len(), 1);
+    assert_eq!(cookies[0].name(), "session");
+    assert_eq!(cookies[0].value(), "abc123");
+}
+
+#[test]
+fn test_cookie_parse_multiple() {
+    let cookies = Cookie::parse("session=abc123; user=john").unwrap();
+    assert_eq!(cookies.len(), 2);
+    assert_eq!(cookies[0].name(), "session");
+    assert_eq!(cookies[0].value(), "abc123");
+    assert_eq!(cookies[1].name(), "user");
+    assert_eq!(cookies[1].value(), "john");
+}
+
+#[test]
+fn test_cookie_parse_with_spaces() {
+    let cookies = Cookie::parse("  session = abc123 ; user = john  ").unwrap();
+    assert_eq!(cookies.len(), 2);
+    assert_eq!(cookies[0].name(), "session");
+    assert_eq!(cookies[0].value(), "abc123");
+}
+
+#[test]
+fn test_cookie_parse_empty() {
+    assert!(Cookie::parse("").is_err());
+}
+
+#[test]
+fn test_cookie_display() {
+    let cookie = Cookie::new("session", "abc123").unwrap();
+    assert_eq!(cookie.to_string(), "session=abc123");
+}
+
+#[test]
+fn test_set_cookie_parse_simple() {
+    let cookie = SetCookie::parse("session=abc123", 2026).unwrap();
+    assert_eq!(cookie.name(), "session");
+    assert_eq!(cookie.value(), "abc123");
+    assert!(!cookie.secure());
+    assert!(!cookie.http_only());
+}
+
+#[test]
+fn test_set_cookie_parse_with_attributes() {
+    let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
+    assert_eq!(cookie.name(), "session");
+    assert_eq!(cookie.value(), "abc123");
+    assert_eq!(cookie.path(), Some("/"));
+    assert!(cookie.http_only());
+    assert!(cookie.secure());
+}
+
+#[test]
+fn test_set_cookie_parse_with_domain() {
+    let cookie = SetCookie::parse("session=abc123; Domain=example.com", 2026).unwrap();
+    assert_eq!(cookie.domain(), Some("example.com"));
+}
+
+#[test]
+fn test_set_cookie_parse_with_max_age() {
+    let cookie = SetCookie::parse("session=abc123; Max-Age=3600", 2026).unwrap();
+    assert_eq!(cookie.max_age(), Some(3600));
+}
+
+#[test]
+fn test_set_cookie_parse_with_expires() {
+    let cookie = SetCookie::parse(
+        "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT",
+        2026,
+    )
+    .unwrap();
+    assert!(cookie.expires().is_some());
+}
+
+#[test]
+fn test_set_cookie_parse_with_samesite() {
+    let cookie = SetCookie::parse("session=abc123; SameSite=Strict", 2026).unwrap();
+    assert_eq!(cookie.same_site(), Some(SameSite::Strict));
+
+    let cookie = SetCookie::parse("session=abc123; SameSite=Lax", 2026).unwrap();
+    assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+
+    let cookie = SetCookie::parse("session=abc123; SameSite=None", 2026).unwrap();
+    assert_eq!(cookie.same_site(), Some(SameSite::None));
+}
+
+#[test]
+fn test_set_cookie_display() {
+    let cookie = SetCookie::new("session", "abc123")
+        .unwrap()
+        .with_path("/")
+        .with_secure(true)
+        .with_http_only(true);
+    let s = cookie.to_string();
+    assert!(s.contains("session=abc123"));
+    assert!(s.contains("Path=/"));
+    assert!(s.contains("Secure"));
+    assert!(s.contains("HttpOnly"));
+}
+
+#[test]
+fn test_set_cookie_builder() {
+    let cookie = SetCookie::new("session", "abc123")
+        .unwrap()
+        .with_domain("example.com")
+        .with_path("/app")
+        .with_max_age(3600)
+        .with_secure(true)
+        .with_http_only(true)
+        .with_same_site(SameSite::Strict);
+
+    assert_eq!(cookie.name(), "session");
+    assert_eq!(cookie.value(), "abc123");
+    assert_eq!(cookie.domain(), Some("example.com"));
+    assert_eq!(cookie.path(), Some("/app"));
+    assert_eq!(cookie.max_age(), Some(3600));
+    assert!(cookie.secure());
+    assert!(cookie.http_only());
+    assert_eq!(cookie.same_site(), Some(SameSite::Strict));
+}
+
+#[test]
+fn test_cookie_parse_quoted_value() {
+    let cookies = Cookie::parse("session=\"abc123\"").unwrap();
+    assert_eq!(cookies[0].value(), "abc123");
+}
+
+#[test]
+fn test_set_cookie_invalid_expires_ignored() {
+    // RFC 6265 Section 5.2.1: 不正な Expires は無視される
+    let cookie = SetCookie::parse("session=abc123; Expires=invalid-date", 2026).unwrap();
+    assert_eq!(cookie.name(), "session");
+    assert_eq!(cookie.value(), "abc123");
+    assert!(cookie.expires().is_none());
+}
+
+#[test]
+fn test_set_cookie_invalid_max_age_ignored() {
+    // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される
+    let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number", 2026).unwrap();
+    assert_eq!(cookie.name(), "session");
+    assert_eq!(cookie.value(), "abc123");
+    assert!(cookie.max_age().is_none());
 }

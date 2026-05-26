@@ -1,7 +1,8 @@
 //! HTTP ステータスコード型
 //!
-//! RFC 9110 Section 15 で定義されたステータスコードと、それに対応する
-//! IANA HTTP Status Code Registry の canonical reason phrase を const 値として保持する。
+//! RFC 9110 Section 15 で定義されたコアステータスコード、RFC 6585 / RFC 7725 等の
+//! 拡張 RFC で定義されたステータスコード (RFC 9110 は obsolete にしていない)、
+//! および IANA HTTP Status Code Registry の canonical reason phrase を const 値として保持する。
 //!
 //! 任意のステータスコード (拡張、私的ステータスコード等) を使いたい場合は
 //! `Response::new(code, reason)` または `Response::with_version(version, code, reason)` を
@@ -29,8 +30,20 @@ impl StatusCode {
     /// `100 Continue` (RFC 9110 Section 15.2.1)
     pub const CONTINUE: Self = Self::new_const(100, "Continue");
     /// `101 Switching Protocols` (RFC 9110 Section 15.2.2)
+    ///
+    /// Upgrade ヘッダー (RFC 9110 Section 7.8) によるプロトコル切替が受理されたときに返す。
+    /// RFC 9931 Section 3 はこの optimistic protocol transition の背景を述べ、
+    /// Section 4 では切替確認前にクライアントがデータを送る場合の security considerations
+    /// (request smuggling 等) を整理している。
     pub const SWITCHING_PROTOCOLS: Self = Self::new_const(101, "Switching Protocols");
     /// `102 Processing` (RFC 2518 Section 10.1, WebDAV)
+    ///
+    /// 102 は WebDAV 拡張の interim response として RFC 2518 Section 10.1 で定義された。
+    /// 後継の RFC 4918 (WebDAV) では本ステータスコードは削除されているが、
+    /// IANA HTTP Status Code Registry 上の登録参照先は RFC 2518 のまま維持される
+    /// (RFC 4918 Section 21)。
+    /// 同じ WebDAV 系でも 207 / 423 / 424 / 507 は RFC 4918 に残存するため、
+    /// 本ファイルではそれぞれ RFC 4918 を引用している。
     pub const PROCESSING: Self = Self::new_const(102, "Processing");
     /// `103 Early Hints` (RFC 8297 Section 2)
     pub const EARLY_HINTS: Self = Self::new_const(103, "Early Hints");
@@ -114,7 +127,15 @@ impl StatusCode {
     pub const RANGE_NOT_SATISFIABLE: Self = Self::new_const(416, "Range Not Satisfiable");
     /// `417 Expectation Failed` (RFC 9110 Section 15.5.18)
     pub const EXPECTATION_FAILED: Self = Self::new_const(417, "Expectation Failed");
-    /// `418 I'm a teapot` (RFC 2324 Section 2.3.2 / RFC 7168 Section 2.3.3)
+    /// `418 (Unused)` (RFC 9110 Section 15.5.19)
+    ///
+    /// RFC 9110 では IANA HTTP Status Code Registry 上の予約コード (Unused) として
+    /// 定義される。RFC 2324 / RFC 7168 由来の 418 乱用により HTTP 標準の意味論は
+    /// 割り当てられておらず、将来の再割当が可能になるまで他用途に使えない。
+    ///
+    /// 定数名 `IM_A_TEAPOT` と reason phrase `"I'm a teapot"` は、RFC 9110 が定義
+    /// する canonical reason ではない。実運用で広く使われる表記を相互運用のため
+    /// 取り込んでいる (RFC 2324 / RFC 7168)。
     pub const IM_A_TEAPOT: Self = Self::new_const(418, "I'm a teapot");
     /// `421 Misdirected Request` (RFC 9110 Section 15.5.20)
     pub const MISDIRECTED_REQUEST: Self = Self::new_const(421, "Misdirected Request");

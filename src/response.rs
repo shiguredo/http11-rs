@@ -1,9 +1,9 @@
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
+use crate::header_name::HeaderName;
 use crate::status_code::{StatusClass, StatusCode};
 use crate::validate::{
-    is_valid_field_value, is_valid_header_name, is_valid_protocol_version, is_valid_reason_phrase,
-    is_valid_status_code,
+    is_valid_field_value, is_valid_protocol_version, is_valid_reason_phrase, is_valid_status_code,
 };
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -36,7 +36,7 @@ pub struct Response {
     version: String,
     status_code: u16,
     reason_phrase: String,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body: Option<Vec<u8>>,
     // ボディ送信を抑止するフラグ (HEAD レスポンス用)
     //
@@ -55,7 +55,7 @@ impl HttpHead for Response {
         &self.version
     }
 
-    fn headers(&self) -> &[(String, String)] {
+    fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 }
@@ -135,7 +135,7 @@ impl Response {
     /// `is_valid_protocol_version` の既存方針 (RTSP 等の互換のため token を許容) を
     /// 継承するものであり、HTTP として送信する場合は呼び出し側が
     /// `"HTTP/1.1"` を渡す責務がある。
-    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
+    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.2.2 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
     ///
     /// 注: `.into()` はバリデーション前に実行されるため、無効な入力でも
@@ -198,7 +198,7 @@ impl Response {
         version: String,
         status_code: u16,
         reason_phrase: String,
-        headers: Vec<(String, String)>,
+        headers: Vec<(HeaderName, String)>,
         body: Option<Vec<u8>>,
     ) -> Self {
         // debug ビルドのみで契約を検査する。release では検証スキップ (decoder 経路の最適化)。
@@ -217,9 +217,9 @@ impl Response {
             "from_raw_parts: invalid reason_phrase: {reason_phrase:?}"
         );
         debug_assert!(
-            headers.iter().all(|(n, v)| {
-                crate::validate::is_valid_header_name(n) && crate::validate::is_valid_field_value(v)
-            }),
+            headers
+                .iter()
+                .all(|(_, v)| crate::validate::is_valid_field_value(v)),
             "from_raw_parts: invalid header(s)"
         );
         Self {
@@ -266,12 +266,9 @@ impl Response {
     /// シーケンスのみ表現可能。
     pub fn header(
         mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<Self, EncodeError> {
-        // add_header は Result<&mut Self, EncodeError> を返す。? 演算子の脱糖は
-        // Ok(v) => v, Err(e) => return Err(e) であり、成功値 v: &mut Self は
-        // ; で破棄され NLL により借用が終了するため、後続の Ok(self) はコンパイル可能。
         self.add_header(name, value)?;
         Ok(self)
     }
@@ -309,16 +306,16 @@ impl Response {
     /// 受け付けるためのトレードオフである。
     pub fn add_header(
         &mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
-        let name = name.into();
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.to_string(),
+                value,
+            });
         }
         self.headers.push((name, value));
         Ok(self)
@@ -342,19 +339,19 @@ impl Response {
     /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
     pub fn set_header(
         &mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         // アトミック性のため、バリデーションを先に行う。
-        let name = name.into();
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.to_string(),
+                value,
+            });
         }
-        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        self.headers.retain(|(n, _)| n != &name);
         self.headers.push((name, value));
         Ok(self)
     }
@@ -506,7 +503,7 @@ impl Response {
     /// RFC 9110 Section 17.5 (Attacks via Protocol Element Length) は
     /// 算術オーバーフロー・DoS の一般的脅威を論じている。
     ///
-    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.1:
+    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.2:
     /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
     /// は本メソッドの責務外であり、呼び出し側で判定する。
     ///

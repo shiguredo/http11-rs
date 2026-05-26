@@ -28,7 +28,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::validate::{
-    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
+    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string, trim_ows,
 };
 
 /// Content-Type パースエラー
@@ -102,7 +102,7 @@ impl ContentType {
     /// assert_eq!(ct.charset(), Some("utf-8"));
     /// ```
     pub fn parse(input: &str) -> Result<Self, ContentTypeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentTypeError::Empty);
         }
@@ -220,23 +220,23 @@ impl fmt::Display for ContentType {
 /// セミコロンで分割 (最初のセミコロンのみ)
 fn split_at_semicolon(input: &str) -> (&str, &str) {
     if let Some(pos) = input.find(';') {
-        (input[..pos].trim(), input[pos + 1..].trim())
+        (trim_ows(&input[..pos]), trim_ows(&input[pos + 1..]))
     } else {
-        (input.trim(), "")
+        (trim_ows(input), "")
     }
 }
 
 /// メディアタイプをパース
 fn parse_media_type(input: &str) -> Result<(&str, &str), ContentTypeError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ContentTypeError::InvalidMediaType);
     }
 
     let slash_pos = input.find('/').ok_or(ContentTypeError::InvalidMediaType)?;
 
-    let media_type = input[..slash_pos].trim();
-    let subtype = input[slash_pos + 1..].trim();
+    let media_type = trim_ows(&input[..slash_pos]);
+    let subtype = trim_ows(&input[slash_pos + 1..]);
 
     if media_type.is_empty() || subtype.is_empty() {
         return Err(ContentTypeError::InvalidMediaType);
@@ -253,24 +253,24 @@ fn parse_media_type(input: &str) -> Result<(&str, &str), ContentTypeError> {
 /// パラメータをパース
 fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeError> {
     let mut parameters = Vec::new();
-    let mut rest = input.trim();
+    let mut rest = trim_ows(input);
 
     while !rest.is_empty() {
         // セミコロンをスキップ
-        rest = rest.trim_start_matches(';').trim();
+        rest = trim_ows(rest.trim_start_matches(';'));
         if rest.is_empty() {
             break;
         }
 
         // name=value をパース
         let eq_pos = rest.find('=').ok_or(ContentTypeError::InvalidParameter)?;
-        let name = rest[..eq_pos].trim();
+        let name = trim_ows(&rest[..eq_pos]);
 
         if name.is_empty() || !is_valid_token(name) {
             return Err(ContentTypeError::InvalidParameter);
         }
 
-        rest = rest[eq_pos + 1..].trim();
+        rest = trim_ows(&rest[eq_pos + 1..]);
 
         // 値をパース (引用符付きまたはトークン)
         let (value, remaining) = if let Some(after_quote) = rest.strip_prefix('"') {
@@ -280,7 +280,7 @@ fn parse_parameters(input: &str) -> Result<Vec<(String, String)>, ContentTypeErr
         };
 
         parameters.push((name.to_ascii_lowercase(), value));
-        rest = remaining.trim_start_matches(';').trim();
+        rest = trim_ows(remaining.trim_start_matches(';'));
     }
 
     Ok(parameters)
@@ -313,172 +313,4 @@ fn needs_quoting(s: &str) -> bool {
     // 空文字列は token として表現不能 (RFC 9110 Section 5.6.2: token = 1*tchar)
     // のため必ず引用符が必要。
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_simple() {
-        let ct = ContentType::parse("text/html").unwrap();
-        assert_eq!(ct.media_type(), "text");
-        assert_eq!(ct.subtype(), "html");
-        assert_eq!(ct.mime_type(), "text/html");
-        assert!(ct.parameters().is_empty());
-    }
-
-    #[test]
-    fn test_parse_with_charset() {
-        let ct = ContentType::parse("text/html; charset=utf-8").unwrap();
-        assert_eq!(ct.media_type(), "text");
-        assert_eq!(ct.subtype(), "html");
-        assert_eq!(ct.charset(), Some("utf-8"));
-    }
-
-    #[test]
-    fn test_parse_with_quoted_charset() {
-        let ct = ContentType::parse("text/html; charset=\"utf-8\"").unwrap();
-        assert_eq!(ct.charset(), Some("utf-8"));
-    }
-
-    #[test]
-    fn test_parse_multipart() {
-        let ct =
-            ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary").unwrap();
-        assert!(ct.is_form_data());
-        assert_eq!(ct.boundary(), Some("----WebKitFormBoundary"));
-    }
-
-    #[test]
-    fn test_parse_case_insensitive() {
-        let ct = ContentType::parse("TEXT/HTML; CHARSET=UTF-8").unwrap();
-        assert_eq!(ct.media_type(), "text");
-        assert_eq!(ct.subtype(), "html");
-        assert_eq!(ct.charset(), Some("UTF-8")); // 値は大文字小文字を保持
-    }
-
-    #[test]
-    fn test_parse_multiple_parameters() {
-        let ct = ContentType::parse("text/plain; charset=utf-8; boundary=something").unwrap();
-        assert_eq!(ct.charset(), Some("utf-8"));
-        assert_eq!(ct.boundary(), Some("something"));
-    }
-
-    #[test]
-    fn test_parse_json() {
-        let ct = ContentType::parse("application/json").unwrap();
-        assert!(ct.is_json());
-    }
-
-    #[test]
-    fn test_parse_form_urlencoded() {
-        let ct = ContentType::parse("application/x-www-form-urlencoded").unwrap();
-        assert!(ct.is_form_urlencoded());
-    }
-
-    #[test]
-    fn test_parse_with_spaces() {
-        let ct = ContentType::parse("  text/html  ;  charset = utf-8  ").unwrap();
-        assert_eq!(ct.media_type(), "text");
-        assert_eq!(ct.subtype(), "html");
-    }
-
-    #[test]
-    fn test_parse_quoted_with_escape() {
-        let ct = ContentType::parse("text/plain; name=\"hello\\\"world\"").unwrap();
-        assert_eq!(ct.parameter("name"), Some("hello\"world"));
-    }
-
-    #[test]
-    fn test_parse_empty() {
-        assert!(ContentType::parse("").is_err());
-    }
-
-    #[test]
-    fn test_parse_no_subtype() {
-        assert!(ContentType::parse("text").is_err());
-    }
-
-    #[test]
-    fn test_parse_empty_subtype() {
-        assert!(ContentType::parse("text/").is_err());
-    }
-
-    #[test]
-    fn test_display() {
-        let ct = ContentType::new("text", "html").with_parameter("charset", "utf-8");
-        assert_eq!(ct.to_string(), "text/html; charset=utf-8");
-    }
-
-    #[test]
-    fn test_display_quoted() {
-        let ct = ContentType::new("text", "plain").with_parameter("name", "hello world");
-        assert_eq!(ct.to_string(), "text/plain; name=\"hello world\"");
-    }
-
-    #[test]
-    fn test_is_text() {
-        assert!(ContentType::parse("text/plain").unwrap().is_text());
-        assert!(ContentType::parse("text/html").unwrap().is_text());
-        assert!(!ContentType::parse("application/json").unwrap().is_text());
-    }
-
-    #[test]
-    fn test_is_multipart() {
-        assert!(
-            ContentType::parse("multipart/form-data")
-                .unwrap()
-                .is_multipart()
-        );
-        assert!(
-            ContentType::parse("multipart/mixed")
-                .unwrap()
-                .is_multipart()
-        );
-        assert!(!ContentType::parse("text/plain").unwrap().is_multipart());
-    }
-
-    // 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
-
-    #[test]
-    fn test_invalid_token_parameter_value() {
-        // 不正なトークン値 (@ を含む) はエラー
-        assert!(ContentType::parse("text/plain; charset=hello@world").is_err());
-    }
-
-    #[test]
-    fn test_invalid_token_parameter_value_space() {
-        // スペースを含むトークン値は境界で区切られる
-        // "text/plain; charset=hello world" -> charset=hello として解釈され、
-        // "world" が無効なパラメータになるためエラー
-        assert!(ContentType::parse("text/plain; charset=hello world").is_err());
-    }
-
-    #[test]
-    fn test_valid_token_parameter_value() {
-        // 有効なトークン値は通る
-        let ct = ContentType::parse("text/plain; charset=utf-8").unwrap();
-        assert_eq!(ct.charset(), Some("utf-8"));
-    }
-
-    #[test]
-    fn test_valid_token_parameter_value_complex() {
-        // 有効なトークン文字で構成された値
-        let ct = ContentType::parse("application/octet-stream; name=file-v1.0_test").unwrap();
-        assert_eq!(ct.parameter("name"), Some("file-v1.0_test"));
-    }
-
-    #[test]
-    fn test_quoted_special_chars() {
-        // 引用符で囲めば特殊文字も OK
-        let ct = ContentType::parse("text/plain; charset=\"hello@world\"").unwrap();
-        assert_eq!(ct.charset(), Some("hello@world"));
-    }
-
-    #[test]
-    fn test_empty_token_parameter_value() {
-        // 空のトークン値はエラー
-        assert!(ContentType::parse("text/plain; charset=").is_err());
-    }
 }

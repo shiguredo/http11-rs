@@ -20,6 +20,7 @@
 //! assert_eq!(etag.tag(), "abc123");
 //! ```
 
+use crate::validate::trim_ows;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -79,7 +80,7 @@ impl EntityTag {
     /// assert!(etag.is_weak());
     /// ```
     pub fn parse(input: &str) -> Result<Self, ETagError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ETagError::Empty);
         }
@@ -101,8 +102,8 @@ impl EntityTag {
         let tag = &rest[1..1 + end_quote];
 
         // タグの文字を検証 (etagc: %x21 / %x23-7E / obs-text)
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -121,8 +122,8 @@ impl EntityTag {
 
     /// 新しい Strong ETag を作成
     pub fn strong(tag: &str) -> Result<Self, ETagError> {
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -134,8 +135,8 @@ impl EntityTag {
 
     /// 新しい Weak ETag を作成
     pub fn weak(tag: &str) -> Result<Self, ETagError> {
-        for b in tag.bytes() {
-            if !is_etagc(b) {
+        for c in tag.chars() {
+            if !is_etagc_char(c) {
                 return Err(ETagError::InvalidCharacter);
             }
         }
@@ -185,10 +186,11 @@ impl fmt::Display for EntityTag {
     }
 }
 
-/// etagc 文字 (RFC 9110)
+/// etagc 文字 (RFC 9110 Section 8.8.3)
 /// %x21 / %x23-7E / obs-text
-fn is_etagc(b: u8) -> bool {
-    b == 0x21 || (0x23..=0x7E).contains(&b) || b >= 0x80
+/// obs-text は Unicode scalar U+0080..=U+10FFFF として char 単位で受理する
+fn is_etagc_char(c: char) -> bool {
+    c == '\x21' || ('\x23'..='\x7E').contains(&c) || c > '\x7F'
 }
 
 /// ETag リストを引用符を考慮してカンマ分割する
@@ -220,7 +222,7 @@ fn split_etag_list_raw(input: &str) -> Vec<&str> {
 /// カンマ区切りの ETag リストをパースします。
 /// `*` (ワイルドカード) もサポートします。
 pub fn parse_etag_list(input: &str) -> Result<ETagList, ETagError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ETagError::Empty);
     }
@@ -231,7 +233,7 @@ pub fn parse_etag_list(input: &str) -> Result<ETagList, ETagError> {
 
     let mut etags = Vec::new();
     for part in split_etag_list_raw(input) {
-        let part = part.trim();
+        let part = trim_ows(part);
         if !part.is_empty() {
             etags.push(EntityTag::parse(part)?);
         }

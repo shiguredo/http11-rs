@@ -16,7 +16,7 @@
 //!     value1\r\n\
 //!     ------WebKitFormBoundary--\r\n";
 //!
-//! let mut parser = MultipartParser::new(boundary);
+//! let mut parser = MultipartParser::new(boundary).unwrap();
 //! parser.feed(body).unwrap();
 //!
 //! while let Some(part) = parser.next_part().unwrap() {
@@ -27,7 +27,7 @@
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
-use crate::validate::is_token_char;
+use crate::validate::{is_token_char, trim_ows};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -274,7 +274,10 @@ impl MultipartParser {
     /// 新しいパーサーを作成
     ///
     /// バッファ上限は 10MB。変更する場合は `with_max_buffer_size()` を使用する。
-    pub fn new(boundary: &str) -> Self {
+    pub fn new(boundary: &str) -> Result<Self, MultipartError> {
+        if !is_valid_boundary(boundary) {
+            return Err(MultipartError::InvalidBoundary);
+        }
         let boundary_bytes = boundary.as_bytes();
         let mut first_delimiter = Vec::with_capacity(2 + boundary_bytes.len());
         first_delimiter.extend_from_slice(b"--");
@@ -284,7 +287,7 @@ impl MultipartParser {
         inner_delimiter.extend_from_slice(b"\r\n--");
         inner_delimiter.extend_from_slice(boundary_bytes);
 
-        MultipartParser {
+        Ok(MultipartParser {
             first_delimiter,
             inner_delimiter,
             buffer: Vec::new(),
@@ -293,23 +296,13 @@ impl MultipartParser {
             finished: false,
             max_buffer_size: 10 * 1024 * 1024,
             boundary_scan_offset: 0,
-        }
+        })
     }
 
     /// バッファ最大サイズを設定
     pub fn with_max_buffer_size(mut self, max_buffer_size: usize) -> Self {
         self.max_buffer_size = max_buffer_size;
         self
-    }
-
-    /// boundary を検証して新しいパーサーを作成
-    ///
-    /// RFC 2046 Section 5.1.1 に従い、boundary 文字列を検証します。
-    pub fn try_new(boundary: &str) -> Result<Self, MultipartError> {
-        if !is_valid_boundary(boundary) {
-            return Err(MultipartError::InvalidBoundary);
-        }
-        Ok(Self::new(boundary))
     }
 
     /// データを追加
@@ -434,8 +427,8 @@ impl MultipartParser {
                                 continue;
                             }
                             if let Some((name, value)) = line.split_once(':') {
-                                let name = name.trim();
-                                let value = value.trim();
+                                let name = trim_ows(name);
+                                let value = trim_ows(value);
 
                                 if name.eq_ignore_ascii_case("Content-Disposition") {
                                     content_disposition = ContentDisposition::parse(value).ok();
@@ -602,21 +595,14 @@ impl MultipartBuilder {
     }
 
     /// 境界を指定して作成
-    pub fn with_boundary(boundary: &str) -> Self {
-        MultipartBuilder {
-            boundary: boundary.to_string(),
-            parts: Vec::new(),
-        }
-    }
-
-    /// boundary を検証して作成
-    ///
-    /// RFC 2046 Section 5.1.1 に従い、boundary 文字列を検証します。
-    pub fn try_with_boundary(boundary: &str) -> Result<Self, MultipartError> {
+    pub fn with_boundary(boundary: &str) -> Result<Self, MultipartError> {
         if !is_valid_boundary(boundary) {
             return Err(MultipartError::InvalidBoundary);
         }
-        Ok(Self::with_boundary(boundary))
+        Ok(MultipartBuilder {
+            boundary: boundary.to_string(),
+            parts: Vec::new(),
+        })
     }
 
     /// 境界文字列を取得
@@ -758,7 +744,7 @@ mod tests {
             value1\r\n\
             ------WebKitFormBoundary--\r\n";
 
-        let mut parser = MultipartParser::new(boundary);
+        let mut parser = MultipartParser::new(boundary).unwrap();
         parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -779,7 +765,7 @@ mod tests {
             value2\r\n\
             --boundary--\r\n";
 
-        let mut parser = MultipartParser::new(boundary);
+        let mut parser = MultipartParser::new(boundary).unwrap();
         parser.feed(body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
@@ -802,7 +788,7 @@ mod tests {
             file content\r\n\
             --boundary--\r\n";
 
-        let mut parser = MultipartParser::new(boundary);
+        let mut parser = MultipartParser::new(boundary).unwrap();
         parser.feed(body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -816,6 +802,7 @@ mod tests {
     #[test]
     fn test_builder_simple() {
         let body = MultipartBuilder::with_boundary("boundary")
+            .unwrap()
             .text_field("field1", "value1")
             .build();
 
@@ -830,6 +817,7 @@ mod tests {
     #[test]
     fn test_builder_with_file() {
         let body = MultipartBuilder::with_boundary("boundary")
+            .unwrap()
             .file_field("file", "test.txt", "text/plain", b"content")
             .build();
 
@@ -845,12 +833,13 @@ mod tests {
     #[test]
     fn test_roundtrip() {
         let original_body = MultipartBuilder::with_boundary("test-boundary")
+            .unwrap()
             .text_field("name", "John")
             .text_field("age", "30")
             .file_field("photo", "photo.jpg", "image/jpeg", b"\xFF\xD8\xFF\xE0")
             .build();
 
-        let mut parser = MultipartParser::new("test-boundary");
+        let mut parser = MultipartParser::new("test-boundary").unwrap();
         parser.feed(&original_body).unwrap();
 
         let part1 = parser.next_part().unwrap().unwrap();
@@ -871,7 +860,7 @@ mod tests {
 
     #[test]
     fn test_content_type() {
-        let builder = MultipartBuilder::with_boundary("abc123");
+        let builder = MultipartBuilder::with_boundary("abc123").unwrap();
         assert_eq!(
             builder.content_type(),
             "multipart/form-data; boundary=abc123"
@@ -907,6 +896,7 @@ mod tests {
     fn test_binary_content() {
         let binary_data = vec![0x00, 0xFF, 0x10, 0x20];
         let body = MultipartBuilder::with_boundary("boundary")
+            .unwrap()
             .file_field(
                 "data",
                 "binary.bin",
@@ -915,7 +905,7 @@ mod tests {
             )
             .build();
 
-        let mut parser = MultipartParser::new("boundary");
+        let mut parser = MultipartParser::new("boundary").unwrap();
         parser.feed(&body).unwrap();
 
         let part = parser.next_part().unwrap().unwrap();
@@ -925,30 +915,30 @@ mod tests {
     #[test]
     fn test_try_new_valid_boundary() {
         // RFC 2046 Section 5.1.1: 有効な boundary
-        assert!(MultipartParser::try_new("simple").is_ok());
-        assert!(MultipartParser::try_new("a-b_c.d").is_ok());
-        assert!(MultipartParser::try_new("with space").is_ok());
-        assert!(MultipartParser::try_new("----WebKitFormBoundary").is_ok());
+        assert!(MultipartParser::new("simple").is_ok());
+        assert!(MultipartParser::new("a-b_c.d").is_ok());
+        assert!(MultipartParser::new("with space").is_ok());
+        assert!(MultipartParser::new("----WebKitFormBoundary").is_ok());
     }
 
     #[test]
     fn test_try_new_invalid_boundary() {
         // RFC 2046 Section 5.1.1: 無効な boundary
         // 空
-        assert!(MultipartParser::try_new("").is_err());
+        assert!(MultipartParser::new("").is_err());
         // 71 文字以上
-        assert!(MultipartParser::try_new(&"a".repeat(71)).is_err());
+        assert!(MultipartParser::new(&"a".repeat(71)).is_err());
         // 末尾スペース
-        assert!(MultipartParser::try_new("boundary ").is_err());
+        assert!(MultipartParser::new("boundary ").is_err());
         // 許可されない文字
-        assert!(MultipartParser::try_new("bound\x00ary").is_err());
-        assert!(MultipartParser::try_new("bound*ary").is_err());
+        assert!(MultipartParser::new("bound\x00ary").is_err());
+        assert!(MultipartParser::new("bound*ary").is_err());
     }
 
     #[test]
     fn test_builder_try_with_boundary() {
-        assert!(MultipartBuilder::try_with_boundary("valid-boundary").is_ok());
-        assert!(MultipartBuilder::try_with_boundary("").is_err());
+        assert!(MultipartBuilder::with_boundary("valid-boundary").is_ok());
+        assert!(MultipartBuilder::with_boundary("").is_err());
     }
 
     /// 多数パートを順次パースしたときに `buffer.drain` が発動して
@@ -959,7 +949,7 @@ mod tests {
         let boundary = "drain-boundary";
         let parts_count = 32;
         let part_body = vec![b'X'; 4096];
-        let mut builder = MultipartBuilder::with_boundary(boundary);
+        let mut builder = MultipartBuilder::with_boundary(boundary).unwrap();
         for i in 0..parts_count {
             let name = alloc::format!("field{i}");
             builder = builder.text_field(&name, core::str::from_utf8(&part_body).unwrap());
@@ -967,7 +957,9 @@ mod tests {
         let body = builder.build();
         let total_len = body.len();
 
-        let mut parser = MultipartParser::new(boundary).with_max_buffer_size(total_len);
+        let mut parser = MultipartParser::new(boundary)
+            .unwrap()
+            .with_max_buffer_size(total_len);
         parser.feed(&body).unwrap();
         // 初期状態は累積入力長そのもの
         assert_eq!(parser.buffer.len(), total_len);
@@ -1002,7 +994,7 @@ mod tests {
     /// (オフセット方式に変更する前のセマンティクスを維持する)
     #[test]
     fn test_feed_buffer_limit_uses_unconsumed_length() {
-        let mut parser = MultipartParser::new("b").with_max_buffer_size(40);
+        let mut parser = MultipartParser::new("b").unwrap().with_max_buffer_size(40);
         // 30 バイト feed して pos を進める
         parser.feed(&[b'X'; 30]).unwrap();
         // 内部状態を直接いじって「20 バイト消費済み、10 バイト未消費」をシミュレートする
@@ -1027,11 +1019,12 @@ mod tests {
     fn test_parser_partial_feed_sequence() {
         let boundary = "split-boundary";
         let body = MultipartBuilder::with_boundary(boundary)
+            .unwrap()
             .text_field("field1", "value1")
             .text_field("field2", "value2")
             .build();
 
-        let mut parser = MultipartParser::new(boundary);
+        let mut parser = MultipartParser::new(boundary).unwrap();
         // 1 バイトずつ feed しながら部分パースする
         let mut feed_pos = 0usize;
         let mut collected: Vec<Part> = Vec::new();

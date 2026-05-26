@@ -92,7 +92,7 @@ fn print_response(response: &Response) {
     );
 
     for (name, value) in HttpHead::headers(response) {
-        info!(name, value, "Header");
+        info!(name = name.as_str(), value, "Header");
     }
 
     // ボディは transport.rs で既にストリーミング展開済み

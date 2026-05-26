@@ -252,8 +252,8 @@ impl SetCookie {
             }
 
             if let Some(eq_pos) = part.find('=') {
-                let attr_name = part[..eq_pos].trim();
-                let attr_value = part[eq_pos + 1..].trim();
+                let attr_name = trim_ows(&part[..eq_pos]);
+                let attr_value = trim_ows(&part[eq_pos + 1..]);
 
                 match attr_name.to_ascii_lowercase().as_str() {
                     "expires" => {
@@ -289,7 +289,8 @@ impl SetCookie {
                         //   先頭の "." を 1 つだけ除去し、小文字に変換する。
                         // RFC 6265bis Section 5.1.2 (Canonicalized Host Names):
                         //   Domain attribute は全 label が punycode (LDH) でなければならず、
-                        //   非 LDH を含む値は reject すべき (SHOULD)。
+                        //   非 LDH を含む label があると canonicalization が失敗するため、
+                        //   本実装では reject する。
                         // 上記を統合し、strip 後の値が「LDH と "." のみで構成され、空でなく、
                         // 再び "." で始まらない」ことを検証する。これにより
                         // parse -> to_string -> parse の fixed-point 性も同時に担保される
@@ -479,8 +480,8 @@ impl fmt::Display for SetCookie {
 fn parse_cookie_pair(pair: &str) -> Result<(&str, &str), CookieError> {
     let eq_pos = pair.find('=').ok_or(CookieError::InvalidFormat)?;
 
-    let name = pair[..eq_pos].trim();
-    let value = pair[eq_pos + 1..].trim();
+    let name = trim_ows(&pair[..eq_pos]);
+    let value = trim_ows(&pair[eq_pos + 1..]);
 
     if name.is_empty() {
         return Err(CookieError::InvalidName);
@@ -539,163 +540,4 @@ fn is_cookie_octet(b: u8) -> bool {
         || (0x2D..=0x3A).contains(&b)
         || (0x3C..=0x5B).contains(&b)
         || (0x5D..=0x7E).contains(&b)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_cookie_parse_single() {
-        let cookies = Cookie::parse("session=abc123").unwrap();
-        assert_eq!(cookies.len(), 1);
-        assert_eq!(cookies[0].name(), "session");
-        assert_eq!(cookies[0].value(), "abc123");
-    }
-
-    #[test]
-    fn test_cookie_parse_multiple() {
-        let cookies = Cookie::parse("session=abc123; user=john").unwrap();
-        assert_eq!(cookies.len(), 2);
-        assert_eq!(cookies[0].name(), "session");
-        assert_eq!(cookies[0].value(), "abc123");
-        assert_eq!(cookies[1].name(), "user");
-        assert_eq!(cookies[1].value(), "john");
-    }
-
-    #[test]
-    fn test_cookie_parse_with_spaces() {
-        let cookies = Cookie::parse("  session = abc123 ; user = john  ").unwrap();
-        assert_eq!(cookies.len(), 2);
-        assert_eq!(cookies[0].name(), "session");
-        assert_eq!(cookies[0].value(), "abc123");
-    }
-
-    #[test]
-    fn test_cookie_parse_empty() {
-        assert!(Cookie::parse("").is_err());
-    }
-
-    #[test]
-    fn test_cookie_display() {
-        let cookie = Cookie::new("session", "abc123").unwrap();
-        assert_eq!(cookie.to_string(), "session=abc123");
-    }
-
-    #[test]
-    fn test_set_cookie_parse_simple() {
-        let cookie = SetCookie::parse("session=abc123", 2026).unwrap();
-        assert_eq!(cookie.name(), "session");
-        assert_eq!(cookie.value(), "abc123");
-        assert!(!cookie.secure());
-        assert!(!cookie.http_only());
-    }
-
-    #[test]
-    fn test_set_cookie_parse_with_attributes() {
-        let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
-        assert_eq!(cookie.name(), "session");
-        assert_eq!(cookie.value(), "abc123");
-        assert_eq!(cookie.path(), Some("/"));
-        assert!(cookie.http_only());
-        assert!(cookie.secure());
-    }
-
-    #[test]
-    fn test_set_cookie_parse_with_domain() {
-        let cookie = SetCookie::parse("session=abc123; Domain=example.com", 2026).unwrap();
-        assert_eq!(cookie.domain(), Some("example.com"));
-    }
-
-    #[test]
-    fn test_set_cookie_parse_with_max_age() {
-        let cookie = SetCookie::parse("session=abc123; Max-Age=3600", 2026).unwrap();
-        assert_eq!(cookie.max_age(), Some(3600));
-    }
-
-    #[test]
-    fn test_set_cookie_parse_with_expires() {
-        let cookie = SetCookie::parse(
-            "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT",
-            2026,
-        )
-        .unwrap();
-        assert!(cookie.expires().is_some());
-    }
-
-    #[test]
-    fn test_set_cookie_parse_with_samesite() {
-        let cookie = SetCookie::parse("session=abc123; SameSite=Strict", 2026).unwrap();
-        assert_eq!(cookie.same_site(), Some(SameSite::Strict));
-
-        let cookie = SetCookie::parse("session=abc123; SameSite=Lax", 2026).unwrap();
-        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
-
-        let cookie = SetCookie::parse("session=abc123; SameSite=None", 2026).unwrap();
-        assert_eq!(cookie.same_site(), Some(SameSite::None));
-    }
-
-    #[test]
-    fn test_set_cookie_display() {
-        let cookie = SetCookie::new("session", "abc123")
-            .unwrap()
-            .with_path("/")
-            .with_secure(true)
-            .with_http_only(true);
-        let s = cookie.to_string();
-        assert!(s.contains("session=abc123"));
-        assert!(s.contains("Path=/"));
-        assert!(s.contains("Secure"));
-        assert!(s.contains("HttpOnly"));
-    }
-
-    #[test]
-    fn test_set_cookie_builder() {
-        let cookie = SetCookie::new("session", "abc123")
-            .unwrap()
-            .with_domain("example.com")
-            .with_path("/app")
-            .with_max_age(3600)
-            .with_secure(true)
-            .with_http_only(true)
-            .with_same_site(SameSite::Strict);
-
-        assert_eq!(cookie.name(), "session");
-        assert_eq!(cookie.value(), "abc123");
-        assert_eq!(cookie.domain(), Some("example.com"));
-        assert_eq!(cookie.path(), Some("/app"));
-        assert_eq!(cookie.max_age(), Some(3600));
-        assert!(cookie.secure());
-        assert!(cookie.http_only());
-        assert_eq!(cookie.same_site(), Some(SameSite::Strict));
-    }
-
-    #[test]
-    fn test_cookie_parse_quoted_value() {
-        let cookies = Cookie::parse("session=\"abc123\"").unwrap();
-        assert_eq!(cookies[0].value(), "abc123");
-    }
-
-    #[test]
-    fn test_same_site_default() {
-        assert_eq!(SameSite::default(), SameSite::Lax);
-    }
-
-    #[test]
-    fn test_set_cookie_invalid_expires_ignored() {
-        // RFC 6265 Section 5.2.1: 不正な Expires は無視される
-        let cookie = SetCookie::parse("session=abc123; Expires=invalid-date", 2026).unwrap();
-        assert_eq!(cookie.name(), "session");
-        assert_eq!(cookie.value(), "abc123");
-        assert!(cookie.expires().is_none());
-    }
-
-    #[test]
-    fn test_set_cookie_invalid_max_age_ignored() {
-        // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される
-        let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number", 2026).unwrap();
-        assert_eq!(cookie.name(), "session");
-        assert_eq!(cookie.value(), "abc123");
-        assert!(cookie.max_age().is_none());
-    }
 }

@@ -18,7 +18,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Content-Encoding パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,12 +83,12 @@ impl ContentEncoding {
     /// RFC 9110 Section 5.6.1.2: 受信者は空のリスト要素を無視しなければならない (MUST)。
     /// 空の値は空リストとして受理する。
     pub fn parse(input: &str) -> Result<Self, ContentEncodingError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut encodings = Vec::new();
         if !input.is_empty() {
             for part in input.split(',') {
-                let part = part.trim();
+                let part = trim_ows(part);
                 if part.is_empty() {
                     continue;
                 }
@@ -159,50 +159,4 @@ fn parse_coding(token: &str) -> Result<ContentCoding, ContentEncodingError> {
     };
 
     Ok(coding)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_single() {
-        let ce = ContentEncoding::parse("gzip").unwrap();
-        assert_eq!(ce.encodings().len(), 1);
-        assert!(ce.has_gzip());
-    }
-
-    #[test]
-    fn parse_multiple() {
-        let ce = ContentEncoding::parse("gzip, deflate, identity").unwrap();
-        assert_eq!(ce.encodings().len(), 3);
-        assert!(ce.has_deflate());
-        assert!(ce.has_identity());
-    }
-
-    #[test]
-    fn parse_unknown() {
-        let ce = ContentEncoding::parse("br").unwrap();
-        assert_eq!(ce.encodings().len(), 1);
-        assert_eq!(ce.encodings()[0], ContentCoding::Other("br".to_string()));
-    }
-
-    #[test]
-    fn parse_empty() {
-        // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
-        let ce = ContentEncoding::parse("").unwrap();
-        assert!(ce.encodings().is_empty());
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(ContentEncoding::parse("gzip,").is_ok());
-        assert!(ContentEncoding::parse("g zip").is_err());
-    }
-
-    #[test]
-    fn display() {
-        let ce = ContentEncoding::parse("GZIP, Deflate").unwrap();
-        assert_eq!(ce.to_string(), "gzip, deflate");
-    }
 }

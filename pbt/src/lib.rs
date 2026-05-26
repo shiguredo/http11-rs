@@ -96,3 +96,139 @@ pub fn field_vchar() -> impl Strategy<Value = char> {
 pub fn header_value() -> impl Strategy<Value = String> {
     proptest::collection::vec(field_vchar(), 1..=64).prop_map(|chars| chars.into_iter().collect())
 }
+
+// ========================================
+// 構築時検査型の戦略 (HeaderName / Method / Scheme)
+// ========================================
+
+/// RFC 9110 Section 5.6.2: token = 1*tchar
+///
+/// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+///       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+///       / DIGIT / ALPHA
+///
+/// 大文字 A-Z と小文字 a-z の両方を含む。
+pub fn valid_header_name() -> impl Strategy<Value = Vec<u8>> {
+    proptest::collection::vec(tchar_byte(), 1..=32)
+}
+
+/// 不正なヘッダー名: 空 / 不正文字を含む
+pub fn invalid_header_name() -> impl Strategy<Value = Vec<u8>> {
+    prop_oneof![
+        Just(Vec::new()),
+        proptest::collection::vec(tchar_byte(), 0..=8).prop_flat_map(|valid| {
+            let invalid_byte = prop_oneof![
+                Just(b'\r'),
+                Just(b'\n'),
+                Just(0x00u8),
+                Just(b':'),
+                Just(b','),
+                Just(b' '),
+                Just(b'('),
+                Just(b')'),
+                Just(b';'),
+                Just(b'<'),
+                Just(b'='),
+                Just(b'>'),
+                Just(b'?'),
+                Just(b'@'),
+                Just(b'['),
+                Just(b'\\'),
+                Just(b']'),
+                Just(b'{'),
+                Just(b'}'),
+                Just(b'"'),
+            ];
+            invalid_byte.prop_map(move |b| {
+                let mut s = valid.clone();
+                s.push(b);
+                s
+            })
+        }),
+    ]
+}
+
+/// tchar の 1 バイト (RFC 9110 Section 5.6.2)
+fn tchar_byte() -> impl Strategy<Value = u8> {
+    prop_oneof![
+        Just(b'!'),
+        Just(b'#'),
+        Just(b'$'),
+        Just(b'%'),
+        Just(b'&'),
+        Just(b'\''),
+        Just(b'*'),
+        Just(b'+'),
+        Just(b'-'),
+        Just(b'.'),
+        prop::char::range('0', '9').prop_map(|c| c as u8),
+        prop::char::range('A', 'Z').prop_map(|c| c as u8),
+        Just(b'^'),
+        Just(b'_'),
+        Just(b'`'),
+        prop::char::range('a', 'z').prop_map(|c| c as u8),
+        Just(b'|'),
+        Just(b'~'),
+    ]
+}
+
+/// RFC 9110 Section 9.1: method = token
+pub fn valid_method() -> impl Strategy<Value = Vec<u8>> {
+    valid_header_name()
+}
+
+pub fn invalid_method() -> impl Strategy<Value = Vec<u8>> {
+    invalid_header_name()
+}
+
+/// RFC 3986 Section 3.1: scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+///
+/// 先頭は ALPHA（大文字小文字両方）、2 文字目以降は ALPHA / DIGIT / "+" / "-" / "."
+pub fn valid_scheme() -> impl Strategy<Value = Vec<u8>> {
+    let first = prop_oneof![prop::char::range('A', 'Z'), prop::char::range('a', 'z'),]
+        .prop_map(|c| c as u8);
+    (first, proptest::collection::vec(scheme_char(), 0..=16)).prop_map(|(first, rest)| {
+        let mut v = vec![first];
+        v.extend(rest);
+        v
+    })
+}
+
+/// scheme の後続文字: ALPHA / DIGIT / "+" / "-" / "."
+fn scheme_char() -> impl Strategy<Value = u8> {
+    prop_oneof![
+        prop::char::range('A', 'Z').prop_map(|c| c as u8),
+        prop::char::range('a', 'z').prop_map(|c| c as u8),
+        prop::char::range('0', '9').prop_map(|c| c as u8),
+        Just(b'+'),
+        Just(b'-'),
+        Just(b'.'),
+    ]
+}
+
+/// 不正なスキーム: 空 / 数字開始 / コロンを含む / token だが scheme では不正な文字
+pub fn invalid_scheme() -> impl Strategy<Value = Vec<u8>> {
+    prop_oneof![
+        Just(Vec::new()),
+        {
+            let first_digit = prop_oneof![prop::char::range('0', '9'),].prop_map(|c| c as u8);
+            (first_digit, proptest::collection::vec(scheme_char(), 0..=8)).prop_map(
+                |(first, rest)| {
+                    let mut v = vec![first];
+                    v.extend(rest);
+                    v
+                },
+            )
+        },
+        {
+            let first = prop_oneof![prop::char::range('A', 'Z'), prop::char::range('a', 'z'),]
+                .prop_map(|c| c as u8);
+            (first, proptest::collection::vec(scheme_char(), 0..=6)).prop_map(|(first, rest)| {
+                let mut v = vec![first];
+                v.extend(rest);
+                v.push(b':');
+                v
+            })
+        },
+    ]
+}

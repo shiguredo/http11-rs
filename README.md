@@ -27,6 +27,8 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテ�
 - no_std 対応
   - <https://docs.rust-embedded.org/book/intro/no-std.html>
 - 依存ライブラリ 0
+- 構築型 (`HeaderName` / `Method` / `Scheme`) によるコンパイル時検査
+  - `from_static(b"...")` でリテラルの構文違反をコンパイル時に検出
 - 圧縮/展開トレイト (`Compressor` / `Decompressor`) の提供
   - ライブラリ本体は圧縮実装を含まず、利用者が任意の実装を組み込める
 
@@ -35,13 +37,13 @@ Rust で実装された依存 0 かつ Sans I/O な HTTP/1.1 スタイルのテ�
 ### クライアント (リクエスト送信、レスポンス受信)
 
 ```rust
-use shiguredo_http11::{Request, ResponseDecoder};
+use shiguredo_http11::{Method, Request, ResponseDecoder};
 
 // リクエストを作成してエンコード
-// Request::new / header は構築時バリデーション (CRLF/NUL 拒否) を行うため
-// `Result<Self, EncodeError>` を返す。
+// new は Method 型または "GET" 等の 'static str リテラルを受け取る
+// 構築時バリデーション (CRLF/NUL 拒否) を行うため `Result<Self, EncodeError>` を返す。
 // encode() は意味論違反 (Host 欠落等) の検出のため `Result<Vec<u8>, EncodeError>` を返す。
-let request = Request::new("GET", "/")?
+let request = Request::new(Method::GET, "/")?
     .header("Host", "example.com")?
     .header("Connection", "close")?;
 let bytes = request.encode()?;
@@ -98,7 +100,8 @@ let bytes = response.encode()?;
 `&mut Self` を返す) も提供しています。
 
 - `add_header(name, value)` - ヘッダーを末尾に追加
-  - チェイン可能
+  - チェイン可能。名前は `'static str` リテラル (`"Host"` 等) または `HeaderName` を渡せる
+  - 動的入力は `HeaderName::new()` で構築した値を渡す
 - `set_header(name, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加
   - チェイン可能
 - `set_body(data)` / `clear_body()` - ボディの差し替え / クリア
@@ -134,12 +137,12 @@ let decoder = ResponseDecoder::new(); // NoCompression がデフォルト
 HEAD リクエストへのレスポンスは、RFC 9110 Section 9.3.2 に基づき GET と同じヘッダーを返しますがボディは送信しません。
 
 ```rust
-use shiguredo_http11::{Request, Response, ResponseDecoder, StatusCode};
+use shiguredo_http11::{Method, Request, Response, ResponseDecoder, StatusCode};
 
 // サーバー側: HEAD リクエストへのレスポンス
 // RFC 9110 Section 9.3.2: GET と同じヘッダーを返すがボディは送信しない
 // Request のフィールドは非公開のためアクセサ method() を使う
-let is_head = request.method().eq_ignore_ascii_case("HEAD");
+let is_head = request.method() == &Method::HEAD;
 
 let body = b"Hello, World!";
 let mut response = Response::with_status(StatusCode::OK)
@@ -153,7 +156,7 @@ if !is_head {
 let bytes = response.encode()?;
 
 // クライアント側: HEAD レスポンスの受信
-let request = Request::new("HEAD", "/")?
+let request = Request::new(Method::HEAD, "/")?
     .header("Host", "example.com")?;
 let bytes = request.encode()?;
 // bytes を送信...
@@ -172,7 +175,7 @@ decoder.set_request_method("HEAD"); // HEAD レスポンスではボディなし
 ヘッダーのみをエンコードし、後からボディをチャンクで送信できます。
 
 ```rust
-use shiguredo_http11::{Response, StatusCode, encode_chunk};
+use shiguredo_http11::{HeaderName, Response, StatusCode, encode_chunk};
 
 let response = Response::with_status(StatusCode::OK)
     .header("Transfer-Encoding", "chunked")?;
@@ -440,7 +443,7 @@ loop {
 
 各サンプルは `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` を組み合わせた **ストリーミング API の実装例** になっています。一括 `decode()` API ではなく、断片入力に対応した経路で実装されています。
 
-io_uring サンプル (`examples/http11_server_io_uring`) のみワークスペースから除外されています (Linux 専用かつ追加カーネル要件があるため)。それ以外の 3 サンプルはルートの `cargo` コマンドからそのまま実行できます。
+サンプルはルートの `cargo` コマンドからそのまま実行できます。
 
 ### http11_client
 
@@ -489,6 +492,7 @@ cargo run -p http11_server -- --port 8443 --tls --cert cert.pem --key key.pem
 - Keep-Alive 対応
   - タイムアウト 60 秒
   - 最大リクエスト数 1000
+- Graceful shutdown 対応
 - Accept-Encoding に基づく圧縮
   - 優先度: `zstd` > `br` > `gzip`
 - エンドポイント
@@ -515,6 +519,7 @@ curl http://localhost:8888/
 
 **機能:**
 
+- Graceful shutdown 対応
 - ストリーミング転送
   - chunked / content-length / close-delimited 対応
 - 接続プール
@@ -522,45 +527,6 @@ curl http://localhost:8888/
   - アイドル 60 秒 / 最大生存 300 秒
 - hop-by-hop ヘッダーの処理
 - HEAD リクエスト対応
-
-### http11_server_io_uring
-
-io_uring + kTLS を使った HTTPS サーバーの例です。Linux 専用です。
-
-ワークスペースから除外されているため、サブクレートのディレクトリへ移動するか `--manifest-path` を指定して実行する必要があります。
-
-```bash
-cargo run --manifest-path examples/http11_server_io_uring/Cargo.toml -- --cert cert.pem --key key.pem
-```
-
-**前提条件:**
-
-- Linux カーネル 6.7 以上
-  - io_uring setsockopt サポート
-- `CONFIG_TLS=y` または `CONFIG_TLS=m`
-  - `modprobe tls` でロード済み
-
-**オプション:**
-
-- `-p, --port <PORT>`: リッスンポート
-  - デフォルト: `8443`
-- `--cert <PATH>`: 証明書ファイル
-  - PEM 形式
-  - 必須
-- `--key <PATH>`: 秘密鍵ファイル
-  - PEM 形式
-  - 必須
-
-**機能:**
-
-- io_uring SQPOLL モード
-- kTLS (Kernel TLS) によるカーネルレベル暗号化
-- HEAD リクエスト対応
-  - RFC 9110 Section 9.3.2
-- Keep-Alive 対応
-  - 最大リクエスト数 1000
-- Accept-Encoding に基づく圧縮
-  - 優先度: `zstd` > `br` > `gzip`
 
 ## Agent Skills
 

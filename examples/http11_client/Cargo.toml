@@ -21,7 +21,7 @@ rustls = { version = "0.23", default-features = false, features = [
   "tls12",
 ] }
 # プラットフォーム標準の証明書ストアを利用する
-rustls-platform-verifier = "0.6"
+rustls-platform-verifier = "0.7"
 # ログ出力
 tracing = "0.1"
 # ログのフォーマットとサブスクライバ

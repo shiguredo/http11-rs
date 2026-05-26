@@ -17,7 +17,7 @@ use std::net::TcpStream;
 use http11_client::decompressor::GzipDecompressor;
 use http11_client::{http_request, parse_url};
 use shiguredo_http11::compression::CompressionStatus;
-use shiguredo_http11::{BodyProgress, Request, ResponseDecoder};
+use shiguredo_http11::{BodyProgress, HeaderName, Method, Request, ResponseDecoder};
 
 /// gzip 圧縮を強制してレスポンスを `Transfer-Encoding: chunked` で返させる nginx 設定
 ///
@@ -63,7 +63,7 @@ server {
 /// 任意のヘッダーを乗せて 1 リクエスト送り、Response を返す
 async fn fetch_with_headers(
     nginx: &helpers::NginxHandle,
-    method: &str,
+    method: Method,
     path: &str,
     extra_headers: &[(&str, &str)],
 ) -> shiguredo_http11::Response {
@@ -77,7 +77,10 @@ async fn fetch_with_headers(
         .expect("User-Agent ヘッダーの設定に失敗");
     for &(name, value) in extra_headers {
         request = request
-            .header(name, value)
+            .header(
+                HeaderName::new(name.as_bytes()).expect("valid header name"),
+                value,
+            )
             .expect("追加ヘッダーの設定に失敗");
     }
     let request_method = request.method().to_string();
@@ -105,7 +108,7 @@ async fn chunked_response_decoded_properly() {
 
     let response = fetch_with_headers(
         &nginx,
-        "GET",
+        Method::GET,
         "/chunked.txt",
         &[("Accept-Encoding", "gzip"), ("Connection", "close")],
     )
@@ -140,8 +143,13 @@ async fn large_body_received_completely() {
     )
     .await;
 
-    let response =
-        fetch_with_headers(&nginx, "GET", "/large.bin", &[("Connection", "close")]).await;
+    let response = fetch_with_headers(
+        &nginx,
+        Method::GET,
+        "/large.bin",
+        &[("Connection", "close")],
+    )
+    .await;
 
     assert_eq!(response.status_code(), 200);
     let received = response.body_bytes().expect("ボディバイトを取得できるべき");
@@ -171,7 +179,7 @@ async fn connection_close_terminates_request() {
     // close を強制されることを検証するため。
     let response = fetch_with_headers(
         &nginx,
-        "GET",
+        Method::GET,
         "/index.html",
         &[("Connection", "keep-alive")],
     )
@@ -208,7 +216,7 @@ async fn streams_large_gzip_body() {
 
     let response = fetch_with_headers(
         &nginx,
-        "GET",
+        Method::GET,
         "/big.txt",
         &[("Accept-Encoding", "gzip"), ("Connection", "close")],
     )

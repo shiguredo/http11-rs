@@ -31,7 +31,7 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{EncodeError, HeaderName, HttpHead, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
@@ -1008,7 +1008,7 @@ fn build_response(
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+        .find(|(name, _)| name == "Accept-Encoding")
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
@@ -1139,7 +1139,10 @@ fn build_compressed_response(
     let mut response = Response::with_status(status)
         .header("Date", date)?
         .header("Content-Type", content_type)?
-        .header("Content-Length", final_body.len().to_string())?
+        .header(
+            "Content-Length",
+            final_body.len().to_string(),
+        )?
         .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
         .header("Vary", "Accept-Encoding")?;
 

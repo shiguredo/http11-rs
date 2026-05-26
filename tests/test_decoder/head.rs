@@ -311,13 +311,15 @@ fn test_request_http_with_double_slash_ok() {
 // ========================================
 
 mod http_head_content_length {
-    use shiguredo_http11::{Error, Request, Response};
+    use shiguredo_http11::{Error, HeaderName, Method, Request, Response};
 
     fn make_request_with_cl(values: &[&str]) -> Request {
-        let mut req = Request::new("POST", "/").unwrap();
-        req = req.header("Host", "example.com").unwrap();
+        let mut req = Request::new(Method::POST, "/").unwrap();
+        req = req
+            .header(HeaderName::from_static(b"Host"), "example.com")
+            .unwrap();
         for v in values {
-            req = req.add_header_clone("Content-Length", v);
+            req = req.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
         }
         req
     }
@@ -325,22 +327,22 @@ mod http_head_content_length {
     fn make_response_with_cl(values: &[&str]) -> Response {
         let mut res = Response::new(200, "OK").unwrap();
         for v in values {
-            res = res.add_header_clone("Content-Length", v);
+            res = res.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
         }
         res
     }
 
     trait AddHeaderClone: Sized {
-        fn add_header_clone(self, name: &str, value: &str) -> Self;
+        fn add_header_clone(self, name: HeaderName, value: &str) -> Self;
     }
     impl AddHeaderClone for Request {
-        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+        fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
             self.add_header(name, value).unwrap();
             self
         }
     }
     impl AddHeaderClone for Response {
-        fn add_header_clone(mut self, name: &str, value: &str) -> Self {
+        fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
             self.add_header(name, value).unwrap();
             self
         }
@@ -399,9 +401,9 @@ mod http_head_content_length {
 
     #[test]
     fn test_request_content_length_absent() {
-        let req = Request::new("GET", "/")
+        let req = Request::new(Method::GET, "/")
             .unwrap()
-            .header("Host", "example.com")
+            .header(HeaderName::from_static(b"Host"), "example.com")
             .unwrap();
         assert_eq!(req.content_length().unwrap(), None);
     }

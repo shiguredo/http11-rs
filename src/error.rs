@@ -16,7 +16,7 @@ pub enum Error {
     /// ヘッダー行が長すぎる
     HeaderLineTooLong { size: usize, limit: usize },
     /// ボディサイズ超過
-    BodyTooLarge { size: usize, limit: usize },
+    BodyTooLarge { size: u64, limit: u64 },
     /// チャンクサイズ行が長すぎる
     ChunkLineTooLong { size: usize, limit: usize },
     /// 圧縮/展開エラー
@@ -239,3 +239,25 @@ impl fmt::Display for EncodeError {
 }
 
 impl core::error::Error for EncodeError {}
+
+impl From<crate::header_name::HeaderNameError> for EncodeError {
+    fn from(e: crate::header_name::HeaderNameError) -> Self {
+        EncodeError::InvalidHeaderName {
+            name: e.into_input(),
+        }
+    }
+}
+
+impl From<crate::method::MethodError> for EncodeError {
+    fn from(e: crate::method::MethodError) -> Self {
+        EncodeError::InvalidMethod {
+            method: e.into_input(),
+        }
+    }
+}
+
+impl From<core::convert::Infallible> for EncodeError {
+    fn from(never: core::convert::Infallible) -> Self {
+        match never {}
+    }
+}

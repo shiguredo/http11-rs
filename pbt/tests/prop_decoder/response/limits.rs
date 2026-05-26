@@ -174,7 +174,7 @@ proptest! {
     #[test]
     fn prop_response_decoder_limits_getter(
         max_buffer_size in 100..1000usize,
-        max_body_size in 100..1000usize
+        max_body_size in 100u64..1000
     ) {
         let limits = DecoderLimits {
             max_buffer_size,

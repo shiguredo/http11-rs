@@ -204,7 +204,7 @@ pub fn new(status_code: u16, reason_phrase: &str) -> Result<Self, EncodeError>
 /// `is_valid_protocol_version` の既存方針 (RTSP 等の互換のため token を許容) を
 /// 継承するものであり、HTTP として送信する場合は呼び出し側が
 /// `"HTTP/1.1"` を渡す責務がある。
-/// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
+/// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.2.2 の RTSP 対応のための拡張であり、
 /// RFC 9112 §2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
 pub fn with_version(version: &str, status_code: u16, reason_phrase: &str) -> Result<Self, EncodeError>
 ```

@@ -34,7 +34,8 @@ use core::fmt;
 
 use crate::base64;
 use crate::validate::{
-    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_token_char, is_valid_token,
+    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_token_char, is_valid_token, trim_ows,
+    trim_ows_start,
 };
 
 /// Basic 認証エラー
@@ -78,10 +79,12 @@ pub enum AuthError {
     ConflictingUsernameField,
     /// `username*` の ext-value が不正 (RFC 8187 Section 3.2.1 / RFC 7616 Section 3.4)
     InvalidUsernameExtValue,
-    /// auth-param が `MAX_AUTH_PARAMS` を超えた (RFC 9110 Section 11.2 auth-param リスト上限)
+    /// auth-param が `MAX_AUTH_PARAMS` (32) を超えた
     ///
-    /// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
-    /// 32 を上限とし、線形重複検出の CPU 消費を有限に抑える。
+    /// RFC 9110 Section 11.2 は各 parameter name の重複禁止 (MUST only occur once per challenge)
+    /// のみ規定し、パラメータ数上限は定義しない。実用パラメータ数 (RFC 7616 Digest = 12 /
+    /// RFC 6750 Bearer = 5) に十分な余裕として 32 を実装上限とし、線形重複検出の CPU 消費を
+    /// 有限に抑える。
     TooManyParameters,
 }
 
@@ -166,7 +169,7 @@ impl BasicAuth {
     /// assert_eq!(auth.password(), "password");
     /// ```
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -275,7 +278,7 @@ impl WwwAuthenticate {
     /// assert_eq!(auth.realm(), "example.com");
     /// ```
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -346,7 +349,7 @@ pub struct DigestAuth {
 impl DigestAuth {
     /// Digest Authorization ヘッダー値をパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -460,7 +463,7 @@ pub struct DigestChallenge {
 impl DigestChallenge {
     /// Digest チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -518,7 +521,7 @@ pub struct BearerToken {
 impl BearerToken {
     /// Bearer Authorization ヘッダー値をパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -573,7 +576,7 @@ pub struct BearerChallenge {
 impl BearerChallenge {
     /// Bearer チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -620,7 +623,7 @@ pub enum Authorization {
 impl Authorization {
     /// Authorization ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -667,7 +670,7 @@ pub enum AuthChallenge {
 impl AuthChallenge {
     /// チャレンジをパース
     pub fn parse(input: &str) -> Result<Self, AuthError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(AuthError::Empty);
         }
@@ -757,7 +760,7 @@ impl fmt::Display for ProxyAuthenticate {
 }
 
 fn strip_scheme<'a>(input: &'a str, scheme: &str) -> Option<&'a str> {
-    let input = input.trim_start();
+    let input = trim_ows_start(input);
     let scheme_len = scheme.len();
     if input.len() <= scheme_len {
         return None;
@@ -773,7 +776,7 @@ fn strip_scheme<'a>(input: &'a str, scheme: &str) -> Option<&'a str> {
     if !rest.starts_with(' ') && !rest.starts_with('\t') {
         return None;
     }
-    Some(rest.trim_start())
+    Some(trim_ows_start(rest))
 }
 
 fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
@@ -1038,58 +1041,6 @@ fn is_attr_char(b: u8) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_basic_auth_parse_empty() {
-        assert!(BasicAuth::parse("").is_err());
-    }
-
-    #[test]
-    fn test_basic_auth_parse_not_basic() {
-        assert!(BasicAuth::parse("Bearer token").is_err());
-        assert!(BasicAuth::parse("Digest abc").is_err());
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_empty() {
-        assert!(WwwAuthenticate::parse("").is_err());
-    }
-
-    #[test]
-    fn test_www_authenticate_parse_not_basic() {
-        assert!(WwwAuthenticate::parse("Digest realm=\"test\"").is_err());
-    }
-
-    #[test]
-    fn test_digest_auth_missing_param() {
-        let header = "Digest username=\"Mufasa\", realm=\"test\"";
-        assert!(DigestAuth::parse(header).is_err());
-    }
-
-    #[test]
-    fn test_bearer_token_parse_non_ascii() {
-        // マルチバイト UTF-8 文字を含む入力でパニックしないことを確認
-        // Fuzzing で発見されたクラッシュケース: バイト [228, 167, 167, 10, 228, 167, 167]
-        let input = "䧧\n䧧";
-        let result = BearerToken::parse(input);
-        assert!(result.is_err());
-
-        // 6 バイト未満のマルチバイト文字
-        let input2 = "日本語";
-        let result2 = BearerToken::parse(input2);
-        assert!(result2.is_err());
-
-        // 6 バイト以上だがバイト境界が文字境界でない場合
-        let input3 = "あいう"; // 9 バイト
-        let result3 = BearerToken::parse(input3);
-        assert!(result3.is_err());
-    }
-
-    #[test]
-    fn test_digest_auth_non_ascii_input() {
-        let input = ")ϓ )ϓ";
-        assert!(DigestAuth::parse(input).is_err());
-    }
 
     #[test]
     fn test_token68_equals_only_at_end() {

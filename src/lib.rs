@@ -77,10 +77,13 @@ mod decoder;
 pub mod digest_fields;
 mod encoder;
 mod error;
+mod header_name;
+
 pub mod etag;
 pub mod expect;
 pub mod host;
 mod limits;
+mod method;
 pub mod multipart;
 pub mod range;
 mod request;
@@ -101,7 +104,10 @@ pub use encoder::{
     encode_request_headers, encode_response, encode_response_headers,
 };
 pub use error::{EncodeError, Error};
+pub use header_name::{HeaderName, HeaderNameError};
 pub use limits::DecoderLimits;
+pub use method::{Method, MethodError};
 pub use request::Request;
 pub use response::Response;
 pub use status_code::{StatusClass, StatusCode};
+pub use uri::{Scheme, SchemeError};

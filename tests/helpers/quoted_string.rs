@@ -7,9 +7,9 @@
 
 /// HTAB (0x09) を **除いた** ASCII CTL (0x00-0x1F) と DEL (0x7F) の網羅集合
 ///
-/// RFC 9110 Section 5.5 (`refs/rfc9110.txt:1606-1615`) で:
+/// RFC 9110 Section 5.5 で:
 ///
-/// - CR / LF / NUL: MUST reject
+/// - CR / LF / NUL: MUST either reject the message or replace with SP (本リポジトリは reject を選択)
 /// - その他の CTL (%x01-08, %x0B-0C, %x0E-1F, %x7F DEL): MAY retain (safe context 限定)
 ///
 /// 本リポジトリでは Accept / Content-Type / Expect 等の標準ヘッダを safe context 外

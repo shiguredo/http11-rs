@@ -8,6 +8,7 @@
 
 use crate::compression::{CompressionStatus, Decompressor, NoCompression};
 use crate::error::Error;
+use crate::header_name::HeaderName;
 use crate::limits::DecoderLimits;
 use crate::response::Response;
 use alloc::string::{String, ToString};
@@ -53,7 +54,7 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     buf: Vec<u8>,
     phase: DecodePhase,
     start_line: Option<String>,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body_decoder: BodyDecoder,
     limits: DecoderLimits,
     /// decode() 用: デコード済みヘッダー
@@ -353,7 +354,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // item 1 で 1xx/204/304 は既に返っているため、ここに到達するのは
         // status が 200-203, 205-299 でかつ request_method == "CONNECT" の場合のみ。
         // RFC 9110 Section 9.3.6: CONNECT への 2xx はヘッダー終了直後にトンネル
-        // モードへ切り替わる。
+        // モードへ切り替わる。RFC 9931 Section 8 は CONNECT に関する追加要件
+        // (proxy の request smuggling 対策等) を RFC 9112 を更新する形で規定する。
         // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
         if self
             .request_method
@@ -368,10 +370,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
             // `head.content_length()` / `head.is_chunked()` 経由で値を観測して
             // 下流に再生成し HTTP Response Smuggling の足場とすることを防ぐ。
             // 将来 RFC が改訂されて CONNECT 2xx の framing が変更される可能性がある。
-            self.headers.retain(|(name, _)| {
-                !name.eq_ignore_ascii_case("Transfer-Encoding")
-                    && !name.eq_ignore_ascii_case("Content-Length")
-            });
+            self.headers
+                .retain(|(name, _)| name != "Transfer-Encoding" && name != "Content-Length");
             return Ok(BodyKind::Tunnel);
         }
 
@@ -392,7 +392,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
             && self
                 .headers
                 .iter()
-                .any(|(name, _)| name.eq_ignore_ascii_case("Transfer-Encoding"))
+                .any(|(name, _)| name == "Transfer-Encoding")
         {
             return Err(Error::InvalidData(
                 "Transfer-Encoding is only defined for HTTP/1.1".to_string(),
@@ -411,9 +411,9 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         if let Some(len) = content_length {
-            if len > self.limits.max_body_size as u64 {
+            if len > self.limits.max_body_size {
                 return Err(Error::BodyTooLarge {
-                    size: usize::try_from(len).unwrap_or(usize::MAX),
+                    size: len,
                     limit: self.limits.max_body_size,
                 });
             }
@@ -586,7 +586,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.buf.drain(..pos + 2);
 
                             let (name, value) = parse_header_line(&line)?;
-                            self.headers.push((name, value));
+                            self.headers
+                                .push((HeaderName::from_validated_bytes(name.into_bytes()), value));
                         }
                     } else {
                         return Ok(None);
@@ -810,12 +811,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             .len()
                             .checked_add(len)
                             .ok_or(Error::BodyTooLarge {
-                                size: usize::MAX,
+                                size: u64::MAX,
                                 limit: self.limits.max_body_size,
                             })?;
-                    if new_size > self.limits.max_body_size {
+                    if (new_size as u64) > self.limits.max_body_size {
                         return Err(Error::BodyTooLarge {
-                            size: new_size,
+                            size: new_size as u64,
                             limit: self.limits.max_body_size,
                         });
                     }

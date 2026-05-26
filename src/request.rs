@@ -1,9 +1,8 @@
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
-use crate::validate::{
-    is_valid_field_value, is_valid_header_name, is_valid_method, is_valid_protocol_version,
-    is_valid_request_target,
-};
+use crate::header_name::HeaderName;
+use crate::method::Method;
+use crate::validate::{is_valid_field_value, is_valid_protocol_version, is_valid_request_target};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
@@ -34,10 +33,10 @@ use alloc::vec::Vec;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Request {
-    method: String,
+    method: Method,
     uri: String,
     version: String,
-    headers: Vec<(String, String)>,
+    headers: Vec<(HeaderName, String)>,
     body: Option<Vec<u8>>,
 }
 
@@ -46,7 +45,7 @@ impl HttpHead for Request {
         &self.version
     }
 
-    fn headers(&self) -> &[(String, String)] {
+    fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
     }
 }
@@ -58,7 +57,7 @@ impl Request {
     /// 失敗時は最初に検出されたエラーを返す。
     ///
     /// `method` は RFC 9110 Section 9.1 の `method = token` (RFC 9110 Section 5.6.2) を要求する。
-    /// 検証には既存の `is_valid_method` (validate.rs:70) を流用する。
+    /// 検証には既存の `is_valid_token` (validate.rs:30) を流用する。
     /// `uri` は request-target として、CRLF (RFC 9112 Section 3.2: whitespace 禁止) および
     /// NUL (RFC 9110 Section 5.5: CR/LF/NUL are invalid and dangerous) を含まないことを要求する
     /// (構文レベルのバリデーション)。request-target 形式 (origin/absolute/authority/asterisk)
@@ -70,12 +69,12 @@ impl Request {
     ///
     /// version は `"HTTP/1.1"` 固定のため、`is_valid_protocol_version` は呼び出さない
     /// (固定値が常に検証を通過するため)。
-    pub fn new(method: impl Into<String>, uri: impl Into<String>) -> Result<Self, EncodeError> {
-        let method = method.into();
+    pub fn new(
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
+        uri: impl Into<String>,
+    ) -> Result<Self, EncodeError> {
+        let method: Method = method.try_into().map_err(Into::into)?;
         let uri = uri.into();
-        if !is_valid_method(&method) {
-            return Err(EncodeError::InvalidMethod { method });
-        }
         if !is_valid_request_target(&uri) {
             return Err(EncodeError::InvalidRequestTarget { uri });
         }
@@ -108,19 +107,16 @@ impl Request {
     /// `is_valid_protocol_version` の既存方針 (RTSP 等の互換のため token を許容) を
     /// 継承するものであり、HTTP として送信する場合は呼び出し側が `"HTTP/1.1"` を渡す責務がある。
     ///
-    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.3 の RTSP 対応のための拡張であり、
+    /// 注: DIGIT+ (1 桁以上) は RFC 7826 Section 20.2.2 の RTSP 対応のための拡張であり、
     /// RFC 9112 Section 2.3 の `DIGIT "." DIGIT` (各 1 桁) より広い。
     pub fn with_version(
-        method: impl Into<String>,
+        method: impl TryInto<Method, Error: Into<EncodeError>>,
         uri: impl Into<String>,
         version: impl Into<String>,
     ) -> Result<Self, EncodeError> {
-        let method = method.into();
+        let method: Method = method.try_into().map_err(Into::into)?;
         let uri = uri.into();
         let version = version.into();
-        if !is_valid_method(&method) {
-            return Err(EncodeError::InvalidMethod { method });
-        }
         if !is_valid_request_target(&uri) {
             return Err(EncodeError::InvalidRequestTarget { uri });
         }
@@ -148,7 +144,7 @@ impl Request {
     /// # 不変条件 (呼び出し側の責務)
     ///
     /// 呼び出し側 (decoder) は以下の不変条件をすべて満たすフィールドのみを渡すこと:
-    /// - `method`: `is_valid_method` を通過済み (RFC 9110 Section 9.1: method = token)
+    /// - `method`: `is_valid_token` を通過済み (RFC 9110 Section 9.1: method = token)
     /// - `uri`: `is_valid_request_target` を通過済み。加えて encoder 側の
     ///   obs-text 拒否 (0x80-0xFF 非含有) を満たすこと
     /// - `version`: `is_valid_protocol_version` を通過済み
@@ -162,19 +158,15 @@ impl Request {
     /// 衝突するが、本関数は unsafe ではない。`pub(crate)` のため外部公開 API には
     /// 影響しない。
     pub(crate) fn from_raw_parts(
-        method: String,
+        method: Method,
         uri: String,
         version: String,
-        headers: Vec<(String, String)>,
+        headers: Vec<(HeaderName, String)>,
         body: Option<Vec<u8>>,
     ) -> Self {
         // debug ビルドのみで契約を検査する。release では検証スキップ (decoder 経路の最適化)。
         // 契約違反は decoder のバグであり、release で発覚した場合は encoder 側の
         // 二重バリデーション (`validate_request_fields`) が最後の防御線となる。
-        debug_assert!(
-            crate::validate::is_valid_method(&method),
-            "from_raw_parts: invalid method: {method:?}"
-        );
         debug_assert!(
             crate::validate::is_valid_request_target(&uri),
             "from_raw_parts: invalid request-target: {uri:?}"
@@ -190,9 +182,9 @@ impl Request {
             "from_raw_parts: invalid version: {version:?}"
         );
         debug_assert!(
-            headers.iter().all(|(n, v)| {
-                crate::validate::is_valid_header_name(n) && crate::validate::is_valid_field_value(v)
-            }),
+            headers
+                .iter()
+                .all(|(_, v)| crate::validate::is_valid_field_value(v)),
             "from_raw_parts: invalid header(s)"
         );
         Self {
@@ -212,7 +204,7 @@ impl Request {
     /// MUST either reject or replace と定義されているため拒否する。
     pub fn header(
         mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<Self, EncodeError> {
         self.add_header(name, value)?;
@@ -264,16 +256,16 @@ impl Request {
     /// 受け付けるためのトレードオフである (Response 側と同方針)。
     pub fn add_header(
         &mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
-        let name = name.into();
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.as_str().into(),
+                value,
+            });
         }
         self.headers.push((name, value));
         Ok(self)
@@ -297,25 +289,25 @@ impl Request {
     /// (`retain` / `push` はバリデーション成功後にのみ実行される)。
     pub fn set_header(
         &mut self,
-        name: impl Into<String>,
+        name: impl TryInto<HeaderName, Error: Into<EncodeError>>,
         value: impl Into<String>,
     ) -> Result<&mut Self, EncodeError> {
-        let name = name.into();
+        let name: HeaderName = name.try_into().map_err(Into::into)?;
         let value = value.into();
-        if !is_valid_header_name(&name) {
-            return Err(EncodeError::InvalidHeaderName { name });
-        }
         if !is_valid_field_value(&value) {
-            return Err(EncodeError::InvalidHeaderValue { name, value });
+            return Err(EncodeError::InvalidHeaderValue {
+                name: name.as_str().into(),
+                value,
+            });
         }
-        self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(&name));
+        self.headers.retain(|(n, _)| n != &name);
         self.headers.push((name, value));
         Ok(self)
     }
 
     /// HTTP メソッドを取得
     pub fn method(&self) -> &str {
-        &self.method
+        self.method.as_str()
     }
 
     /// リクエスト URI を取得

@@ -28,7 +28,7 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::is_valid_token;
+use crate::validate::{is_valid_token, trim_ows};
 
 /// Range パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,15 +147,15 @@ impl Range {
     /// let range = Range::parse("bytes=-500").unwrap();
     /// ```
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         // unit=ranges の形式
         let eq_pos = input.find('=').ok_or(RangeError::InvalidFormat)?;
-        let unit = input[..eq_pos].trim();
-        let ranges_str = input[eq_pos + 1..].trim();
+        let unit = trim_ows(&input[..eq_pos]);
+        let ranges_str = trim_ows(&input[eq_pos + 1..]);
 
         // RFC 9110 Section 14.1: range-unit = token
         if !is_valid_token(unit) {
@@ -164,7 +164,7 @@ impl Range {
 
         let mut ranges = Vec::new();
         for part in ranges_str.split(',') {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }
@@ -214,8 +214,8 @@ impl fmt::Display for Range {
 fn parse_range_spec(s: &str) -> Result<RangeSpec, RangeError> {
     let dash_pos = s.find('-').ok_or(RangeError::InvalidRange)?;
 
-    let start_str = s[..dash_pos].trim();
-    let end_str = s[dash_pos + 1..].trim();
+    let start_str = trim_ows(&s[..dash_pos]);
+    let end_str = trim_ows(&s[dash_pos + 1..]);
 
     if start_str.is_empty() && end_str.is_empty() {
         return Err(RangeError::InvalidRange);
@@ -287,15 +287,15 @@ pub struct ContentRange {
 impl ContentRange {
     /// Content-Range ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         // unit range/length の形式
         let space_pos = input.find(' ').ok_or(RangeError::InvalidFormat)?;
-        let unit = input[..space_pos].trim();
-        let rest = input[space_pos + 1..].trim();
+        let unit = trim_ows(&input[..space_pos]);
+        let rest = trim_ows(&input[space_pos + 1..]);
 
         // RFC 9110 Section 14.1: range-unit = token
         if !is_valid_token(unit) {
@@ -304,8 +304,8 @@ impl ContentRange {
 
         // range/length
         let slash_pos = rest.find('/').ok_or(RangeError::InvalidFormat)?;
-        let range_str = rest[..slash_pos].trim();
-        let length_str = rest[slash_pos + 1..].trim();
+        let range_str = trim_ows(&rest[..slash_pos]);
+        let length_str = trim_ows(&rest[slash_pos + 1..]);
 
         let complete_length = if length_str == "*" {
             None
@@ -449,14 +449,14 @@ pub struct AcceptRanges {
 impl AcceptRanges {
     /// Accept-Ranges ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, RangeError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(RangeError::Empty);
         }
 
         let units: Vec<String> = input
             .split(',')
-            .map(|s| s.trim().to_string())
+            .map(|s| trim_ows(s).to_string())
             .filter(|s| !s.is_empty())
             .collect();
 
@@ -514,169 +514,5 @@ impl AcceptRanges {
 impl fmt::Display for AcceptRanges {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.units.join(", "))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_range_single() {
-        let range = Range::parse("bytes=0-499").unwrap();
-        assert_eq!(range.unit(), "bytes");
-        assert!(range.is_bytes());
-        let specs = range.ranges();
-        assert_eq!(specs.len(), 1);
-        match specs[0] {
-            RangeSpec::Range { start, end } => {
-                assert_eq!(start, 0);
-                assert_eq!(end, 499);
-            }
-            _ => panic!("Range バリアントを期待"),
-        }
-    }
-
-    #[test]
-    fn test_parse_range_multiple() {
-        let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
-        assert_eq!(range.ranges().len(), 2);
-    }
-
-    #[test]
-    fn test_parse_range_suffix() {
-        let range = Range::parse("bytes=-500").unwrap();
-        match range.first().unwrap() {
-            RangeSpec::Suffix { length } => assert_eq!(*length, 500),
-            _ => panic!("Suffix バリアントを期待"),
-        }
-    }
-
-    #[test]
-    fn test_parse_range_from_start() {
-        let range = Range::parse("bytes=500-").unwrap();
-        match range.first().unwrap() {
-            RangeSpec::FromStart { start } => assert_eq!(*start, 500),
-            _ => panic!("FromStart バリアントを期待"),
-        }
-    }
-
-    #[test]
-    fn test_parse_range_invalid_bounds() {
-        assert!(Range::parse("bytes=500-100").is_err());
-    }
-
-    #[test]
-    fn test_parse_range_invalid_unit() {
-        // RFC 9110 Section 14.1: range-unit = token
-        // 不正な token 文字を含む unit は拒否されるべき
-        assert!(Range::parse("byt es=0-499").is_err()); // スペースは token に含まれない
-        assert!(Range::parse("bytes/foo=0-499").is_err()); // '/' は token に含まれない
-        assert!(Range::parse("=0-499").is_err()); // 空の unit
-        assert!(Range::parse("by\tes=0-499").is_err()); // タブは token に含まれない (unit の中)
-        assert!(Range::parse("byt(es=0-499").is_err()); // '(' は token に含まれない
-    }
-
-    #[test]
-    fn test_range_spec_to_bounds() {
-        let total = 1000;
-
-        // 0-499
-        let spec = RangeSpec::Range { start: 0, end: 499 };
-        assert_eq!(spec.to_bounds(total), Some((0, 499)));
-
-        // 500-
-        let spec = RangeSpec::FromStart { start: 500 };
-        assert_eq!(spec.to_bounds(total), Some((500, 999)));
-
-        // -200
-        let spec = RangeSpec::Suffix { length: 200 };
-        assert_eq!(spec.to_bounds(total), Some((800, 999)));
-
-        // 範囲外
-        let spec = RangeSpec::Range {
-            start: 1000,
-            end: 1500,
-        };
-        assert_eq!(spec.to_bounds(total), None);
-    }
-
-    #[test]
-    fn test_range_display() {
-        let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
-        assert_eq!(range.to_string(), "bytes=0-499, 1000-1499");
-    }
-
-    #[test]
-    fn test_content_range_parse() {
-        let cr = ContentRange::parse("bytes 0-499/1000").unwrap();
-        assert_eq!(cr.unit(), "bytes");
-        assert_eq!(cr.start(), Some(0));
-        assert_eq!(cr.end(), Some(499));
-        assert_eq!(cr.complete_length(), Some(1000));
-        assert_eq!(cr.length(), Some(500));
-    }
-
-    #[test]
-    fn test_content_range_unknown_length() {
-        let cr = ContentRange::parse("bytes 0-499/*").unwrap();
-        assert_eq!(cr.complete_length(), None);
-    }
-
-    #[test]
-    fn test_content_range_unsatisfied() {
-        let cr = ContentRange::parse("bytes */1000").unwrap();
-        assert!(cr.is_unsatisfied());
-        assert_eq!(cr.complete_length(), Some(1000));
-    }
-
-    #[test]
-    fn test_content_range_unsatisfied_requires_length() {
-        // unsatisfied-range = "*/" complete-length (complete-length 必須)
-        assert!(ContentRange::parse("bytes */*").is_err());
-    }
-
-    #[test]
-    fn test_content_range_complete_length_must_exceed_last_pos() {
-        // complete-length <= last-pos は invalid
-        assert!(ContentRange::parse("bytes 0-999/500").is_err());
-        assert!(ContentRange::parse("bytes 0-999/999").is_err());
-        // complete-length > last-pos は OK
-        assert!(ContentRange::parse("bytes 0-999/1000").is_ok());
-    }
-
-    #[test]
-    fn test_content_range_display() {
-        let cr = ContentRange::new_bytes(0, 499, Some(1000));
-        assert_eq!(cr.to_string(), "bytes 0-499/1000");
-
-        let cr = ContentRange::unsatisfied("bytes", 1000);
-        assert_eq!(cr.to_string(), "bytes */1000");
-    }
-
-    #[test]
-    fn test_accept_ranges_bytes() {
-        let ar = AcceptRanges::parse("bytes").unwrap();
-        assert!(ar.accepts_bytes());
-        assert!(!ar.is_none());
-    }
-
-    #[test]
-    fn test_accept_ranges_none() {
-        let ar = AcceptRanges::parse("none").unwrap();
-        assert!(ar.is_none());
-        assert!(!ar.accepts_bytes());
-    }
-
-    #[test]
-    fn test_accept_ranges_display() {
-        let ar = AcceptRanges::bytes();
-        assert_eq!(ar.to_string(), "bytes");
-    }
-
-    #[test]
-    fn test_accept_ranges_invalid_token() {
-        assert!(AcceptRanges::parse("inv@lid").is_err());
-        assert!(AcceptRanges::parse("bytes, inv@lid").is_err());
     }
 }

@@ -98,7 +98,7 @@ proptest! {
         };
         prop_assert_eq!(body, body_content.as_bytes());
         prop_assert_eq!(trailers.len(), 1);
-        prop_assert_eq!(&trailers[0].0, &trailer_name);
+        prop_assert_eq!(trailers[0].0.as_str(), trailer_name.as_str());
         prop_assert_eq!(&trailers[0].1, &trailer_value);
     }
 }

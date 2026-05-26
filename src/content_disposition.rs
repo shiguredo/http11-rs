@@ -23,7 +23,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
 
-use crate::validate::{escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token};
+use crate::validate::{
+    escape_quotes, is_qdtext_char, is_quoted_pair_char, is_valid_token, trim_ows,
+};
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +158,7 @@ impl ContentDisposition {
     /// assert_eq!(cd.filename(), Some("report.pdf"));
     /// ```
     pub fn parse(input: &str) -> Result<Self, ContentDispositionError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentDispositionError::Empty);
         }
@@ -168,7 +170,7 @@ impl ContentDisposition {
         let type_str = parts
             .first()
             .ok_or(ContentDispositionError::InvalidFormat)?;
-        let disposition_type = DispositionType::from_str(type_str.trim())?;
+        let disposition_type = DispositionType::from_str(trim_ows(type_str))?;
 
         let mut cd = ContentDisposition {
             disposition_type,
@@ -183,14 +185,14 @@ impl ContentDisposition {
         let mut seen_params = Vec::new();
 
         for part in parts.iter().skip(1) {
-            let part = part.trim();
+            let part = trim_ows(part);
             if part.is_empty() {
                 continue;
             }
 
             if let Some(eq_pos) = part.find('=') {
-                let param_name = part[..eq_pos].trim().to_ascii_lowercase();
-                let param_value = part[eq_pos + 1..].trim();
+                let param_name = trim_ows(&part[..eq_pos]).to_ascii_lowercase();
+                let param_value = trim_ows(&part[eq_pos + 1..]);
 
                 // 重複パラメータチェック
                 if seen_params.iter().any(|n: &String| n == &param_name) {
@@ -376,7 +378,7 @@ fn split_params(input: &str) -> Vec<String> {
 /// RFC 9110 Section 5.6.6: パラメータ値がトークンの場合、
 /// トークン文字 (tchar) のみで構成されている必要がある
 fn parse_param_value(value: &str) -> Result<String, ContentDispositionError> {
-    let value = value.trim();
+    let value = trim_ows(value);
 
     if value.starts_with('"') {
         // 引用符で始まる場合
@@ -433,7 +435,7 @@ fn parse_quoted_string(s: &str) -> Result<String, ContentDispositionError> {
 /// 形式: charset'language'value
 /// 例: UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.txt
 fn parse_ext_value(value: &str) -> Result<String, ContentDispositionError> {
-    let value = value.trim();
+    let value = trim_ows(value);
 
     // charset'language'value の形式
     let first_quote = value
@@ -504,237 +506,4 @@ fn is_attr_char(b: u8) -> bool {
         b'!' | b'#' | b'$' | b'&' | b'+' | b'-' | b'.' |
         b'^' | b'_' | b'`' | b'|' | b'~'
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_inline() {
-        let cd = ContentDisposition::parse("inline").unwrap();
-        assert_eq!(cd.disposition_type(), DispositionType::Inline);
-        assert!(cd.is_inline());
-        assert!(!cd.is_attachment());
-    }
-
-    #[test]
-    fn test_parse_attachment() {
-        let cd = ContentDisposition::parse("attachment").unwrap();
-        assert_eq!(cd.disposition_type(), DispositionType::Attachment);
-        assert!(cd.is_attachment());
-    }
-
-    #[test]
-    fn test_parse_attachment_with_filename() {
-        let cd = ContentDisposition::parse("attachment; filename=\"example.txt\"").unwrap();
-        assert!(cd.is_attachment());
-        assert_eq!(cd.filename(), Some("example.txt"));
-    }
-
-    #[test]
-    fn test_parse_filename_without_quotes() {
-        let cd = ContentDisposition::parse("attachment; filename=example.txt").unwrap();
-        assert_eq!(cd.filename(), Some("example.txt"));
-    }
-
-    #[test]
-    fn test_parse_filename_with_escape() {
-        let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#).unwrap();
-        assert_eq!(cd.filename(), Some("file\"name.txt"));
-    }
-
-    #[test]
-    fn test_parse_filename_ext() {
-        let cd = ContentDisposition::parse(
-            "attachment; filename*=UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.txt",
-        )
-        .unwrap();
-        assert_eq!(cd.filename(), Some("日本語.txt"));
-        assert_eq!(cd.filename_ext(), Some("日本語.txt"));
-    }
-
-    #[test]
-    fn test_filename_ext_priority() {
-        // filename* が filename より優先される
-        let cd = ContentDisposition::parse(
-            "attachment; filename=\"fallback.txt\"; filename*=UTF-8''preferred.txt",
-        )
-        .unwrap();
-        assert_eq!(cd.filename(), Some("preferred.txt"));
-        assert_eq!(cd.filename_ascii(), Some("fallback.txt"));
-    }
-
-    #[test]
-    fn test_parse_form_data() {
-        let cd = ContentDisposition::parse("form-data; name=\"field1\"").unwrap();
-        assert!(cd.is_form_data());
-        assert_eq!(cd.name(), Some("field1"));
-    }
-
-    #[test]
-    fn test_parse_form_data_with_filename() {
-        let cd =
-            ContentDisposition::parse("form-data; name=\"file\"; filename=\"image.png\"").unwrap();
-        assert!(cd.is_form_data());
-        assert_eq!(cd.name(), Some("file"));
-        assert_eq!(cd.filename(), Some("image.png"));
-    }
-
-    #[test]
-    fn test_parse_case_insensitive() {
-        let cd = ContentDisposition::parse("ATTACHMENT; FILENAME=\"test.txt\"").unwrap();
-        assert!(cd.is_attachment());
-        assert_eq!(cd.filename(), Some("test.txt"));
-    }
-
-    #[test]
-    fn test_parse_empty() {
-        assert!(ContentDisposition::parse("").is_err());
-    }
-
-    #[test]
-    fn test_parse_invalid_type() {
-        // 不正なトークン (スペースを含む) はエラー
-        assert!(ContentDisposition::parse("hello world").is_err());
-        // 不正なトークン (@ を含む) はエラー
-        assert!(ContentDisposition::parse("type@invalid").is_err());
-    }
-
-    #[test]
-    fn test_display() {
-        let cd = ContentDisposition::new(DispositionType::Attachment).with_filename("test.txt");
-        assert_eq!(cd.to_string(), "attachment; filename=\"test.txt\"");
-    }
-
-    #[test]
-    fn test_display_with_filename_ext() {
-        let cd = ContentDisposition::new(DispositionType::Attachment)
-            .with_filename("fallback.txt")
-            .with_filename_ext("日本語.txt");
-        let s = cd.to_string();
-        assert!(s.contains("attachment"));
-        assert!(s.contains("filename=\"fallback.txt\""));
-        assert!(s.contains("filename*=UTF-8''"));
-    }
-
-    #[test]
-    fn test_display_form_data() {
-        let cd = ContentDisposition::new(DispositionType::FormData)
-            .with_name("field")
-            .with_filename("file.txt");
-        let s = cd.to_string();
-        assert!(s.contains("form-data"));
-        assert!(s.contains("name=\"field\""));
-        assert!(s.contains("filename=\"file.txt\""));
-    }
-
-    #[test]
-    fn test_builder() {
-        let cd = ContentDisposition::new(DispositionType::Attachment)
-            .with_filename("example.txt")
-            .with_filename_ext("例.txt");
-
-        assert!(cd.is_attachment());
-        assert_eq!(cd.filename_ascii(), Some("example.txt"));
-        assert_eq!(cd.filename_ext(), Some("例.txt"));
-        assert_eq!(cd.filename(), Some("例.txt")); // filename* 優先
-    }
-
-    #[test]
-    fn test_ext_value_invalid_char() {
-        // RFC 8187 Section 3.2: attr-char 以外の生文字は不正
-        // スペースは attr-char ではない
-        assert!(ContentDisposition::parse("attachment; filename*=UTF-8''hello world.txt").is_err());
-        // @ は attr-char ではない
-        assert!(ContentDisposition::parse("attachment; filename*=UTF-8''test@file.txt").is_err());
-    }
-
-    #[test]
-    fn test_ext_value_valid_chars() {
-        // RFC 8187: 許可された attr-char はそのまま使える
-        let cd =
-            ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt").unwrap();
-        assert_eq!(cd.filename(), Some("test-file_v1.0.txt"));
-    }
-
-    // 修正 2: 拡張 disposition-type サポート (RFC 6266 Section 4.1)
-
-    #[test]
-    fn test_unknown_disposition_type() {
-        // 拡張 disposition-type がパースできること
-        let cd = ContentDisposition::parse("signal").unwrap();
-        assert_eq!(
-            cd.disposition_type(),
-            DispositionType::Unknown("signal".to_string())
-        );
-    }
-
-    #[test]
-    fn test_unknown_disposition_type_with_params() {
-        // 拡張 disposition-type + パラメータ
-        let cd = ContentDisposition::parse("notification; id=123").unwrap();
-        assert_eq!(
-            cd.disposition_type(),
-            DispositionType::Unknown("notification".to_string())
-        );
-        assert_eq!(cd.parameter("id"), Some("123"));
-    }
-
-    #[test]
-    fn test_unknown_disposition_type_case_insensitive() {
-        // 大文字小文字は区別しない (小文字に正規化)
-        let cd = ContentDisposition::parse("CUSTOM-TYPE").unwrap();
-        assert_eq!(
-            cd.disposition_type(),
-            DispositionType::Unknown("custom-type".to_string())
-        );
-    }
-
-    #[test]
-    fn test_invalid_disposition_type() {
-        // 不正なトークン (スペースを含む) はエラー
-        assert!(ContentDisposition::parse("hello world").is_err());
-    }
-
-    #[test]
-    fn test_invalid_disposition_type_special_char() {
-        // 不正なトークン (@ を含む) はエラー
-        assert!(ContentDisposition::parse("type@invalid").is_err());
-    }
-
-    #[test]
-    fn test_unknown_disposition_display() {
-        let cd = ContentDisposition::parse("custom-type; name=\"test\"").unwrap();
-        let s = cd.to_string();
-        assert!(s.starts_with("custom-type"));
-    }
-
-    // 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
-
-    #[test]
-    fn test_invalid_token_parameter_value() {
-        // 不正なトークン値 (@ を含む) はエラー
-        assert!(ContentDisposition::parse("attachment; filename=hello@world.txt").is_err());
-    }
-
-    #[test]
-    fn test_invalid_token_parameter_value_space() {
-        // スペースを含むトークン値はエラー (引用符で囲む必要がある)
-        assert!(ContentDisposition::parse("attachment; filename=hello world.txt").is_err());
-    }
-
-    #[test]
-    fn test_valid_token_parameter_value() {
-        // 有効なトークン値は通る
-        let cd = ContentDisposition::parse("attachment; filename=valid-token_v1.0").unwrap();
-        assert_eq!(cd.filename(), Some("valid-token_v1.0"));
-    }
-
-    #[test]
-    fn test_quoted_special_chars() {
-        // 引用符で囲めば特殊文字も OK
-        let cd = ContentDisposition::parse("attachment; filename=\"hello@world.txt\"").unwrap();
-        assert_eq!(cd.filename(), Some("hello@world.txt"));
-    }
 }

@@ -301,3 +301,162 @@ fn test_new_bytes_max_range_none_length() {
     assert_eq!(cr.length(), None);
     assert_eq!(cr.to_string(), "bytes 0-18446744073709551615/*");
 }
+
+// ========================================
+// NBSP は OWS ではないことの検証 (RFC 9110 Section 5.6.3)
+// ========================================
+
+#[test]
+fn test_range_nbsp_not_stripped_as_ows() {
+    // NBSP は OWS ではないため除去されず、unit のトークン検証で失敗する
+    let result = Range::parse("\u{00A0}bytes=0-100");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_range_trailing_nbsp_not_stripped() {
+    // 末尾の NBSP も OWS として除去されない
+    let result = Range::parse("bytes=0-100\u{00A0}");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_range_sp_htab_stripped_as_ows() {
+    // SP と HTAB は OWS として正しく除去される
+    let range = Range::parse(" \tbytes=0-100\t ").unwrap();
+    assert_eq!(range.unit(), "bytes");
+}
+
+// ========================================
+// src/range.rs のインラインテストを移動
+// ========================================
+
+#[test]
+fn test_parse_range_single() {
+    let range = Range::parse("bytes=0-499").unwrap();
+    assert_eq!(range.unit(), "bytes");
+    assert!(range.is_bytes());
+    let specs = range.ranges();
+    assert_eq!(specs.len(), 1);
+    match specs[0] {
+        RangeSpec::Range { start, end } => {
+            assert_eq!(start, 0);
+            assert_eq!(end, 499);
+        }
+        _ => panic!("Range バリアントを期待"),
+    }
+}
+
+#[test]
+fn test_parse_range_multiple() {
+    let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
+    assert_eq!(range.ranges().len(), 2);
+}
+
+#[test]
+fn test_parse_range_suffix() {
+    let range = Range::parse("bytes=-500").unwrap();
+    match range.first().unwrap() {
+        RangeSpec::Suffix { length } => assert_eq!(*length, 500),
+        _ => panic!("Suffix バリアントを期待"),
+    }
+}
+
+#[test]
+fn test_parse_range_from_start() {
+    let range = Range::parse("bytes=500-").unwrap();
+    match range.first().unwrap() {
+        RangeSpec::FromStart { start } => assert_eq!(*start, 500),
+        _ => panic!("FromStart バリアントを期待"),
+    }
+}
+
+#[test]
+fn test_parse_range_invalid_bounds() {
+    assert!(Range::parse("bytes=500-100").is_err());
+}
+
+#[test]
+fn test_parse_range_invalid_unit() {
+    assert!(Range::parse("byt es=0-499").is_err());
+    assert!(Range::parse("bytes/foo=0-499").is_err());
+    assert!(Range::parse("=0-499").is_err());
+    assert!(Range::parse("by\tes=0-499").is_err());
+    assert!(Range::parse("byt(es=0-499").is_err());
+}
+
+#[test]
+fn test_range_spec_to_bounds() {
+    let total = 1000;
+
+    let spec = RangeSpec::Range { start: 0, end: 499 };
+    assert_eq!(spec.to_bounds(total), Some((0, 499)));
+
+    let spec = RangeSpec::FromStart { start: 500 };
+    assert_eq!(spec.to_bounds(total), Some((500, 999)));
+
+    let spec = RangeSpec::Suffix { length: 200 };
+    assert_eq!(spec.to_bounds(total), Some((800, 999)));
+
+    let spec = RangeSpec::Range {
+        start: 1000,
+        end: 1500,
+    };
+    assert_eq!(spec.to_bounds(total), None);
+}
+
+#[test]
+fn test_range_display() {
+    let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
+    assert_eq!(range.to_string(), "bytes=0-499, 1000-1499");
+}
+
+#[test]
+fn test_content_range_parse() {
+    let cr = ContentRange::parse("bytes 0-499/1000").unwrap();
+    assert_eq!(cr.unit(), "bytes");
+    assert_eq!(cr.start(), Some(0));
+    assert_eq!(cr.end(), Some(499));
+    assert_eq!(cr.complete_length(), Some(1000));
+    assert_eq!(cr.length(), Some(500));
+}
+
+#[test]
+fn test_content_range_unknown_length() {
+    let cr = ContentRange::parse("bytes 0-499/*").unwrap();
+    assert_eq!(cr.complete_length(), None);
+}
+
+#[test]
+fn test_content_range_unsatisfied() {
+    let cr = ContentRange::parse("bytes */1000").unwrap();
+    assert!(cr.is_unsatisfied());
+    assert_eq!(cr.complete_length(), Some(1000));
+}
+
+#[test]
+fn test_content_range_unsatisfied_requires_length() {
+    assert!(ContentRange::parse("bytes */*").is_err());
+}
+
+#[test]
+fn test_content_range_complete_length_must_exceed_last_pos() {
+    assert!(ContentRange::parse("bytes 0-999/500").is_err());
+    assert!(ContentRange::parse("bytes 0-999/999").is_err());
+    assert!(ContentRange::parse("bytes 0-999/1000").is_ok());
+}
+
+#[test]
+fn test_content_range_display() {
+    let cr = ContentRange::new_bytes(0, 499, Some(1000));
+    assert_eq!(cr.to_string(), "bytes 0-499/1000");
+
+    let cr = ContentRange::unsatisfied("bytes", 1000);
+    assert_eq!(cr.to_string(), "bytes */1000");
+}
+
+#[test]
+fn test_accept_ranges_invalid_token() {
+    assert!(AcceptRanges::parse("inv@lid").is_err());
+    assert!(AcceptRanges::parse("bytes, inv@lid").is_err());
+}

@@ -220,7 +220,7 @@ impl ResponseSession {
         let encoding = head
             .headers()
             .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("Content-Encoding"))
+            .find(|(name, _)| name == "Content-Encoding")
             .map(|(_, v)| v.as_str())
             .unwrap_or("");
         self.decompressor = AnyDecompressor::for_encoding(encoding)?;
@@ -318,7 +318,7 @@ impl ResponseSession {
         let mut response =
             Response::with_version(head.version(), head.status_code(), head.reason_phrase())?;
         for (name, value) in head.headers() {
-            response.add_header(name, value)?;
+            response.add_header(name.clone(), value)?;
         }
         if let Some(b) = body_field {
             response = response.body(b);

@@ -25,17 +25,19 @@ mod compressor;
 
 use std::io::Write;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use shiguredo_http11::{
-    BodyKind, BodyProgress, EncodeError, HttpHead, Request, RequestDecoder, RequestHead, Response,
-    StatusCode,
+    BodyKind, BodyProgress, EncodeError, HttpHead, Method, Request, RequestDecoder, RequestHead,
+    Response, StatusCode,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 
 use compressor::{compress_body, encoding_header, select_encoding};
@@ -45,6 +47,11 @@ use tracing::{error, info};
 const DEFAULT_KEEP_ALIVE_TIMEOUT: u64 = 60;
 /// 1 接続あたりの最大リクエスト数
 const DEFAULT_MAX_REQUESTS: u32 = 1000;
+/// Graceful shutdown タイムアウト (秒)
+///
+/// 実行中リクエストが完了しない場合 (slow client 等) に備えるタイムアウト。
+/// Keep-Alive タイムアウト (60 秒) より短く、実用的なリクエスト完了に十分な時間。
+const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
 
 struct ServerOptions {
     port: u16,
@@ -98,6 +105,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::io::stdout().flush().expect("stdout flush failed");
     let addr = local_addr.to_string();
 
+    let shutting_down = Arc::new(AtomicBool::new(false));
+    let mut tasks: JoinSet<()> = JoinSet::new();
+
     if options.tls {
         let cert_path = options
             .cert_path
@@ -113,33 +123,93 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         info!(addr = %addr, "HTTPS server listening");
 
-        loop {
-            let (stream, peer_addr) = listener.accept().await?;
-            let acceptor = acceptor.clone();
+        let shutdown = shutdown_signal();
+        tokio::pin!(shutdown);
 
-            tokio::spawn(async move {
-                match acceptor.accept(stream).await {
-                    Ok(tls_stream) => {
-                        if let Err(e) = handle_tls_client(tls_stream, peer_addr).await {
-                            error!(peer_addr = %peer_addr, error = %e, "TLS client error");
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, peer_addr) = result?;
+                    let acceptor = acceptor.clone();
+                    let shutting_down = shutting_down.clone();
+                    tasks.spawn(async move {
+                        match acceptor.accept(stream).await {
+                            Ok(tls_stream) => {
+                                if let Err(e) = handle_tls_client(tls_stream, peer_addr, shutting_down).await {
+                                    error!(peer_addr = %peer_addr, error = %e, "TLS client error");
+                                }
+                            }
+                            Err(e) => error!(peer_addr = %peer_addr, error = %e, "TLS handshake error"),
                         }
-                    }
-                    Err(e) => error!(peer_addr = %peer_addr, error = %e, "TLS handshake error"),
+                    });
                 }
-            });
+                _ = &mut shutdown => break,
+            }
         }
     } else {
         info!(addr = %addr, "HTTP server listening");
 
-        loop {
-            let (stream, peer_addr) = listener.accept().await?;
+        let shutdown = shutdown_signal();
+        tokio::pin!(shutdown);
 
-            tokio::spawn(async move {
-                if let Err(e) = handle_client(stream, peer_addr).await {
-                    error!(peer_addr = %peer_addr, error = %e, "Client error");
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, peer_addr) = result?;
+                    let shutting_down = shutting_down.clone();
+                    tasks.spawn(async move {
+                        if let Err(e) = handle_client(stream, peer_addr, shutting_down).await {
+                            error!(peer_addr = %peer_addr, error = %e, "Client error");
+                        }
+                    });
                 }
-            });
+                _ = &mut shutdown => break,
+            }
         }
+    }
+
+    // Graceful shutdown: accept ループを抜けた後、実行中タスクの完了を待機する
+    info!("Shutting down gracefully, waiting for active connections");
+    shutting_down.store(true, Ordering::SeqCst);
+
+    let timeout = Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+    if tokio::time::timeout(timeout, async {
+        while tasks.join_next().await.is_some() {}
+    })
+    .await
+    .is_err()
+    {
+        info!("Shutdown timeout reached, aborting remaining tasks");
+        tasks.abort_all();
+        // abort 後の JoinError は期待動作のため無視する
+        while tasks.join_next().await.is_some() {}
+    }
+
+    info!("Server stopped");
+    Ok(())
+}
+
+/// CTRL+C (SIGINT) または SIGTERM (Unix) を待ち受ける
+///
+/// RFC 9112 Section 9.5: graceful close を意図する server はシグナルを監視し
+/// 適切に応答すべき (SHOULD)。
+async fn shutdown_signal() {
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {}
+        _ = terminate => {}
     }
 }
 
@@ -286,6 +356,7 @@ async fn serve_request(
     writer: &mut (impl AsyncWriteExt + Unpin),
     peer_addr: std::net::SocketAddr,
     tls: bool,
+    shutting_down: bool,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let h = state
         .head
@@ -314,9 +385,13 @@ async fn serve_request(
     // examples は外部 crate のため `from_raw_parts` 使用不可。
     // 構築時バリデーション付きの Request::with_version 経由で再構築する。
     // decoder を通過した時点で各フィールドは構文上有効なので、? 伝播で十分。
-    let mut request = Request::with_version(h.method(), h.uri(), h.version())?;
+    let mut request = Request::with_version(
+        Method::new(h.method().as_bytes()).expect("decoder-validated method"),
+        h.uri(),
+        h.version(),
+    )?;
     for (name, value) in h.headers() {
-        request.add_header(name, value)?;
+        request.add_header(name.clone(), value)?;
     }
     let request = if let Some(body) = state.body.take() {
         request.body(body)
@@ -339,10 +414,17 @@ async fn serve_request(
     let should_keep_alive =
         request.is_keep_alive() && conn_state.request_count < conn_state.max_requests;
 
-    let response = build_response(&request, should_keep_alive)?;
+    // RFC 9112 Section 9.6: shutdown 中のレスポンスには Connection: close を付与し、
+    // 同一接続で後続リクエストを受け付けない
+    let response = build_response(&request, should_keep_alive, shutting_down)?;
     let response_bytes = response.encode()?;
     writer.write_all(&response_bytes).await?;
     writer.flush().await?;
+
+    if shutting_down {
+        info!(peer_addr = %peer_addr, tls = tls, "Connection close (shutting down)");
+        return Ok(false);
+    }
 
     if !should_keep_alive {
         if conn_state.request_count >= conn_state.max_requests {
@@ -364,6 +446,7 @@ async fn serve_request(
 async fn handle_client(
     stream: TcpStream,
     peer_addr: std::net::SocketAddr,
+    shutting_down: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(peer_addr = %peer_addr, "Connection accepted");
 
@@ -436,8 +519,16 @@ async fn handle_client(
                 break;
             }
 
-            let keep_alive =
-                serve_request(&mut state, &mut conn_state, &mut writer, peer_addr, false).await?;
+            let is_shutting_down = shutting_down.load(Ordering::SeqCst);
+            let keep_alive = serve_request(
+                &mut state,
+                &mut conn_state,
+                &mut writer,
+                peer_addr,
+                false,
+                is_shutting_down,
+            )
+            .await?;
             if !keep_alive {
                 return Ok(());
             }
@@ -450,9 +541,14 @@ async fn handle_client(
 async fn handle_tls_client(
     stream: tokio_rustls::server::TlsStream<TcpStream>,
     peer_addr: std::net::SocketAddr,
+    shutting_down: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     info!(peer_addr = %peer_addr, "TLS connection accepted");
 
+    // 注: TLS half-close (RFC 9112 Section 9.6 推奨の write-side shutdown) は
+    // `tokio::io::split` で取得した WriteHalf からは `into_inner()` が使えないため
+    // 本 example では実装しない。TLS closure alert は tokio_rustls の Drop 実装に委ねる。
+    // TCP reset リスクは存在するが、お手本としての透明性を優先しこの制約を明示する。
     let (reader, writer) = tokio::io::split(stream);
     let mut reader = tokio::io::BufReader::with_capacity(8192, reader);
     let mut writer = BufWriter::with_capacity(65536, writer);
@@ -522,8 +618,16 @@ async fn handle_tls_client(
                 break;
             }
 
-            let keep_alive =
-                serve_request(&mut state, &mut conn_state, &mut writer, peer_addr, true).await?;
+            let is_shutting_down = shutting_down.load(Ordering::SeqCst);
+            let keep_alive = serve_request(
+                &mut state,
+                &mut conn_state,
+                &mut writer,
+                peer_addr,
+                true,
+                is_shutting_down,
+            )
+            .await?;
             if !keep_alive {
                 return Ok(());
             }
@@ -533,7 +637,11 @@ async fn handle_tls_client(
     Ok(())
 }
 
-fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response, EncodeError> {
+fn build_response(
+    request: &Request,
+    should_keep_alive: bool,
+    shutting_down: bool,
+) -> Result<Response, EncodeError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -548,7 +656,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)
         .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case("Accept-Encoding"))
+        .find(|(name, _)| name == "Accept-Encoding")
         .map(|(_, value)| value.as_str());
 
     let encoding = accept_encoding.and_then(select_encoding);
@@ -601,7 +709,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
                     .header("Content-Length", "0")?
                     .header("Server", "shiguredo_http11/0.1.0")?
                     .omit_body(true);
-                return add_connection_headers(head_response, should_keep_alive);
+                return add_connection_headers(head_response, should_keep_alive, shutting_down);
             }
 
             let mut body = format!(
@@ -648,7 +756,7 @@ fn build_response(request: &Request, should_keep_alive: bool) -> Result<Response
         }
     };
 
-    add_connection_headers(response, should_keep_alive)
+    add_connection_headers(response, should_keep_alive, shutting_down)
 }
 
 /// 圧縮対応のレスポンスを構築
@@ -694,13 +802,18 @@ fn build_compressed_response(
 /// RFC 9112 準拠で Connection ヘッダーを設定する
 ///
 /// HTTP/1.1 では keep-alive がデフォルトのため:
-/// - keep-alive 継続: ヘッダー不要
-/// - 接続終了: Connection: close を追加
+/// - keep-alive 継続かつ shutdown 中でない: ヘッダー不要
+/// - 接続終了または shutdown 中: Connection: close を追加
+///
+/// RFC 9112 Section 9.6: server が "close" を送信した場合、そのレスポンス後に
+/// 接続を閉じなければならない (MUST)。shutdown 中は全レスポンスに close を付与し、
+/// 同一接続での後続リクエスト受付を拒否する。
 fn add_connection_headers(
     response: Response,
     should_keep_alive: bool,
+    shutting_down: bool,
 ) -> Result<Response, EncodeError> {
-    if should_keep_alive {
+    if should_keep_alive && !shutting_down {
         Ok(response)
     } else {
         response.header("Connection", "close")

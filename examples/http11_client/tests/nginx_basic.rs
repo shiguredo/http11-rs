@@ -10,14 +10,14 @@
 mod helpers;
 
 use http11_client::{http_request, parse_url};
-use shiguredo_http11::{HttpHead, Request};
+use shiguredo_http11::{HttpHead, Method, Request};
 
 /// nginx に対して 1 リクエスト送って Response を返す共通ヘルパー
 ///
 /// 各テスト関数の重複を減らすため、ヘッダー組み立て + encode + spawn_blocking までを一括する。
 async fn fetch(
     nginx: &helpers::NginxHandle,
-    method: &str,
+    method: Method,
     path: &str,
 ) -> shiguredo_http11::Response {
     let url = nginx.http_url(path);
@@ -44,7 +44,7 @@ async fn get_root_returns_200_html() {
     helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
-    let response = fetch(&nginx, "GET", "/").await;
+    let response = fetch(&nginx, Method::GET, "/").await;
 
     assert_eq!(response.status_code(), 200);
     let content_type = response.get_header("Content-Type").unwrap_or("");
@@ -65,7 +65,7 @@ async fn get_unknown_returns_404() {
     helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
-    let response = fetch(&nginx, "GET", "/this-path-does-not-exist").await;
+    let response = fetch(&nginx, Method::GET, "/this-path-does-not-exist").await;
 
     assert_eq!(response.status_code(), 404);
     let body = response.body_bytes().unwrap_or(&[]);
@@ -81,7 +81,7 @@ async fn head_root_returns_no_body() {
     helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
-    let response = fetch(&nginx, "HEAD", "/").await;
+    let response = fetch(&nginx, Method::HEAD, "/").await;
 
     assert_eq!(response.status_code(), 200);
     // HEAD は BodyKind::None として扱われるため、body は None
@@ -96,7 +96,7 @@ async fn includes_server_header() {
     helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
-    let response = fetch(&nginx, "GET", "/").await;
+    let response = fetch(&nginx, Method::GET, "/").await;
 
     let server = response.get_header("Server").unwrap_or("");
     assert!(
@@ -110,7 +110,7 @@ async fn http_version_is_1_1() {
     helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
-    let response = fetch(&nginx, "GET", "/").await;
+    let response = fetch(&nginx, Method::GET, "/").await;
 
     assert_eq!(HttpHead::version(&response), "HTTP/1.1");
 }

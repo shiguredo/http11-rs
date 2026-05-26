@@ -18,7 +18,7 @@ use alloc::string::{String, ToString};
 use core::fmt;
 use core::net::{Ipv4Addr, Ipv6Addr};
 
-use crate::validate::trim_ows;
+use crate::validate::{is_sub_delim_byte, is_unreserved_byte, trim_ows};
 
 /// Host パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,7 +184,7 @@ fn is_valid_ipvfuture(input: &str) -> bool {
 
     let mut i = 1;
     let mut hex_len = 0;
-    while i < bytes.len() && is_hexdig(bytes[i]) {
+    while i < bytes.len() && bytes[i].is_ascii_hexdigit() {
         hex_len += 1;
         i += 1;
     }
@@ -210,7 +210,7 @@ fn is_valid_ipvfuture(input: &str) -> bool {
 }
 
 fn is_ipvfuture_char(b: u8) -> bool {
-    is_unreserved(b) || is_sub_delim(b) || b == b':'
+    is_unreserved_byte(b) || is_sub_delim_byte(b) || b == b':'
 }
 
 fn is_valid_reg_name(input: &str) -> bool {
@@ -222,7 +222,7 @@ fn is_valid_reg_name(input: &str) -> bool {
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
-        if is_unreserved(b) || is_sub_delim(b) {
+        if is_unreserved_byte(b) || is_sub_delim_byte(b) {
             i += 1;
             continue;
         }
@@ -230,7 +230,7 @@ fn is_valid_reg_name(input: &str) -> bool {
             if i + 2 >= bytes.len() {
                 return false;
             }
-            if !is_hexdig(bytes[i + 1]) || !is_hexdig(bytes[i + 2]) {
+            if !bytes[i + 1].is_ascii_hexdigit() || !bytes[i + 2].is_ascii_hexdigit() {
                 return false;
             }
             i += 3;
@@ -240,65 +240,4 @@ fn is_valid_reg_name(input: &str) -> bool {
     }
 
     true
-}
-
-fn is_unreserved(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b'_' || b == b'~'
-}
-
-fn is_sub_delim(b: u8) -> bool {
-    matches!(
-        b,
-        b'!' | b'$' | b'&' | b'\'' | b'(' | b')' | b'*' | b'+' | b',' | b';' | b'='
-    )
-}
-
-fn is_hexdig(b: u8) -> bool {
-    b.is_ascii_hexdigit()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_hostname() {
-        let host = Host::parse("example.com").unwrap();
-        assert_eq!(host.host(), "example.com");
-        assert_eq!(host.port(), None);
-    }
-
-    #[test]
-    fn parse_hostname_port() {
-        let host = Host::parse("example.com:8080").unwrap();
-        assert_eq!(host.host(), "example.com");
-        assert_eq!(host.port(), Some(8080));
-    }
-
-    #[test]
-    fn parse_ipv4() {
-        let host = Host::parse("127.0.0.1").unwrap();
-        assert_eq!(host.host(), "127.0.0.1");
-    }
-
-    #[test]
-    fn parse_ipv6() {
-        let host = Host::parse("[::1]").unwrap();
-        assert!(host.is_ipv6());
-        assert_eq!(host.host(), "[::1]");
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(Host::parse("").is_err());
-        assert!(Host::parse("example.com:").is_err());
-        assert!(Host::parse("example.com:abc").is_err());
-        assert!(Host::parse("exa mple.com").is_err());
-    }
-
-    #[test]
-    fn display() {
-        let host = Host::parse("example.com:8080").unwrap();
-        assert_eq!(host.to_string(), "example.com:8080");
-    }
 }

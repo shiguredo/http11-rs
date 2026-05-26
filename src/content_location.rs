@@ -14,6 +14,7 @@
 //! ```
 
 use crate::uri::Uri;
+use crate::validate::trim_ows;
 use core::fmt;
 
 /// Content-Location パースエラー
@@ -51,7 +52,7 @@ pub struct ContentLocation {
 impl ContentLocation {
     /// Content-Location ヘッダーをパース
     pub fn parse(input: &str) -> Result<Self, ContentLocationError> {
-        let input = input.trim();
+        let input = trim_ows(input);
         if input.is_empty() {
             return Err(ContentLocationError::Empty);
         }
@@ -85,40 +86,5 @@ impl ContentLocation {
 impl fmt::Display for ContentLocation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.uri)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_absolute() {
-        let cl = ContentLocation::parse("https://example.com/path").unwrap();
-        assert_eq!(cl.uri().as_str(), "https://example.com/path");
-    }
-
-    #[test]
-    fn parse_relative() {
-        let cl = ContentLocation::parse("/assets/logo.png").unwrap();
-        assert_eq!(cl.uri().path(), "/assets/logo.png");
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(ContentLocation::parse("").is_err());
-        assert!(ContentLocation::parse("http://[::1").is_err());
-    }
-
-    #[test]
-    fn parse_fragment_rejected() {
-        assert_eq!(
-            ContentLocation::parse("https://example.com/path#frag"),
-            Err(ContentLocationError::FragmentNotAllowed)
-        );
-        assert_eq!(
-            ContentLocation::parse("/path#frag"),
-            Err(ContentLocationError::FragmentNotAllowed)
-        );
     }
 }

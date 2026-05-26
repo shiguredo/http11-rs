@@ -33,7 +33,7 @@ use core::fmt;
 
 use crate::validate::{
     QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string,
-    split_with_quotes,
+    split_with_quotes, trim_ows,
 };
 
 /// Expect パースエラー
@@ -88,18 +88,18 @@ impl Expect {
     ///
     /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
     pub fn parse(input: &str) -> Result<Self, ExpectError> {
-        let input = input.trim();
+        let input = trim_ows(input);
 
         let mut items = Vec::new();
         for part in split_with_quotes(input, ',') {
-            let part = part.trim();
+            let part = trim_ows(&part);
             // RFC 9110 Section 5.6.1.2: 空要素は無視する
             if part.is_empty() {
                 continue;
             }
 
             let (token, value) = if let Some((token, value)) = part.split_once('=') {
-                let token = token.trim();
+                let token = trim_ows(token);
                 if token.is_empty() {
                     return Err(ExpectError::InvalidFormat);
                 }
@@ -182,14 +182,14 @@ impl fmt::Display for Expectation {
 }
 
 fn parse_value(input: &str) -> Result<String, ExpectError> {
-    let input = input.trim();
+    let input = trim_ows(input);
     if input.is_empty() {
         return Err(ExpectError::InvalidValue);
     }
 
     if let Some(rest) = input.strip_prefix('"') {
         let (value, remaining) = parse_quoted_string(rest)?;
-        if !remaining.trim().is_empty() {
+        if !trim_ows(remaining).is_empty() {
             return Err(ExpectError::InvalidValue);
         }
         Ok(value)
@@ -207,66 +207,4 @@ fn parse_value(input: &str) -> Result<String, ExpectError> {
 fn needs_quoting(s: &str) -> bool {
     // 空文字列は引用符が必要
     s.is_empty() || s.bytes().any(|b| !is_token_char(b))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_simple() {
-        let expect = Expect::parse("100-continue").unwrap();
-        assert!(expect.has_100_continue());
-        assert_eq!(expect.items().len(), 1);
-    }
-
-    #[test]
-    fn parse_extension() {
-        let expect = Expect::parse("foo=bar, 100-continue").unwrap();
-        assert_eq!(expect.items().len(), 2);
-        assert_eq!(expect.items()[0].token(), "foo");
-        assert_eq!(expect.items()[0].value(), Some("bar"));
-    }
-
-    #[test]
-    fn parse_quoted_value() {
-        let expect = Expect::parse("token=\"va\\\\lue\"").unwrap();
-        assert_eq!(expect.items()[0].value(), Some("va\\lue"));
-    }
-
-    #[test]
-    fn parse_invalid() {
-        assert!(Expect::parse("bad value").is_err());
-        assert!(Expect::parse("token=").is_err());
-    }
-
-    /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
-    #[test]
-    fn parse_empty_elements() {
-        let expect = Expect::parse("").unwrap();
-        assert!(expect.items().is_empty());
-
-        let expect = Expect::parse(",").unwrap();
-        assert!(expect.items().is_empty());
-
-        let expect = Expect::parse("100-continue,,foo=bar").unwrap();
-        assert_eq!(expect.items().len(), 2);
-    }
-
-    #[test]
-    fn display() {
-        let expect = Expect::parse("foo=bar, 100-continue").unwrap();
-        assert_eq!(expect.to_string(), "foo=bar, 100-continue");
-    }
-
-    #[test]
-    fn empty_value_roundtrip() {
-        // 空の値は引用符で囲む必要がある
-        let expect = Expect::parse("token=\"\"").unwrap();
-        assert_eq!(expect.items()[0].value(), Some(""));
-        let displayed = expect.to_string();
-        assert_eq!(displayed, "token=\"\"");
-        let reparsed = Expect::parse(&displayed).unwrap();
-        assert_eq!(expect, reparsed);
-    }
 }
