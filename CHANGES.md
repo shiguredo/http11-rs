@@ -64,6 +64,8 @@
   - @voluntas
 - [UPDATE] `fuzz_multipart_roundtrip` の重複パターンを削除する
   - @voluntas
+- [UPDATE] `fuzz_multipart_boundary` の重複パターンを削除する
+  - @voluntas
 
 ## 2026.5.0
 
