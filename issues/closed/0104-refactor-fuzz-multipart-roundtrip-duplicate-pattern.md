@@ -2,6 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-05-26
+- Completed: 2026-05-26
 - Model: Opus 4.7
 - Branch: feature/refactor-fuzz-multipart-roundtrip
 
@@ -52,3 +53,9 @@ if let Ok(builder) = MultipartBuilder::with_boundary(&boundary) {
 - `fuzz_multipart_roundtrip.rs` のパターン 2 のコードブロック全体が削除されている
 - パターン 1 のコメントから番号表記が除去されている
 - `cargo fuzz build fuzz_multipart_roundtrip` が成功する
+
+## 解決方法
+
+- `fuzz/fuzz_targets/fuzz_multipart_roundtrip.rs` のパターン 2 (126-133 行) のコードブロック全体 (コメント含む) を削除した
+- パターン 1 のコメント `// パターン 1: \`with_boundary\` を通った valid path` から番号表記を除去し `// \`with_boundary\` を通った valid path` に変更した
+- `cargo +nightly fuzz build fuzz_multipart_roundtrip` でビルド成功を確認した

@@ -62,6 +62,8 @@
   - @voluntas
 - [UPDATE] examples/http11_reverse_proxy と http11_server に graceful shutdown を実装する
   - @voluntas
+- [UPDATE] `fuzz_multipart_roundtrip` の重複パターンを削除する
+  - @voluntas
 
 ## 2026.5.0
 
