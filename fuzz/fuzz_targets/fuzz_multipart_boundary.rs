@@ -66,13 +66,7 @@ fuzz_target!(|input: FuzzInput| {
     // OOM を避けるため上限を 1MB に clamp する
     let max_buffer_size = (max_buffer_size as usize).min(1024 * 1024);
 
-    // パターン 1: `new` 経路 (RFC 2046 Section 5.1.1 検証あり)
-    if let Ok(mut parser) = MultipartParser::new(&boundary) {
-        parser = parser.with_max_buffer_size(max_buffer_size);
-        drive(&mut parser, &data, split_size);
-    }
-
-    // パターン 2: 任意 boundary の経路 (検証に引っかかる境界は早期リターン)
+    // `new` 経路 (RFC 2046 Section 5.1.1 検証あり)
     if let Ok(mut parser) = MultipartParser::new(&boundary) {
         parser = parser.with_max_buffer_size(max_buffer_size);
         drive(&mut parser, &data, split_size);
