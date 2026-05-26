@@ -2,6 +2,7 @@
 
 - Priority: High
 - Created: 2026-05-26
+- Completed: 2026-05-26
 - Model: Opus 4.7
 - Branch: feature/add-fuzz-validate
 
@@ -38,3 +39,15 @@
 - `fuzz/Cargo.toml` に `[[bin]]` エントリが追加されている
 - `cargo fuzz build fuzz_validate` が成功する
 - 上記 4 関数の経路が fuzz ターゲットでカバーされている
+
+## 解決方法
+
+対応不要としてクローズする。
+
+- `validate` モジュールは `lib.rs` で `mod validate;` (非公開) として宣言されており、fuzz crate (外部クレート) から直接アクセスできない
+- 対象の 4 関数は全て既存の fuzz ターゲット経由で間接的にカバー済み:
+  - `parse_quoted_string`: `fuzz_content_type`, `fuzz_accept`, `fuzz_expect`, `fuzz_content_disposition`, `fuzz_auth`
+  - `is_valid_request_target`: `fuzz_decoder_request`, `fuzz_encode_request`, `fuzz_request_response_helpers`
+  - `split_with_quotes`: `fuzz_accept`, `fuzz_expect`
+  - `escape_quotes`: `fuzz_content_type`, `fuzz_accept`, `fuzz_expect` 等の Display ラウンドトリップ
+- 直接ファズのために `#[doc(hidden)] pub` 等で内部 API を公開すると設計を歪めるため不適切

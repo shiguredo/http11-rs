@@ -2,6 +2,7 @@
 
 - Priority: High
 - Created: 2026-05-26
+- Completed: 2026-05-26
 - Model: Opus 4.7
 - Branch: feature/add-fuzz-base64
 
@@ -35,3 +36,12 @@
 - `fuzz/Cargo.toml` に `[[bin]]` エントリが追加されている
 - `cargo fuzz build fuzz_base64` が成功する
 - パニック安全性とラウンドトリップの両方がカバーされている
+
+## 解決方法
+
+対応不要としてクローズする。
+
+- `base64` モジュールは `lib.rs` で `mod base64;` (非公開) として宣言されており、fuzz crate (外部クレート) から直接アクセスできない
+- `base64::decode` は `fuzz_auth` 経由 (`BasicAuth::parse("Basic " + 任意文字列)`) および `fuzz_digest_fields` 経由で間接的にカバー済み
+- `base64::encode` → `decode` のラウンドトリップは `fuzz_auth` / `fuzz_digest_fields` の Display ラウンドトリップでカバー済み
+- 直接ファズのために内部 API を公開すると設計を歪めるため不適切
