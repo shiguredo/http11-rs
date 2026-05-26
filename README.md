@@ -100,8 +100,8 @@ let bytes = response.encode()?;
 `&mut Self` を返す) も提供しています。
 
 - `add_header(name, value)` - ヘッダーを末尾に追加
-  - チェイン可能。名前は `'static str` リテラル (`"Host"` 等)、`HeaderName`、`Method` 値のいずれかを渡せる
-  - 動的入力は `HeaderName::new()` / `Method::new()` で構築した値を渡す
+  - チェイン可能。名前は `'static str` リテラル (`"Host"` 等) または `HeaderName` を渡せる
+  - 動的入力は `HeaderName::new()` で構築した値を渡す
 - `set_header(name, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加
   - チェイン可能
 - `set_body(data)` / `clear_body()` - ボディの差し替え / クリア
@@ -492,6 +492,7 @@ cargo run -p http11_server -- --port 8443 --tls --cert cert.pem --key key.pem
 - Keep-Alive 対応
   - タイムアウト 60 秒
   - 最大リクエスト数 1000
+- Graceful shutdown 対応
 - Accept-Encoding に基づく圧縮
   - 優先度: `zstd` > `br` > `gzip`
 - エンドポイント
@@ -518,6 +519,7 @@ curl http://localhost:8888/
 
 **機能:**
 
+- Graceful shutdown 対応
 - ストリーミング転送
   - chunked / content-length / close-delimited 対応
 - 接続プール
