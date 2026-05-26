@@ -100,8 +100,8 @@ let bytes = response.encode()?;
 `&mut Self` を返す) も提供しています。
 
 - `add_header(name, value)` - ヘッダーを末尾に追加
-  - チェイン可能。名前は `'static str` リテラル (`"Host"` 等)、`HeaderName`、`Method` 値のいずれかを渡せる
-  - 動的入力は `HeaderName::new()` / `Method::new()` で構築した値を渡す
+  - チェイン可能。名前は `'static str` リテラル (`"Host"` 等) または `HeaderName` を渡せる
+  - 動的入力は `HeaderName::new()` で構築した値を渡す
 - `set_header(name, value)` - 同名 (case-insensitive) のヘッダーを全削除した上で新規追加
   - チェイン可能
 - `set_body(data)` / `clear_body()` - ボディの差し替え / クリア
@@ -443,7 +443,7 @@ loop {
 
 各サンプルは `decode_headers()` + `peek_body()` / `consume_body()` / `progress()` を組み合わせた **ストリーミング API の実装例** になっています。一括 `decode()` API ではなく、断片入力に対応した経路で実装されています。
 
-io_uring サンプル (`examples/http11_server_io_uring`) のみワークスペースから除外されています (Linux 専用かつ追加カーネル要件があるため)。それ以外の 3 サンプルはルートの `cargo` コマンドからそのまま実行できます。
+サンプルはルートの `cargo` コマンドからそのまま実行できます。
 
 ### http11_client
 
@@ -492,6 +492,7 @@ cargo run -p http11_server -- --port 8443 --tls --cert cert.pem --key key.pem
 - Keep-Alive 対応
   - タイムアウト 60 秒
   - 最大リクエスト数 1000
+- Graceful shutdown 対応
 - Accept-Encoding に基づく圧縮
   - 優先度: `zstd` > `br` > `gzip`
 - エンドポイント
@@ -518,6 +519,7 @@ curl http://localhost:8888/
 
 **機能:**
 
+- Graceful shutdown 対応
 - ストリーミング転送
   - chunked / content-length / close-delimited 対応
 - 接続プール
@@ -525,45 +527,6 @@ curl http://localhost:8888/
   - アイドル 60 秒 / 最大生存 300 秒
 - hop-by-hop ヘッダーの処理
 - HEAD リクエスト対応
-
-### http11_server_io_uring
-
-io_uring + kTLS を使った HTTPS サーバーの例です。Linux 専用です。
-
-ワークスペースから除外されているため、サブクレートのディレクトリへ移動するか `--manifest-path` を指定して実行する必要があります。
-
-```bash
-cargo run --manifest-path examples/http11_server_io_uring/Cargo.toml -- --cert cert.pem --key key.pem
-```
-
-**前提条件:**
-
-- Linux カーネル 6.7 以上
-  - io_uring setsockopt サポート
-- `CONFIG_TLS=y` または `CONFIG_TLS=m`
-  - `modprobe tls` でロード済み
-
-**オプション:**
-
-- `-p, --port <PORT>`: リッスンポート
-  - デフォルト: `8443`
-- `--cert <PATH>`: 証明書ファイル
-  - PEM 形式
-  - 必須
-- `--key <PATH>`: 秘密鍵ファイル
-  - PEM 形式
-  - 必須
-
-**機能:**
-
-- io_uring SQPOLL モード
-- kTLS (Kernel TLS) によるカーネルレベル暗号化
-- HEAD リクエスト対応
-  - RFC 9110 Section 9.3.2
-- Keep-Alive 対応
-  - 最大リクエスト数 1000
-- Accept-Encoding に基づく圧縮
-  - 優先度: `zstd` > `br` > `gzip`
 
 ## Agent Skills
 

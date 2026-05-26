@@ -1,11 +1,41 @@
+minimum_prek_version = "0.4.0"
 fail_fast = true
+
+# 生成物・参照 RFC 資料はフック対象外
+exclude = { glob = [
+  "target/**",
+  "refs/**",
+  "fuzz/artifacts/**",
+  "fuzz/corpus/**",
+  "fuzz/target/**",
+] }
+
+default_install_hook_types = ["pre-commit", "pre-push"]
+
+# pre-commit: 静的チェック + ユニットテスト (CI ci job と同等)
+# pre-push: ユニットテスト + e2e (curl / Docker が必要; CI e2e-test job と同等)
 
 [[repos]]
 repo = "builtin"
 hooks = [
-  { id = "trailing-whitespace" },
-  { id = "end-of-file-fixer" },
-  { id = "check-toml" },
+  { id = "trailing-whitespace", priority = 0 },
+  { id = "end-of-file-fixer", priority = 0 },
+  { id = "check-merge-conflict", priority = 0 },
+  { id = "detect-private-key", priority = 0 },
+  { id = "mixed-line-ending", priority = 0 },
+  { id = "check-case-conflict", priority = 0 },
+  { id = "check-symlinks", priority = 0 },
+  { id = "fix-byte-order-marker", priority = 0 },
+  { id = "check-yaml", priority = 0 },
+  { id = "check-toml", priority = 0 },
+  { id = "check-added-large-files", priority = 0, args = ["--maxkb=500"] },
+]
+
+[[repos]]
+repo = "meta"
+hooks = [
+  { id = "check-hooks-apply", priority = 5, files = "prek\\.toml$" },
+  { id = "check-useless-excludes", priority = 5, files = "prek\\.toml$" },
 ]
 
 [[repos]]
@@ -18,7 +48,8 @@ hooks = [
     language = "system",
     types = ["rust"],
     pass_filenames = false,
-    priority = 0,
+    require_serial = true,
+    priority = 10,
   },
   {
     id = "cargo-clippy",
@@ -27,15 +58,30 @@ hooks = [
     language = "system",
     types = ["rust"],
     pass_filenames = false,
-    priority = 10,
+    require_serial = true,
+    priority = 20,
   },
   {
     id = "cargo-test",
     name = "cargo test",
-    entry = "cargo test --workspace",
+    # CI の ci job と同じ除外 (curl / Docker を要する e2e は pre-push)
+    entry = "cargo test --workspace --exclude http11_client --exclude http11_server",
     language = "system",
     types = ["rust"],
     pass_filenames = false,
-    priority = 20,
+    require_serial = true,
+    priority = 30,
+    stages = ["pre-commit", "pre-push"],
+  },
+  {
+    id = "cargo-test-e2e",
+    name = "cargo test (e2e)",
+    entry = "cargo test -p http11_client -p http11_server",
+    language = "system",
+    types = ["rust"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 40,
+    stages = ["pre-push"],
   },
 ]

@@ -21,7 +21,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ## バージョン情報
 
 - crate 名: `shiguredo_http11`
-- バージョン: 2026.5.0
+- バージョン: 2026.6.0
 - Rust Edition: 2024
 - 最小 Rust バージョン: 1.88
 - ライセンス: Apache-2.0
@@ -150,7 +150,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 | `etag` | `EntityTag`, `ETagList` | RFC 9110 |
 | `expect` | `Expect` | RFC 9110 |
 | `host` | `Host` (IPv4, IPv6, IPv-future 対応) | RFC 9110 |
-| `multipart` | `MultipartParser` (`with_max_buffer_size`, `feed -> Result<(), MultipartError>`), `MultipartBuilder`, `Part`, `MultipartError` | RFC 7578 |
+| `multipart` | `MultipartParser` (`new(boundary) -> Result`, `with_max_buffer_size`, `feed -> Result<(), MultipartError>`), `MultipartBuilder` (`with_boundary(boundary) -> Result`), `Part`, `MultipartError` | RFC 7578 |
 | `range` | `Range`, `RangeSpec`, `ContentRange`, `AcceptRanges` | RFC 9110 |
 | `trailer` | `Trailer` (禁止フィールド検証) | RFC 9110, 9112 |
 | `upgrade` | `Upgrade` | RFC 9110 |

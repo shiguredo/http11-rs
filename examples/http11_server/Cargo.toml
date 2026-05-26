@@ -55,7 +55,7 @@ zstd = "0.13"
 
 [dev-dependencies]
 # 自己署名証明書を実行時生成 (fixture cert の期限切れを回避)
-rcgen = { version = "0.13", default-features = false, features = [
+rcgen = { version = "0.14", default-features = false, features = [
   # 暗号バックエンド (AGENTS.md ルール)
   "aws_lc_rs",
   # PEM シリアライズ

@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.6.0
+
+**リリース日**: 2026-05-26
+
 - [CHANGE] `MultipartParser::new` / `MultipartBuilder::with_boundary` に boundary 検証を追加し `Result` 返却に変更する
   - `try_new` / `try_with_boundary` を削除し、`new` / `with_boundary` に統合する
   - @voluntas
@@ -47,7 +51,7 @@
   - 空 / CRLF 注入 / NUL / コロン / 空白等の不正リテラルがコンパイルエラーになることを回帰テストで担保する
   - @voluntas
 - [ADD] HeaderName / Method / Scheme の構築時検査の PBT 整合性検証を追加する
-  - pbt/src/lib.rs に valid_* / invalid_* 戦略 6 種を追加する
+  - pbt/src/lib.rs に valid_*/ invalid_* 戦略 6 種を追加する
   - pbt/tests/prop_header_name.rs / prop_method.rs / prop_scheme.rs を新設する
   - @voluntas
 - [ADD] TryFrom / new() の受理集合一致を PBT で検証する
