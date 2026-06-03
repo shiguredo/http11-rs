@@ -342,6 +342,89 @@ proptest! {
 }
 
 // ========================================
+// ヘッダー個数・サイズ上限の PBT
+// ========================================
+
+proptest! {
+    // 同名ヘッダー (Cookie) を上限超で送ると TooManyHeaders になる
+    #[test]
+    fn prop_request_decoder_duplicate_cookie_counted(
+        header_count in 20..50usize
+    ) {
+        let limits = DecoderLimits {
+            max_headers_count: 10,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = RequestDecoder::with_limits(limits);
+        let headers = (0..header_count)
+            .map(|i| format!("Cookie: c{}=v", i))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", headers);
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        let is_too_many = matches!(result, Err(Error::TooManyHeaders { .. }));
+        prop_assert!(is_too_many, "TooManyHeaders を期待したが {:?} だった", result);
+    }
+}
+
+proptest! {
+    // 空値ヘッダー (`x0:` 相当) を上限超で送ると TooManyHeaders になる
+    #[test]
+    fn prop_request_decoder_empty_value_header_flood_counted(
+        header_count in 20..50usize
+    ) {
+        let limits = DecoderLimits {
+            max_headers_count: 10,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = RequestDecoder::with_limits(limits);
+        let headers = (0..header_count)
+            .map(|i| format!("x{}:", i))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", headers);
+        decoder.feed(data.as_bytes()).unwrap();
+        let result = decoder.decode_headers();
+        let is_too_many = matches!(result, Err(Error::TooManyHeaders { .. }));
+        prop_assert!(is_too_many, "TooManyHeaders を期待したが {:?} だった", result);
+    }
+}
+
+proptest! {
+    // デコード成功時、ヘッダー数は max_headers_count 以下、各ヘッダーの name+value は
+    // max_header_line_size 以下に収まる
+    #[test]
+    fn prop_request_decoded_header_memory_bounded(
+        header_count in 1..30usize,
+        value_len in 0..40usize,
+    ) {
+        let max_headers = 50;
+        let max_line = 128;
+        let limits = DecoderLimits {
+            max_headers_count: max_headers,
+            max_header_line_size: max_line,
+            ..DecoderLimits::default()
+        };
+        let mut decoder = RequestDecoder::with_limits(limits);
+        let value = "v".repeat(value_len);
+        let headers = (0..header_count)
+            .map(|i| format!("X-H{}: {}", i, value))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r\n\r\n", headers);
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        // 保持ヘッダー数は上限以下 (Host + header_count <= max_headers)
+        prop_assert!(head.headers().len() <= max_headers);
+        // 各ヘッダーの name+value バイト数は行サイズ上限以下
+        for (name, value) in head.headers() {
+            prop_assert!(name.as_str().len() + value.len() <= max_line);
+        }
+    }
+}
+
+// ========================================
 // 複数リクエスト PBT
 // ========================================
 

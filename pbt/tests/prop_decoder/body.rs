@@ -145,6 +145,39 @@ proptest! {
 }
 
 proptest! {
+    // トレーラーフィールドを上限超で送ると TooManyHeaders になる
+    // (トレーラーは `Trailer:` ヘッダーで申告したホワイトリストのみ受理される)
+    #[test]
+    fn prop_chunked_trailer_too_many_error(
+        trailer_count in 12..30usize
+    ) {
+        let limits = DecoderLimits {
+            max_headers_count: 10,
+            ..DecoderLimits::default()
+        };
+        let declared = (0..trailer_count)
+            .map(|i| format!("X-T{}", i))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let trailers = (0..trailer_count)
+            .map(|i| format!("X-T{}: v{}", i, i))
+            .collect::<Vec<_>>()
+            .join("\r\n");
+        let data = format!(
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: {}\r\n\r\n0\r\n{}\r\n\r\n",
+            declared, trailers
+        );
+        let mut decoder = ResponseDecoder::with_limits(limits);
+        decoder.feed(data.as_bytes()).unwrap();
+        decoder.decode_headers().unwrap().unwrap();
+        // トレーラー処理でカウント上限に達し TooManyHeaders になる
+        let result = decoder.progress();
+        let is_too_many = matches!(result, Err(Error::TooManyHeaders { .. }));
+        prop_assert!(is_too_many, "TooManyHeaders を期待したが {:?} だった", result);
+    }
+}
+
+proptest! {
     #[test]
     fn prop_chunked_multiple_chunks(
         chunk1 in proptest::collection::vec(any::<u8>(), 1..64),
