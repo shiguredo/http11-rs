@@ -183,6 +183,7 @@ cargo llvm-cov report
 
 - **良い設計のためには破壊的変更を積極的に行うこと**
 - RTSP/1.0 や RTSP/2.0 も利用できること
+- `Request` / `Response` / `RequestHead` / `ResponseHead` 間で API の一貫性を保つこと
 
 ### RFC について
 
@@ -197,6 +198,10 @@ cargo llvm-cov report
   - char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する (ABNF のオクテット表現を Unicode scalar に拡張解釈する)
   - CR / LF / NUL は引き続き reject する (RFC 9110 Section 5.5)
   - 送信側は US-ASCII を推奨、非 ASCII は RFC 8187 ext-value を使うこと
+
+### Proxy について
+
+- `examples/http11_reverse_proxy` を **お手本** とし、proxy 利用時の API 一貫性を常に意識すること
 
 ## サンプルについて
 
