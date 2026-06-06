@@ -16,8 +16,8 @@ use rustls::ClientConfig;
 use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, DecoderLimits, HeaderName, HttpHead, Method, Request, RequestDecoder,
-    Response, ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
+    BodyKind, BodyProgress, DecoderLimits, HeaderName, HttpHead, Request, RequestDecoder, Response,
+    ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -636,13 +636,7 @@ async fn handle_client(
         }
     }
 
-    // アップストリームへプロキシリクエストを作成
-    let mut upstream_request = Request::new(
-        Method::new(req_head.method().as_bytes()).expect("decoder-validated method"),
-        req_head.uri(),
-    )?;
-
-    // Connection ヘッダーに列挙されたヘッダー名を収集
+    // Connection ヘッダーに列挙されたヘッダー名を収集 (into_parts() 前に実行)
     let connection_headers: Vec<String> = req_head
         .headers()
         .iter()
@@ -656,20 +650,25 @@ async fn handle_client(
         })
         .collect();
 
+    // 全フィールドを消費して取り出す
+    // version は転送せず HTTP/1.1 固定 (RFC 9112 Section 2.3: 仲介者は自身の HTTP-version を送信 MUST)
+    let (method, uri, _version, headers) = req_head.into_parts();
+    let mut upstream_request = Request::new(method, uri)?;
+
     // ヘッダーをコピー (hop-by-hop ヘッダー、Host、Content-Length は除外)
     // Content-Length は Transfer-Encoding 除外後に不整合が生じる可能性があるため除外し、
     // encoder の自動設定に任せる (RFC 9112 Section 6.3 対応)
-    for (name, value) in req_head.headers() {
+    for (name, value) in headers {
         if name == "host" {
             continue;
         }
         if name == "content-length" {
             continue;
         }
-        if is_hop_by_hop_header(name, &connection_headers) {
+        if is_hop_by_hop_header(&name, &connection_headers) {
             continue;
         }
-        upstream_request.add_header(name.clone(), value)?;
+        upstream_request.add_header(name, value)?;
     }
 
     upstream_request.add_header("Host", upstream_host_header)?;
@@ -837,14 +836,7 @@ async fn stream_response_on_connection(
     }
 
     // クライアントへレスポンスヘッダーを送信
-    // 注: upstream の reason_phrase が空文字列の場合 (RFC 9112 Section 4 の reason-phrase absent)、
-    // Response::new は Err を返すため from_raw_parts 経路に切り替える必要があるが、
-    // 本サンプルでは upstream が常に reason_phrase を送る前提で `Response::new` を使う。
-    // 任意の upstream を受け入れる本格的な proxy では、decoder 経由で得た raw_parts を
-    // そのまま再構築する経路 (本 issue では公開されていない) を将来検討する。
-    let mut response_for_headers =
-        Response::new(resp_head.status_code(), resp_head.reason_phrase())?;
-
+    // Connection ヘッダーに列挙されたヘッダー名を収集 (into_parts() 前に実行)
     let connection_headers: Vec<String> = resp_head
         .headers()
         .iter()
@@ -869,15 +861,20 @@ async fn stream_response_on_connection(
         _ => None,
     };
 
-    for (name, value) in resp_head.headers() {
-        if is_hop_by_hop_header(name, &connection_headers) {
+    // 全フィールドを消費して取り出す
+    // version は転送せず HTTP/1.1 固定 (RFC 9112 Section 2.3: 仲介者は自身の HTTP-version を送信 MUST)
+    let (_version, status_code, reason_phrase, headers) = resp_head.into_parts();
+    let mut response_for_headers = Response::new(status_code, reason_phrase)?;
+
+    for (name, value) in headers {
+        if is_hop_by_hop_header(&name, &connection_headers) {
             continue;
         }
         // Content-Length と Transfer-Encoding は body_kind に基づいて後で設定する
         if name == "content-length" || name == "transfer-encoding" {
             continue;
         }
-        response_for_headers.add_header(name.clone(), value)?;
+        response_for_headers.add_header(name, value)?;
     }
 
     if let Some(len) = content_length {

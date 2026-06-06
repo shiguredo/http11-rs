@@ -314,3 +314,10 @@ path = "fuzz_targets/fuzz_encode_headers.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_decoder_head_into_parts"
+path = "fuzz_targets/fuzz_decoder_head_into_parts.rs"
+test = false
+doc = false
+bench = false
