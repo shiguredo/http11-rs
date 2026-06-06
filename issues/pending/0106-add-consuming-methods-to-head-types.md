@@ -8,7 +8,7 @@ Pending: 2026-06-06
 
 ## pending 理由
 
-実用上のパフォーマンス改善は誤差レベル。クローン対象は数バイトの ASCII 文字列であり、既存の回避策 (`Method::new()` / `HeaderName::new()`) で十分動作する。API 設計の美学の問題であり、優先度を下げて保留とする。
+AGENTS.md で `examples/http11_reverse_proxy` をお手本とし API 一貫性を重視する方針が明記された。本 issue は proxy 実装上、`Method::new()` + `name.clone()` の回避策で動作はするが、Head 型が所有する値を取り出せない API ギャップは proxy コード (`main.rs:840-844`) でも課題として認識されている。実用上の緊急性は低いが、proxy のお手本としての完成度を上げるために検討を継続する。
 
 ## 目的
 
