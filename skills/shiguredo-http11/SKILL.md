@@ -70,8 +70,8 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 |----|------|-------------|
 | `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()`, `is_tunnel()`, `take_remaining()` (CONNECT 用) |
 | `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
-| `RequestHead` | デコード済みリクエストヘッダー | `method`, `uri`, `version`, `headers` |
-| `ResponseHead` | デコード済みレスポンスヘッダー | `version`, `status_code`, `reason_phrase`, `headers` (+ `status_class()`) |
+| `RequestHead` | デコード済みリクエストヘッダー | `new(Method, uri)` (Result), `with_version(Method, uri, version)` (Result), `header(HeaderName, value)` (Result, builder), `add_header(HeaderName, value)` (Result, mutator), `method()` / `uri()` / `version()` / `headers()` (参照 getter), `into_method()` / `into_uri()` / `into_version()` / `into_headers()` / `into_parts()` (消費メソッド) |
+| `ResponseHead` | デコード済みレスポンスヘッダー | `new(status_code, reason_phrase)` (Result), `with_version(version, status_code, reason_phrase)` (Result), `header(HeaderName, value)` (Result, builder), `add_header(HeaderName, value)` (Result, mutator), `status_code()` / `reason_phrase()` / `version()` / `headers()` / `status_class()` (参照 getter), `into_version()` / `into_reason_phrase()` / `into_headers()` / `into_parts()` (消費メソッド) |
 | `HttpHead` | ヘッダー操作トレイト (`Request` / `Response` / `RequestHead` / `ResponseHead` が実装) | `version()`, `headers()`, `get_header()`, `is_keep_alive()`, `is_chunked()` |
 | `request_target::RequestTargetForm` | request-target 形式 (encoder/decoder で共通) | `Origin`, `Absolute`, `Authority`, `Asterisk` |
 
