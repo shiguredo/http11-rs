@@ -2,11 +2,13 @@
 
 use proptest::prelude::*;
 use shiguredo_http11::{
-    BodyKind, HeaderName, HttpHead, RequestDecoder, ResponseDecoder, ResponseHead, StatusClass,
+    BodyKind, HeaderName, HttpHead, Request, RequestDecoder, Response, ResponseDecoder,
+    ResponseHead, StatusClass,
 };
 
 use super::{
-    http_method, invalid_header_name_char, transfer_encoding_token, valid_header_name_special_char,
+    http_method, http_uri, invalid_header_name_char, reason_phrase, status_code,
+    transfer_encoding_token, valid_header_name_special_char,
 };
 
 /// PBT 用に `ResponseHead` を直接構築するヘルパー
@@ -854,5 +856,246 @@ proptest! {
         decoder.feed(data.as_bytes()).unwrap();
         let (head, _) = decoder.decode_headers().unwrap().unwrap();
         prop_assert_eq!(head.version(), version);
+    }
+}
+
+// ========================================
+// into_parts() ラウンドトリップ PBT
+// ========================================
+
+proptest! {
+    /// RequestHead → into_parts() → Request::with_version() → encode_headers() → decode → 一致
+    #[test]
+    fn prop_request_head_into_parts_roundtrip(
+        method in http_method(),
+        uri in http_uri(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+        extra_header_count in 0..3usize,
+    ) {
+        let mut request_line = format!("{} {} {}\r\nHost: localhost\r\n", method.as_str(), uri, version);
+        for _ in 0..extra_header_count {
+            request_line.push_str("X-Custom: value\r\n");
+        }
+        request_line.push_str("\r\n");
+
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(request_line.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_method = head.method().to_string();
+        let orig_uri = head.uri().to_string();
+        let orig_version = head.version().to_string();
+        let orig_headers: Vec<_> = head.headers().to_vec();
+
+        let (method, uri, version, headers) = head.into_parts();
+        let mut request = Request::with_version(method, uri, version)?;
+        for (name, value) in headers {
+            request.add_header(name, value)?;
+        }
+
+        let encoded = request.encode_headers()?;
+        let mut decoder2 = RequestDecoder::new();
+        decoder2.feed(&encoded).unwrap();
+        let (head2, _) = decoder2.decode_headers().unwrap().unwrap();
+
+        prop_assert_eq!(head2.method(), orig_method.as_str());
+        prop_assert_eq!(head2.uri(), orig_uri.as_str());
+        prop_assert_eq!(head2.version(), orig_version.as_str());
+        prop_assert_eq!(head2.headers().len(), orig_headers.len());
+        for ((n1, v1), (n2, v2)) in orig_headers.iter().zip(head2.headers().iter()) {
+            prop_assert_eq!(n1, n2);
+            prop_assert_eq!(v1, v2);
+        }
+    }
+}
+
+proptest! {
+    /// ResponseHead → into_parts() → Response::with_version() → encode_headers() → decode → 一致
+    #[test]
+    fn prop_response_head_into_parts_roundtrip(
+        status in status_code(),
+        reason in reason_phrase(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+        extra_header_count in 0..3usize,
+    ) {
+        let mut status_line = format!("{} {} {}\r\n", version, status, reason);
+        for _ in 0..extra_header_count {
+            status_line.push_str("X-Custom: value\r\n");
+        }
+        status_line.push_str("\r\n");
+
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(status_line.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_version = head.version().to_string();
+        let orig_status_code = head.status_code();
+        let orig_reason = head.reason_phrase().to_string();
+        let orig_headers: Vec<_> = head.headers().to_vec();
+
+        let (version, status_code, reason_phrase, headers) = head.into_parts();
+        let mut response = Response::with_version(version, status_code, reason_phrase)?;
+        for (name, value) in headers {
+            response.add_header(name, value)?;
+        }
+
+        let encoded = response.encode_headers()?;
+        let mut decoder2 = ResponseDecoder::new();
+        decoder2.feed(&encoded).unwrap();
+        let (head2, _) = decoder2.decode_headers().unwrap().unwrap();
+
+        prop_assert_eq!(head2.version(), orig_version.as_str());
+        prop_assert_eq!(head2.status_code(), orig_status_code);
+        prop_assert_eq!(head2.reason_phrase(), orig_reason.as_str());
+        prop_assert_eq!(head2.headers().len(), orig_headers.len());
+        for ((n1, v1), (n2, v2)) in orig_headers.iter().zip(head2.headers().iter()) {
+            prop_assert_eq!(n1, n2);
+            prop_assert_eq!(v1, v2);
+        }
+    }
+}
+
+// ========================================
+// 個別 into_xxx() メソッドの PBT
+// ========================================
+
+proptest! {
+    /// RequestHead の個別 into_xxx() メソッドが各フィールドを正しく返す
+    #[test]
+    fn prop_request_head_into_method(
+        method in http_method(),
+        uri in http_uri(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_method = head.method().to_string();
+        let m = head.into_method();
+        prop_assert_eq!(m.as_str(), orig_method.as_str());
+    }
+}
+
+proptest! {
+    /// RequestHead の into_uri() が URI を正しく返す
+    #[test]
+    fn prop_request_head_into_uri(
+        method in http_method(),
+        uri in http_uri(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_uri = head.uri().to_string();
+        let u = head.into_uri();
+        prop_assert_eq!(u, orig_uri);
+    }
+}
+
+proptest! {
+    /// RequestHead の into_version() がバージョンを正しく返す
+    #[test]
+    fn prop_request_head_into_version(
+        method in http_method(),
+        uri in http_uri(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_version = head.version().to_string();
+        let v = head.into_version();
+        prop_assert_eq!(v, orig_version);
+    }
+}
+
+proptest! {
+    /// RequestHead の into_headers() がヘッダーを正しく返す
+    #[test]
+    fn prop_request_head_into_headers(
+        method in http_method(),
+        uri in http_uri(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
+        let mut decoder = RequestDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_headers: Vec<_> = head.headers().to_vec();
+        let h = head.into_headers();
+        prop_assert_eq!(h.len(), orig_headers.len());
+        for ((n1, v1), (n2, v2)) in orig_headers.iter().zip(h.iter()) {
+            prop_assert_eq!(n1, n2);
+            prop_assert_eq!(v1, v2);
+        }
+    }
+}
+
+proptest! {
+    /// ResponseHead の個別 into_xxx() メソッドが各フィールドを正しく返す
+    #[test]
+    fn prop_response_head_into_version(
+        status in status_code(),
+        reason in reason_phrase(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\n\r\n", version, status, reason);
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_version = head.version().to_string();
+        let v = head.into_version();
+        prop_assert_eq!(v, orig_version);
+    }
+}
+
+proptest! {
+    /// ResponseHead の into_reason_phrase() が reason_phrase を正しく返す
+    #[test]
+    fn prop_response_head_into_reason_phrase(
+        status in status_code(),
+        reason in reason_phrase(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\n\r\n", version, status, reason);
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_reason = head.reason_phrase().to_string();
+        let r = head.into_reason_phrase();
+        prop_assert_eq!(r, orig_reason);
+    }
+}
+
+proptest! {
+    /// ResponseHead の into_headers() がヘッダーを正しく返す
+    #[test]
+    fn prop_response_head_into_headers(
+        status in status_code(),
+        reason in reason_phrase(),
+        version in prop_oneof![Just("HTTP/1.0"), Just("HTTP/1.1")],
+    ) {
+        let data = format!("{} {} {}\r\n\r\n", version, status, reason);
+        let mut decoder = ResponseDecoder::new();
+        decoder.feed(data.as_bytes()).unwrap();
+        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+
+        let orig_headers: Vec<_> = head.headers().to_vec();
+        let h = head.into_headers();
+        prop_assert_eq!(h.len(), orig_headers.len());
+        for ((n1, v1), (n2, v2)) in orig_headers.iter().zip(h.iter()) {
+            prop_assert_eq!(n1, n2);
+            prop_assert_eq!(v1, v2);
+        }
     }
 }

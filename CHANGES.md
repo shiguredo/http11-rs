@@ -11,6 +11,9 @@
 
 ## develop
 
+- [ADD] RequestHead / ResponseHead に所有権を消費してフィールドを取り出す into_xxx() メソッドと into_parts() メソッドを追加する
+  - @voluntas
+
 ### misc
 
 - [ADD] ヘッダー個数・サイズ上限によるメモリ枯渇防御を検証する PBT を追加する

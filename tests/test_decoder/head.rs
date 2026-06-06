@@ -420,3 +420,48 @@ mod http_head_content_length {
         assert_eq!(res.content_length().unwrap(), Some(100));
     }
 }
+
+// ========================================
+// RequestHead / ResponseHead 消費メソッドのテスト
+// ========================================
+
+/// obs-text (0x80-0xFF) を含む URI を into_parts() で取り出して
+/// Request::with_version() に渡すと Err が返ることを検証する
+#[test]
+fn test_request_head_into_parts_obs_text_uri_error() {
+    use shiguredo_http11::{EncodeError, Method, Request, RequestHead};
+
+    // is_valid_request_target は obs-text を許容するため
+    // RequestHead::with_version は U+0080 を含む URI を受理する
+    let head = RequestHead::with_version(Method::GET, "/path\u{0080}", "HTTP/1.1")
+        .expect("obs-text URI は RequestHead 構築時に許容される");
+
+    let (method, uri, _version, _headers) = head.into_parts();
+
+    // Request::with_version は送信側ポリシーとして obs-text を拒否する
+    let result = Request::with_version(method, uri, "HTTP/1.1");
+    match result {
+        Err(EncodeError::InvalidRequestTarget { .. }) => {}
+        other => panic!("InvalidRequestTarget を期待したが {:?} が返った", other),
+    }
+}
+
+/// 空 reason-phrase を into_parts() で取り出して
+/// Response::new() に渡すと Err が返ることを検証する
+#[test]
+fn test_response_head_into_parts_empty_reason_phrase_error() {
+    use shiguredo_http11::{EncodeError, Response, ResponseHead};
+
+    // ResponseHead::new は空 reason-phrase を許容する (RFC 9112 Section 4 の absent 扱い)
+    let head =
+        ResponseHead::new(200, "").expect("空 reason-phrase は ResponseHead 構築時に許容される");
+
+    let (_version, status_code, reason_phrase, _headers) = head.into_parts();
+
+    // Response::new は送信側ポリシーとして空 reason-phrase を拒否する
+    let result = Response::new(status_code, reason_phrase);
+    match result {
+        Err(EncodeError::InvalidReasonPhrase { .. }) => {}
+        other => panic!("InvalidReasonPhrase を期待したが {:?} が返った", other),
+    }
+}

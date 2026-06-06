@@ -1,9 +1,11 @@
 # RequestHead / ResponseHead に消費メソッドを追加する
 
 Created: 2026-06-06
+Completed: 2026-06-06
 Priority: Medium
 Model: deepseek-v4-pro
 Polished: 2026-06-06
+Branch: feature/add-head-consuming-methods
 
 ## 目的
 
@@ -143,8 +145,8 @@ for (name, value) in req_head.headers() {
 変更後:
 
 ```rust
-let (method, uri, version, headers) = req_head.into_parts();
-let mut upstream_request = Request::with_version(method, uri, version)?;
+let (method, uri, _version, headers) = req_head.into_parts();
+let mut upstream_request = Request::new(method, uri)?;
 
 for (name, value) in headers {
     // ...
@@ -152,7 +154,7 @@ for (name, value) in headers {
 }
 ```
 
-変更後はクライアントの HTTP バージョン（例: `HTTP/1.0`）がそのまま upstream に転送される。これは RFC 9112 Section 2.3（proxy は受信した HTTP-version を転送先メッセージの version として転送 MUST。リクエスト転送時は request-line version、レスポンス転送時は status-line version）に準拠する正しい動作変更である。
+変更後も upstream リクエストの HTTP-version は HTTP/1.1 固定のまま変わらない。これは RFC 9112 Section 2.3（仲介者は自身の HTTP-version を転送先メッセージに送信 MUST。受信した HTTP-version を盲目的に転送してはならない）に準拠する。
 
 #### ResponseHead → client Response
 
@@ -172,8 +174,8 @@ for (name, value) in head.headers() {
 変更後:
 
 ```rust
-let (version, status_code, reason_phrase, headers) = head.into_parts();
-let mut response = Response::with_version(version, status_code, reason_phrase)?;
+let (_version, status_code, reason_phrase, headers) = head.into_parts();
+let mut response = Response::new(status_code, reason_phrase)?;
 
 for (name, value) in headers {
     if is_hop_by_hop_header(&name, &connection_headers) {
@@ -245,3 +247,12 @@ for (name, value) in headers {
   - [ADD] RequestHead / ResponseHead に所有権を消費してフィールドを取り出す into_xxx() メソッドと into_parts() メソッドを追加する
     - @voluntas
   ```
+
+## 解決方法
+
+- `src/decoder/head.rs` に RequestHead 用の `into_method()`, `into_uri()`, `into_version()`, `into_headers()`, `into_parts()` と ResponseHead 用の `into_version()`, `into_reason_phrase()`, `into_headers()`, `into_parts()` を追加した
+- `examples/http11_reverse_proxy/src/main.rs` を `into_parts()` を使う形に更新した。method / URI / headers はゼロコピーで移譲し、version は HTTP/1.1 固定（RFC 9112 Section 2.3 準拠）とした
+- `pbt/tests/prop_decoder/head.rs` に into_parts() ラウンドトリップ PBT と個別 into_xxx() PBT を追加した
+- `tests/test_decoder/head.rs` に obs-text URI と空 reason-phrase のエラーパステストを追加した
+- `fuzz/fuzz_targets/fuzz_decoder_head_into_parts.rs` を新設し into_parts() 経路のパニック安全性を検証するようにした
+- `CHANGES.md` の `## develop` に `[ADD]` エントリを追加した

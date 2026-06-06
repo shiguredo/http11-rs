@@ -269,6 +269,38 @@ impl RequestHead {
         &self.headers
     }
 
+    /// 所有している Method を消費して取り出す
+    #[must_use]
+    pub fn into_method(self) -> Method {
+        self.method
+    }
+
+    /// 所有している URI を消費して取り出す
+    #[must_use]
+    pub fn into_uri(self) -> String {
+        self.uri
+    }
+
+    /// 所有している HTTP バージョンを消費して取り出す
+    #[must_use]
+    pub fn into_version(self) -> String {
+        self.version
+    }
+
+    /// 所有しているヘッダーを消費して取り出す
+    #[must_use]
+    pub fn into_headers(self) -> Vec<(HeaderName, String)> {
+        self.headers
+    }
+
+    /// 全フィールドを消費してタプルで取り出す
+    ///
+    /// 戻り値: `(method: Method, uri: String, version: String, headers: Vec<(HeaderName, String)>)`
+    #[must_use]
+    pub fn into_parts(self) -> (Method, String, String, Vec<(HeaderName, String)>) {
+        (self.method, self.uri, self.version, self.headers)
+    }
+
     /// `RequestDecoder` 内部からの構築用 (バリデーションスキップ)
     ///
     /// `RequestDecoder::decode_headers` は start-line / ヘッダーをデコード時に
@@ -443,6 +475,37 @@ impl ResponseHead {
     #[must_use]
     pub fn headers(&self) -> &[(HeaderName, String)] {
         &self.headers
+    }
+
+    /// 所有している HTTP バージョンを消費して取り出す
+    #[must_use]
+    pub fn into_version(self) -> String {
+        self.version
+    }
+
+    /// 所有している reason-phrase を消費して取り出す
+    #[must_use]
+    pub fn into_reason_phrase(self) -> String {
+        self.reason_phrase
+    }
+
+    /// 所有しているヘッダーを消費して取り出す
+    #[must_use]
+    pub fn into_headers(self) -> Vec<(HeaderName, String)> {
+        self.headers
+    }
+
+    /// 全フィールドを消費してタプルで取り出す
+    ///
+    /// 戻り値: `(version: String, status_code: u16, reason_phrase: String, headers: Vec<(HeaderName, String)>)`
+    #[must_use]
+    pub fn into_parts(self) -> (String, u16, String, Vec<(HeaderName, String)>) {
+        (
+            self.version,
+            self.status_code,
+            self.reason_phrase,
+            self.headers,
+        )
     }
 
     /// `ResponseDecoder` 内部からの構築用 (バリデーションスキップ)
