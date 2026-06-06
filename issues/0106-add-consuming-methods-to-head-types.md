@@ -4,11 +4,6 @@ Created: 2026-06-06
 Priority: Medium
 Model: deepseek-v4-pro
 Polished: 2026-06-06
-Pending: 2026-06-06
-
-## pending 理由
-
-AGENTS.md で `examples/http11_reverse_proxy` をお手本とし API 一貫性を重視する方針が明記された。本 issue は proxy 実装上、`Method::new()` + `name.clone()` の回避策で動作はするが、Head 型が所有する値を取り出せない API ギャップは proxy コード (`main.rs:840-844`) でも課題として認識されている。実用上の緊急性は低いが、proxy のお手本としての完成度を上げるために検討を継続する。
 
 ## 目的
 
