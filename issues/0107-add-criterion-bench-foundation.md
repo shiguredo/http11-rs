@@ -5,7 +5,7 @@
 - Completed: {YYYY-MM-DD}
 - Model: Opus 4.7
 - Branch: feature/add-criterion-bench-foundation
-- Polished: {YYYY-MM-DD}
+- Polished: 2026-06-13
 
 ## 目的
 
@@ -62,7 +62,9 @@ Medium とする。
   - 対象: `src/decoder/head.rs:361` `ResponseHead`
   - 入力パターン: `200 OK` 最小 / 多ヘッダ / `Content-Length` あり
 - field-value パース (obs-text / quoted-string を含む経路)
-  - 対象: CLAUDE.md で言及している obs-text ポリシー (`char_indices()` ベース、Unicode scalar `U+0080..=U+10FFFF` を opaque として保持) の経路
+  - 対象: `src/validate.rs` の `is_valid_field_value` (field-value 全体の許容文字検証) と `parse_quoted_string` (quoted-string 内の obs-text / quoted-pair 経路) を利用する公開ヘッダパース API
+  - `is_valid_field_value` / `parse_quoted_string` は `pub(crate)` なため、独立クレート `bench` から直接呼び出すことはできない。代わりに `Content-Type::parse` (`src/content_type.rs`)、`Accept::parse` (`src/accept.rs`) 等、内部でこれらを利用する公開 API をベンチ対象とする
+  - obs-text は `char_indices()` ベースで Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) を opaque として保持する (CLAUDE.md / AGENTS.md)
   - 入力パターン: ASCII のみ / obs-text を含む / quoted-string を含む
 
 ### 入力データ
@@ -89,22 +91,24 @@ Medium とする。
 - 以下の microbench が動作する
   - `RequestHead` デコード (最小ヘッダ / 多ヘッダ / chunked)
   - `ResponseHead` デコード (最小 / 多ヘッダ / Content-Length あり)
-  - field-value パース (ASCII / obs-text / quoted-string)
+  - field-value パース (ASCII / obs-text / quoted-string) (`Content-Type::parse` / `Accept::parse` 等の公開 API を利用)
 - `Makefile` に `bench` ターゲットが追加され、上記が走る
-- `CHANGES.md` の develop セクションに本対応の追記がある (種別は `shiguredo-changelog` スキルに従う)
+- `CHANGES.md` の develop セクションに本対応を追記する (種別は `[ADD]`、`shiguredo-changelog` スキルに従う。例: 「criterion を用いたベンチマーク基盤を追加する」)
 
 ## 解決方法
 
 1. `bench/Cargo.toml` を作成する
    - `name = "bench"`、`version = "0.0.0"`、`publish = false`、`edition.workspace = true`、`rust-version.workspace = true`
    - `[dependencies]` に `criterion = { version = "0.5", features = ["html_reports"] }`、`shiguredo_http11.workspace = true`
-   - 各 bench を `[[bench]] name = "..." harness = false` で登録する
+   - 各 bench を `[[bench]] name = "..." path = "benches/<file>.rs" harness = false` で登録する
+     - 例: `[[bench]] name = "decode_request_head" path = "benches/decode_request_head.rs" harness = false`
 2. `bench/benches/` を作成し、以下のファイルを追加する
    - `bench/benches/decode_request_head.rs`
    - `bench/benches/decode_response_head.rs`
    - `bench/benches/parse_field_value.rs`
 3. `bench/inputs/` を作成し、各ベンチで使う RFC 準拠の固定入力をテキストファイルとして配置する
 4. 各 bench は `include_str!` または `include_bytes!` で入力を読み込み、`criterion::black_box` を経由してパースを呼び出す
+   - `parse_field_value.rs` では `Content-Type::parse` / `Accept::parse` 等、内部で `validate::is_valid_field_value` / `validate::parse_quoted_string` を利用する公開 API を呼び出す
 5. ルート `Cargo.toml` の `[workspace] members` に `bench` を追加する
-6. `Makefile` に `bench` ターゲットを追加する (`cargo bench -p bench`)
+6. `Makefile` の `.PHONY` に `bench` を追加し、`bench` ターゲットを追加する (`cargo bench -p bench`)
 7. `CHANGES.md` の develop セクションに追記する (`shiguredo-changelog` 規約に従う)
