@@ -5,7 +5,7 @@
 - Completed: {YYYY-MM-DD}
 - Model: Kimi K2.7 Code
 - Branch: feature/refactor-requesthead-responsehead-string-api
-- Polished: 2026-06-13
+- Polished: 2026-06-16
 
 ## 目的
 
@@ -38,6 +38,10 @@ Medium とする。`ResponseHead::new` / `with_version` の `reason_phrase` や 
 4. バリデーション前に `.into()` して所有権を取得するため、無効な入力でもアロケーションが発生する。これは `Request` / `Response` 側と同じトレードオフである。
 5. `Cow` 借用時のゼロコピーバリデーションは本 issue では行わない。`impl Into<String>` に統一することで API 一貫性を優先する。
 
+6. 0108 (`decoder-obs-text-utf8-forced-parsing`) / 0116 (`http-version-validation-too-lenient`) との関係: 0108 は decoder 内部の `start_line` フィールド構造変更、0116 は HTTP-version 検証関数 (`is_valid_http_version`) の新設で、いずれも本 issue の引数型変更とは **独立**。本 issue は引数型のみを `&str` → `impl Into<String>` に変える純粋なシグネチャ変更であり、検証ロジックは既存のまま流用する。3 issue の間でマージ順序の制約はない。
+
+7. `add_header` / `header` のシグネチャでは `name` が `impl TryInto<HeaderName, Error: Into<EncodeError>>` (closed/0091 で導入)、`value` が `impl Into<String>` (本 issue で導入) の **TryInto / Into 混在** になる。これは `Request::add_header` / `Response::add_header` の既存パターンと一致しており **意図的**。`name` 側は token 制約を伴うバリデーション (TryInto 経由のエラー)、`value` 側は文字列保持 (Into<String> でムーブ受け取り) という責務の差を反映した形式。
+
 ## 完了条件
 
 - `RequestHead::new` の `uri`、および `RequestHead::with_version` の `uri` / `version` を `impl Into<String>` に変更すること。
@@ -48,9 +52,13 @@ Medium とする。`ResponseHead::new` / `with_version` の `reason_phrase` や 
   - 既存の `&str` リテラルからの呼び出し
   - 所有済み `String` からの呼び出し
   - `Cow<'_, str>` からの呼び出し
-- `String` を渡した際に不要なクローンが発生しないこと（ムーブで受け取る）。
-- `tests/test_decoder/head.rs` に、上記の型からの構築テストを追加すること。
-- `CHANGES.md` に本変更を記載すること。
+- `String` を渡した際に不要なクローンが発生しないこと (ムーブで受け取る)。
+- エラーパス (`EncodeError::Invalid*` 構築箇所) でも `.into()` 後の `String` をムーブで構築し、不要 clone を残さないこと。
+- 各メソッドの doc comment に「バリデーション前に `.into()` して所有権を取得するため、無効な入力でもアロケーションが発生する」トレードオフを明記すること (Request / Response 側の既存 doc comment 形式を踏襲)。
+- 0108 (decoder obs-text) / 0116 (HTTP-version 厳格化) と本 issue は独立 (引数型のみ変更、検証関数・decoder 内部状態は変更しない) であることを設計方針節に明示すること。
+- `tests/test_decoder/head.rs` に、上記の型 (`&str` / `String` / `Cow<'_, str>`) からの構築テストを追加すること。空文字列 (`""`) を `value` に渡した `add_header` / `header` のテストも含める (`is_valid_field_value("")` は `true` を返す現状仕様の回帰防止)。
+- `CHANGES.md` の `## develop` セクションに以下の `[CHANGE]` エントリを `[ADD]` の下、`### misc` の上に追加すること。`impl Into<String>` 化は呼出側互換性が高いが、ジェネリック化で型推論が壊れる呼出パターンがあり得るため `[CHANGE]` 種別が妥当。
+  - `[CHANGE] RequestHead / ResponseHead の new / with_version / header / add_header の文字列引数を &str から impl Into<String> に変更し、Request / Response 側の API と一貫させる`
 
 ## 解決方法
 

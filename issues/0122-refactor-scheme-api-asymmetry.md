@@ -5,7 +5,7 @@
 - Completed: {YYYY-MM-DD}
 - Model: Kimi K2.7 Code
 - Branch: feature/refactor-scheme-api-asymmetry
-- Polished: 2026-06-13
+- Polished: 2026-06-16
 
 ## 目的
 
@@ -17,11 +17,11 @@ Medium とする。`Method` / `HeaderName` には存在する `'static str` リ�
 
 ## 現状
 
-- `src/uri.rs:1070`: `Scheme` 定義。
-- `src/uri.rs:1073-1083`: `SchemeError` は `Empty` / `InvalidFirstByte { byte }` / `InvalidByte { byte, position }` を持ち、`input` フィールドがない。
+- `src/uri.rs:1071`: `Scheme` 定義。
+- `src/uri.rs:1076-1083`: `SchemeError` は `Empty` / `InvalidFirstByte { byte }` / `InvalidByte { byte, position }` を持ち、`input` フィールドがない。`#[non_exhaustive]` 属性付きで保護されている。
 - `src/uri.rs:1085`: `SchemeError` は `core::error::Error` / `Clone` / `PartialEq` / `Eq` を実装していない。
 - `src/uri.rs:1116`: `Scheme::new()` は `SchemeError` を返すが、原因入力を保持しない。
-- `src/uri.rs:1173`: `Scheme::from_static()` は `const fn` として提供されている。
+- `src/uri.rs:1173`: `Scheme::from_static()` は `const fn` として提供されている。compile_fail doctest は既に 3 件存在 (`L1155-1172` 付近)。
 - `src/uri.rs:1191` / `src/uri.rs:1196`: `Scheme` は `as_bytes()` / `as_str()` を持つ。
 - `src/uri.rs:1202-1216`: `Scheme` は case-insensitive な `PartialEq` / `Eq` / `Hash` を実装済み。
 - `src/uri.rs:1230`: `Scheme` は `Display` を実装済み。
@@ -34,16 +34,16 @@ Medium とする。`Method` / `HeaderName` には存在する `'static str` リ�
 ## 設計方針
 
 1. `SchemeError` の名前は他の構築型と同じく `SchemeError` のままとする。`InvalidScheme` は `UriError::InvalidScheme` などと混同しやすく、他の `XxxError` 命名とも不一致である。
-2. `SchemeError` のバリアントを `MethodError` / `HeaderNameError` と同じ形状に統一する。`InvalidFirstByte` は先頭バイト制約も `InvalidByte { byte, position: 0, input }` で表現できるため削除し、`Empty { input }` / `InvalidByte { byte, position, input }` とする。
+2. `SchemeError` のバリアントを `MethodError` / `HeaderNameError` と同じ形状に統一する。`InvalidFirstByte` は先頭バイト制約も `InvalidByte { byte, position: 0, input }` で表現できるため削除し、`Empty { input }` / `InvalidByte { byte, position, input }` とする。`Display` 実装も `MethodError` / `HeaderNameError` と同じフォーマットを共有し、位置 0 と位置 N を区別せず単一フォーマットで表示する (closed/0091 で確立された他 2 型の Display パターンを踏襲)。
 3. `SchemeError` に `input()` / `into_input()` を追加し、`Clone` / `PartialEq` / `Eq` / `core::error::Error` を実装する。
-4. `Scheme` に `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` を実装する。成功時は `Cow::Borrowed` を利用する。
+4. `Scheme` に `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` を実装する。成功時は `Cow::Borrowed` を利用する。戻り型は `Result<Self, SchemeError>` で、`Method::try_from(&'static str) -> Result<Self, MethodError>` / `HeaderName::try_from(...) -> Result<Self, HeaderNameError>` と同じ対称形をとる。
 5. `Scheme` に `From<Scheme> for String` を実装する。
-6. `Scheme::new()` のエラー生成時に入力文字列を保持する。
+6. `Scheme::new()` のエラー生成時に入力文字列を `input: String` で保持する。`Scheme::new(impl AsRef<[u8]>)` の現状シグネチャを維持しつつ、エラー生成時のみ `String::from_utf8_lossy(input.as_ref()).into_owned()` で `String` 化する。`MethodError` / `HeaderNameError` も同じく `input: String` 型を採用しており、API 対称性の観点で `String` 統一を選ぶ (`Vec<u8>` 等のバイト列保持は採用しない、3 型で型を揃えるため)。
 7. `Scheme` のドキュメントコメントに `Method` / `HeaderName` と同様の構築経路表と、非 `'static` な `&str` がコンパイルエラーになることの説明を追加する。
 
 ## 完了条件
 
-- `src/uri.rs:1073-1083` の `SchemeError` が `Empty { input }` / `InvalidByte { byte, position, input }` のみを持ち、`input()` / `into_input()`、`Clone` / `PartialEq` / `Eq` / `core::error::Error` を実装すること。
+- `src/uri.rs:1076-1083` の `SchemeError` が `Empty { input }` / `InvalidByte { byte, position, input }` のみを持ち、`input()` / `into_input()`、`Clone` / `PartialEq` / `Eq` / `core::error::Error` を実装すること。`Display` フォーマットは `MethodError` / `HeaderNameError` と同じパターンを踏襲する。
 - `src/uri.rs:1116` の `Scheme::new()` がエラー時に `input` を含む `SchemeError` を返すこと。
 - `src/uri.rs` に `impl TryFrom<&'static str> for Scheme` / `impl TryFrom<&'static [u8]> for Scheme` が追加され、それぞれ `Scheme::new()` と同じ受理集合になること。
 - `src/uri.rs` に `impl From<Scheme> for String` が追加されること。

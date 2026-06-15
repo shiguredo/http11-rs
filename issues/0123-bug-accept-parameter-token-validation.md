@@ -5,7 +5,7 @@
 - Completed: {YYYY-MM-DD}
 - Model: Kimi K2.7 Code
 - Branch: feature/fix-accept-parameter-token-validation
-- Polished: 2026-06-13
+- Polished: 2026-06-16
 
 ## 目的
 
@@ -46,7 +46,7 @@ Medium とする。RFC 9110 Section 5.6.6 では `parameter-name = token` と明
   - `text/html; charset=value; q=0.5`
 - `AcceptCharset::parse` / `AcceptEncoding::parse` / `AcceptLanguage::parse` は `q` 以外のパラメータを引き続き `Err(AcceptError::InvalidParameter)` で拒否すること。
 - `tests/test_accept.rs` に不正パラメータ名に対するテストケースを追加すること。
-- `CHANGES.md` の `## develop` セクションに以下の `[FIX]` エントリを追加すること。
+- `CHANGES.md` の `## develop` セクションに以下の `[FIX]` エントリを `[ADD]` の下、`### misc` の上に追加すること (本体ライブラリのバグ修正のため develop 直下、shiguredo-changelog 規約 CHANGE → ADD → UPDATE → FIX の順)。
   - `[FIX] Accept ヘッダーのメディアレンジパラメータ名が token 規則に違反していても受理されていた問題を修正する`
 
 ## 解決方法

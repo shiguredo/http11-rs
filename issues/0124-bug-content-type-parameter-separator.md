@@ -5,7 +5,7 @@
 - Completed: {YYYY-MM-DD}
 - Model: Kimi K2.7 Code
 - Branch: feature/fix-content-type-parameter-separator
-- Polished: 2026-06-13
+- Polished: 2026-06-16
 
 ## 目的
 
@@ -24,15 +24,35 @@ Medium とする。RFC 9110 Section 8.3 では `Content-Type = media-type`、Sec
   - `text/html; charset=utf-8 boundary=something` が空白区切りで受理される（不正）。
   - `text/html; charset=utf-8\tboundary=something` が HTAB 区切りで受理される（不正）。
   - `text/html; charset=utf-8 boundary=something; foo=bar` が受理される（不正）。
-  - `text/html, charset=utf-8` 等のカンマ区切りは現状の下流の token 検証で偶然拒否されるが、区切り文字の検証が明示的ではない。
+  - `text/html, charset=utf-8` 等のカンマ区切りは区切り文字の検証が明示的でないため、本 issue で明示拒否する (現状は下流の token 検証で偶然拒否されている)。
 
 ## 設計方針
 
-1. `type/subtype` 以降の parameter 区切りを `;` のみにする。
-2. parameter 名と値の間の `=` は既存の解釈を維持する（本 issue では `=` 周りの OWS 取り扱いは変更しない）。
-3. `OWS ";" OWS` 形式は許容する。
-4. 空の parameter セグメント（連続するセミコロン）は RFC 準拠として許容する。
+1. parameter を 1 つ消費した後の **次区切りの検証** で、区切り文字を `;` のみに限定する。`type/subtype` 直後の最初の `;` 出現は既存の `split_at_semicolon` (`L221`) が扱い、本 issue は **parameter 直後の次区切り検証時** のみ厳密化対象とする。
+2. parameter 名と値の間の `=` は既存の解釈を維持する (本 issue では `=` 周りの OWS 取り扱いは変更しない)。
+3. `OWS ";" OWS` 形式は許容する (RFC 9110 Section 5.6.6 ABNF `parameters = *( OWS ";" OWS [ parameter ] )` に従う)。
+4. 空の parameter セグメント (連続するセミコロン `;;`) は RFC 準拠として許容する (ABNF の `[ parameter ]` が optional のため)。
 5. 区切り文字違反時は既存の `ContentTypeError::InvalidParameter` を返す。
+
+### 実装 Skeleton
+
+`parse_parameters` (`L254-`) のループ内 `remaining` 処理を以下に変更する。
+
+```rust
+// 1 つの parameter をパース後の残り入力を以下のパターンで処理する
+let remaining = trim_ows(remaining);
+if remaining.is_empty() {
+    break;
+}
+// `;` で始まらなければ区切り違反として reject
+let after_semi = remaining
+    .strip_prefix(';')
+    .ok_or(ContentTypeError::InvalidParameter)?;
+rest = trim_ows(after_semi);
+// 空 parameter セグメント (;;) は次の loop iteration で trim_ows → strip_prefix(';') が連鎖する
+```
+
+既存の `L260` の `rest = trim_ows(rest.trim_start_matches(';'))` (ループ先頭) は、最初の `split_at_semicolon` 後の `;` 前置に対する処理として残すか、設計方針 1 の「最初の `;` は `split_at_semicolon` で扱う」前提で削除する。`split_at_semicolon` 後の rest は parameter 部分のみを含むため、ループ先頭での `trim_start_matches(';')` は冗長で削除可能。
 
 ## 完了条件
 
@@ -45,7 +65,7 @@ Medium とする。RFC 9110 Section 8.3 では `Content-Type = media-type`、Sec
 - `text/html; charset=utf-8, boundary=something` は拒否されること。
 - `text/html, charset=utf-8` は拒否されること。
 - `tests/test_content_type.rs` に上記の受理・拒否テストが追加されること。
-- `CHANGES.md` に `[FIX]` エントリが追加されること。
+- `CHANGES.md` の `## develop` セクションに `[FIX]` エントリを `[ADD]` の下、`### misc` の上に追加すること (本体ライブラリのバグ修正)。例: `[FIX] Content-Type ヘッダーの parameter 区切りをセミコロンのみに厳密化する`。
 
 ## 解決方法
 
