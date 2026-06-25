@@ -402,6 +402,8 @@ loop {
 - Upgrade ヘッダー
 - Content-Digest / Repr-Digest / Want-Content-Digest / Want-Repr-Digest
   - RFC 9530
+- Accept-Query
+  - RFC 10008
 
 ### コンテントネゴシエーション
 
@@ -566,6 +568,10 @@ gh skill install shiguredo/http11-rs shiguredo-http11
   - <https://datatracker.ietf.org/doc/html/rfc9112>
 - RFC 9530 - Digest Fields
   - <https://datatracker.ietf.org/doc/html/rfc9530>
+- RFC 9651 - Structured Field Values for HTTP
+  - <https://datatracker.ietf.org/doc/html/rfc9651>
+- RFC 10008 - The HTTP QUERY Method
+  - <https://datatracker.ietf.org/doc/html/rfc10008>
 
 ## ライセンス
 

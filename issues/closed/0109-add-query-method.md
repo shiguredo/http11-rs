@@ -2,7 +2,7 @@
 
 - Priority: Medium
 - Created: 2026-06-25
-- Completed: YYYY-MM-DD
+- Completed: 2026-06-25
 - Model: glm-5.2
 - Branch: feature/add-query-method
 - Polished: 2026-06-25
@@ -363,43 +363,48 @@ Token/String のみを許可し、それ以外は全て「サポート対象外�
 ## 解決方法
 
 1. `refs/rfc9651.txt` を `https://www.rfc-editor.org/rfc/rfc9651.txt` から取得して
-   配置する。配置後に RFC 9651 の節番号 (Section 4.2.1 等) を実確認する
-2. `src/method.rs:104` の `PATCH` 定数の次行に
-   `pub const QUERY: Self = Self::from_static(b"QUERY");` を追加する
+   配置した。RFC 9651 Section 4.2 系の節番号を実確認し、実装が一致していることを
+   検証した
+2. `src/method.rs` の `PATCH` 定数の次行に
+   `pub const QUERY: Self = Self::from_static(b"QUERY");` を追加した
    (既存スタイルに合わせ個別コメントなし)
-3. `src/accept_query.rs` を新設する
+3. `src/accept_query.rs` を新設した
    - RFC 9651 Section 4.2.1 (Parsing a List) / 4.2.3 (Item) / 4.2.3.2 (Parameters)
      / 4.2.3.3 (Key) / 4.2.5 (String) / 4.2.6 (Token) に従う最小パーサー
-     (節番号は step 1 で検証すること)
-   - SF Token 検証関数 (先頭 ALPHA/`*`、後続 tchar/`:`/`/`) を新設
-     (type/subtype 検証には `is_valid_token` を再利用する)
+   - SF Token 検証 (先頭 ALPHA/`*`、後続 tchar/`:`/`/`) を新設
+     (type/subtype 検証には `is_valid_token` を再利用)
    - SF String パーサー (%x20-7E のみ、`\"`/`\\` のみエスケープ) を新設
-   - SF Parameter key 検証関数 (lcalpha 系、大文字不可) を新設
-   - SP 専用の discard / split 関数を新設 (`trim_ows` / `split_with_quotes` は不使用)
+   - SF Parameter key 検証 (lcalpha 系、大文字不可) を新設
+   - SP 専用の discard / OWS (SP/HTAB) 専用の discard 関数を新設
    - `AcceptQueryError` は `InvalidFormat` / `InvalidMediaRange` /
      `InvalidParameter` / `UnterminatedQuote` / `UnsupportedItemType` を持つ
    - `MediaRangeItem` は `media_type` / `subtype` / `parameters` を持ち、
      Token/String 区別は保持しない (`Vec<(String, String)>`)
    - Display は Token 形式を優先し、先頭数字等の Token 不可な media range は
      String 形式で出力する。空パラメータ値は SF String `""` で出力する
-4. `src/lib.rs` に `pub mod accept_query;` を追加する (`accept` の直後)
-5. `tests/test_accept_query.rs` を作成する
-6. `pbt/tests/prop_accept_query.rs` を作成する
-   (String-only 表現の strategy も別途定義する)
+   - 重複 parameter key は RFC 9651 Section 4.2.3.2 step 7 に従い
+     最後の値で上書き (last-wins) する
+     (レビューで指摘された RFC 準拠違反を修正)
+4. `src/lib.rs` に `pub mod accept_query;` を追加した (`accept` の直後)
+5. `tests/test_accept_query.rs` を作成した
+   (RFC 10008 の例 4 件、Display ラウンドトリップ、エラーケース全網羅、空入力、
+   重複 parameter key の last-wins 挙動)
+6. `pbt/tests/prop_accept_query.rs` を作成した
+   (String-only 表現の strategy も別途定義)
 7. `pbt/tests/prop_request.rs` / `pbt/tests/prop_encoder.rs` /
-   `pbt/tests/prop_decoder/main.rs` の `http_method()` に `Method::QUERY` を追加する
-8. `fuzz/fuzz_targets/fuzz_accept_query.rs` を新設し、`fuzz/Cargo.toml` に登録する
+   `pbt/tests/prop_decoder/main.rs` の `http_method()` に `Method::QUERY` を追加した
+8. `fuzz/fuzz_targets/fuzz_accept_query.rs` を新設し、`fuzz/Cargo.toml` に登録した
    (parse 成功時はアクセサ呼び出し + Display ラウンドトリップを検証する)
-9. `examples/http11_reverse_proxy/src/main.rs:589` の `Allow` ヘッダーに
-   `QUERY` を追加する
+9. `examples/http11_reverse_proxy/src/main.rs` の `Allow` ヘッダーに
+   `QUERY` を追加した
    (`"GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, QUERY"`)
-10. `README.md` の規格書一覧に RFC 9651 / RFC 10008 を追加する (番号順。
-    RFC 9530 の後に挿入)。「その他のヘッダー」セクションに Accept-Query を追加する
-11. `skills/shiguredo-http11/SKILL.md` を更新する:
-    - 行 44 の Method 定数一覧に `Method::QUERY` を追加する
-    - ヘッダーパースモジュールテーブル (行 136-158) に `accept_query` 行を追加する
-    - RFC 準拠テーブル (行 532-545) に RFC 9651 / RFC 10008 行を追加する
-12. `CHANGES.md` の develop に ADD エントリを記載する
+10. `README.md` の規格書一覧に RFC 9651 / RFC 10008 を追加した (番号順)。
+    「その他のヘッダー」セクションに Accept-Query を追加した
+11. `skills/shiguredo-http11/SKILL.md` を更新した:
+    - Method 定数一覧に `Method::QUERY` を追加した
+    - ヘッダーパースモジュールテーブルに `accept_query` 行を追加した
+    - RFC 準拠テーブルに RFC 9651 / RFC 10008 行を追加した
+12. `CHANGES.md` の develop に ADD エントリを記載した
 13. `cargo test --workspace --all-targets` /
     `cargo clippy --workspace --all-targets -- -D warnings` /
-    `cargo fmt --all -- --check` で検証する
+    `cargo fmt --all -- --check` で検証した

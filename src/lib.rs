@@ -61,6 +61,7 @@
 extern crate alloc;
 
 pub mod accept;
+pub mod accept_query;
 pub mod auth;
 mod base64;
 pub mod cache;

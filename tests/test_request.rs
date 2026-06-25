@@ -56,6 +56,7 @@ fn test_request_new_accepts_standard_methods() {
         Method::PATCH,
         Method::CONNECT,
         Method::TRACE,
+        Method::QUERY,
     ] {
         let result = Request::new(method, "/");
         assert!(result.is_ok());

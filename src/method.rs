@@ -102,6 +102,7 @@ impl Method {
     pub const CONNECT: Self = Self::from_static(b"CONNECT");
     pub const TRACE: Self = Self::from_static(b"TRACE");
     pub const PATCH: Self = Self::from_static(b"PATCH");
+    pub const QUERY: Self = Self::from_static(b"QUERY");
 
     /// ランタイム検査つきで構築する
     pub fn new(method: impl AsRef<[u8]>) -> Result<Self, MethodError> {
