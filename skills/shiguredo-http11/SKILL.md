@@ -41,7 +41,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 | `Scheme` | URI スキーム (RFC 3986 Section 3.1)。Eq/Hash は case-insensitive | `from_static(b"scheme")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()` |
 | `SchemeError` | `Scheme` の構築エラー | `Empty`, `InvalidByte { byte, position }` |
 
-**Method の標準定数**: `Method::GET`, `Method::POST`, `Method::PUT`, `Method::DELETE`, `Method::HEAD`, `Method::OPTIONS`, `Method::CONNECT`, `Method::TRACE`, `Method::PATCH`
+**Method の標準定数**: `Method::GET`, `Method::POST`, `Method::PUT`, `Method::DELETE`, `Method::HEAD`, `Method::OPTIONS`, `Method::CONNECT`, `Method::TRACE`, `Method::PATCH`, `Method::QUERY`
 
 **Scheme の標準定数**: `Scheme::HTTP`, `Scheme::HTTPS`, `Scheme::WS`, `Scheme::WSS`, `Scheme::RTSP`
 
@@ -136,6 +136,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 | モジュール | 主要型 | RFC |
 |-----------|--------|-----|
 | `accept` | `Accept`, `AcceptCharset`, `AcceptEncoding`, `AcceptLanguage`, `QValue` | RFC 9110 |
+| `accept_query` | `AcceptQuery`, `MediaRangeItem`, `AcceptQueryError` | RFC 10008, RFC 9651 |
 | `auth` | `BasicAuth`, `DigestAuth`, `DigestChallenge`, `BearerToken`, `BearerChallenge`, `WwwAuthenticate`, `Authorization`, `AuthChallenge`, `ProxyAuthorization`, `ProxyAuthenticate`, `AuthError` | RFC 7617, 7616, 6750 |
 | `cache` | `CacheControl`, `Age`, `Expires` | RFC 9111 |
 | `conditional` | `IfMatch`, `IfNoneMatch`, `IfModifiedSince`, `IfUnmodifiedSince`, `IfRange` | RFC 9110 |
@@ -543,6 +544,8 @@ let decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
 | RFC 9111 | HTTP Caching | Cache-Control, Age, Expires |
 | RFC 9112 | HTTP/1.1 | Transfer-Encoding, Content-Length, 接続管理, request-target 形式 |
 | RFC 9530 | Digest Fields | Content-Digest, Repr-Digest, Want-Content-Digest, Want-Repr-Digest |
+| RFC 9651 | Structured Field Values for HTTP | Accept-Query の List パース |
+| RFC 10008 | The HTTP QUERY Method | QUERY メソッド, Accept-Query |
 
 ## 既知の制限事項
 

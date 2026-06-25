@@ -321,3 +321,10 @@ path = "fuzz_targets/fuzz_decoder_head_into_parts.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "fuzz_accept_query"
+path = "fuzz_targets/fuzz_accept_query.rs"
+test = false
+doc = false
+bench = false

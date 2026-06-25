@@ -586,7 +586,10 @@ async fn handle_client(
     if matches!(req_body_kind, BodyKind::Tunnel) {
         info!(method = %req_head.method(), "CONNECT rejected with 405 Method Not Allowed");
         let response = Response::with_status(StatusCode::METHOD_NOT_ALLOWED)
-            .header("Allow", "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH")?
+            .header(
+                "Allow",
+                "GET, HEAD, POST, PUT, DELETE, OPTIONS, PATCH, QUERY",
+            )?
             .header("Content-Length", "0")?
             .header("Connection", "close")?;
         socket.write_all(&response.encode()?).await?;

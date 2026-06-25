@@ -21,6 +21,7 @@ fn http_method() -> impl Strategy<Value = Method> {
         Just(Method::HEAD),
         Just(Method::OPTIONS),
         Just(Method::PATCH),
+        Just(Method::QUERY),
     ]
 }
 

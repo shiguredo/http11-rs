@@ -11,6 +11,11 @@
 
 ## develop
 
+- [ADD] QUERY メソッド (RFC 10008) と Accept-Query ヘッダー (RFC 10008 Section 3 / RFC 9651 Structured Fields) のサポートを追加する
+  - `Method::QUERY` 定数を追加する (safe, idempotent)
+  - `accept_query::AcceptQuery` / `accept_query::MediaRangeItem` / `accept_query::AcceptQueryError` を追加する
+  - Accept-Query は RFC 9651 Structured Fields の List としてパースする (Token / String のみ、Inner List 不可)
+  - @voluntas
 - [ADD] RequestHead / ResponseHead に所有権を消費してフィールドを取り出す into_xxx() メソッドと into_parts() メソッドを追加する
   - @voluntas
 
