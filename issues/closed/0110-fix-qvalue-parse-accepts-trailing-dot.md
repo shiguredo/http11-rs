@@ -1,6 +1,7 @@
 # QValue::parse が RFC 9110 Section 12.4.2 に違反して "0." と "1." を不正に受理するバグを修正する
 
 - Priority: High
+- Created: 2026-07-08
 - Completed: 2026-07-08
 - Model: DeepSeek V4 Pro
 
