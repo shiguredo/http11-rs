@@ -12,14 +12,18 @@ shiguredo_http11.workspace = true
 # コマンドライン引数のパース
 noargs = "0.4"
 # TLS 実装
-rustls = { version = "0.23", default-features = false, features = [
-  # 暗号ライブラリバックエンド
-  "aws_lc_rs",
-  # std 環境での動作に必要
-  "std",
-  # TLS 1.2 を有効化
-  "tls12",
-] }
+rustls = {
+  version = "0.23",
+  default-features = false,
+  features = [
+    # 暗号ライブラリバックエンド
+    "aws_lc_rs",
+    # std 環境での動作に必要
+    "std",
+    # TLS 1.2 を有効化
+    "tls12",
+  ]
+}
 # プラットフォーム標準の証明書ストアを利用する
 rustls-platform-verifier = "0.7"
 # ログ出力
@@ -36,16 +40,23 @@ zstd = "0.13"
 
 [dev-dependencies]
 # Docker コンテナ起動 (実 nginx 相手の integration test)
-testcontainers = { version = "0.27", default-features = false, features = [
-  # 暗号バックエンド (AGENTS.md: 暗号ライブラリは aws-lc-rs)
-  "aws-lc-rs",
-] }
+testcontainers = {
+  version = "0.27",
+  default-features = false,
+  features = [
+    # 暗号バックエンド (AGENTS.md: 暗号ライブラリは aws-lc-rs)
+    "aws-lc-rs",
+  ]
+}
 # 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
-tokio = { version = "1.52", features = [
-  # tokio::test マクロ
-  "macros",
-  # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
-  "rt-multi-thread",
-  # タイムアウト
-  "time",
-] }
+tokio = {
+  version = "1.52",
+  features = [
+    # tokio::test マクロ
+    "macros",
+    # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
+    "rt-multi-thread",
+    # タイムアウト
+    "time",
+  ]
+}

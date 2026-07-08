@@ -2,13 +2,15 @@ minimum_prek_version = "0.4.0"
 fail_fast = true
 
 # 生成物・参照 RFC 資料はフック対象外
-exclude = { glob = [
-  "target/**",
-  "refs/**",
-  "fuzz/artifacts/**",
-  "fuzz/corpus/**",
-  "fuzz/target/**",
-] }
+exclude = {
+  glob = [
+    "target/**",
+    "refs/**",
+    "fuzz/artifacts/**",
+    "fuzz/corpus/**",
+    "fuzz/target/**",
+  ]
+}
 
 default_install_hook_types = ["pre-commit", "pre-push"]
 
@@ -41,6 +43,26 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
+  {
+    id = "tombi-fmt",
+    name = "tombi fmt",
+    entry = "tombi format --check",
+    language = "system",
+    types = ["toml"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 5,
+  },
+  {
+    id = "tombi-lint",
+    name = "tombi lint",
+    entry = "tombi lint",
+    language = "system",
+    types = ["toml"],
+    pass_filenames = false,
+    require_serial = true,
+    priority = 6,
+  },
   {
     id = "cargo-fmt",
     name = "cargo fmt",

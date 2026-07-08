@@ -12,38 +12,49 @@ shiguredo_http11.workspace = true
 # コマンドライン引数のパース
 noargs = "0.4"
 # TLS 実装
-rustls = { version = "0.23", default-features = false, features = [
-  # 暗号ライブラリバックエンド
-  "aws_lc_rs",
-  # std 環境での動作に必要
-  "std",
-  # TLS 1.2 を有効化
-  "tls12",
-] }
+rustls = {
+  version = "0.23",
+  default-features = false,
+  features = [
+    # 暗号ライブラリバックエンド
+    "aws_lc_rs",
+    # std 環境での動作に必要
+    "std",
+    # TLS 1.2 を有効化
+    "tls12",
+  ]
+}
 # プラットフォーム標準の証明書ストアを利用する
 rustls-platform-verifier = "0.7"
 # 非同期ランタイム
-tokio = { version = "1.52", features = [
-  # 非同期入出力ユーティリティ
-  "io-util",
-  # main 関数のマクロ
-  "macros",
-  # TCP / UDP ソケット
-  "net",
-  # マルチスレッドランタイム
-  "rt-multi-thread",
-  # シグナルハンドリング (ctrl_c / SIGTERM)
-  "signal",
-  # 同期プリミティブ
-  "sync",
-  # タイマー
-  "time",
-] }
+tokio = {
+  version = "1.52",
+  features = [
+    # 非同期入出力ユーティリティ
+    "io-util",
+    # main 関数のマクロ
+    "macros",
+    # TCP / UDP ソケット
+    "net",
+    # マルチスレッドランタイム
+    "rt-multi-thread",
+    # シグナルハンドリング (ctrl_c / SIGTERM)
+    "signal",
+    # 同期プリミティブ
+    "sync",
+    # タイマー
+    "time",
+  ]
+}
 # tokio 上で rustls を動作させるアダプタ
-tokio-rustls = { version = "0.26", default-features = false, features = [
-  # 暗号ライブラリバックエンド
-  "aws_lc_rs",
-] }
+tokio-rustls = {
+  version = "0.26",
+  default-features = false,
+  features = [
+    # 暗号ライブラリバックエンド
+    "aws_lc_rs",
+  ]
+}
 # CancellationToken (graceful shutdown 用)
 tokio-util = "0.7"
 # ログ出力

@@ -1,330 +1,330 @@
 [package]
 name = "fuzz"
 version = "0.0.0"
-publish = false
 edition = "2024"
+publish = false
 
 [package.metadata]
 cargo-fuzz = true
 
-[dependencies]
-libfuzzer-sys = "0.4"
-arbitrary = { version = "1", features = ["derive"] }
-
-[dependencies.shiguredo_http11]
-path = ".."
-
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_request"
 path = "fuzz_targets/fuzz_decoder_request.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_response"
 path = "fuzz_targets/fuzz_decoder_response.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_roundtrip"
 path = "fuzz_targets/fuzz_decoder_roundtrip.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_uri"
 path = "fuzz_targets/fuzz_uri.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_content_type"
 path = "fuzz_targets/fuzz_content_type.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_date"
 path = "fuzz_targets/fuzz_date.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_cookie"
 path = "fuzz_targets/fuzz_cookie.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_content_disposition"
 path = "fuzz_targets/fuzz_content_disposition.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_etag"
 path = "fuzz_targets/fuzz_etag.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_conditional"
 path = "fuzz_targets/fuzz_conditional.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_range"
 path = "fuzz_targets/fuzz_range.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_auth"
 path = "fuzz_targets/fuzz_auth.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_accept"
 path = "fuzz_targets/fuzz_accept.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_content_encoding"
 path = "fuzz_targets/fuzz_content_encoding.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_content_language"
 path = "fuzz_targets/fuzz_content_language.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_content_location"
 path = "fuzz_targets/fuzz_content_location.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_digest_fields"
 path = "fuzz_targets/fuzz_digest_fields.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_host"
 path = "fuzz_targets/fuzz_host.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_trailer"
 path = "fuzz_targets/fuzz_trailer.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_upgrade"
 path = "fuzz_targets/fuzz_upgrade.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_cache"
 path = "fuzz_targets/fuzz_cache.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_multipart"
 path = "fuzz_targets/fuzz_multipart.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_vary"
 path = "fuzz_targets/fuzz_vary.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_chunked"
 path = "fuzz_targets/fuzz_decoder_chunked.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_limits"
 path = "fuzz_targets/fuzz_decoder_limits.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_header_bomb"
 path = "fuzz_targets/fuzz_decoder_header_bomb.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_mut_buf"
 path = "fuzz_targets/fuzz_decoder_mut_buf.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_request_response_helpers"
 path = "fuzz_targets/fuzz_request_response_helpers.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_percent_encoding"
 path = "fuzz_targets/fuzz_percent_encoding.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_expect"
 path = "fuzz_targets/fuzz_expect.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_encode_request"
 path = "fuzz_targets/fuzz_encode_request.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_encode_response"
 path = "fuzz_targets/fuzz_encode_response.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_pipelined"
 path = "fuzz_targets/fuzz_pipelined.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_uri_resolve"
 path = "fuzz_targets/fuzz_uri_resolve.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_mark_eof"
 path = "fuzz_targets/fuzz_mark_eof.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_streaming_encoder"
 path = "fuzz_targets/fuzz_streaming_encoder.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_multipart_boundary"
 path = "fuzz_targets/fuzz_multipart_boundary.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_response_method"
 path = "fuzz_targets/fuzz_decoder_response_method.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_encode_chunks"
 path = "fuzz_targets/fuzz_encode_chunks.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_decompressed"
 path = "fuzz_targets/fuzz_decoder_decompressed.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_multipart_roundtrip"
 path = "fuzz_targets/fuzz_multipart_roundtrip.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_chunked_trailer"
 path = "fuzz_targets/fuzz_chunked_trailer.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_encode_headers"
 path = "fuzz_targets/fuzz_encode_headers.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_decoder_head_into_parts"
 path = "fuzz_targets/fuzz_decoder_head_into_parts.rs"
 test = false
-doc = false
-bench = false
 
 [[bin]]
+bench = false
+doc = false
 name = "fuzz_accept_query"
 path = "fuzz_targets/fuzz_accept_query.rs"
 test = false
-doc = false
-bench = false
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+
+[dependencies.shiguredo_http11]
+path = ".."
