@@ -45,6 +45,9 @@ fn test_qvalue_parse_errors() {
 
     // 範囲外
     assert!(QValue::parse("1.5").is_err());
+    // dot のみで後続数字なし (RFC 9110 Section 12.4.2 違反)
+    assert!(QValue::parse("0.").is_err());
+    assert!(QValue::parse("1.").is_err());
     assert!(QValue::parse("2").is_err());
 
     // 不正な形式
@@ -72,7 +75,7 @@ fn test_qvalue_ordering() {
 #[test]
 fn test_qvalue_one_variants() {
     assert_eq!(QValue::parse("1").unwrap().value(), 1000);
-    assert_eq!(QValue::parse("1.").unwrap().value(), 1000);
+    assert!(QValue::parse("1.").is_err());
     assert_eq!(QValue::parse("1.0").unwrap().value(), 1000);
     assert_eq!(QValue::parse("1.00").unwrap().value(), 1000);
     assert_eq!(QValue::parse("1.000").unwrap().value(), 1000);

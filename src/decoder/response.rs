@@ -551,7 +551,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             self.body_decoder.set_declared_trailers(declared_trailers);
 
                             // ResponseHead を構築
-                            let start_line = self.start_line.take().unwrap();
+                            let start_line = self
+                                .start_line
+                                .take()
+                                .expect("start_line は StartLine フェーズで必ず設定される");
                             let parts: Vec<&str> = start_line.splitn(3, ' ').collect();
 
                             let head = ResponseHead::from_validated_parts(
@@ -768,7 +771,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
         }
 
         // ボディを読む
-        let body_kind = *self.decoded_body_kind.as_ref().unwrap();
+        let body_kind = *self
+            .decoded_body_kind
+            .as_ref()
+            .expect("decoded_body_kind は decode_headers() で必ず設定される");
         match body_kind {
             BodyKind::Tunnel => {
                 return Err(Error::InvalidData(
@@ -836,7 +842,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // Response を構築
         // BodyKind::None / Tunnel は「フレーミングがない」ため body = None。
         // それ以外 (ContentLength / Chunked / CloseDelimited) は明示的なボディなので body = Some。
-        let head = self.decoded_head.take().unwrap();
+        let head = self
+            .decoded_head
+            .take()
+            .expect("decoded_head は decode_headers() で必ず設定される");
         let body = match body_kind {
             BodyKind::None | BodyKind::Tunnel => None,
             BodyKind::ContentLength(_) | BodyKind::Chunked | BodyKind::CloseDelimited => {

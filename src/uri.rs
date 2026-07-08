@@ -280,7 +280,7 @@ pub fn percent_decode(input: &str) -> Result<String, UriError> {
 
 /// パーセントデコーディング (バイト列として)
 pub fn percent_decode_bytes(input: &str) -> Result<Vec<u8>, UriError> {
-    let mut result = Vec::with_capacity(input.len());
+    let mut result = Vec::new();
     let mut bytes = input.bytes();
 
     while let Some(byte) = bytes.next() {

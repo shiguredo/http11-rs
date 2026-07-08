@@ -25,7 +25,7 @@ use alloc::vec::Vec;
 /// 注: 304 は 1xx/204 と異なり Transfer-Encoding / Content-Length ヘッダーの
 /// 設定が拒否されないが、ボディ送出自体は抑止される (encoder.rs の
 /// `response_status_has_body` が false を返す)。
-/// また pending/0018 で encoder 側への移譲が検討されており、将来撤去される可能性がある。
+/// また encoder 側への移譲が検討されており、将来撤去される可能性がある。
 ///
 /// 全フィールドは非公開で、構築時バリデーション付きの `new` / `with_version` /
 /// `header` / `add_header` / `set_header` 経由でのみ操作できる。`#[non_exhaustive]`
@@ -45,7 +45,7 @@ pub struct Response {
     // 1xx/204/304 はエンコーダーが自動的にボディを抑止するため、本フラグの設定は不要。
     // `pub fn omit_body(omit: bool)` 経由でのみ設定可能。
     //
-    // 注: pending/0018 で encoder 側のフラグへの移譲が検討されており、
+    // 注: encoder 側のフラグへの移譲が検討されており、
     // 本フィールドは将来撤去される可能性がある。
     omit_body: bool,
 }

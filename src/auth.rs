@@ -118,7 +118,7 @@ impl fmt::Display for AuthError {
     }
 }
 
-/// auth-param リストの上限 (issue 0047)
+/// auth-param リストの上限
 ///
 /// 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6750 Bearer = 5) に十分な余裕として
 /// 32 を上限とする。重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に
@@ -880,7 +880,7 @@ fn parse_auth_params(input: &str) -> Result<Vec<(String, String)>, AuthError> {
         if params.iter().any(|(n, _)| n == &key) {
             return Err(AuthError::DuplicateParameter);
         }
-        // issue 0047: パラメータ数 hard cap (`MAX_AUTH_PARAMS = 32`)。
+        // パラメータ数 hard cap (`MAX_AUTH_PARAMS = 32`)。
         // 線形重複検出の CPU 消費を有限に抑える。
         if params.len() >= MAX_AUTH_PARAMS {
             return Err(AuthError::TooManyParameters);
@@ -986,7 +986,7 @@ fn decode_username_ext_value(input: &str) -> Result<String, AuthError> {
 
     // percent-decode する。RFC 8187 §3.2.1 の attr-char 範囲外は reject。
     let bytes = value_chars.as_bytes();
-    let mut result = alloc::vec::Vec::with_capacity(bytes.len());
+    let mut result = alloc::vec::Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];

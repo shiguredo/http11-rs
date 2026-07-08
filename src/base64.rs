@@ -77,7 +77,7 @@ pub(crate) fn encode(input: &[u8]) -> String {
 /// 不完全な末尾 6 bit 群) を全て reject する。
 pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
     // 空白を除去した正規化バッファを作る
-    let mut normalized: Vec<u8> = Vec::with_capacity(input.len());
+    let mut normalized: Vec<u8> = Vec::new();
     for c in input.chars() {
         match c {
             ' ' | '\t' | '\n' | '\r' => continue,
@@ -118,7 +118,7 @@ pub(crate) fn decode(input: &str) -> Result<Vec<u8>, Base64Error> {
         return Err(Base64Error::InvalidPadding);
     }
 
-    let mut result = Vec::with_capacity((data.len() * 3) / 4);
+    let mut result = Vec::new();
     let mut buf: u32 = 0;
     let mut bits: u32 = 0;
 

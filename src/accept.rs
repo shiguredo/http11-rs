@@ -93,7 +93,7 @@ impl QValue {
 
         if let Some(rest) = input.strip_prefix("1.") {
             if rest.is_empty() {
-                return Ok(QValue(1000));
+                return Err(AcceptError::InvalidQValue);
             }
             if rest.len() > 3 || !rest.chars().all(|c| c == '0') {
                 return Err(AcceptError::InvalidQValue);
@@ -106,6 +106,9 @@ impl QValue {
         }
 
         if let Some(rest) = input.strip_prefix("0.") {
+            if rest.is_empty() {
+                return Err(AcceptError::InvalidQValue);
+            }
             if rest.len() > 3 || !rest.chars().all(|c| c.is_ascii_digit()) {
                 return Err(AcceptError::InvalidQValue);
             }

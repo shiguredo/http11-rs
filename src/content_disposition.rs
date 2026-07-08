@@ -43,7 +43,7 @@ pub enum ContentDispositionError {
     InvalidExtValue,
     /// 重複パラメータ (RFC 6266)
     DuplicateParameter(String),
-    /// パラメータ数が `MAX_PARAMS` を超えた (issue 0047)
+    /// パラメータ数が `MAX_PARAMS` を超えた
     ///
     /// 実用パラメータ数 (RFC 6266 程度) に十分な余裕として 32 を上限とし、
     /// 線形重複検出の CPU 消費を有限に抑える。
@@ -74,7 +74,7 @@ impl fmt::Display for ContentDispositionError {
 
 impl core::error::Error for ContentDispositionError {}
 
-/// Content-Disposition のパラメータ数上限 (issue 0047)
+/// Content-Disposition のパラメータ数上限
 ///
 /// 実用パラメータ数 (RFC 6266 = 7 程度) に十分な余裕として 32 を上限とする。
 /// 重複検出の `Vec` + `iter().any` 線形検索による CPU 消費を有限に抑えるための hard cap。
@@ -198,7 +198,7 @@ impl ContentDisposition {
                 if seen_params.iter().any(|n: &String| n == &param_name) {
                     return Err(ContentDispositionError::DuplicateParameter(param_name));
                 }
-                // issue 0047: パラメータ数 hard cap (`MAX_PARAMS = 32`)。
+                // パラメータ数 hard cap (`MAX_PARAMS = 32`)。
                 // 線形重複検出の CPU 消費を有限に抑える。
                 if seen_params.len() >= MAX_PARAMS {
                     return Err(ContentDispositionError::TooManyParameters);
@@ -461,7 +461,7 @@ fn parse_ext_value(value: &str) -> Result<String, ContentDispositionError> {
 
 /// パーセントデコード
 fn percent_decode(s: &str) -> Result<String, ContentDispositionError> {
-    let mut bytes = Vec::with_capacity(s.len());
+    let mut bytes = Vec::new();
     let mut chars = s.chars();
 
     while let Some(c) = chars.next() {
