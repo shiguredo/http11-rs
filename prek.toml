@@ -48,8 +48,9 @@ hooks = [
     name = "tombi fmt",
     entry = "tombi format --check",
     language = "system",
-    types = ["toml"],
-    pass_filenames = false,
+    # Cargo.toml のみ (Cargo.lock は cargo が独自に再生成するため対象外)
+    files = "Cargo\\.toml$",
+    pass_filenames = true,
     require_serial = true,
     priority = 5,
   },
@@ -58,8 +59,9 @@ hooks = [
     name = "tombi lint",
     entry = "tombi lint",
     language = "system",
-    types = ["toml"],
-    pass_filenames = false,
+    # Cargo.toml のみ (Cargo.lock は cargo が独自に再生成するため対象外)
+    files = "Cargo\\.toml$",
+    pass_filenames = true,
     require_serial = true,
     priority = 6,
   },
