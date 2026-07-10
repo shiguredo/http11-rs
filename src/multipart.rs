@@ -718,16 +718,12 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     while i <= max_start {
         // 次の最初のバイト一致点までジャンプ
         let remaining = &haystack[i..=max_start];
-        match remaining.iter().position(|&b| b == first) {
-            Some(offset) => {
-                i += offset;
-                if &haystack[i..i + needle.len()] == needle {
-                    return Some(i);
-                }
-                i += 1;
-            }
-            None => return None,
+        let offset = remaining.iter().position(|&b| b == first)?;
+        i += offset;
+        if &haystack[i..i + needle.len()] == needle {
+            return Some(i);
         }
+        i += 1;
     }
     None
 }

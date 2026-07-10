@@ -26,6 +26,9 @@
   - @voluntas
 - [ADD] 固定した上限のもとで任意入力をデコードしてもヘッダー・トレーラーが上限内に収まる不変条件を検証する fuzz ターゲット `fuzz_decoder_header_bomb` を追加する
   - @voluntas
+- [UPDATE] `find_bytes` の `match` 式を `?` 演算子に書き換える
+  - `cargo clippy -- -D warnings` の `clippy::question_mark` 警告 (rust-1.97.0 で追加) を解消する
+  - @voluntas
 
 ## 2026.6.1
 
