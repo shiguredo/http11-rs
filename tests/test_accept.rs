@@ -205,7 +205,6 @@ mod helpers;
 
 // ========================================
 // quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
-// issue 0061
 // ========================================
 
 // CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
@@ -236,7 +235,7 @@ fn test_accept_quoted_string_rejects_ctl() {
 }
 
 // 空 quoted-string `""` が受理され、Display ラウンドトリップも破綻しない
-// (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
+// (`needs_quoting("")` を `true` に修正したリグレッション防止)
 #[test]
 fn test_accept_empty_quoted_string() {
     let accept = Accept::parse("text/html; ext=\"\"").unwrap();

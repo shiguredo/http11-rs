@@ -14,8 +14,7 @@ use alloc::vec::Vec;
 /// - `Some(data)`: 通常のボディ (`Content-Length: N` を自動付与)
 ///
 /// 全フィールドは非公開で、構築時バリデーション付きの `new` / `with_version` /
-/// `header` / `add_header` / `set_header` 経由でのみ操作できる。`#[non_exhaustive]`
-/// により、将来のフィールド追加 (例: `trailers`) は破壊的変更にならない。
+/// `header` / `add_header` / `set_header` 経由でのみ操作できる。
 ///
 /// # 構築時バリデーションのスコープ
 ///
@@ -31,7 +30,6 @@ use alloc::vec::Vec;
 /// 攻撃で、本ライブラリの `examples/http11_reverse_proxy` 等の reverse proxy 経路では
 /// 致命的な脆弱性となる。構築時バリデーションは不正な Request の生成自体を防ぐ防御線である。
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct Request {
     method: Method,
     uri: String,

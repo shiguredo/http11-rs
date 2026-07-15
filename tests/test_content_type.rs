@@ -183,7 +183,6 @@ mod helpers;
 
 // ========================================
 // quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
-// issue 0061
 // ========================================
 
 // CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される
@@ -214,7 +213,7 @@ fn test_content_type_quoted_string_rejects_ctl() {
 }
 
 // 空 quoted-string `""` の Display ラウンドトリップが破綻しない
-// (issue 0061 で `needs_quoting("")` を `true` に修正したリグレッション防止)
+// (`needs_quoting("")` を `true` に修正したリグレッション防止)
 #[test]
 fn test_content_type_empty_quoted_value_roundtrip() {
     let ct = ContentType::parse("text/plain; ext=\"\"").unwrap();

@@ -29,7 +29,6 @@ use crate::validate::{
 
 /// Content-Disposition パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ContentDispositionError {
     /// 空の入力
     Empty,

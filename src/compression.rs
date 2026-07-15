@@ -8,7 +8,6 @@ use core::fmt;
 
 /// 圧縮/展開エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum CompressionError {
     /// 出力バッファが小さすぎる
     BufferTooSmall { required: usize, available: usize },
@@ -47,7 +46,6 @@ impl core::error::Error for CompressionError {}
 
 /// 処理結果
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum CompressionStatus {
     /// 処理継続中
     Continue {
@@ -75,33 +73,33 @@ pub enum CompressionStatus {
 impl CompressionStatus {
     /// 消費した入力バイト数を取得
     #[inline]
-    pub fn consumed(&self) -> usize {
+    pub fn consumed(self) -> usize {
         match self {
-            CompressionStatus::Continue { consumed, .. } => *consumed,
-            CompressionStatus::Complete { consumed, .. } => *consumed,
-            CompressionStatus::OutputFull { consumed, .. } => *consumed,
+            CompressionStatus::Continue { consumed, .. } => consumed,
+            CompressionStatus::Complete { consumed, .. } => consumed,
+            CompressionStatus::OutputFull { consumed, .. } => consumed,
         }
     }
 
     /// 生成した出力バイト数を取得
     #[inline]
-    pub fn produced(&self) -> usize {
+    pub fn produced(self) -> usize {
         match self {
-            CompressionStatus::Continue { produced, .. } => *produced,
-            CompressionStatus::Complete { produced, .. } => *produced,
-            CompressionStatus::OutputFull { produced, .. } => *produced,
+            CompressionStatus::Continue { produced, .. } => produced,
+            CompressionStatus::Complete { produced, .. } => produced,
+            CompressionStatus::OutputFull { produced, .. } => produced,
         }
     }
 
     /// 処理が完了したかどうかを判定
     #[inline]
-    pub fn is_complete(&self) -> bool {
+    pub fn is_complete(self) -> bool {
         matches!(self, CompressionStatus::Complete { .. })
     }
 
     /// 出力バッファが満杯かどうかを判定
     #[inline]
-    pub fn is_output_full(&self) -> bool {
+    pub fn is_output_full(self) -> bool {
         matches!(self, CompressionStatus::OutputFull { .. })
     }
 }

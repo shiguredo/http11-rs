@@ -24,7 +24,6 @@ use crate::validate::{is_valid_token, trim_ows};
 
 /// Trailer パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum TrailerError {
     /// 空の入力
     Empty,

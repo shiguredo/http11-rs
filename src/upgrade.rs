@@ -25,8 +25,7 @@ use core::fmt;
 use crate::validate::{is_valid_token, trim_ows};
 
 /// Upgrade パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpgradeError {
     /// 空の入力
     Empty,

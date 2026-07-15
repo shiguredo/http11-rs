@@ -18,8 +18,7 @@ use crate::validate::trim_ows;
 use core::fmt;
 
 /// Content-Location パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentLocationError {
     /// 空の入力
     Empty,

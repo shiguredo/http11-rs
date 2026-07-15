@@ -21,8 +21,7 @@ use core::net::{Ipv4Addr, Ipv6Addr};
 use crate::validate::{is_sub_delim_byte, is_unreserved_byte, trim_ows};
 
 /// Host パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostError {
     /// 空の入力
     Empty,

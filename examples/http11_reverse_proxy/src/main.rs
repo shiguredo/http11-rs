@@ -27,7 +27,7 @@ use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
 use tracing::{debug, error, info};
 
-/// upstream の scheme (issue 0050)
+/// upstream の scheme
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Scheme {
     Http,
@@ -44,7 +44,7 @@ impl Scheme {
     }
 }
 
-/// upstream URL から抽出した接続情報 (issue 0050)
+/// upstream URL から抽出した接続情報
 #[derive(Debug, Clone)]
 struct UpstreamUrl {
     scheme: Scheme,
@@ -54,16 +54,16 @@ struct UpstreamUrl {
 }
 
 impl UpstreamUrl {
-    /// 接続プールキー (issue 0050)
+    /// 接続プールキー
     fn key(&self) -> UpstreamKey {
         (self.scheme, self.host.clone(), self.port)
     }
 }
 
-/// 接続プールキー: scheme / host / port のタプル (issue 0050)
+/// 接続プールキー: scheme / host / port のタプル
 type UpstreamKey = (Scheme, String, u16);
 
-/// upstream URL をパースして scheme / host / port を抽出する (issue 0050)
+/// upstream URL をパースして scheme / host / port を抽出する
 ///
 /// 受理する形式:
 /// - `http://host[:port][/path][?query]`
@@ -132,7 +132,7 @@ fn parse_upstream_url(url: &str) -> Result<UpstreamUrl, Box<dyn std::error::Erro
     })
 }
 
-/// Host ヘッダー値を組み立てる (RFC 9110 Section 7.2、issue 0050)
+/// Host ヘッダー値を組み立てる (RFC 9110 Section 7.2)
 ///
 /// - デフォルトポートは省略する (正書法)
 /// - IPv6 リテラルはブラケット表記で構築する
@@ -149,7 +149,7 @@ fn format_host_header(scheme: Scheme, host: &str, port: u16) -> String {
     }
 }
 
-/// upstream への接続。plaintext / TLS を保持する (issue 0050)
+/// upstream への接続。plaintext / TLS を保持する
 ///
 /// `BufWriter` で wrap することで書き込みのシステムコール回数を抑える。
 /// TLS バリアント (`rustls::ClientConnection` 内蔵) は plaintext の十数倍のサイズが
@@ -250,7 +250,7 @@ impl PooledConnection {
 
 /// 接続プール
 struct ConnectionPool {
-    /// scheme / host / port ごとのアイドル接続 (issue 0050)
+    /// scheme / host / port ごとのアイドル接続
     ///
     /// 旧実装は host 文字列のみをキーにしていたため、`http://a:8080/` と
     /// `https://a:443/` のプールエントリが混在する経路があった。
@@ -330,7 +330,7 @@ impl ConnectionPool {
     }
 }
 
-/// 新規接続を作成（ロック外で実行）。scheme で plaintext / TLS を分岐する (issue 0050)。
+/// 新規接続を作成（ロック外で実行）。scheme で plaintext / TLS を分岐する。
 async fn create_connection(
     scheme: Scheme,
     host: &str,
@@ -442,7 +442,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .init();
 
-    // upstream URL から scheme / host / port を抽出 (issue 0050)
+    // upstream URL から scheme / host / port を抽出
     let upstream = parse_upstream_url(&upstream_url)?;
     let upstream_host_header = format_host_header(upstream.scheme, &upstream.host, upstream.port);
     let upstream = Arc::new(upstream);
@@ -582,7 +582,7 @@ async fn handle_client(
     // 許可メソッド一覧を返す MUST。
     // decoder は CONNECT 受信で Tunnel phase に遷移しているため後続の
     // decode_headers() / decode() / peek_body() は使えず、本判定を抜けると
-    // ハンドラがハングする経路を持つ (issue 0051)。
+    // ハンドラがハングする経路を持つ。
     if matches!(req_body_kind, BodyKind::Tunnel) {
         info!(method = %req_head.method(), "CONNECT rejected with 405 Method Not Allowed");
         let response = Response::with_status(StatusCode::METHOD_NOT_ALLOWED)
@@ -896,7 +896,7 @@ async fn stream_response_on_connection(
     downstream.write_all(&header_bytes).await?;
     downstream.flush().await?;
 
-    // close-delimited body の場合の処理 (issue 0052):
+    // close-delimited body の場合の処理:
     // 1. ヘッダー終端の直後に decoder 内部バッファに残ったボディ先頭バイトを
     //    `take_remaining()` で取り出して downstream に流す。TCP セグメント結合や
     //    TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するため、これを怠ると

@@ -279,10 +279,10 @@ fn test_content_disposition_qdtext_rejects_crlf() {
     assert!(result.is_err(), "qdtext に LF を含むものは reject される");
 }
 
-// issue 0059 で報告された Latin-1 mojibake 入力。`\xeb\xa3\xa3` と `\xe9\xa3\xa3` は
+// Latin-1 mojibake 入力のリグレッション防止。`\xeb\xa3\xa3` と `\xe9\xa3\xa3` は
 // それぞれ UTF-8 として valid な 3 バイトシーケンス (`U+B8E3` / `U+98E3`)。
 #[test]
-fn test_content_disposition_regression_0059() {
+fn test_content_disposition_obs_text_filename_no_mojibake() {
     let input =
         b"inlnie;filename=\"aDDDDDDdttach]ment;}\\/\\\\\\\\;\\\\\\\xeb\xa3\xa3\xe9\xa3\xa3\\;\"";
     let s = core::str::from_utf8(input).expect("valid UTF-8");
@@ -297,7 +297,7 @@ fn test_content_disposition_regression_0059() {
     assert_eq!(reparsed.filename(), Some(expected));
 }
 
-// CR / LF / NUL は引き続き reject される (issue 0036 のリグレッション防止)
+// CR / LF / NUL は引き続き reject される (リグレッション防止)
 #[test]
 fn test_content_disposition_filename_rejects_cr_lf_nul() {
     for c in ['\r', '\n', '\0'] {

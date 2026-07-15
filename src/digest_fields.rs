@@ -25,8 +25,7 @@ use crate::base64;
 use crate::validate::{is_valid_token, trim_ows};
 
 /// Digest Fields パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DigestFieldsError {
     /// 空の入力
     Empty,

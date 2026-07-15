@@ -31,8 +31,7 @@ use crate::validate::trim_ows;
 use core::fmt;
 
 /// 条件付きリクエストエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConditionalError {
     /// 空の入力
     Empty,

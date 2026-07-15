@@ -132,7 +132,7 @@ fn test_expect_parse_errors() {
         Err(ExpectError::InvalidValue)
     ));
 
-    // 閉じ引用符がない (issue 0061: UnterminatedQuote に分離)
+    // 閉じ引用符がない (UnterminatedQuote に分離)
     assert!(matches!(
         Expect::parse("token=\"unclosed"),
         Err(ExpectError::UnterminatedQuote)
@@ -232,7 +232,6 @@ mod helpers;
 
 // ========================================
 // quoted-string 文字種検証 (RFC 9110 Section 5.6.4 / 5.5)
-// issue 0061
 // ========================================
 
 // CR / LF / NUL / 他の CTL を含む quoted-string / quoted-pair が reject される

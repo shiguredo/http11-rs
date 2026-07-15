@@ -235,7 +235,7 @@ fn test_response_encode_reason_phrase_absent_via_decoder() {
 }
 
 // ========================================
-// 0021: ビルダーと mutator の対称性 / チェイン化 / impl Into 化のテスト
+// ビルダーと mutator の対称性 / チェイン化 / impl Into 化のテスト
 // ========================================
 
 #[test]

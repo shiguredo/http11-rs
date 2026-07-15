@@ -43,8 +43,8 @@ pub fn language_tag() -> impl Strategy<Value = String> {
 /// ```text
 /// qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
 /// ```
-/// を、char 単位走査の本実装に合わせて Unicode scalar に拡張解釈する
-/// (issue 0059 で確立)。surrogate (`U+D800..=U+DFFF`) は char 型で構築不能。
+/// を、char 単位走査の本実装に合わせて Unicode scalar に拡張解釈する。
+/// surrogate (`U+D800..=U+DFFF`) は char 型で構築不能。
 pub fn qdtext_char() -> impl Strategy<Value = char> {
     prop_oneof![
         Just('\t'),

@@ -21,8 +21,7 @@ use core::fmt;
 use crate::validate::{is_valid_token, trim_ows};
 
 /// Content-Encoding パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentEncodingError {
     /// 空の入力
     Empty,

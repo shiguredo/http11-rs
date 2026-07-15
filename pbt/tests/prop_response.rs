@@ -473,7 +473,7 @@ proptest! {
 }
 
 // ========================================
-// 0021: mutator (set_body / clear_body / without_body / set_omit_body / チェイン) の PBT
+// mutator (set_body / clear_body / without_body / set_omit_body / チェイン) の PBT
 // ========================================
 
 // set_body → body_bytes() のラウンドトリップ

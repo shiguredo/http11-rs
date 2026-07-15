@@ -25,8 +25,7 @@ use core::fmt;
 use crate::validate::{is_token_char, is_valid_token};
 
 /// Accept-Query パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptQueryError {
     /// 不正な形式 (trailing comma / 連続カンマ / 未消費残り文字 等)
     InvalidFormat,

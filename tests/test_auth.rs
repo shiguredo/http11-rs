@@ -309,7 +309,7 @@ fn test_digest_auth_rejects_username_star_invalid_ext_value() {
     );
 }
 
-// CR / LF / NUL を含む quoted-string は引き続き reject される (issue 0036 のリグレッション防止)
+// CR / LF / NUL を含む quoted-string は引き続き reject される (リグレッション防止)
 #[test]
 fn test_basic_realm_rejects_cr_lf_nul() {
     for c in ['\r', '\n', '\0'] {

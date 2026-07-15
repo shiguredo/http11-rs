@@ -344,7 +344,7 @@ proptest! {
 }
 
 // `--<boundary>` の直後に CRLF / `--` / SP / HTAB 以外のバイトが続く入力は
-// `InvalidPart` で reject される (issue 0043, RFC 2046 Section 5.1.1 違反)
+// `InvalidPart` で reject される (RFC 2046 Section 5.1.1 違反)
 proptest! {
     #[test]
     fn prop_multipart_dash_boundary_invalid_byte_is_rejected(
@@ -369,7 +369,7 @@ proptest! {
 }
 
 // 任意の境界で chunk 分割した入力でも、bulk feed と同じパース結果を得る上に
-// 終端まで feed すれば `is_finished()` が true になる (issue 0042)
+// 終端まで feed すれば `is_finished` が true になる
 proptest! {
     #[test]
     fn prop_multipart_chunk_split_roundtrip(

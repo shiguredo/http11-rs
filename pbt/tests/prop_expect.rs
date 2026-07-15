@@ -182,7 +182,7 @@ proptest! {
 }
 
 // ========================================
-// obs-text 含む quoted-string の PBT (issue 0061)
+// obs-text 含む quoted-string の PBT
 // ========================================
 
 // qdtext (obs-text を含む) を quoted value として往復できる

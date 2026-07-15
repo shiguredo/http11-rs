@@ -26,8 +26,7 @@ use crate::validate::{
 };
 
 /// Accept 系パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptError {
     /// 空の入力
     Empty,

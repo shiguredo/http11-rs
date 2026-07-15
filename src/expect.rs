@@ -37,8 +37,7 @@ use crate::validate::{
 };
 
 /// Expect パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpectError {
     /// 空の入力
     Empty,

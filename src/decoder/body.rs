@@ -22,7 +22,6 @@ use super::phase::DecodePhase;
 
 /// ボディの種類
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum BodyKind {
     /// Content-Length で指定された固定長
     ContentLength(u64),
@@ -212,7 +211,7 @@ impl BodyDecoder {
                     len, 0,
                     "BodyChunkedSize では consume_body ではなく progress を使うこと"
                 );
-                let initial_phase = phase.clone();
+                let initial_phase = *phase;
                 self.process_chunked_size(buf, phase, limits)?;
 
                 match phase {

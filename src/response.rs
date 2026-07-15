@@ -28,10 +28,8 @@ use alloc::vec::Vec;
 /// また encoder 側への移譲が検討されており、将来撤去される可能性がある。
 ///
 /// 全フィールドは非公開で、構築時バリデーション付きの `new` / `with_version` /
-/// `header` / `add_header` / `set_header` 経由でのみ操作できる。`#[non_exhaustive]`
-/// により、将来のフィールド追加 (例: `trailers`) は破壊的変更にならない。
+/// `header` / `add_header` / `set_header` 経由でのみ操作できる。
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct Response {
     version: String,
     status_code: u16,
@@ -78,7 +76,7 @@ impl Response {
     ///
     /// `reason_phrase: impl Into<String>` は Rust の `String` / `&str` (UTF-8 不変条件) を要求するため、
     /// RFC 9112 Section 4 の `obs-text = %x80-FF` のうち UTF-8 として valid なシーケンスのみ
-    /// を表現可能。任意バイト列の obs-text を渡す API は本 issue では提供しない。
+    /// を表現可能。任意バイト列の obs-text を渡す API は提供しない。
     ///
     /// 注: `.into()` はバリデーション前に実行されるため、無効な `status_code` でも
     /// `reason_phrase` のアロケーションが発生する。これは `impl Into<String>` で

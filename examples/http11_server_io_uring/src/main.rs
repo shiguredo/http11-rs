@@ -134,7 +134,7 @@ struct Connection {
     /// `false` のときは書き込み完了後に `pending_writes` 残量に関わらず接続を閉じる
     /// (RFC 9112 Section 9.6: Connection: close 後の追加メッセージは送らない)。
     current_write_should_keep_alive: bool,
-    /// 未送信レスポンスキュー (issue 0048)
+    /// 未送信レスポンスキュー
     ///
     /// パイプラインで複数の Request を 1 read で受け取ったとき、build した全レスポンスを
     /// ここに積む。`handle_write` 完了時に `pop_front` で次エントリを取り出して
@@ -563,7 +563,6 @@ fn submit_enable_ktls(
 
 /// rustls の `received_plaintext` に残っている平文を排出して decoder に feed し、
 /// 確定した Request はその場で build_response して `pending_writes` に積む。
-/// (issue 0049)
 ///
 /// `dangerous_extract_secrets()` 呼び出し前に呼ぶこと。呼ばないと TLS 1.3 で
 /// Client Finished と同一 flight で来た HTTP リクエストの先頭バイトが消失する。
@@ -696,7 +695,6 @@ fn handle_read(
                 // `dangerous_extract_secrets` / `tls_conn` drop 前に rustls の内部
                 // `received_plaintext` バッファを排出しないと、HTTP リクエストの先頭バイトが
                 // 復元不能で消失する (TCP は ACK 済みのため再送経路もない)。
-                // issue 0049 で本処理を追加した。
                 if let Err(e) = drain_and_feed_leftover(&mut tls_conn, conn, peer_addr) {
                     error!(
                         peer_addr = %peer_addr,
@@ -741,7 +739,7 @@ fn handle_read(
             let peer_addr = conn.peer_addr;
             let mut request_count = conn.request_count;
             // パイプラインで複数 Request を一度に受け取った場合、build した全レスポンスを
-            // conn.pending_writes に積み、handle_write 完了時に順次送出する (issue 0048)。
+            // conn.pending_writes に積み、handle_write 完了時に順次送出する。
             // `should_keep_alive == false` のレスポンスが出た時点でループを break し、
             // 以降の Request の処理は行わない (RFC 9112 Section 9.6: Connection: close
             // 後の追加メッセージは送らない)。decoder バッファに残った未処理データは
@@ -843,7 +841,7 @@ fn handle_write(
                 // tls_conn を取り出して秘密鍵を抽出
                 let mut tls_conn = conn.tls_conn.take().unwrap();
 
-                // issue 0049: ハンドシェイク Write 完了経路でも、念のため rustls の
+                // ハンドシェイク Write 完了経路でも、念のため rustls の
                 // received_plaintext を排出する。発火頻度は低い (Client Finished と
                 // Application Data はまだ届いていないことが多い) が、防御的措置として
                 // Read 経路と同型で扱う。
@@ -884,7 +882,7 @@ fn handle_write(
         }
         ConnectionState::Writing => {
             // 進行中レスポンスが Keep-Alive なら pending_writes の次エントリを書き出すか、
-            // キューが空なら次のリクエストを待つ (issue 0048)。
+            // キューが空なら次のリクエストを待つ。
             if let Some((response_bytes, should_keep_alive)) = conn.pending_writes.pop_front() {
                 conn.write_buf = response_bytes;
                 conn.write_offset = 0;
@@ -936,7 +934,7 @@ fn handle_setsockopt_complete(
         conn.ktls_tx = None;
         conn.ktls_rx = None;
 
-        // issue 0049: leftover drain で `pending_writes` に Response が積まれていれば
+        // leftover drain で `pending_writes` に Response が積まれていれば
         // ハンドシェイク完了直後に submit_write を発行して順次送出する。
         // キューが空なら従来通り submit_read を発行する。
         let fd = conn.fd;

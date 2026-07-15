@@ -745,7 +745,6 @@ proptest! {
 
 proptest! {
     /// decoder の BodyKind::ContentLength(n) と head.content_length() の整合性
-    /// (issue 0044)
     #[test]
     fn prop_body_kind_content_length_matches_head(len in 0u64..1_000_000) {
         let data = format!("POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: {}\r\n\r\n", len);
@@ -759,7 +758,6 @@ proptest! {
 
 proptest! {
     /// CL 不在のリクエストでは head.content_length() は Ok(None)
-    /// (issue 0044)
     #[test]
     fn prop_no_content_length_header_returns_ok_none(method in "GET|HEAD|DELETE") {
         let data = format!("{} / HTTP/1.1\r\nHost: example.com\r\n\r\n", method);

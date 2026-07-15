@@ -304,7 +304,7 @@ fn test_request_http_with_double_slash_ok() {
 }
 
 // ========================================
-// HttpHead::content_length の差分検証 (issue 0044)
+// HttpHead::content_length の差分検証
 //
 // decoder/body の parse_content_length と完全に整合した厳格パースを行うことを検証する。
 // 旧実装の `.parse::<u64>().ok()` で漏れていた smuggling 経路を遮断する。

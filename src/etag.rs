@@ -26,8 +26,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// ETag パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ETagError {
     /// 空の入力
     Empty,

@@ -30,8 +30,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// Cookie パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CookieError {
     /// 空の Cookie
     Empty,

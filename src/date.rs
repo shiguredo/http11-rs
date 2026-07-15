@@ -24,8 +24,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// HTTP-date パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DateError {
     /// 空の日付
     Empty,
@@ -89,7 +88,7 @@ pub enum DayOfWeek {
 
 impl DayOfWeek {
     /// 短い形式の曜日名を取得
-    pub fn short_name(&self) -> &'static str {
+    pub fn short_name(self) -> &'static str {
         match self {
             DayOfWeek::Sunday => "Sun",
             DayOfWeek::Monday => "Mon",

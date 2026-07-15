@@ -38,7 +38,7 @@ fn param_value() -> impl Strategy<Value = String> {
 // quoted-string の qdtext として許容される char (obs-text の Unicode scalar 拡張を含む)
 //
 // RFC 9110 Section 5.6.4 の qdtext ABNF (オクテット表現) を、char 単位走査の本実装に
-// 合わせて Unicode scalar に拡張解釈する (issue 0059)。
+// 合わせて Unicode scalar に拡張解釈する。
 fn qdtext_char() -> impl Strategy<Value = char> {
     prop_oneof![
         Just('\t'),
@@ -608,7 +608,7 @@ proptest! {
 }
 
 // ========================================
-// obs-text Unicode scalar 拡張のラウンドトリップ (issue 0059)
+// obs-text Unicode scalar 拡張のラウンドトリップ
 // ========================================
 
 // WwwAuthenticate (Basic realm=...) に obs-text を含む UTF-8 char が含まれても
@@ -647,7 +647,7 @@ proptest! {
 }
 
 // ========================================
-// auth-param の hard cap (issue 0047)
+// auth-param の hard cap
 // ========================================
 
 proptest! {

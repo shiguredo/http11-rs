@@ -38,7 +38,6 @@ pub struct Method(Cow<'static, [u8]>);
 
 /// `Method` の構築エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum MethodError {
     /// 空のメソッド
     Empty { input: String },

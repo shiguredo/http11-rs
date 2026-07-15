@@ -40,7 +40,6 @@ pub struct HeaderName(Cow<'static, [u8]>);
 
 /// `HeaderName` の構築エラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum HeaderNameError {
     /// 空のヘッダー名
     Empty { input: String },

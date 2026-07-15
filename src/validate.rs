@@ -284,7 +284,7 @@ pub(crate) fn is_quoted_pair_char(c: char) -> bool {
 /// `parse_quoted_string` から返り、各ヘッダーモジュールが自身のエラー型に
 /// マッピングする。文字種違反と構造違反を区別することで、`Content-Type` の
 /// `UnterminatedQuote` のような既存の細粒度エラーを保てる。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuotedStringError {
     /// qdtext 経路で `is_qdtext_char` が false を返した
     InvalidQdtext,

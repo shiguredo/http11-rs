@@ -3,9 +3,9 @@
 //! 元は `tests/test_decode_body.rs` に置かれていたテスト群を統合した。
 //! - 不完全 / 完全な Content-Length / chunked ボディの挙動 (Complete に到達するか)
 //! - close-delimited の `mark_eof` 経路
-//! - HTTP/1.1 完全一致以外で Transfer-Encoding を拒否すること (issue 0046)
+//! - HTTP/1.1 完全一致以外で Transfer-Encoding を拒否すること
 //! - Transfer-Encoding 値の OWS 解釈で Unicode 空白 (NBSP / U+2028 / 全角空白) を許容しないこと
-//!   (issue 0053 / smuggling 対策)
+//!   (smuggling 対策)
 //! - request-target のパーセントエンコーディング検証 (`%00`、不完全、無効 16 進など)
 //! - chunk-extension の obs-text / BWS / 前置空白 / 後置空白の許否 (RFC 9112 Section 7.1.1)
 //! - absolute-form の IPv6 ブラケット整合性検証
@@ -241,7 +241,7 @@ fn http11_with_transfer_encoding_should_succeed() {
 }
 
 /// HTTP/1.1 以外の version (HTTP/0.9 / 2.0 / 3.0 / RTSP/x / FOO/1.0 / case 違い) で
-/// `Transfer-Encoding: chunked` が来たリクエストは reject する (issue 0046)
+/// `Transfer-Encoding: chunked` が来たリクエストは reject する
 fn assert_request_te_rejected(version: &str) {
     let mut decoder = RequestDecoder::new();
     let line = format!(
@@ -309,7 +309,7 @@ fn lower_case_http11_request_with_transfer_encoding_should_fail() {
     assert!(result.is_err());
 }
 
-/// ResponseDecoder 側でも同じく HTTP/1.1 完全一致以外で reject する (issue 0046)
+/// ResponseDecoder 側でも同じく HTTP/1.1 完全一致以外で reject する
 fn assert_response_te_rejected(version: &str) {
     let mut decoder = ResponseDecoder::new();
     let line = format!("{} 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", version);
@@ -368,7 +368,7 @@ fn foo10_response_with_transfer_encoding_should_fail() {
 /// Transfer-Encoding 値の OWS 解釈で Unicode 空白を許容してしまうと前段プロキシ
 /// (ASCII OWS のみ) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場
 /// となる。RFC 9110 Section 5.6.3 (OWS = *( SP / HTAB )) に準拠して SP / HTAB
-/// のみ許容することを確認する (issue 0053)。
+/// のみ許容することを確認する。
 fn assert_request_te_rejected_with_unicode_whitespace(payload: &[u8]) {
     let mut decoder = RequestDecoder::new();
     decoder.feed(payload).unwrap();
@@ -475,12 +475,12 @@ fn response_te_with_htab_should_succeed() {
 
 /// Trailer 申告の OWS 解釈で Unicode 空白を除去してしまうと、申告名と
 /// trailer-section の照合が前段プロキシと食い違い、認証フィールド等が
-/// trailer-section 経由で素通りする経路の足場になる (issue 0053)。
+/// trailer-section 経由で素通りする経路の足場になる。
 #[test]
 fn trailer_declared_with_nbsp_should_not_match_section_name() {
     // Trailer: \xC2\xA0X-Test を申告すると、trim_ows では NBSP が除去されず
     // declared には NBSP 込みの名前が入る。後続 trailer-section の `X-Test:` は
-    // undeclared と判定されて reject される。issue 0032 (Trailer ホワイトリスト) の挙動。
+    // undeclared と判定されて reject される (Trailer ホワイトリストの挙動)。
     let mut decoder = ResponseDecoder::new();
     let response =
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: \xC2\xA0X-Test\r\n\r\n\

@@ -34,8 +34,7 @@ use core::fmt;
 use core::hash::{Hash, Hasher};
 
 /// URI パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UriError {
     /// 空の URI
     Empty,
@@ -1071,8 +1070,7 @@ fn normalize_percent_encoding(input: &str) -> Result<String, UriError> {
 pub struct Scheme(Cow<'static, [u8]>);
 
 /// `Scheme` の構築エラー
-#[derive(Debug)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchemeError {
     /// 空のスキーム
     Empty,

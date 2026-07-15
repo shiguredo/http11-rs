@@ -1,7 +1,7 @@
 //! デコード状態の定義
 
 /// デコード状態
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DecodePhase {
     /// スタートライン待ち
     StartLine,

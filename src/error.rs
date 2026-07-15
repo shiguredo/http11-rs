@@ -5,7 +5,6 @@ use crate::compression::CompressionError;
 
 /// HTTP パースエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum Error {
     /// 不正なデータ
     InvalidData(String),
@@ -57,7 +56,6 @@ impl From<CompressionError> for Error {
 
 /// HTTP エンコードエラー
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum EncodeError {
     /// Host ヘッダーがない (HTTP/1.1 必須)
     MissingHostHeader,

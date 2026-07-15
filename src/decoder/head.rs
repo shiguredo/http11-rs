@@ -163,10 +163,7 @@ pub trait HttpHead {
 /// `RequestDecoder::decode_headers` の戻り値として返される、デコード済みの
 /// リクエストヘッダーを表す。フィールドは非公開で、`new` / `with_version` /
 /// `header` 等のバリデート付き API 経由でのみ構築できる。
-///
-/// `#[non_exhaustive]` を付与しているため、将来のフィールド追加は非破壊的に扱える。
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct RequestHead {
     /// HTTP メソッド (GET, POST, etc.)
     pub(crate) method: Method,
@@ -354,10 +351,7 @@ impl HttpHead for RequestHead {
 /// `header` 等のバリデート付き API 経由でのみ構築できる。これにより
 /// `status_code` の不変条件 (RFC 9110 Section 15: 100..=599) が型レベルで
 /// 保証され、`status_class()` の panic 経路を塞ぐ。
-///
-/// `#[non_exhaustive]` を付与しているため、将来のフィールド追加は非破壊的に扱える。
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
 pub struct ResponseHead {
     /// HTTP バージョン (HTTP/1.1 等)
     pub(crate) version: String,

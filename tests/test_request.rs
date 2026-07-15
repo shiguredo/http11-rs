@@ -319,8 +319,8 @@ fn test_request_header_accepts_empty_value() {
 #[test]
 fn test_request_header_accepts_value_with_leading_trailing_whitespace() {
     // RFC 9110 §5.5 では「A field parsing implementation MUST exclude such whitespace」
-    // と先頭/末尾空白の除外を要求しているが、本 issue では smuggling 防御に注力するため
-    // trim を行わない。後続 issue で trim を導入する予定の暫定動作。
+    // と先頭/末尾空白の除外を要求しているが、現状では smuggling 防御に注力するため
+    // trim を行わない。将来 trim を導入する予定の暫定動作。
     let req = Request::new(Method::GET, "/").unwrap();
     let result = req.header(
         HeaderName::from_static(b"X-Test"),
@@ -525,7 +525,7 @@ fn test_request_body_bytes_some_empty() {
 }
 
 // ========================================
-// API 対称化テスト (Response との対称化、issue 0039)
+// API 対称化テスト (Response との対称化)
 // ========================================
 
 /// without_body() / set_body() / clear_body() の動作
@@ -546,7 +546,7 @@ fn test_request_body_mutators() {
 }
 
 // ========================================
-// is_keep_alive の HTTP/1.1 完全一致 (issue 0040)
+// is_keep_alive の HTTP/1.1 完全一致
 // ========================================
 
 /// HTTP/1.1 で Connection ヘッダーなし → keep-alive
@@ -623,7 +623,7 @@ fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
 }
 
 // ========================================
-// is_keep_alive / is_chunked の OWS 厳格化 (issue 0062)
+// is_keep_alive / is_chunked の OWS 厳格化
 // ========================================
 // RFC 9110 Section 5.6.3 の OWS は `*( SP / HTAB )` のみ。
 // 旧実装は `str::trim()` を使っており NBSP (U+00A0) 等の Unicode 空白も除去していたため、

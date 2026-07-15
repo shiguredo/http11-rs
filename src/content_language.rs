@@ -20,8 +20,7 @@ use core::fmt;
 use crate::validate::{is_valid_language_tag, trim_ows};
 
 /// Content-Language パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentLanguageError {
     /// 空の入力
     Empty,

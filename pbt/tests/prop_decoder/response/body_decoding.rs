@@ -311,7 +311,7 @@ proptest! {
 }
 
 // ========================================
-// CONNECT 2xx で Transfer-Encoding / Content-Length が ResponseHead から消える (issue 0045)
+// CONNECT 2xx で Transfer-Encoding / Content-Length が ResponseHead から消える
 // ========================================
 
 proptest! {

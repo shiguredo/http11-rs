@@ -241,7 +241,7 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
 }
 
 // ========================================
-// inner_delimiter 直後の chunk-split 経路 (issue 0042)
+// inner_delimiter 直後の chunk-split 経路
 // ========================================
 
 // close-delimiter (`--`) の手前で chunk が切れた後に `--\r\n` を補給すると
@@ -351,7 +351,7 @@ fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
 }
 
 // ========================================
-// dash-boundary 直後の transport-padding 検証 (issue 0043, RFC 2046 Section 5.1.1)
+// dash-boundary 直後の transport-padding 検証 (RFC 2046 Section 5.1.1)
 // ========================================
 
 // `--<boundary>X` で X が CRLF / `--` / SP / HTAB のいずれでもない場合は InvalidPart

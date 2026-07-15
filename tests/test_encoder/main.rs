@@ -87,7 +87,7 @@ fn test_encode_request_with_existing_content_length() {
     assert_eq!(count, 1);
 }
 
-// body == None と body == Some(vec![]) の挙動差分 (issue 0004)
+// body == None と body == Some(vec![]) の挙動差分
 
 #[test]
 fn test_encode_post_with_explicit_empty_body_emits_content_length_zero() {
@@ -338,7 +338,7 @@ fn test_encode_response_205_with_cl_zero_ok() {
 }
 
 // ========================================
-// 205 Content-Length の OWS 厳格化 (issue 0062)
+// 205 Content-Length の OWS 厳格化
 // ========================================
 // RFC 9110 Section 5.6.3 の OWS は `*( SP / HTAB )` のみ。
 // 旧実装は `str::trim()` を使っており NBSP (U+00A0) 等の Unicode 空白も除去していた。

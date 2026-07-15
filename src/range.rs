@@ -31,8 +31,7 @@ use core::fmt;
 use crate::validate::{is_valid_token, trim_ows};
 
 /// Range パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RangeError {
     /// 空の入力
     Empty,
@@ -79,11 +78,11 @@ impl RangeSpec {
     ///
     /// total_length はリソースの総バイト数
     /// 戻り値は (start, end) で両端含む
-    pub fn to_bounds(&self, total_length: u64) -> Option<(u64, u64)> {
+    pub fn to_bounds(self, total_length: u64) -> Option<(u64, u64)> {
         if total_length == 0 {
             return None;
         }
-        match *self {
+        match self {
             RangeSpec::Range { start, end } => {
                 if start > end || start >= total_length {
                     return None;

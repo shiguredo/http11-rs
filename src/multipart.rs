@@ -33,8 +33,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 /// multipart パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MultipartError {
     /// 空の入力
     Empty,
@@ -230,7 +229,7 @@ pub struct MultipartParser {
     boundary_scan_offset: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParserState {
     /// 初期状態 (最初の境界を待機)
     Initial,

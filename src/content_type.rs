@@ -32,8 +32,7 @@ use crate::validate::{
 };
 
 /// Content-Type パースエラー
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentTypeError {
     /// 空の Content-Type
     Empty,
