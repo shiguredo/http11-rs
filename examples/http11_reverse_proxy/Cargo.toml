@@ -28,7 +28,7 @@ rustls = {
 rustls-platform-verifier = "0.7"
 # 非同期ランタイム
 tokio = {
-  version = "1.52",
+  version = "1.53",
   features = [
     # 非同期入出力ユーティリティ
     "io-util",

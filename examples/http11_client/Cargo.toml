@@ -50,7 +50,7 @@ testcontainers = {
 }
 # 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
 tokio = {
-  version = "1.52",
+  version = "1.53",
   features = [
     # tokio::test マクロ
     "macros",

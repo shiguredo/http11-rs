@@ -27,7 +27,7 @@ rustls = {
 }
 # 非同期ランタイム
 tokio = {
-  version = "1.52",
+  version = "1.53",
   features = [
     # 非同期入出力ユーティリティ
     "io-util",
@@ -77,10 +77,10 @@ rcgen = {
   ]
 }
 # テスト用の一時ディレクトリ (証明書ファイルの置き場)
-tempfile = "3.13"
+tempfile = "3.27"
 # 子プロセスの非同期管理 + stdout 行読み (tests でのみ追加 feature が必要)
 tokio = {
-  version = "1.52",
+  version = "1.53",
   features = [
     # AsyncBufReadExt::lines() を使う
     "io-util",
