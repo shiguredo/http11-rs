@@ -11,6 +11,8 @@
 
 ## develop
 
+- [CHANGE] 最小対応 Rust バージョン (MSRV) を 1.88 から 1.93 に引き上げる
+  - @voluntas
 - [ADD] QUERY メソッド (RFC 10008) と Accept-Query ヘッダー (RFC 10008 Section 3 / RFC 9651 Structured Fields) のサポートを追加する
   - `Method::QUERY` 定数を追加する (safe, idempotent)
   - `accept_query::AcceptQuery` / `accept_query::MediaRangeItem` / `accept_query::AcceptQueryError` を追加する

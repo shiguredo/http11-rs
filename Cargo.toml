@@ -21,7 +21,7 @@ exclude = ["examples/http11_server_io_uring", "fuzz"]
 
 [workspace.package]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.93"
 
 [workspace.dependencies]
 # 本ライブラリ (workspace ルートを参照)

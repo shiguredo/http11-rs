@@ -101,13 +101,8 @@ fn print_response(response: &Response) {
     if let Ok(text) = std::str::from_utf8(body) {
         if text.len() > 1000 {
             info!(total_bytes = body.len(), "Body truncated");
-            // MSRV 1.88.0 では str::floor_char_boundary (1.91.0 stabilize) が使えないため
-            // is_char_boundary で UTF-8 境界まで縮める
-            let mut end = 1000;
-            while !text.is_char_boundary(end) {
-                end -= 1;
-            }
-            println!("{}...", &text[..end]);
+            // UTF-8 文字境界を越えない位置まで切り詰める
+            println!("{}...", &text[..text.floor_char_boundary(1000)]);
         } else {
             println!("{}", text);
         }

@@ -23,7 +23,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 - crate 名: `shiguredo_http11`
 - バージョン: 2026.6.0
 - Rust Edition: 2024
-- 最小 Rust バージョン: 1.88
+- 最小 Rust バージョン: 1.93
 - ライセンス: Apache-2.0
 
 公開 enum (全 `Error` 系・`StatusClass` / `BodyKind` / `CompressionStatus` / `Authorization` / `AuthChallenge` 等) には `#[non_exhaustive]` が付与されている。利用側の `match` には `_` アームを置くこと。
