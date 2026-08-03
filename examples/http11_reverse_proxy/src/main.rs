@@ -21,7 +21,7 @@ use shiguredo_http11::{
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio_rustls::TlsConnector;
 use tokio_rustls::client::TlsStream;
@@ -249,6 +249,10 @@ impl PooledConnection {
 }
 
 /// 接続プール
+///
+/// 状態は単一タスク (pool_task) が所有し、mpsc チャネル経由で操作を依頼する。
+/// Mutex / RwLock は使わないため、ロック保持時間・ロック順序 (デッドロック)・
+/// await をまたいだ保持といった考慮が不要になる。
 struct ConnectionPool {
     /// scheme / host / port ごとのアイドル接続
     ///
@@ -256,19 +260,17 @@ struct ConnectionPool {
     /// `https://a:443/` のプールエントリが混在する経路があった。
     idle_connections: HashMap<UpstreamKey, Vec<PooledConnection>>,
     config: PoolConfig,
-    tls_connector: TlsConnector,
 }
 
 impl ConnectionPool {
-    fn new(tls_connector: TlsConnector, config: PoolConfig) -> Self {
+    fn new(config: PoolConfig) -> Self {
         Self {
             idle_connections: HashMap::new(),
             config,
-            tls_connector,
         }
     }
 
-    /// プールからアイドル接続を取得（ロック内で高速に実行）
+    /// プールからアイドル接続を取得 (所有タスク内で高速に実行)
     fn try_acquire(&mut self, key: &UpstreamKey) -> Option<PooledConnection> {
         if let Some(connections) = self.idle_connections.get_mut(key) {
             while let Some(mut conn) = connections.pop() {
@@ -280,11 +282,6 @@ impl ConnectionPool {
             }
         }
         None
-    }
-
-    /// TLS コネクタを取得（ロック外で接続を作成するため）
-    fn tls_connector(&self) -> TlsConnector {
-        self.tls_connector.clone()
     }
 
     /// 接続をプールに返却
@@ -330,7 +327,7 @@ impl ConnectionPool {
     }
 }
 
-/// 新規接続を作成（ロック外で実行）。scheme で plaintext / TLS を分岐する。
+/// 新規接続を作成 (プールタスク外で実行)。scheme で plaintext / TLS を分岐する。
 async fn create_connection(
     scheme: Scheme,
     host: &str,
@@ -350,8 +347,54 @@ async fn create_connection(
     Ok(PooledConnection::new(stream))
 }
 
-/// 共有可能な接続プール
-type SharedPool = Arc<Mutex<ConnectionPool>>;
+/// 接続プールへの操作依頼 (mpsc チャネル経由)
+enum PoolCmd {
+    /// アイドル接続の取得。プールに無ければ None を応答し、依頼側で新規接続を作る
+    Acquire {
+        key: UpstreamKey,
+        reply: oneshot::Sender<Option<PooledConnection>>,
+    },
+    /// 接続をプールへ返却
+    Release {
+        key: UpstreamKey,
+        conn: PooledConnection,
+    },
+    /// 期限切れ接続の掃除 (定期クリーンアップタスクから依頼)
+    Cleanup,
+    /// 全アイドル接続の破棄 (Graceful shutdown)。破棄した接続数を oneshot で応答する
+    Drain { reply: oneshot::Sender<usize> },
+}
+
+/// 接続プール操作用チャネルのバッファ数
+const POOL_CHANNEL_CAPACITY: usize = 16;
+
+/// 接続プールを所有する単一タスク
+///
+/// 状態の所有者を 1 箇所に定めるため、プールへの操作はすべてこのタスク経由で行う。
+async fn pool_task(mut pool: ConnectionPool, mut rx: mpsc::Receiver<PoolCmd>) {
+    while let Some(cmd) = rx.recv().await {
+        match cmd {
+            PoolCmd::Acquire { key, reply } => {
+                // 依頼側が応答を待たずに drop した場合は送信失敗になるため無視する
+                let _ = reply.send(pool.try_acquire(&key));
+            }
+            PoolCmd::Release { key, conn } => pool.release(key, conn),
+            PoolCmd::Cleanup => {
+                pool.cleanup_expired();
+                let (hosts, conns) = pool.stats();
+                debug!(hosts, connections = conns, "Pool cleanup done");
+            }
+            PoolCmd::Drain { reply } => {
+                let _ = reply.send(pool.drain());
+                break;
+            }
+        }
+    }
+    debug!("Pool task stopped");
+}
+
+/// 共有可能な接続プール (単一タスク所有 + mpsc チャネル)
+type SharedPool = mpsc::Sender<PoolCmd>;
 
 /// Graceful shutdown タイムアウト (秒)
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
@@ -451,18 +494,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tls_config = Arc::new(ClientConfig::with_platform_verifier()?);
     let tls_connector = TlsConnector::from(tls_config);
 
-    // 接続プールを作成
+    // 接続プールを作成 (状態は pool_task が単一所有し、mpsc チャネルで操作を依頼する)
     let pool_config = PoolConfig::default();
-    let pool = Arc::new(Mutex::new(ConnectionPool::new(
-        tls_connector,
-        pool_config.clone(),
-    )));
+    let (pool_tx, pool_rx) = mpsc::channel::<PoolCmd>(POOL_CHANNEL_CAPACITY);
+    let mut tasks: JoinSet<()> = JoinSet::new();
+    tasks.spawn(pool_task(ConnectionPool::new(pool_config.clone()), pool_rx));
 
     // 定期的なクリーンアップタスク (CancellationToken で停止可能)
     let cancel_token = CancellationToken::new();
-    let mut tasks: JoinSet<()> = JoinSet::new();
 
-    let cleanup_pool = pool.clone();
+    let cleanup_pool = pool_tx.clone();
     let cleanup_cancel = cancel_token.clone();
     tasks.spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -470,10 +511,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::select! {
                 _ = cleanup_cancel.cancelled() => break,
                 _ = interval.tick() => {
-                    let mut pool = cleanup_pool.lock().await;
-                    pool.cleanup_expired();
-                    let (hosts, conns) = pool.stats();
-                    debug!(hosts, connections = conns, "Pool cleanup done");
+                    // プールタスクが終了済みなら送信失敗するためその場合は終了する
+                    if cleanup_pool.send(PoolCmd::Cleanup).await.is_err() {
+                        break;
+                    }
                 }
             }
         }
@@ -500,9 +541,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let (socket, _) = result?;
                 let upstream = upstream.clone();
                 let upstream_host_header = upstream_host_header.clone();
-                let pool = pool.clone();
+                let pool = pool_tx.clone();
+                let tls_connector = tls_connector.clone();
                 tasks.spawn(async move {
-                    if let Err(e) = handle_client(socket, &upstream, &upstream_host_header, pool).await {
+                    if let Err(e) = handle_client(socket, &upstream, &upstream_host_header, pool, tls_connector).await {
                         error!(error = %e, "Client handler error");
                     }
                 });
@@ -518,7 +560,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cancel_token.cancel();
 
     // 接続プール内の idle 接続を drain する
-    let drained = pool.lock().await.drain();
+    let (drain_reply, drain_rx) = oneshot::channel();
+    // プールタスクが既に終了している場合は送信失敗する (その場合は 0 件扱い)
+    let _ = pool_tx.send(PoolCmd::Drain { reply: drain_reply }).await;
+    let drained = drain_rx.await.unwrap_or(0);
     info!(drained_connections = drained, "Connection pool drained");
 
     // 実行中タスク (クリーンアップ + クライアント接続) の完了を待機する
@@ -544,6 +589,7 @@ async fn handle_client(
     upstream: &UpstreamUrl,
     upstream_host_header: &str,
     pool: SharedPool,
+    tls_connector: TlsConnector,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // クライアントからリクエストヘッダーを受信
     let mut decoder = RequestDecoder::new();
@@ -691,9 +737,14 @@ async fn handle_client(
     );
 
     // 接続プールから接続を取得してリクエストを送信
-    let result =
-        stream_upstream_response_pooled(&mut socket, &upstream_request, upstream, pool.clone())
-            .await;
+    let result = stream_upstream_response_pooled(
+        &mut socket,
+        &upstream_request,
+        upstream,
+        pool.clone(),
+        &tls_connector,
+    )
+    .await;
 
     // エラーの場合はログに出力
     if let Err(ref e) = result {
@@ -708,26 +759,32 @@ async fn stream_upstream_response_pooled(
     request: &Request,
     upstream: &UpstreamUrl,
     pool: SharedPool,
+    tls_connector: &TlsConnector,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let start = Instant::now();
     let key = upstream.key();
 
-    // まずプールからアイドル接続を取得（ロックは短時間のみ保持）
-    let (mut conn, from_pool) = {
-        let mut pool_guard = pool.lock().await;
-        if let Some(conn) = pool_guard.try_acquire(&key) {
-            (conn, true)
-        } else {
-            // プールにない場合は TLS コネクタを取得してロックを解放
-            let tls_connector = pool_guard.tls_connector();
-            drop(pool_guard); // 明示的にロックを解放
-
-            // ロック外で新規接続を作成（時間がかかる処理）
+    // まずプールへアイドル接続の取得を依頼する (状態はプールタスクが所有)
+    let (acquire_reply, acquire_rx) = oneshot::channel();
+    pool.send(PoolCmd::Acquire {
+        // release でも key を使うためクローンする
+        key: key.clone(),
+        reply: acquire_reply,
+    })
+    .await
+    .map_err(|_| "connection pool task is stopped")?;
+    let (mut conn, from_pool) = match acquire_rx
+        .await
+        .map_err(|_| "connection pool task is stopped")?
+    {
+        Some(conn) => (conn, true),
+        None => {
+            // プールにアイドル接続がない場合は新規接続を作成 (プールタスク外で実行)
             let conn = create_connection(
                 upstream.scheme,
                 &upstream.host,
                 upstream.port,
-                &tls_connector,
+                tls_connector,
             )
             .await?;
             (conn, false)
@@ -757,8 +814,12 @@ async fn stream_upstream_response_pooled(
 
     if should_reuse {
         conn.last_used = Instant::now();
-        pool.lock().await.release(key, conn);
-        debug!("connection returned to pool");
+        // プールタスクが終了済みなら送信失敗する (接続は drop で OS クローズされる)
+        if pool.send(PoolCmd::Release { key, conn }).await.is_err() {
+            debug!("connection dropped (pool task stopped)");
+        } else {
+            debug!("connection returned to pool");
+        }
     } else {
         debug!("connection closed (not reusable)");
     }
@@ -868,6 +929,10 @@ async fn stream_response_on_connection(
     // version は転送せず HTTP/1.1 固定 (RFC 9112 Section 2.3: 仲介者は自身の HTTP-version を送信 MUST)
     let (_version, status_code, reason_phrase, headers) = resp_head.into_parts();
     let mut response_for_headers = Response::new(status_code, reason_phrase)?;
+    // ボディはストリーミング転送するため、ここではヘッダーのみエンコードする。
+    // omit_body(true) により encode_response_headers の Content-Length 整合性検証を
+    // スキップさせる (ヘッダー先行送信パターン)。
+    response_for_headers.set_omit_body(true);
 
     for (name, value) in headers {
         if is_hop_by_hop_header(&name, &connection_headers) {
