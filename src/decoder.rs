@@ -12,10 +12,10 @@
 //! let mut decoder = RequestDecoder::new();
 //!
 //! // データを投入
-//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello").unwrap();
+//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello").expect("デコードは成功するはず (実装バグ)");
 //!
 //! // ヘッダーをデコード
-//! let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+//! let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("デコードは成功するはず (実装バグ)");
 //! assert_eq!(head.method(), "GET");
 //!
 //! // ボディをストリーミングで読み取り
@@ -26,7 +26,7 @@
 //!         if let Some(data) = decoder.peek_body() {
 //!             body.extend_from_slice(data);
 //!             let len = data.len();
-//!             match decoder.consume_body(len).unwrap() {
+//!             match decoder.consume_body(len).expect("デコードは成功するはず (実装バグ)") {
 //!                 BodyProgress::Complete { .. } => break,
 //!                 // NeedData (chunked CRLF 不足) でも loop 先頭に戻って peek_body 再試行。
 //!                 // peek_body が None なら progress() に fall through する。
@@ -34,7 +34,7 @@
 //!             }
 //!         }
 //!         // peek_body() が None → 状態機械を進める
-//!         match decoder.progress().unwrap() {
+//!         match decoder.progress().expect("デコードは成功するはず (実装バグ)") {
 //!             BodyProgress::Complete { .. } => break,
 //!             // 状態が進んだ: peek_body 再試行のため loop 先頭へ
 //!             BodyProgress::Advanced => continue,
@@ -55,9 +55,9 @@
 //! use shiguredo_http11::{ResponseDecoder, BodyKind};
 //!
 //! let mut decoder = ResponseDecoder::new();
-//! decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nhello world").unwrap();
+//! decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nhello world").expect("デコードは成功するはず (実装バグ)");
 //!
-//! let (_head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+//! let (_head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("デコードは成功するはず (実装バグ)");
 //! assert_eq!(body_kind, BodyKind::CloseDelimited);
 //!
 //! // mark_eof() 前に peek_body() でバッファ内の全ボディデータを消費する
@@ -65,7 +65,7 @@
 //! while let Some(data) = decoder.peek_body() {
 //!     body.extend_from_slice(data);
 //!     let len = data.len();
-//!     decoder.consume_body(len).unwrap();
+//!     decoder.consume_body(len).expect("デコードは成功するはず (実装バグ)");
 //! }
 //! // I/O レイヤーが接続切断を検知したら mark_eof() を呼ぶ。
 //! // mark_eof() 後は phase が Complete に遷移し peek_body() は None を返す。
@@ -79,8 +79,8 @@
 //! use shiguredo_http11::RequestDecoder;
 //!
 //! let mut decoder = RequestDecoder::new();
-//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").unwrap();
-//! let request = decoder.decode().unwrap().unwrap();
+//! decoder.feed(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n").expect("デコードは成功するはず (実装バグ)");
+//! let request = decoder.decode().expect("結果は存在するはず (実装バグ)").expect("デコードは成功するはず (実装バグ)");
 //! assert_eq!(request.method(), "GET");
 //! ```
 

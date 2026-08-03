@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+# Property-Based Testing のストラテジ生成と検証
 proptest = "1.11"
 
 [dev-dependencies]

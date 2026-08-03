@@ -323,7 +323,9 @@ path = "fuzz_targets/fuzz_accept_query.rs"
 test = false
 
 [dependencies]
-arbitrary = { version = "1", features = ["derive"] }
+# fuzz ターゲットへの任意バイト入力生成 (libFuzzer 入力を構造化データとして解釈)
+arbitrary = { version = "1.4", features = ["derive"] }
+# libFuzzer ランタイムとのリンク
 libfuzzer-sys = "0.4"
 
 [dependencies.shiguredo_http11]

@@ -14,7 +14,7 @@ exclude = {
 
 default_install_hook_types = ["pre-commit", "pre-push"]
 
-# pre-commit: 静的チェック + ユニットテスト (CI ci job と同等)
+# pre-commit: 静的チェックのみ
 # pre-push: ユニットテスト + e2e (curl / Docker が必要; CI e2e-test job と同等)
 
 [[repos]]
@@ -88,14 +88,15 @@ hooks = [
   {
     id = "cargo-test",
     name = "cargo test",
-    # CI の ci job と同じ除外 (curl / Docker を要する e2e は pre-push)
+    # コミットのたびにテストを実行すると遅すぎるため pre-push のみで実行
+    # CI の ci job と同じ除外 (curl / Docker を要する e2e は cargo-test-e2e)
     entry = "cargo test --workspace --exclude http11_client --exclude http11_server",
     language = "system",
     types = ["rust"],
     pass_filenames = false,
     require_serial = true,
     priority = 30,
-    stages = ["pre-commit", "pre-push"],
+    stages = ["pre-push"],
   },
   {
     id = "cargo-test-e2e",
