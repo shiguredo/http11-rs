@@ -73,13 +73,13 @@ fn test_encode_response_invalid_status_code() {
 fn test_encode_request_with_existing_content_length() {
     // Content-Length が既に設定されている場合は追加しない
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
-    let encoded = encode_request(&req).unwrap();
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // Content-Length が 1 回だけ出現
@@ -93,11 +93,11 @@ fn test_encode_request_with_existing_content_length() {
 fn test_encode_post_with_explicit_empty_body_emits_content_length_zero() {
     // POST + body=Some(vec![]) なら Content-Length: 0 を自動付与する
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(Vec::new());
-    let encoded = encode_request(&req).unwrap();
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(
@@ -111,11 +111,11 @@ fn test_encode_post_without_body_emits_no_content_length() {
     // POST + body=None なら Content-Length は自動付与しない
     // (RFC 9110 8.6 はメソッド意味論で content が想定されるかは呼び出し側の判断とする)
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(req.body_bytes().is_none());
-    let encoded = encode_request(&req).unwrap();
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(
@@ -128,10 +128,10 @@ fn test_encode_post_without_body_emits_no_content_length() {
 fn test_encode_get_without_body_emits_no_content_length() {
     // GET + body=None (デフォルト) は Content-Length を自動付与しない
     let req = Request::new(Method::GET, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
-    let encoded = encode_request(&req).unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(
@@ -149,9 +149,9 @@ fn test_encode_response_no_content_length_with_transfer_encoding() {
     // Transfer-Encoding がある場合は Content-Length を追加しない
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(!encoded_str.contains("Content-Length"));
@@ -199,9 +199,9 @@ fn test_encode_chunks_various_sizes() {
 #[test]
 fn test_encode_request_headers_ignores_body() {
     let req = Request::with_version(Method::POST, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello world".to_vec());
-    let encoded = encode_request_headers(&req).unwrap();
+    let encoded = encode_request_headers(&req).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // ボディは含まれない
@@ -213,7 +213,7 @@ fn test_encode_request_headers_ignores_body() {
 #[test]
 fn test_encode_response_headers_ignores_body() {
     let res = Response::with_status(StatusCode::OK).body(b"hello world".to_vec());
-    let encoded = encode_response_headers(&res).unwrap();
+    let encoded = encode_response_headers(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     // ボディは含まれない
@@ -224,11 +224,11 @@ fn test_encode_response_headers_ignores_body() {
 #[test]
 fn test_encode_request_headers_content_length_not_digit() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "abc")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request_headers(&req);
     assert!(result.is_err());
 }
@@ -237,11 +237,11 @@ fn test_encode_request_headers_content_length_not_digit() {
 #[test]
 fn test_encode_request_headers_content_length_mismatch() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "999")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request_headers(&req);
     assert!(result.is_err());
@@ -252,7 +252,7 @@ fn test_encode_request_headers_content_length_mismatch() {
 fn test_encode_response_headers_content_length_not_digit() {
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "abc")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_response_headers(&res);
     assert!(result.is_err());
 }
@@ -262,8 +262,37 @@ fn test_encode_response_headers_content_length_not_digit() {
 fn test_encode_response_headers_content_length_mismatch() {
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "999")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
+    let result = encode_response_headers(&res);
+    assert!(result.is_err());
+}
+
+/// encode_response_headers で omit_body(true) + Content-Length + body なしは許可
+///
+/// HEAD レスポンスやプロキシのヘッダー先行送信で、ボディを保持せずに
+/// Content-Length だけを転送するケース (encode_response 側と同じ条件)。
+#[test]
+fn test_encode_response_headers_omit_body_with_content_length() {
+    let mut res = Response::with_status(StatusCode::OK)
+        .header(HeaderName::from_static(b"Content-Length"), "999")
+        .expect("エンコードは成功するはず (実装バグ)");
+    res.set_omit_body(true);
+    let encoded = encode_response_headers(&res).expect("エンコードは成功するはず (実装バグ)");
+    let encoded_str = String::from_utf8_lossy(&encoded);
+    assert!(encoded_str.contains("Content-Length: 999"));
+    assert!(encoded_str.contains("HTTP/1.1 200 OK"));
+}
+
+/// encode_response_headers で omit_body(true) でもボディが空でなければ検証は通す
+#[test]
+fn test_encode_response_headers_omit_body_with_body_mismatch() {
+    let mut res = Response::with_status(StatusCode::OK)
+        .header(HeaderName::from_static(b"Content-Length"), "999")
+        .expect("エンコードは成功するはず (実装バグ)")
+        .body(b"hello".to_vec());
+    res.set_omit_body(true);
+    // body が空でないため不一致は検出される (encode_response 側と同じ条件)
     let result = encode_response_headers(&res);
     assert!(result.is_err());
 }
@@ -275,11 +304,11 @@ fn test_encode_response_headers_content_length_mismatch() {
 #[test]
 fn test_encode_request_te_only_ok() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -287,11 +316,11 @@ fn test_encode_request_te_only_ok() {
 #[test]
 fn test_encode_request_cl_only_ok() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "100")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(vec![0u8; 100]);
     let result = encode_request(&req);
     assert!(result.is_ok());
@@ -301,7 +330,7 @@ fn test_encode_request_cl_only_ok() {
 fn test_encode_response_te_only_ok() {
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_response(&res);
     assert!(result.is_ok());
 }
@@ -310,7 +339,7 @@ fn test_encode_response_te_only_ok() {
 fn test_encode_response_cl_only_ok() {
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "100")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(vec![0u8; 100]);
     let result = encode_response(&res);
     assert!(result.is_ok());
@@ -332,7 +361,7 @@ fn test_encode_response_205_with_cl_zero_ok() {
     // 205 で Content-Length: 0 は許可
     let res = Response::with_status(StatusCode::RESET_CONTENT)
         .header(HeaderName::from_static(b"Content-Length"), "0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_response(&res);
     assert!(result.is_ok());
 }
@@ -350,7 +379,7 @@ fn test_encode_response_205_with_cl_nbsp_zero_error() {
     // Content-Length: \u{00A0}0 (NBSP 前置) は trim_ows で除去されないため非 "0"
     let res = Response::with_status(StatusCode::RESET_CONTENT)
         .header(HeaderName::from_static(b"Content-Length"), "\u{00A0}0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_response(&res);
     assert!(matches!(
         result,
@@ -363,7 +392,7 @@ fn test_encode_response_headers_205_with_cl_nbsp_zero_error() {
     // encode_response_headers 経路でも同様に reject されること
     let res = Response::with_status(StatusCode::RESET_CONTENT)
         .header(HeaderName::from_static(b"Content-Length"), "\u{00A0}0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_response_headers(&res);
     assert!(matches!(
         result,
@@ -376,7 +405,7 @@ fn test_encode_response_205_with_cl_htab_zero_ok() {
     // HTAB 前置は OWS として正しく除去される (リグレッション防止)
     let res = Response::with_status(StatusCode::RESET_CONTENT)
         .header(HeaderName::from_static(b"Content-Length"), "\t0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_response(&res).is_ok());
     assert!(encode_response_headers(&res).is_ok());
 }
@@ -386,7 +415,7 @@ fn test_encode_response_205_with_cl_sp_zero_ok() {
     // SP 前置 / 後置は OWS として正しく除去される (リグレッション防止)
     let res = Response::with_status(StatusCode::RESET_CONTENT)
         .header(HeaderName::from_static(b"Content-Length"), " 0 ")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_response(&res).is_ok());
     assert!(encode_response_headers(&res).is_ok());
 }
@@ -399,9 +428,9 @@ fn test_encode_response_205_with_cl_sp_zero_ok() {
 fn test_encode_request_invalid_host_error() {
     // 不正な Host ヘッダー値はエラー
     let req = Request::new(Method::GET, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "exam ple.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(result, Err(EncodeError::InvalidHostHeader { .. })));
 }
@@ -410,9 +439,9 @@ fn test_encode_request_invalid_host_error() {
 fn test_encode_request_host_authority_mismatch_error() {
     // Host と URI authority の不一致はエラー
     let req = Request::new(Method::GET, "http://example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "other.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -424,9 +453,9 @@ fn test_encode_request_host_authority_mismatch_error() {
 fn test_encode_request_host_authority_match_ok() {
     // Host と URI authority の一致は OK
     let req = Request::new(Method::GET, "http://example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -435,9 +464,9 @@ fn test_encode_request_host_authority_match_ok() {
 fn test_encode_request_empty_host_ok() {
     // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
     let req = Request::new(Method::GET, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -490,9 +519,9 @@ fn test_encode_request_crlf_in_header_value() {
     // 不正なヘッダー値は構築時に拒否される
     for &value in &["evil\r\nEvil: injected", "evil\ninjected", "evil\rinjected"] {
         let req = Request::new(Method::GET, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = req.header(HeaderName::from_static(b"X-Test"), value);
         assert!(
             matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
@@ -506,9 +535,9 @@ fn test_encode_request_crlf_in_header_value() {
 fn test_encode_request_nul_in_header_value() {
     // NUL を含むヘッダー値は構築時に拒否される
     let req = Request::new(Method::GET, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = req.header(HeaderName::from_static(b"X-Test"), "evil\0value");
     assert!(
         matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
@@ -564,9 +593,9 @@ fn test_encode_response_crlf_in_header_value() {
 fn test_encode_request_http_userinfo_rejected() {
     // RFC 9110 Section 4.2.4: http URI の userinfo は MUST NOT
     let req = Request::new(Method::GET, "http://user:pass@example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -577,9 +606,9 @@ fn test_encode_request_http_userinfo_rejected() {
 fn test_encode_request_https_userinfo_rejected() {
     // RFC 9110 Section 4.2.4: https URI の userinfo は MUST NOT
     let req = Request::new(Method::GET, "https://user@example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -589,9 +618,9 @@ fn test_encode_request_https_userinfo_rejected() {
 #[test]
 fn test_encode_request_http_userinfo_with_port_rejected() {
     let req = Request::new(Method::GET, "http://user@example.com:8080/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:8080")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -602,9 +631,9 @@ fn test_encode_request_http_userinfo_with_port_rejected() {
 fn test_encode_request_non_http_scheme_userinfo_allowed() {
     // http/https 以外のスキームでは userinfo は許可
     let req = Request::new(Method::GET, "ftp://user@example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request(&req).is_ok());
 }
 
@@ -617,7 +646,7 @@ fn test_encode_response_content_length_mismatch() {
     // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(
@@ -633,11 +662,11 @@ fn test_encode_response_content_length_mismatch() {
 fn test_encode_request_content_length_mismatch() {
     // Content-Length と body.len() が不一致 → ContentLengthMismatch エラー
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(
@@ -653,7 +682,7 @@ fn test_encode_request_content_length_mismatch() {
 fn test_encode_response_omit_body_without_content_length_does_not_add_header() {
     // omit_body: true かつ body が空の場合、自動で Content-Length を追加しない
     let res = Response::with_status(StatusCode::OK).omit_body(true);
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
     assert!(!encoded_str.contains("Content-Length"));
 }
@@ -663,9 +692,9 @@ fn test_encode_response_omit_body_allows_content_length_without_body() {
     // HEAD レスポンス相当: body を送信しないが Content-Length で表現長を返す
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "100")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .omit_body(true);
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(encoded_str.contains("Content-Length: 100\r\n"));
@@ -677,10 +706,10 @@ fn test_encode_response_omit_body_does_not_encode_body() {
     // omit_body: true の場合、status がボディ許可でも実ボディは送信しない
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec())
         .omit_body(true);
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(encoded_str.contains("Content-Length: 5\r\n"));
@@ -693,7 +722,7 @@ fn test_encode_response_omit_body_with_non_empty_body_still_validates_content_le
     // omit_body: true でも body を持っている場合は Content-Length 整合性を検証する
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec())
         .omit_body(true);
     let result = encode_response(&res);
@@ -711,8 +740,8 @@ fn test_encode_response_304_content_length_representation_size_ok() {
     // RFC 9110 Section 8.6: 304 の Content-Length は表現長を示せる
     let res = Response::with_status(StatusCode::NOT_MODIFIED)
         .header(HeaderName::from_static(b"Content-Length"), "100")
-        .unwrap();
-    let encoded = encode_response(&res).unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let encoded_str = String::from_utf8_lossy(&encoded);
 
     assert!(encoded_str.contains("Content-Length: 100\r\n"));
@@ -727,7 +756,7 @@ fn test_encode_response_content_length_with_nbsp_is_rejected() {
     // HTTP Request Smuggling (CWE-444) の経路を塞ぐ意図のテスト。
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "\u{A0}5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(
@@ -740,11 +769,11 @@ fn test_encode_response_content_length_with_nbsp_is_rejected() {
 fn test_encode_request_content_length_with_ideographic_space_is_rejected() {
     // U+3000 (全角空白) も str::trim で除去される Unicode 空白だが OWS ではない
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "\u{3000}5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(
@@ -758,7 +787,7 @@ fn test_encode_response_content_length_with_sp_htab_is_accepted() {
     // OWS = *( SP / HTAB ) は引き続き正しく trim される
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), " \t5\t ")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let encoded = encode_response(&res).expect("SP/HTAB のみの OWS は受理される想定");
     let encoded_str = String::from_utf8_lossy(&encoded);
@@ -769,7 +798,7 @@ fn test_encode_response_content_length_with_sp_htab_is_accepted() {
 fn test_encode_response_204_no_auto_content_length_with_no_body() {
     // 204: status_has_body=false なので Content-Length 自動付与なし (body=None)
     let res = Response::with_status(StatusCode::NO_CONTENT);
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
     assert!(s.ends_with("\r\n\r\n"));
@@ -779,7 +808,7 @@ fn test_encode_response_204_no_auto_content_length_with_no_body() {
 fn test_encode_response_204_no_auto_content_length_with_empty_body() {
     // 204: body=Some(vec![]) でも Content-Length は自動付与しない
     let res = Response::with_status(StatusCode::NO_CONTENT).body(Vec::new());
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
     assert!(s.ends_with("\r\n\r\n"));
@@ -800,7 +829,7 @@ fn test_encode_response_omit_body_with_explicit_empty_body_does_not_add_content_
     let res = Response::with_status(StatusCode::OK)
         .body(Vec::new())
         .omit_body(true);
-    let encoded = encode_response(&res).unwrap();
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
     let s = String::from_utf8_lossy(&encoded);
     assert!(!s.contains("Content-Length"));
     assert!(s.ends_with("\r\n\r\n"));
@@ -810,9 +839,9 @@ fn test_encode_response_omit_body_with_explicit_empty_body_does_not_add_content_
 fn test_encode_request_absolute_form_at_in_userinfo() {
     // RFC 9110 Section 4.2.4: userinfo の "@" は http URI で禁止
     let req = Request::new(Method::GET, "http://user%40name@example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(matches!(
         encode_request(&req),
         Err(EncodeError::UserinfoInHttpUri { .. })
@@ -848,37 +877,37 @@ fn test_encode_request_absolute_form_at_in_userinfo() {
 fn test_encode_request_connect_accepts_body_headers() {
     // body 付き + Content-Length
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     assert!(encode_request(&req).is_ok());
 
     // Content-Length: 0 (content がないことの明示)
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request(&req).is_ok());
 
     // Transfer-Encoding: chunked
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request(&req).is_ok());
 
     // body なし (最も一般的なケース)
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request(&req).is_ok());
 }
 
@@ -889,20 +918,20 @@ fn test_encode_request_connect_accepts_body_headers() {
 fn test_encode_request_headers_connect_accepts_content_length() {
     // Content-Length: 0
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "0")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request_headers(&req).is_ok());
 
     // Content-Length: N > 0
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     assert!(encode_request_headers(&req).is_ok());
 }
 
@@ -914,9 +943,9 @@ fn test_encode_request_headers_connect_accepts_content_length() {
 fn test_encode_request_connect_authority_form_ok() {
     // CONNECT は authority-form (host:port) のみ許可
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -925,9 +954,9 @@ fn test_encode_request_connect_authority_form_ok() {
 fn test_encode_request_connect_origin_form_error() {
     // CONNECT で origin-form は不正
     let req = Request::new(Method::CONNECT, "/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -939,9 +968,9 @@ fn test_encode_request_connect_origin_form_error() {
 fn test_encode_request_connect_absolute_form_error() {
     // CONNECT で absolute-form は不正
     let req = Request::new(Method::CONNECT, "http://example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -953,9 +982,9 @@ fn test_encode_request_connect_absolute_form_error() {
 fn test_encode_request_connect_asterisk_form_error() {
     // CONNECT で asterisk-form は不正
     let req = Request::new(Method::CONNECT, "*")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -967,9 +996,9 @@ fn test_encode_request_connect_asterisk_form_error() {
 fn test_encode_request_options_asterisk_form_ok() {
     // OPTIONS * は asterisk-form 許可
     let req = Request::new(Method::OPTIONS, "*")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -978,9 +1007,9 @@ fn test_encode_request_options_asterisk_form_ok() {
 fn test_encode_request_get_asterisk_form_error() {
     // GET で asterisk-form は不正
     let req = Request::new(Method::GET, "*")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -992,9 +1021,9 @@ fn test_encode_request_get_asterisk_form_error() {
 fn test_encode_request_get_authority_form_error() {
     // GET で authority-form は不正
     let req = Request::new(Method::GET, "example.com:80")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1009,7 +1038,8 @@ fn test_encode_request_get_authority_form_error() {
 #[test]
 fn test_encode_request_absolute_form_without_double_slash_ok() {
     // "://" を含まない absolute-URI (urn:isbn:...) は absolute-form
-    let req = Request::with_version(Method::GET, "urn:isbn:0451450523", "HTTP/1.0").unwrap();
+    let req = Request::with_version(Method::GET, "urn:isbn:0451450523", "HTTP/1.0")
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1017,8 +1047,8 @@ fn test_encode_request_absolute_form_without_double_slash_ok() {
 #[test]
 fn test_encode_request_absolute_form_urn_nid_nss() {
     // urn:nid:nss 形式の absolute-URI
-    let req =
-        Request::with_version(Method::GET, "urn:example:animal:ferret:nose", "HTTP/1.0").unwrap();
+    let req = Request::with_version(Method::GET, "urn:example:animal:ferret:nose", "HTTP/1.0")
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1031,9 +1061,9 @@ fn test_encode_request_absolute_form_urn_nid_nss() {
 fn test_encode_request_authority_less_uri_non_empty_host_error() {
     // authority がない absolute-form で Host が非空はエラー
     let req = Request::new(Method::GET, "urn:isbn:0451450523")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1045,9 +1075,9 @@ fn test_encode_request_authority_less_uri_non_empty_host_error() {
 fn test_encode_request_authority_less_uri_empty_host_ok() {
     // authority がない absolute-form で Host が空は OK
     let req = Request::new(Method::GET, "urn:isbn:0451450523")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1060,9 +1090,9 @@ fn test_encode_request_authority_less_uri_empty_host_ok() {
 fn test_encode_request_http_empty_host_error() {
     // http:///path は空 host で不正
     let req = Request::new(Method::GET, "http:///path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1074,9 +1104,9 @@ fn test_encode_request_http_empty_host_error() {
 fn test_encode_request_https_port_only_host_error() {
     // https://:443/path は空 host で不正
     let req = Request::new(Method::GET, "https://:443/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1088,9 +1118,9 @@ fn test_encode_request_https_port_only_host_error() {
 fn test_encode_request_authority_form_still_works() {
     // 通常の authority-form (host:port) は引き続き authority-form と判定
     let req = Request::new(Method::CONNECT, "example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1103,9 +1133,9 @@ fn test_encode_request_authority_form_still_works() {
 fn test_encode_request_http_without_double_slash_error() {
     // http:foo は "://" がないので不正
     let req = Request::new(Method::GET, "http:foo")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1117,9 +1147,9 @@ fn test_encode_request_http_without_double_slash_error() {
 fn test_encode_request_https_without_double_slash_error() {
     // https:path は "://" がないので不正
     let req = Request::new(Method::GET, "https:path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1131,9 +1161,9 @@ fn test_encode_request_https_without_double_slash_error() {
 fn test_encode_request_non_http_scheme_without_double_slash_ok() {
     // urn:isbn:xxx は http/https ではないので OK
     let req = Request::new(Method::GET, "urn:isbn:0451450523")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1146,9 +1176,9 @@ fn test_encode_request_non_http_scheme_without_double_slash_ok() {
 fn test_encode_request_connect_userinfo_error() {
     // user@example.com:443 は authority-form として不正 (userinfo を含む)
     let req = Request::new(Method::CONNECT, "user@example.com:443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com:443")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1161,9 +1191,9 @@ fn test_encode_request_connect_userinfo_error() {
 fn test_encode_request_connect_empty_host_error() {
     // :443 は authority-form として不正 (ホストが空)
     let req = Request::new(Method::CONNECT, ":443")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_err());
 }
@@ -1176,9 +1206,9 @@ fn test_encode_request_connect_empty_host_error() {
 fn test_encode_request_empty_host_with_authority_uri_error() {
     // URI に authority があるのに Host が空は不正
     let req = Request::new(Method::GET, "http://example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(matches!(
         result,
@@ -1190,9 +1220,9 @@ fn test_encode_request_empty_host_with_authority_uri_error() {
 fn test_encode_request_matching_host_with_authority_uri_ok() {
     // URI の authority と Host が一致する場合は OK
     let req = Request::new(Method::GET, "http://example.com/path")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("エンコードは成功するはず (実装バグ)");
     let result = encode_request(&req);
     assert!(result.is_ok());
 }
@@ -1205,11 +1235,11 @@ fn test_encode_request_matching_host_with_authority_uri_ok() {
 fn test_encode_request_non_numeric_content_length() {
     // 非数値の Content-Length はエラー
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "abc")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(
@@ -1223,7 +1253,7 @@ fn test_encode_response_non_numeric_content_length() {
     // 非数値の Content-Length はエラー
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "abc")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(
@@ -1236,13 +1266,13 @@ fn test_encode_response_non_numeric_content_length() {
 fn test_encode_request_duplicate_content_length_mismatch() {
     // 重複 Content-Length で値が不一致はエラー
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
@@ -1253,9 +1283,9 @@ fn test_encode_response_duplicate_content_length_mismatch() {
     // 重複 Content-Length で値が不一致はエラー
     let res = Response::with_status(StatusCode::OK)
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "10")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_response(&res);
     assert!(matches!(result, Err(EncodeError::DuplicateContentLength)));
@@ -1265,13 +1295,13 @@ fn test_encode_response_duplicate_content_length_mismatch() {
 fn test_encode_request_duplicate_content_length_same_value() {
     // 同一値の重複 Content-Length は通過する
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Content-Length"), "5")
-        .unwrap()
+        .expect("エンコードは成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     let result = encode_request(&req);
     assert!(result.is_ok());
@@ -1306,8 +1336,10 @@ fn test_encode_chunk_hex_boundaries() {
 fn test_encode_response_status_code_decimal_boundaries() {
     // status_code 100 / 200 / 999 のステータスラインが format!("{}") と一致する
     for &code in &[100u16, 200, 599] {
-        let res = Response::new(code, "Reason").unwrap().body(Vec::new());
-        let encoded = encode_response(&res).unwrap();
+        let res = Response::new(code, "Reason")
+            .expect("エンコードは成功するはず (実装バグ)")
+            .body(Vec::new());
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
         assert!(
             encoded.starts_with(expected_status_line.as_bytes()),
@@ -1322,8 +1354,9 @@ fn test_encode_response_content_length_decimal_boundaries() {
     for &len in &[0usize, 9, 10, 99, 100] {
         let body = vec![b'x'; len];
         let res = Response::with_status(StatusCode::OK).body(body.clone());
-        let encoded = encode_response(&res).unwrap();
-        let encoded_str = core::str::from_utf8(&encoded).unwrap();
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
+        let encoded_str =
+            core::str::from_utf8(&encoded).expect("エンコードは成功するはず (実装バグ)");
         let expected_header = format!("Content-Length: {len}\r\n");
         assert!(
             encoded_str.contains(&expected_header),
@@ -1338,12 +1371,13 @@ fn test_encode_request_content_length_decimal_boundaries() {
     for &len in &[0usize, 9, 10, 99, 100] {
         let body = vec![b'x'; len];
         let req = Request::new(Method::POST, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(body.clone());
-        let encoded = encode_request(&req).unwrap();
-        let encoded_str = core::str::from_utf8(&encoded).unwrap();
+        let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
+        let encoded_str =
+            core::str::from_utf8(&encoded).expect("エンコードは成功するはず (実装バグ)");
         let expected_header = format!("Content-Length: {len}\r\n");
         assert!(
             encoded_str.contains(&expected_header),
@@ -1356,8 +1390,8 @@ fn test_encode_request_content_length_decimal_boundaries() {
 fn test_encode_response_headers_status_code_decimal_boundaries() {
     // encode_response_headers 経路でも status_code が format!("{}") と一致する
     for &code in &[100u16, 200, 599] {
-        let res = Response::new(code, "Reason").unwrap();
-        let encoded = encode_response_headers(&res).unwrap();
+        let res = Response::new(code, "Reason").expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_response_headers(&res).expect("エンコードは成功するはず (実装バグ)");
         let expected_status_line = format!("HTTP/1.1 {code} Reason\r\n");
         assert!(
             encoded.starts_with(expected_status_line.as_bytes()),

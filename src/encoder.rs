@@ -1031,12 +1031,19 @@ pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeErr
 
     // Content-Length の値検証。encode_response 側と同等の常時検証を行う。
     // TE がない場合のみ検証 (TE がある場合は chunked 送信が前提のためスキップ)。
+    // omit_body: true の場合は、body が空 (None または Some(vec![])) のときのみ検証を
+    // スキップする (HEAD レスポンスやヘッダー先行送信で Content-Length が表現長を
+    // 示すケース。encode_response 側と同じ条件)。
+    // body == None は body 長 0 として扱う。
+    let body_will_be_encoded =
+        response_status_has_body(response.status_code()) && !response.is_body_omitted();
     if response_status_has_body(response.status_code())
         && !response.has_header("Transfer-Encoding")
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(response))?
     {
         let body_length = response.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
-        if header_value != body_length {
+        let should_validate = body_will_be_encoded || body_length != 0;
+        if should_validate && header_value != body_length {
             return Err(EncodeError::ContentLengthMismatch {
                 header_value,
                 body_length,
@@ -1309,18 +1316,18 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_simple_get() {
         let req = Request::new(Method::GET, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         assert_request_capacity_sufficient(&req);
     }
 
     #[test]
     fn test_request_capacity_post_with_body_auto_content_length() {
         let req = Request::new(Method::POST, "/api")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
     }
@@ -1328,11 +1335,11 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_post_with_explicit_content_length() {
         let req = Request::new(Method::POST, "/api")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), "11")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(b"hello world".to_vec());
         assert_request_capacity_sufficient(&req);
     }
@@ -1340,11 +1347,11 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_post_with_transfer_encoding_no_auto() {
         let req = Request::new(Method::POST, "/api")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(b"hello".to_vec());
         assert_request_capacity_sufficient(&req);
     }
@@ -1352,16 +1359,17 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_many_headers() {
         let mut req = Request::new(Method::GET, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         for i in 0..50 {
             req = req
                 .header(
-                    HeaderName::new(alloc::format!("x-custom-{i}")).unwrap(),
+                    HeaderName::new(alloc::format!("x-custom-{i}"))
+                        .expect("エンコードは成功するはず (実装バグ)"),
                     alloc::format!("value-{i}-with-some-padding"),
                 )
-                .unwrap();
+                .expect("エンコードは成功するはず (実装バグ)");
         }
         assert_request_capacity_sufficient(&req);
     }
@@ -1369,9 +1377,9 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_empty_body_auto_content_length_zero() {
         let req = Request::new(Method::POST, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(Vec::new());
         assert_request_capacity_sufficient(&req);
     }
@@ -1379,9 +1387,9 @@ mod capacity_tests {
     #[test]
     fn test_request_capacity_no_body() {
         let req = Request::new(Method::GET, "/path/to/resource?q=1")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         assert_request_capacity_sufficient(&req);
     }
 
@@ -1395,7 +1403,7 @@ mod capacity_tests {
     fn test_response_capacity_no_body_status() {
         // 1xx / 204 / 304 は body を含めない
         for &code in &[100u16, 204, 304] {
-            let res = Response::new(code, "Reason").unwrap();
+            let res = Response::new(code, "Reason").expect("エンコードは成功するはず (実装バグ)");
             assert_response_capacity_sufficient(&res);
         }
     }
@@ -1404,7 +1412,7 @@ mod capacity_tests {
     fn test_response_capacity_omit_body_with_content_length() {
         let res = Response::with_status(StatusCode::OK)
             .header(HeaderName::from_static(b"Content-Length"), "100")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .omit_body(true);
         assert_response_capacity_sufficient(&res);
     }
@@ -1413,7 +1421,7 @@ mod capacity_tests {
     fn test_response_capacity_with_transfer_encoding() {
         let res = Response::with_status(StatusCode::OK)
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         assert_response_capacity_sufficient(&res);
     }
 
@@ -1423,10 +1431,11 @@ mod capacity_tests {
         for i in 0..50 {
             res = res
                 .header(
-                    HeaderName::new(alloc::format!("x-custom-{i}")).unwrap(),
+                    HeaderName::new(alloc::format!("x-custom-{i}"))
+                        .expect("エンコードは成功するはず (実装バグ)"),
                     alloc::format!("value-{i}-with-some-padding"),
                 )
-                .unwrap();
+                .expect("エンコードは成功するはず (実装バグ)");
         }
         assert_response_capacity_sufficient(&res);
     }
@@ -1436,7 +1445,7 @@ mod capacity_tests {
         // status_code は 100..=599、見積もりは 3 桁固定なので過小確保にならない
         for &code in &[100u16, 200, 599] {
             let res = Response::new(code, "Phrase")
-                .unwrap()
+                .expect("エンコードは成功するはず (実装バグ)")
                 .body(b"body".to_vec());
             assert_response_capacity_sufficient(&res);
         }
@@ -1449,10 +1458,10 @@ mod capacity_tests {
         // パニックしないことを通常入力で確認する。
         // 実際のオーバーフロー検出は fuzz_encode_request で網羅する。
         let req = Request::new(Method::GET, "/")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
-        let _ = encode_request(&req).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let _ = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
     }
 }
 
@@ -1477,7 +1486,7 @@ mod validate_response_fields_tests {
     fn test_validate_response_fields_empty_reason_phrase_is_accepted() {
         let res =
             Response::from_raw_parts("HTTP/1.1".to_string(), 200, String::new(), Vec::new(), None);
-        let encoded = encode_response(&res).unwrap();
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         // status-line は "HTTP/1.1 200 \r\n" (status-code の後に SP 1 個 + CRLF)
         assert!(encoded.starts_with(b"HTTP/1.1 200 \r\n"));
     }
