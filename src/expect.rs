@@ -23,7 +23,7 @@
 //! ```rust
 //! use shiguredo_http11::expect::Expect;
 //!
-//! let expect = Expect::parse("100-continue").unwrap();
+//! let expect = Expect::parse("100-continue").expect("Expect のパースは成功するはず (実装バグ)");
 //! assert!(expect.has_100_continue());
 //! ```
 

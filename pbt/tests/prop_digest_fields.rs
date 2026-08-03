@@ -83,7 +83,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ContentDigest::parse(&input).unwrap();
+        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(digest.items().len(), 1);
         prop_assert_eq!(digest.items()[0].algorithm(), algorithm.as_str());
     }
@@ -100,7 +100,7 @@ proptest! {
         let b64_2 = base64_encode(&data2);
         let input = format!("sha-256=:{}:, sha-512=:{}:", b64_1, b64_2);
 
-        let digest = ContentDigest::parse(&input).unwrap();
+        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(digest.items().len(), 2);
         prop_assert_eq!(digest.items()[0].algorithm(), "sha-256");
         prop_assert_eq!(digest.items()[1].algorithm(), "sha-512");
@@ -117,7 +117,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ContentDigest::parse(&input).unwrap();
+        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
 
         // 大文字小文字を無視して取得
         prop_assert!(digest.get(&algorithm).is_some());
@@ -135,7 +135,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ContentDigest::parse(&input).unwrap();
+        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = digest.to_string();
 
         // 再パース可能
@@ -151,7 +151,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ContentDigest::parse(&input).unwrap();
+        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let value = digest.items()[0].value();
 
         prop_assert_eq!(value.bytes(), data.as_slice());
@@ -172,7 +172,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ReprDigest::parse(&input).unwrap();
+        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(digest.items().len(), 1);
         prop_assert_eq!(digest.items()[0].algorithm(), algorithm.as_str());
     }
@@ -189,7 +189,7 @@ proptest! {
         let b64_2 = base64_encode(&data2);
         let input = format!("sha-256=:{}:, sha-512=:{}:", b64_1, b64_2);
 
-        let digest = ReprDigest::parse(&input).unwrap();
+        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(digest.items().len(), 2);
     }
 }
@@ -204,7 +204,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ReprDigest::parse(&input).unwrap();
+        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert!(digest.get(&algorithm).is_some());
         prop_assert!(digest.get("nonexistent").is_none());
     }
@@ -217,7 +217,7 @@ proptest! {
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ReprDigest::parse(&input).unwrap();
+        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = digest.to_string();
 
         let reparsed = ReprDigest::parse(&display);
@@ -238,7 +238,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).unwrap();
+        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.items().len(), 1);
         prop_assert_eq!(want.items()[0].algorithm(), algorithm.as_str());
         prop_assert_eq!(want.items()[0].weight(), weight);
@@ -254,7 +254,7 @@ proptest! {
     ) {
         let input = format!("sha-256={}, sha-512={}", weight1, weight2);
 
-        let want = WantContentDigest::parse(&input).unwrap();
+        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.items().len(), 2);
         prop_assert_eq!(want.items()[0].weight(), weight1);
         prop_assert_eq!(want.items()[1].weight(), weight2);
@@ -270,7 +270,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).unwrap();
+        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.get(&algorithm), Some(weight));
         prop_assert_eq!(want.get(&algorithm.to_uppercase()), Some(weight));
         prop_assert!(want.get("nonexistent").is_none());
@@ -286,7 +286,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).unwrap();
+        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = want.to_string();
 
         let reparsed = WantContentDigest::parse(&display);
@@ -307,7 +307,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).unwrap();
+        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.items().len(), 1);
         prop_assert_eq!(want.items()[0].algorithm(), algorithm.as_str());
         prop_assert_eq!(want.items()[0].weight(), weight);
@@ -323,7 +323,7 @@ proptest! {
     ) {
         let input = format!("sha-256={}, sha-512={}", weight1, weight2);
 
-        let want = WantReprDigest::parse(&input).unwrap();
+        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.items().len(), 2);
     }
 }
@@ -337,7 +337,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).unwrap();
+        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(want.get(&algorithm), Some(weight));
         prop_assert!(want.get("nonexistent").is_none());
     }
@@ -352,7 +352,7 @@ proptest! {
     ) {
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).unwrap();
+        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = want.to_string();
 
         let reparsed = WantReprDigest::parse(&display);

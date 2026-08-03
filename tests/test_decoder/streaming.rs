@@ -52,8 +52,13 @@ fn test_decompressor_reset_request_pipelined() {
 
     // 1 件目のリクエスト (Content-Length: 0)
     let req1 = "GET /1 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
-    decoder.feed(req1.as_bytes()).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
+    decoder
+        .feed(req1.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let request = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(request.method(), "GET");
 
     assert_eq!(
@@ -64,8 +69,13 @@ fn test_decompressor_reset_request_pipelined() {
 
     // 2 件目のリクエスト (Content-Length: 0)
     let req2 = "GET /2 HTTP/1.1\r\nHost: example.com\r\nContent-Length: 0\r\n\r\n";
-    decoder.feed(req2.as_bytes()).unwrap();
-    let request = decoder.decode().unwrap().unwrap();
+    decoder
+        .feed(req2.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let request = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(request.method(), "GET");
 
     assert_eq!(
@@ -87,8 +97,13 @@ fn test_decompressor_reset_response_pipelined() {
 
     // 1 件目のレスポンス (Content-Length: 0)
     let res1 = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
-    decoder.feed(res1.as_bytes()).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
+    decoder
+        .feed(res1.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let response = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(response.status_code(), 200);
 
     assert_eq!(
@@ -99,8 +114,13 @@ fn test_decompressor_reset_response_pipelined() {
 
     // 2 件目のレスポンス (Content-Length: 0)
     let res2 = "HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n";
-    decoder.feed(res2.as_bytes()).unwrap();
-    let response = decoder.decode().unwrap().unwrap();
+    decoder
+        .feed(res2.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let response = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(response.status_code(), 201);
 
     assert_eq!(
@@ -143,16 +163,20 @@ fn test_connect_2xx_tunnel_mode() {
         // サーバーが MUST NOT に違反して Content-Length を付けても、
         // クライアントは MUST ignore に従い無視する
         let response = format!("HTTP/1.1 {} OK\r\nContent-Length: 100\r\n\r\n", status);
-        decoder.feed(response.as_bytes()).unwrap();
+        decoder
+            .feed(response.as_bytes())
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
-        let result = decoder.decode_headers().unwrap();
+        let result = decoder
+            .decode_headers()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert!(
             result.is_some(),
             "expected headers for CONNECT {} response",
             status
         );
 
-        let (head, body_kind) = result.unwrap();
+        let (head, body_kind) = result.expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert_eq!(head.status_code(), status);
         assert_eq!(
             body_kind,
@@ -176,9 +200,14 @@ fn test_connect_204_no_body() {
     decoder.set_request_method("CONNECT");
 
     let response = "HTTP/1.1 204 No Content\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.status_code(), 204);
     assert_eq!(body_kind, BodyKind::None);
     assert!(!decoder.is_tunnel());
@@ -197,16 +226,20 @@ fn test_connect_non_2xx_normal_body() {
             "HTTP/1.1 {} Error\r\nContent-Length: 5\r\n\r\nhello",
             status
         );
-        decoder.feed(response.as_bytes()).unwrap();
+        decoder
+            .feed(response.as_bytes())
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
-        let result = decoder.decode_headers().unwrap();
+        let result = decoder
+            .decode_headers()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert!(
             result.is_some(),
             "expected headers for CONNECT {} response",
             status
         );
 
-        let (_head, body_kind) = result.unwrap();
+        let (_head, body_kind) = result.expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert_ne!(
             body_kind,
             BodyKind::Tunnel,
@@ -226,12 +259,16 @@ fn test_non_connect_2xx_normal_body() {
         decoder.set_request_method(method);
 
         let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-        decoder.feed(response.as_bytes()).unwrap();
+        decoder
+            .feed(response.as_bytes())
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
-        let result = decoder.decode_headers().unwrap();
+        let result = decoder
+            .decode_headers()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert!(result.is_some(), "{} レスポンスでヘッダーを期待", method);
 
-        let (_head, body_kind) = result.unwrap();
+        let (_head, body_kind) = result.expect("ストリーミングのデコードは成功するはず (実装バグ)");
         assert_ne!(
             body_kind,
             BodyKind::Tunnel,
@@ -253,8 +290,13 @@ fn test_connect_2xx_ignores_body_headers() {
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert_eq!(head.get_header("Transfer-Encoding"), None);
     assert!(!head.is_chunked());
@@ -263,33 +305,60 @@ fn test_connect_2xx_ignores_body_headers() {
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert_eq!(head.get_header("Content-Length"), None);
-    assert_eq!(head.content_length().unwrap(), None);
+    assert_eq!(
+        head.content_length()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)"),
+        None
+    );
 
     // Transfer-Encoding + Content-Length の両方があっても Tunnel、両方とも消える
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 100\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert_eq!(head.get_header("Transfer-Encoding"), None);
     assert_eq!(head.get_header("Content-Length"), None);
     assert!(!head.is_chunked());
-    assert_eq!(head.content_length().unwrap(), None);
+    assert_eq!(
+        head.content_length()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)"),
+        None
+    );
 
     // CONNECT 非 2xx (例: 502) では従来通り CL が ResponseHead.headers に残る
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(body_kind, BodyKind::ContentLength(5));
     assert_eq!(head.get_header("Content-Length"), Some("5"));
-    assert_eq!(head.content_length().unwrap(), Some(5));
+    assert_eq!(
+        head.content_length()
+            .expect("ストリーミングのデコードは成功するはず (実装バグ)"),
+        Some(5)
+    );
 }
 
 /// take_remaining() でヘッダー後のデータを取得
@@ -299,9 +368,14 @@ fn test_connect_take_remaining() {
     decoder.set_request_method("CONNECT");
 
     let response = "HTTP/1.1 200 OK\r\n\r\ntunnel data here";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
-    let result = decoder.decode_headers().unwrap().unwrap();
+    let result = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(result.1, BodyKind::Tunnel);
 
     // take_remaining でトンネルデータを取得
@@ -320,10 +394,15 @@ fn test_connect_tunnel_decode_headers_error() {
     decoder.set_request_method("CONNECT");
 
     let response = "HTTP/1.1 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // 最初の decode_headers は成功
-    let result = decoder.decode_headers().unwrap().unwrap();
+    let result = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(result.1, BodyKind::Tunnel);
 
     // トンネルモードで再度 decode_headers を呼ぶとエラー
@@ -338,7 +417,9 @@ fn test_connect_tunnel_decode_error() {
     decoder.set_request_method("CONNECT");
 
     let response = "HTTP/1.1 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // decode() はトンネルモードではエラー
     let result = decoder.decode();
@@ -354,8 +435,13 @@ fn test_connect_tunnel_decode_error() {
 fn test_request_consume_body_zero_error() {
     let mut decoder = RequestDecoder::new();
     let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(request.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     let result = decoder.consume_body(0);
     assert!(result.is_err());
@@ -366,8 +452,13 @@ fn test_request_consume_body_zero_error() {
 fn test_response_consume_body_zero_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     let result = decoder.consume_body(0);
     assert!(result.is_err());
@@ -379,8 +470,13 @@ fn test_response_consume_body_in_tunnel_error() {
     let mut decoder = ResponseDecoder::new();
     decoder.set_request_method("CONNECT");
     let response = "HTTP/1.1 200 OK\r\n\r\ndata";
-    decoder.feed(response.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     let result = decoder.consume_body(4);
     assert!(result.is_err());
@@ -395,10 +491,15 @@ fn test_response_consume_body_in_tunnel_error() {
 fn test_request_decode_mixed_with_streaming_error() {
     let mut decoder = RequestDecoder::new();
     let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // streaming API でヘッダーをデコード
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // その後 decode() を呼ぶとエラー
     let result = decoder.decode();
@@ -410,10 +511,15 @@ fn test_request_decode_mixed_with_streaming_error() {
 fn test_response_decode_mixed_with_streaming_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // streaming API でヘッダーをデコード
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // その後 decode() を呼ぶとエラー
     let result = decoder.decode();
@@ -425,8 +531,13 @@ fn test_response_decode_mixed_with_streaming_error() {
 fn test_request_decode_headers_during_body_error() {
     let mut decoder = RequestDecoder::new();
     let request = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\nhello";
-    decoder.feed(request.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // ボディ未消費のまま decode_headers を再度呼ぶ
     // (Complete でないフェーズなのでエラー)
@@ -440,8 +551,13 @@ fn test_request_decode_headers_during_body_error() {
 fn test_response_decode_headers_during_body_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // ボディ未消費のまま decode_headers を再度呼ぶ
     let result = decoder.decode_headers();
@@ -457,8 +573,13 @@ fn test_response_decode_headers_during_body_error() {
 fn test_consume_body_exceeds_remaining_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // 5 バイトしかないのに 10 バイト消費しようとする
     let result = decoder.consume_body(10);
@@ -470,8 +591,13 @@ fn test_consume_body_exceeds_remaining_error() {
 fn test_consume_body_exceeds_buffer_close_delimited_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
 
     // バッファにある以上のバイト数を消費しようとする
     let result = decoder.consume_body(100);
@@ -508,8 +634,13 @@ fn test_connect_request_enters_tunnel_mode() {
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 3\r\n\r\nabc";
-    decoder.feed(request.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel(), "CONNECT 受信後はトンネルモード");
@@ -524,8 +655,13 @@ fn test_connect_request_enters_tunnel_mode() {
     let mut decoder = RequestDecoder::new();
     let request =
         "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nContent-Length: 0\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
@@ -537,8 +673,13 @@ fn test_connect_request_enters_tunnel_mode() {
     // Transfer-Encoding: chunked でも BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nTransfer-Encoding: chunked\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
@@ -546,8 +687,13 @@ fn test_connect_request_enters_tunnel_mode() {
     // ヘッダーなし (最も一般的なケース) → BodyKind::Tunnel
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.method(), "CONNECT");
     assert_eq!(body_kind, BodyKind::Tunnel);
     assert!(decoder.is_tunnel());
@@ -560,8 +706,13 @@ fn test_connect_request_enters_tunnel_mode() {
 fn test_connect_request_decode_headers_in_tunnel_returns_error() {
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\nGET /admin HTTP/1.1\r\nHost: internal\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert!(decoder.is_tunnel());
 
     // 後続バイトに見える「GET /admin」は次のリクエストではなくトンネルデータ
@@ -583,8 +734,13 @@ fn test_connect_request_decode_headers_in_tunnel_returns_error() {
 fn test_connect_request_reset_clears_tunnel_mode() {
     let mut decoder = RequestDecoder::new();
     let request = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert!(decoder.is_tunnel());
 
     decoder.reset();
@@ -592,8 +748,13 @@ fn test_connect_request_reset_clears_tunnel_mode() {
 
     // 通常リクエストを decode できる
     let next = "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    decoder.feed(next.as_bytes()).unwrap();
-    let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(next.as_bytes())
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
     assert_eq!(head.method(), "GET");
     assert_eq!(body_kind, BodyKind::None);
 }

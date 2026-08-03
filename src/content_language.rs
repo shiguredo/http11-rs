@@ -9,7 +9,7 @@
 //! ```rust
 //! use shiguredo_http11::content_language::ContentLanguage;
 //!
-//! let cl = ContentLanguage::parse("en-US, ja").unwrap();
+//! let cl = ContentLanguage::parse("en-US, ja").expect("Content-Language のパースは成功するはず (実装バグ)");
 //! assert_eq!(cl.tags().len(), 2);
 //! ```
 

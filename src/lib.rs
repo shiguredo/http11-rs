@@ -18,14 +18,14 @@
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // リクエストを作成してエンコード
 //!     let request = Request::new("GET", "/")
-//!         .unwrap()
+//!         .expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)")
 //!         .header("Host", "example.com")
-//!         .unwrap()
+//!         .expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)")
 //!         .header("Connection", "close")
-//!         .unwrap();
+//!         .expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)");
 //!     request.encode()
 //! }
-//! let bytes = build().unwrap();
+//! let bytes = build().expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)");
 //! // bytes を送信...
 //!
 //! // レスポンスをデコード
@@ -49,11 +49,11 @@
 //! fn build() -> Result<Vec<u8>, EncodeError> {
 //!     // レスポンスを作成してエンコード
 //!     let response = Response::with_status(StatusCode::OK)
-//!         .header("Content-Type", "text/plain").unwrap()
+//!         .header("Content-Type", "text/plain").expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)")
 //!         .body(b"Hello, World!".to_vec());
 //!     response.encode()
 //! }
-//! let bytes = build().unwrap();
+//! let bytes = build().expect("リクエスト / レスポンスの構築は成功するはず (実装バグ)");
 //! // bytes を送信...
 //! ```
 

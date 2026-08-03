@@ -109,24 +109,24 @@ proptest! {
         hdrs in headers(),
         body_data in body()
     ) {
-        let mut request = Request::new(method.clone(), &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let host_value = host_for_uri(&uri);
-        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         for (name, value) in &hdrs {
             // Host ヘッダーの重複を避ける
             if name != "Host" {
-                request.add_header(name.clone(), value).unwrap();
+                request.add_header(name.clone(), value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
             }
         }
         if !body_data.is_empty() {
             request = request.body(body_data.clone());
         }
 
-        let encoded = request.encode().unwrap();
+        let encoded = request.encode().expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         let mut decoder = RequestDecoder::new();
-        decoder.feed(&encoded).unwrap();
-        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(&encoded).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(head.method(), method.as_str());
         prop_assert_eq!(head.uri(), uri.as_str());
@@ -137,7 +137,7 @@ proptest! {
                 while let Some(data) = decoder.peek_body() {
                     decoded_body.extend_from_slice(data);
                     let len = data.len();
-                    match decoder.consume_body(len).unwrap() {
+                    match decoder.consume_body(len).expect("リクエストのパース / 構築は成功するはず (実装バグ)") {
                         BodyProgress::Complete { .. } => break,
                         BodyProgress::Advanced | BodyProgress::NeedData => {}
                     }
@@ -180,23 +180,23 @@ proptest! {
         hdrs in headers()
     ) {
         let method_str = method.as_str().to_string();
-        let mut request = Request::new(method, &uri).unwrap();
+        let mut request = Request::new(method, &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let host_value = host_for_uri(&uri);
-        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         for (name, value) in &hdrs {
             if name != "Host" {
-                request.add_header(name.clone(), value).unwrap();
+                request.add_header(name.clone(), value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
             }
         }
 
-        let encoded = request.encode().unwrap();
+        let encoded = request.encode().expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         // 1バイトずつ feed
         let mut decoder = RequestDecoder::new();
         for byte in &encoded {
-            decoder.feed(std::slice::from_ref(byte)).unwrap();
+            decoder.feed(std::slice::from_ref(byte)).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         }
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(head.method(), &method_str);
         prop_assert_eq!(head.uri(), uri.as_str());
@@ -211,11 +211,11 @@ proptest! {
         uri in http_uri(),
         body_data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
-        let mut request = Request::new(method.clone(), &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let host_value = host_for_uri(&uri);
-        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let request = request.body(body_data.clone());
-        let encoded = request.encode().unwrap();
+        let encoded = request.encode().expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         // チャンクサイズで分割して feed し、デコード完了まで繰り返す
         let mut decoder = RequestDecoder::new();
@@ -225,7 +225,7 @@ proptest! {
         let mut decoded_method = String::new();
 
         for chunk in encoded.chunks(7) {
-            decoder.feed(chunk).unwrap();
+            decoder.feed(chunk).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
             if !headers_decoded
                 && let Ok(Some((head, kind))) = decoder.decode_headers()
@@ -241,7 +241,7 @@ proptest! {
                         while let Some(data) = decoder.peek_body() {
                             decoded_body.extend_from_slice(data);
                             let len = data.len();
-                            match decoder.consume_body(len).unwrap() {
+                            match decoder.consume_body(len).expect("リクエストのパース / 構築は成功するはず (実装バグ)") {
                                 BodyProgress::Complete { .. } => break,
                                 BodyProgress::Advanced | BodyProgress::NeedData => {}
                             }
@@ -277,12 +277,12 @@ proptest! {
             if i > 0 {
                 decoder.reset();
             }
-            let mut request = Request::new(methods[i].clone(), &uris[i]).unwrap();
+            let mut request = Request::new(methods[i].clone(), &uris[i]).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
             let host_value = host_for_uri(&uris[i]);
-            request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
-            let encoded = request.encode().unwrap();
-            decoder.feed(&encoded).unwrap();
-            let (head, _) = decoder.decode_headers().unwrap().unwrap();
+            request.add_header(HeaderName::from_static(b"Host"), &host_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+            let encoded = request.encode().expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+            decoder.feed(&encoded).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+            let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
             prop_assert_eq!(head.method(), methods[i].as_str());
             prop_assert_eq!(head.uri(), uris[i].as_str());
@@ -306,12 +306,12 @@ proptest! {
 
         // リセットして正常なリクエストをデコード
         decoder.reset();
-        let mut request = Request::new(method.clone(), &uri).unwrap();
+        let mut request = Request::new(method.clone(), &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let host_value = host_for_uri(&uri);
-        request.add_header(HeaderName::from_static(b"Host"), &host_value).unwrap();
-        let encoded = request.encode().unwrap();
-        decoder.feed(&encoded).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        request.add_header(HeaderName::from_static(b"Host"), &host_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        let encoded = request.encode().expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        decoder.feed(&encoded).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(head.method(), method.as_str());
         prop_assert_eq!(head.uri(), uri.as_str());
@@ -325,7 +325,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_new_creates_valid_request(method in http_method(), uri in http_uri()) {
-        let request = Request::new(method.clone(), &uri).unwrap();
+        let request = Request::new(method.clone(), &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(request.method(), method.as_str());
         prop_assert_eq!(request.uri(), &uri);
@@ -338,8 +338,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_request_with_version(method in http_method(), uri in http_uri()) {
-        let request10 = Request::with_version(method.clone(), &uri, "HTTP/1.0").unwrap();
-        let request11 = Request::with_version(method, &uri, "HTTP/1.1").unwrap();
+        let request10 = Request::with_version(method.clone(), &uri, "HTTP/1.0").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        let request11 = Request::with_version(method, &uri, "HTTP/1.1").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(request10.version(), "HTTP/1.0");
         prop_assert_eq!(request11.version(), "HTTP/1.1");
@@ -354,7 +354,7 @@ proptest! {
         name in header_name(),
         value in header_value()
     ) {
-        let request = Request::new(method, &uri).unwrap().header(name.clone(), &value).unwrap();
+        let request = Request::new(method, &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)").header(name.clone(), &value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         let headers = HttpHead::headers(&request);
         prop_assert_eq!(headers.len(), 1);
@@ -370,7 +370,7 @@ proptest! {
         uri in http_uri(),
         body_data in body()
     ) {
-        let request = Request::new(method, &uri).unwrap().body(body_data.clone());
+        let request = Request::new(method, &uri).expect("リクエストのパース / 構築は成功するはず (実装バグ)").body(body_data.clone());
 
         prop_assert_eq!(request.body_bytes(), Some(body_data.as_slice()));
     }
@@ -384,9 +384,9 @@ proptest! {
         value in header_value()
     ) {
         let request = Request::new(method, &uri)
-            .unwrap()
+            .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Type"), &value)
-            .unwrap();
+            .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(request.get_header("content-type"), Some(value.as_str()));
         prop_assert_eq!(request.get_header("CONTENT-TYPE"), Some(value.as_str()));
@@ -403,11 +403,11 @@ proptest! {
         value2 in header_value()
     ) {
         let request = Request::new(method, &uri)
-            .unwrap()
+            .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"X-Custom"), &value1)
-            .unwrap()
+            .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"x-custom"), &value2)
-            .unwrap();
+            .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
 
         let values = request.get_headers("X-CUSTOM");
         prop_assert_eq!(values.len(), 2);
@@ -457,7 +457,7 @@ proptest! {
         infix in prop_oneof![Just("\r\n"), Just("\r"), Just("\n")],
         suffix in header_value(),
     ) {
-        let req = Request::new(Method::GET, "/").unwrap();
+        let req = Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         let value = format!("{prefix}{infix}{suffix}");
         let result = req.header(HeaderName::from_static(b"X-Test"), &value);
         let is_invalid_value = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
@@ -472,8 +472,8 @@ proptest! {
         old_value in header_value(),
         new_value in header_value(),
     ) {
-        let mut req = Request::new(Method::GET, "/").unwrap();
-        req.add_header(HeaderName::from_static(b"X-Test"), &old_value).unwrap();
+        let mut req = Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
+        req.add_header(HeaderName::from_static(b"X-Test"), &old_value).expect("リクエストのパース / 構築は成功するはず (実装バグ)");
         // 不正な値で set_header 失敗
         let invalid = format!("{new_value}\r\nEvil: x");
         let result = req.set_header(HeaderName::from_static(b"X-Test"), &invalid);

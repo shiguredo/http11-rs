@@ -61,7 +61,8 @@ fn test_accept_ranges_none() {
 fn test_accept_ranges_bytes_roundtrip() {
     let ar = AcceptRanges::bytes();
     let displayed = ar.to_string();
-    let reparsed = AcceptRanges::parse(&displayed).unwrap();
+    let reparsed =
+        AcceptRanges::parse(&displayed).expect("Range のパースは成功するはず (実装バグ)");
     assert!(reparsed.accepts_bytes());
 }
 
@@ -78,7 +79,7 @@ fn test_accept_ranges_display() {
 // AcceptRanges 複数単位
 #[test]
 fn test_accept_ranges_multiple_units() {
-    let ar = AcceptRanges::parse("bytes, custom").unwrap();
+    let ar = AcceptRanges::parse("bytes, custom").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(ar.units().len(), 2);
     assert!(ar.accepts_bytes());
 }
@@ -204,14 +205,14 @@ fn test_accept_ranges_none_mixed_with_other_units_error() {
 #[test]
 fn test_accept_ranges_none_alone_ok() {
     // none 単独は正常
-    let ar = AcceptRanges::parse("none").unwrap();
+    let ar = AcceptRanges::parse("none").expect("Range のパースは成功するはず (実装バグ)");
     assert!(ar.is_none());
 }
 
 #[test]
 fn test_accept_ranges_multiple_units_without_none_ok() {
     // none を含まない複数単位は正常
-    let ar = AcceptRanges::parse("bytes, items").unwrap();
+    let ar = AcceptRanges::parse("bytes, items").expect("Range のパースは成功するはず (実装バグ)");
     assert!(!ar.is_none());
     assert!(ar.accepts_bytes());
 }
@@ -323,7 +324,7 @@ fn test_range_trailing_nbsp_not_stripped() {
 #[test]
 fn test_range_sp_htab_stripped_as_ows() {
     // SP と HTAB は OWS として正しく除去される
-    let range = Range::parse(" \tbytes=0-100\t ").unwrap();
+    let range = Range::parse(" \tbytes=0-100\t ").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(range.unit(), "bytes");
 }
 
@@ -333,7 +334,7 @@ fn test_range_sp_htab_stripped_as_ows() {
 
 #[test]
 fn test_parse_range_single() {
-    let range = Range::parse("bytes=0-499").unwrap();
+    let range = Range::parse("bytes=0-499").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(range.unit(), "bytes");
     assert!(range.is_bytes());
     let specs = range.ranges();
@@ -349,14 +350,18 @@ fn test_parse_range_single() {
 
 #[test]
 fn test_parse_range_multiple() {
-    let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
+    let range =
+        Range::parse("bytes=0-499, 1000-1499").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(range.ranges().len(), 2);
 }
 
 #[test]
 fn test_parse_range_suffix() {
-    let range = Range::parse("bytes=-500").unwrap();
-    match range.first().unwrap() {
+    let range = Range::parse("bytes=-500").expect("Range のパースは成功するはず (実装バグ)");
+    match range
+        .first()
+        .expect("Range のパースは成功するはず (実装バグ)")
+    {
         RangeSpec::Suffix { length } => assert_eq!(*length, 500),
         _ => panic!("Suffix バリアントを期待"),
     }
@@ -364,8 +369,11 @@ fn test_parse_range_suffix() {
 
 #[test]
 fn test_parse_range_from_start() {
-    let range = Range::parse("bytes=500-").unwrap();
-    match range.first().unwrap() {
+    let range = Range::parse("bytes=500-").expect("Range のパースは成功するはず (実装バグ)");
+    match range
+        .first()
+        .expect("Range のパースは成功するはず (実装バグ)")
+    {
         RangeSpec::FromStart { start } => assert_eq!(*start, 500),
         _ => panic!("FromStart バリアントを期待"),
     }
@@ -407,13 +415,15 @@ fn test_range_spec_to_bounds() {
 
 #[test]
 fn test_range_display() {
-    let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
+    let range =
+        Range::parse("bytes=0-499, 1000-1499").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(range.to_string(), "bytes=0-499, 1000-1499");
 }
 
 #[test]
 fn test_content_range_parse() {
-    let cr = ContentRange::parse("bytes 0-499/1000").unwrap();
+    let cr =
+        ContentRange::parse("bytes 0-499/1000").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(cr.unit(), "bytes");
     assert_eq!(cr.start(), Some(0));
     assert_eq!(cr.end(), Some(499));
@@ -423,13 +433,13 @@ fn test_content_range_parse() {
 
 #[test]
 fn test_content_range_unknown_length() {
-    let cr = ContentRange::parse("bytes 0-499/*").unwrap();
+    let cr = ContentRange::parse("bytes 0-499/*").expect("Range のパースは成功するはず (実装バグ)");
     assert_eq!(cr.complete_length(), None);
 }
 
 #[test]
 fn test_content_range_unsatisfied() {
-    let cr = ContentRange::parse("bytes */1000").unwrap();
+    let cr = ContentRange::parse("bytes */1000").expect("Range のパースは成功するはず (実装バグ)");
     assert!(cr.is_unsatisfied());
     assert_eq!(cr.complete_length(), Some(1000));
 }

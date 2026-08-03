@@ -52,9 +52,9 @@ proptest! {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
-        let im = IfMatch::parse(&list_str).unwrap();
+        let im = IfMatch::parse(&list_str).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         let displayed = im.to_string();
-        let reparsed = IfMatch::parse(&displayed).unwrap();
+        let reparsed = IfMatch::parse(&displayed).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(im, reparsed);
     }
@@ -67,8 +67,8 @@ proptest! {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
-        let im = IfMatch::parse(&list_str).unwrap();
-        let etag = EntityTag::strong(&check_tag).unwrap();
+        let im = IfMatch::parse(&list_str).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
+        let etag = EntityTag::strong(&check_tag).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         // Strong 比較なので、tags に check_tag が含まれていれば true
         let expected = tags.contains(&check_tag);
@@ -81,8 +81,8 @@ proptest! {
     #[test]
     fn prop_if_match_weak_not_match(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
-        let im = IfMatch::parse(&input).unwrap();
-        let strong_etag = EntityTag::strong(&tag).unwrap();
+        let im = IfMatch::parse(&input).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
+        let strong_etag = EntityTag::strong(&tag).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         // If-Match は Strong 比較を使用するため、Weak ETag は一致しない
         prop_assert!(!im.matches(&strong_etag));
@@ -100,9 +100,9 @@ proptest! {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
-        let inm = IfNoneMatch::parse(&list_str).unwrap();
+        let inm = IfNoneMatch::parse(&list_str).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         let displayed = inm.to_string();
-        let reparsed = IfNoneMatch::parse(&displayed).unwrap();
+        let reparsed = IfNoneMatch::parse(&displayed).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(inm, reparsed);
     }
@@ -115,8 +115,8 @@ proptest! {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
-        let inm = IfNoneMatch::parse(&list_str).unwrap();
-        let etag = EntityTag::strong(&check_tag).unwrap();
+        let inm = IfNoneMatch::parse(&list_str).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
+        let etag = EntityTag::strong(&check_tag).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         // matches が true = 処理すべき = tags に含まれていない
         let expected = !tags.contains(&check_tag);
@@ -129,8 +129,8 @@ proptest! {
     #[test]
     fn prop_if_none_match_weak_match(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
-        let inm = IfNoneMatch::parse(&input).unwrap();
-        let strong_etag = EntityTag::strong(&tag).unwrap();
+        let inm = IfNoneMatch::parse(&input).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
+        let strong_etag = EntityTag::strong(&tag).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         // If-None-Match は Weak 比較を使用するため、同じタグなら一致
         // matches が false = 一致するので処理しない
@@ -146,9 +146,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_modified_since_roundtrip(date_str in http_date_str()) {
-        let ims = IfModifiedSince::parse(&date_str, 2026).unwrap();
+        let ims = IfModifiedSince::parse(&date_str, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         let displayed = ims.to_string();
-        let reparsed = IfModifiedSince::parse(&displayed, 2026).unwrap();
+        let reparsed = IfModifiedSince::parse(&displayed, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(ims.date().day(), reparsed.date().day());
         prop_assert_eq!(ims.date().month(), reparsed.date().month());
@@ -163,7 +163,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_modified_since_is_modified(date_str in http_date_str()) {
-        let ims = IfModifiedSince::parse(&date_str, 2026).unwrap();
+        let ims = IfModifiedSince::parse(&date_str, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         let same_date = ims.date();
 
         // 同じ日付なら modified ではない
@@ -179,9 +179,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_unmodified_since_roundtrip(date_str in http_date_str()) {
-        let ius = IfUnmodifiedSince::parse(&date_str, 2026).unwrap();
+        let ius = IfUnmodifiedSince::parse(&date_str, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         let displayed = ius.to_string();
-        let reparsed = IfUnmodifiedSince::parse(&displayed, 2026).unwrap();
+        let reparsed = IfUnmodifiedSince::parse(&displayed, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(ius.date().day(), reparsed.date().day());
         prop_assert_eq!(ius.date().month(), reparsed.date().month());
@@ -198,17 +198,17 @@ proptest! {
     #[test]
     fn prop_if_range_strong_etag_roundtrip(tag in etag_value()) {
         let input = format!("\"{}\"", tag);
-        let ir = IfRange::parse(&input, 2026).unwrap();
+        let ir = IfRange::parse(&input, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert!(ir.is_etag());
         prop_assert!(!ir.is_date());
-        prop_assert_eq!(ir.etag().unwrap().tag(), tag.as_str());
+        prop_assert_eq!(ir.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").tag(), tag.as_str());
         prop_assert!(ir.date().is_none());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         prop_assert!(reparsed.is_etag());
-        prop_assert_eq!(ir.etag().unwrap().tag(), reparsed.etag().unwrap().tag());
+        prop_assert_eq!(ir.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").tag(), reparsed.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").tag());
     }
 }
 
@@ -217,16 +217,16 @@ proptest! {
     #[test]
     fn prop_if_range_weak_etag_roundtrip(tag in etag_value()) {
         let input = format!("W/\"{}\"", tag);
-        let ir = IfRange::parse(&input, 2026).unwrap();
+        let ir = IfRange::parse(&input, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert!(ir.is_etag());
-        prop_assert!(ir.etag().unwrap().is_weak());
-        prop_assert_eq!(ir.etag().unwrap().tag(), tag.as_str());
+        prop_assert!(ir.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").is_weak());
+        prop_assert_eq!(ir.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").tag(), tag.as_str());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         prop_assert!(reparsed.is_etag());
-        prop_assert!(reparsed.etag().unwrap().is_weak());
+        prop_assert!(reparsed.etag().expect("条件付きリクエストのパースは成功するはず (実装バグ)").is_weak());
     }
 }
 
@@ -234,7 +234,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_if_range_date_roundtrip(date_str in http_date_str()) {
-        let ir = IfRange::parse(&date_str, 2026).unwrap();
+        let ir = IfRange::parse(&date_str, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 
         prop_assert!(ir.is_date());
         prop_assert!(!ir.is_etag());
@@ -242,11 +242,11 @@ proptest! {
         prop_assert!(ir.date().is_some());
 
         let displayed = ir.to_string();
-        let reparsed = IfRange::parse(&displayed, 2026).unwrap();
+        let reparsed = IfRange::parse(&displayed, 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
         prop_assert!(reparsed.is_date());
         prop_assert_eq!(
-            ir.date().unwrap().day(),
-            reparsed.date().unwrap().day()
+            ir.date().expect("条件付きリクエストのパースは成功するはず (実装バグ)").day(),
+            reparsed.date().expect("条件付きリクエストのパースは成功するはず (実装バグ)").day()
         );
     }
 }

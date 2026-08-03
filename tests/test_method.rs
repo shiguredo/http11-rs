@@ -6,7 +6,10 @@ use shiguredo_http11::Method;
 fn from_static_matches_new_known_inputs() {
     let names: &[&[u8]] = &[b"GET", b"POST"];
     for &method in names {
-        assert_eq!(Method::new(method).unwrap(), Method::from_static(method));
+        assert_eq!(
+            Method::new(method).expect("メソッドのパースは成功するはず (実装バグ)"),
+            Method::from_static(method)
+        );
     }
 }
 
@@ -27,14 +30,16 @@ fn new_rejects_invalid_bytes() {
 
 #[test]
 fn eq_is_case_sensitive() {
-    let m1 = Method::new(b"GET").unwrap();
-    let m2 = Method::new(b"get").unwrap();
+    let m1 = Method::new(b"GET").expect("メソッドのパースは成功するはず (実装バグ)");
+    let m2 = Method::new(b"get").expect("メソッドのパースは成功するはず (実装バグ)");
     assert_ne!(m1, m2);
 }
 
 #[test]
 fn try_from_static_str_valid() {
-    let m: Method = "GET".try_into().unwrap();
+    let m: Method = "GET"
+        .try_into()
+        .expect("メソッドのパースは成功するはず (実装バグ)");
     assert_eq!(m.as_str(), "GET");
     assert_eq!(m.as_bytes(), b"GET");
 }
@@ -53,7 +58,9 @@ fn try_from_static_str_invalid() {
 
 #[test]
 fn try_from_static_bytes_valid() {
-    let m: Method = (b"POST" as &'static [u8]).try_into().unwrap();
+    let m: Method = (b"POST" as &'static [u8])
+        .try_into()
+        .expect("メソッドのパースは成功するはず (実装バグ)");
     assert_eq!(m.as_str(), "POST");
 }
 

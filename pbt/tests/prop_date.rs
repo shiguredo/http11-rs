@@ -121,9 +121,9 @@ proptest! {
         minute in valid_minute(),
         second in normal_second()
     ) {
-        let date = HttpDate::new(dow, day, month, year, hour, minute, second).unwrap();
+        let date = HttpDate::new(dow, day, month, year, hour, minute, second).expect("日時のパースは成功するはず (実装バグ)");
         let displayed = date.to_string();
-        let reparsed = HttpDate::parse(&displayed).unwrap();
+        let reparsed = HttpDate::parse(&displayed).expect("日時のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(date.day(), reparsed.day());
         prop_assert_eq!(date.month(), reparsed.month());
@@ -159,7 +159,7 @@ proptest! {
         let result = HttpDate::parse_rfc850(&date_str, reference_year);
         prop_assert!(result.is_ok());
 
-        let date = result.unwrap();
+        let date = result.expect("日時のパースは成功するはず (実装バグ)");
         prop_assert_eq!(date.day(), day);
         prop_assert_eq!(date.hour(), hour);
         prop_assert_eq!(date.minute(), minute);
@@ -200,7 +200,7 @@ proptest! {
             "Sunday, 06-Nov-{:02} 08:49:37 GMT",
             year
         );
-        let date = HttpDate::parse_rfc850(&date_str, reference_year).unwrap();
+        let date = HttpDate::parse_rfc850(&date_str, reference_year).expect("日時のパースは成功するはず (実装バグ)");
         let parsed_year = date.year();
 
         // RFC 9110: 50 年以上未来に見える場合は 100 年引く
@@ -240,7 +240,7 @@ proptest! {
         let result = HttpDate::parse(&date_str);
         prop_assert!(result.is_ok());
 
-        let date = result.unwrap();
+        let date = result.expect("日時のパースは成功するはず (実装バグ)");
         prop_assert_eq!(date.day(), day);
         prop_assert_eq!(date.year(), year);
         prop_assert_eq!(date.hour(), hour);
@@ -267,7 +267,7 @@ proptest! {
         let result = HttpDate::new(dow, day, month, year, hour, minute, second);
         prop_assert!(result.is_ok());
 
-        let date = result.unwrap();
+        let date = result.expect("日時のパースは成功するはず (実装バグ)");
         prop_assert_eq!(date.day_of_week(), dow);
         prop_assert_eq!(date.day(), day);
         prop_assert_eq!(date.month(), month);
@@ -373,7 +373,7 @@ proptest! {
         let result = HttpDate::parse(&date_str);
         prop_assert!(result.is_ok());
 
-        let date = result.unwrap();
+        let date = result.expect("日時のパースは成功するはず (実装バグ)");
         prop_assert_eq!(date.day(), day);
         prop_assert_eq!(date.year(), year);
         prop_assert_eq!(date.hour(), hour);

@@ -10,25 +10,25 @@ fn parse_invalid() {
 /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
 #[test]
 fn parse_empty_elements() {
-    let vary = Vary::parse("").unwrap();
+    let vary = Vary::parse("").expect("Vary のパースは成功するはず (実装バグ)");
     assert!(!vary.is_any());
     assert!(vary.fields().is_empty());
 
-    let vary = Vary::parse(",").unwrap();
+    let vary = Vary::parse(",").expect("Vary のパースは成功するはず (実装バグ)");
     assert!(vary.fields().is_empty());
 
-    let vary = Vary::parse("Accept,,User-Agent").unwrap();
+    let vary = Vary::parse("Accept,,User-Agent").expect("Vary のパースは成功するはず (実装バグ)");
     assert_eq!(vary.fields().len(), 2);
 }
 
 /// RFC 9110 Section 12.5.5: リスト内の "*" はワイルドカード
 #[test]
 fn parse_wildcard_in_list() {
-    let vary = Vary::parse("*, Accept").unwrap();
+    let vary = Vary::parse("*, Accept").expect("Vary のパースは成功するはず (実装バグ)");
     assert!(vary.is_any());
     assert!(vary.fields().is_empty());
 
-    let vary = Vary::parse("Accept, *").unwrap();
+    let vary = Vary::parse("Accept, *").expect("Vary のパースは成功するはず (実装バグ)");
     assert!(vary.is_any());
     assert!(vary.fields().is_empty());
 }

@@ -9,7 +9,7 @@
 //! ```rust
 //! use shiguredo_http11::host::Host;
 //!
-//! let host = Host::parse("example.com:8080").unwrap();
+//! let host = Host::parse("example.com:8080").expect("Host のパースは成功するはず (実装バグ)");
 //! assert_eq!(host.host(), "example.com");
 //! assert_eq!(host.port(), Some(8080));
 //! ```

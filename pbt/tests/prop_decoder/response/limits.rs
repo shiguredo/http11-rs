@@ -39,7 +39,7 @@ proptest! {
         let mut decoder = ResponseDecoder::with_limits(limits);
         let header_value = "x".repeat(header_value_len);
         let data = format!("HTTP/1.1 200 OK\r\nX-Long: {}\r\n\r\n", header_value);
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         let is_header_line_too_long = matches!(result, Err(Error::HeaderLineTooLong { .. }));
         prop_assert!(is_header_line_too_long, "HeaderLineTooLong を期待したが {:?} だった", result);
@@ -61,7 +61,7 @@ proptest! {
             .collect::<Vec<_>>()
             .join("\r\n");
         let data = format!("HTTP/1.1 200 OK\r\n{}\r\n\r\n", headers);
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         let is_too_many_headers = matches!(result, Err(Error::TooManyHeaders { .. }));
         prop_assert!(is_too_many_headers, "TooManyHeaders を期待したが {:?} だった", result);
@@ -80,7 +80,7 @@ proptest! {
         let mut decoder = ResponseDecoder::with_limits(limits);
         let body = "x".repeat(body_size);
         let data = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}", body_size, body);
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));
         prop_assert!(is_body_too_large, "BodyTooLarge を期待したが {:?} だった", result);
@@ -102,8 +102,8 @@ proptest! {
             "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{}\r\n0\r\n\r\n",
             chunk_size, chunk
         );
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         // チャンクサイズ解析時にボディサイズ制限エラー
         let result = decoder.progress();
         prop_assert!(result.is_err());
@@ -122,13 +122,13 @@ proptest! {
         };
         let mut decoder = ResponseDecoder::with_limits(limits);
         // Content-Length も Transfer-Encoding もなし = close-delimited
-        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::CloseDelimited);
 
         // ボディデータを追加
         let body = vec![b'x'; body_size];
-        decoder.feed(&body).unwrap();
+        decoder.feed(&body).expect("レスポンスのデコードは成功するはず (実装バグ)");
 
         // ボディを消費していくと max_body_size 超過でエラー
         let mut consumed = 0;
@@ -203,8 +203,8 @@ proptest! {
         };
         let mut decoder = ResponseDecoder::with_limits(limits);
         let body_data = vec![0x41u8; body_size];
-        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-        decoder.feed(&body_data).unwrap();
+        decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").expect("レスポンスのデコードは成功するはず (実装バグ)");
+        decoder.feed(&body_data).expect("レスポンスのデコードは成功するはず (実装バグ)");
 
         let result = decoder.decode();
         let is_body_too_large = matches!(result, Err(Error::BodyTooLarge { .. }));

@@ -35,8 +35,8 @@ fn test_accept_query_error_display() {
 // Accept-Query: "application/jsonpath", application/sql;charset="UTF-8"
 #[test]
 fn test_rfc10008_section3_example() {
-    let aq =
-        AcceptQuery::parse("\"application/jsonpath\", application/sql;charset=\"UTF-8\"").unwrap();
+    let aq = AcceptQuery::parse("\"application/jsonpath\", application/sql;charset=\"UTF-8\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 2);
 
     // 1 つ目: String 形式の application/jsonpath
@@ -58,7 +58,8 @@ fn test_rfc10008_section3_example() {
 // Accept-Query: application/x-www-form-urlencoded, application/sql
 #[test]
 fn test_rfc10008_appendix_a3_token_form() {
-    let aq = AcceptQuery::parse("application/x-www-form-urlencoded, application/sql").unwrap();
+    let aq = AcceptQuery::parse("application/x-www-form-urlencoded, application/sql")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 2);
 
     assert_eq!(aq.items()[0].media_type(), "application");
@@ -72,7 +73,8 @@ fn test_rfc10008_appendix_a3_token_form() {
 // Accept-Query: "application/sql", "application/xslt+xml"
 #[test]
 fn test_rfc10008_appendix_a5_string_form() {
-    let aq = AcceptQuery::parse("\"application/sql\", \"application/xslt+xml\"").unwrap();
+    let aq = AcceptQuery::parse("\"application/sql\", \"application/xslt+xml\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 2);
 
     assert_eq!(aq.items()[0].media_type(), "application");
@@ -86,7 +88,8 @@ fn test_rfc10008_appendix_a5_string_form() {
 // Accept-Query: "application/jsonpath", "application/xslt+xml"
 #[test]
 fn test_rfc10008_appendix_a6_string_form() {
-    let aq = AcceptQuery::parse("\"application/jsonpath\", \"application/xslt+xml\"").unwrap();
+    let aq = AcceptQuery::parse("\"application/jsonpath\", \"application/xslt+xml\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 2);
 
     assert_eq!(aq.items()[0].media_type(), "application");
@@ -103,61 +106,71 @@ fn test_rfc10008_appendix_a6_string_form() {
 // Token 形式でパースした media range は Token 形式で Display される
 #[test]
 fn test_display_token_form() {
-    let aq = AcceptQuery::parse("application/sql").unwrap();
+    let aq = AcceptQuery::parse("application/sql")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.to_string(), "application/sql");
 }
 
 // String 形式でパースしても Token 表現可能なら Token に正規化される
 #[test]
 fn test_display_string_normalized_to_token() {
-    let aq = AcceptQuery::parse("\"application/sql\"").unwrap();
+    let aq = AcceptQuery::parse("\"application/sql\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.to_string(), "application/sql");
 }
 
 // 先頭数字の media range は String 形式で Display される
 #[test]
 fn test_display_leading_digit_string_form() {
-    let aq = AcceptQuery::parse("\"3gpp/*\"").unwrap();
+    let aq =
+        AcceptQuery::parse("\"3gpp/*\"").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.to_string(), "\"3gpp/*\"");
 }
 
 // パラメータ付きの Display (RFC 10008 Section 3 の例に準拠)
 #[test]
 fn test_display_with_parameters() {
-    let aq = AcceptQuery::parse("application/sql;charset=\"UTF-8\"").unwrap();
+    let aq = AcceptQuery::parse("application/sql;charset=\"UTF-8\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.to_string(), "application/sql;charset=UTF-8");
 }
 
 // 空パラメータ値は SF String `""` で Display される
 #[test]
 fn test_display_empty_param_value() {
-    let aq = AcceptQuery::parse("application/sql;charset=\"\"").unwrap();
+    let aq = AcceptQuery::parse("application/sql;charset=\"\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.to_string(), "application/sql;charset=\"\"");
 }
 
 // Display ラウンドトリップ: parse(Display(x)) == x (意味等価)
 #[test]
 fn test_display_roundtrip_token() {
-    let aq = AcceptQuery::parse("application/sql, text/html").unwrap();
+    let aq = AcceptQuery::parse("application/sql, text/html")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     let displayed = aq.to_string();
-    let reparsed = AcceptQuery::parse(&displayed).unwrap();
+    let reparsed =
+        AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq, reparsed);
 }
 
 #[test]
 fn test_display_roundtrip_mixed() {
-    let aq =
-        AcceptQuery::parse("\"application/jsonpath\", application/sql;charset=\"UTF-8\"").unwrap();
+    let aq = AcceptQuery::parse("\"application/jsonpath\", application/sql;charset=\"UTF-8\"")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     let displayed = aq.to_string();
-    let reparsed = AcceptQuery::parse(&displayed).unwrap();
+    let reparsed =
+        AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq, reparsed);
 }
 
 #[test]
 fn test_display_roundtrip_leading_digit() {
-    let aq = AcceptQuery::parse("\"3gpp/*\", application/sql").unwrap();
+    let aq = AcceptQuery::parse("\"3gpp/*\", application/sql")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     let displayed = aq.to_string();
-    let reparsed = AcceptQuery::parse(&displayed).unwrap();
+    let reparsed =
+        AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq, reparsed);
 }
 
@@ -167,13 +180,13 @@ fn test_display_roundtrip_leading_digit() {
 
 #[test]
 fn test_parse_empty_returns_empty_list() {
-    let aq = AcceptQuery::parse("").unwrap();
+    let aq = AcceptQuery::parse("").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert!(aq.items().is_empty());
 }
 
 #[test]
 fn test_parse_only_spaces_returns_empty_list() {
-    let aq = AcceptQuery::parse("   ").unwrap();
+    let aq = AcceptQuery::parse("   ").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert!(aq.items().is_empty());
 }
 
@@ -459,7 +472,8 @@ fn test_error_sf_string_del() {
 // 最後の値で上書き (last-wins) される
 #[test]
 fn test_duplicate_param_key_last_wins() {
-    let aq = AcceptQuery::parse("application/sql;key=v1;key=v2").unwrap();
+    let aq = AcceptQuery::parse("application/sql;key=v1;key=v2")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items()[0].parameters().len(), 1);
     assert_eq!(aq.items()[0].parameters()[0].0, "key");
     assert_eq!(aq.items()[0].parameters()[0].1, "v2");
@@ -489,14 +503,14 @@ fn test_error_non_ascii() {
 
 #[test]
 fn test_wildcard_star_star() {
-    let aq = AcceptQuery::parse("*/*").unwrap();
+    let aq = AcceptQuery::parse("*/*").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items()[0].media_type(), "*");
     assert_eq!(aq.items()[0].subtype(), "*");
 }
 
 #[test]
 fn test_wildcard_type_star() {
-    let aq = AcceptQuery::parse("text/*").unwrap();
+    let aq = AcceptQuery::parse("text/*").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items()[0].media_type(), "text");
     assert_eq!(aq.items()[0].subtype(), "*");
 }
@@ -508,7 +522,8 @@ fn test_wildcard_type_star() {
 // media type / subtype は小文字に正規化される
 #[test]
 fn test_lowercase_normalization() {
-    let aq = AcceptQuery::parse("TEXT/HTML").unwrap();
+    let aq =
+        AcceptQuery::parse("TEXT/HTML").expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items()[0].media_type(), "text");
     assert_eq!(aq.items()[0].subtype(), "html");
 }
@@ -517,7 +532,8 @@ fn test_lowercase_normalization() {
 // パラメータ value はそのまま保持 (Token の場合)
 #[test]
 fn test_param_value_preserved() {
-    let aq = AcceptQuery::parse("application/sql;charset=UTF-8").unwrap();
+    let aq = AcceptQuery::parse("application/sql;charset=UTF-8")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items()[0].parameters()[0].0, "charset");
     assert_eq!(aq.items()[0].parameters()[0].1, "UTF-8");
 }
@@ -528,21 +544,24 @@ fn test_param_value_preserved() {
 
 #[test]
 fn test_multiple_items() {
-    let aq = AcceptQuery::parse("application/sql, text/html, application/json").unwrap();
+    let aq = AcceptQuery::parse("application/sql, text/html, application/json")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 3);
 }
 
 // OWS (SP / HTAB) がメンバー間で許容される
 #[test]
 fn test_ows_between_members() {
-    let aq = AcceptQuery::parse("application/sql,\t text/html").unwrap();
+    let aq = AcceptQuery::parse("application/sql,\t text/html")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 2);
 }
 
 // 先頭の SP は discard される (RFC 9651 Section 4.2 step 2 は SP のみ)
 #[test]
 fn test_leading_sp_discarded() {
-    let aq = AcceptQuery::parse("   application/sql").unwrap();
+    let aq = AcceptQuery::parse("   application/sql")
+        .expect("Accept-Query のパースは成功するはず (実装バグ)");
     assert_eq!(aq.items().len(), 1);
     assert_eq!(aq.items()[0].subtype(), "sql");
 }

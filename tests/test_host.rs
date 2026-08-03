@@ -124,11 +124,11 @@ fn test_host_ipvfuture() {
 #[test]
 fn test_host_port_boundary() {
     // 最小値
-    let host = Host::parse("example.com:1").unwrap();
+    let host = Host::parse("example.com:1").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.port(), Some(1));
 
     // 最大値
-    let host = Host::parse("example.com:65535").unwrap();
+    let host = Host::parse("example.com:65535").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.port(), Some(65535));
 
     // オーバーフロー
@@ -142,27 +142,27 @@ fn test_host_port_boundary() {
 
 #[test]
 fn parse_hostname() {
-    let host = Host::parse("example.com").unwrap();
+    let host = Host::parse("example.com").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.host(), "example.com");
     assert_eq!(host.port(), None);
 }
 
 #[test]
 fn parse_hostname_port() {
-    let host = Host::parse("example.com:8080").unwrap();
+    let host = Host::parse("example.com:8080").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.host(), "example.com");
     assert_eq!(host.port(), Some(8080));
 }
 
 #[test]
 fn parse_ipv4() {
-    let host = Host::parse("127.0.0.1").unwrap();
+    let host = Host::parse("127.0.0.1").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.host(), "127.0.0.1");
 }
 
 #[test]
 fn parse_ipv6() {
-    let host = Host::parse("[::1]").unwrap();
+    let host = Host::parse("[::1]").expect("Host のパースは成功するはず (実装バグ)");
     assert!(host.is_ipv6());
     assert_eq!(host.host(), "[::1]");
 }
@@ -177,6 +177,6 @@ fn parse_invalid() {
 
 #[test]
 fn display() {
-    let host = Host::parse("example.com:8080").unwrap();
+    let host = Host::parse("example.com:8080").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.to_string(), "example.com:8080");
 }

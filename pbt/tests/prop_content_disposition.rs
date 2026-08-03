@@ -86,7 +86,7 @@ fn is_attr_char_for_test(b: u8) -> bool {
 proptest! {
     #[test]
     fn prop_content_disposition_type_only_roundtrip(dtype in disposition_type_str()) {
-        let cd = ContentDisposition::parse(dtype).unwrap();
+        let cd = ContentDisposition::parse(dtype).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         match dtype {
             "inline" => {
@@ -122,7 +122,7 @@ proptest! {
         filename in ascii_filename()
     ) {
         let input = format!("{}; filename=\"{}\"", dtype, filename);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cd.filename(), Some(filename.as_str()));
         prop_assert_eq!(cd.filename_ascii(), Some(filename.as_str()));
@@ -137,7 +137,7 @@ proptest! {
         filename in ascii_filename()
     ) {
         let input = format!("{}; filename={}", dtype, filename);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cd.filename(), Some(filename.as_str()));
     }
@@ -151,7 +151,7 @@ proptest! {
         content in quoted_string_content()
     ) {
         let input = format!("{}; filename=\"{}\"", dtype, content);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cd.filename(), Some(content.as_str()));
     }
@@ -169,7 +169,7 @@ proptest! {
         (original, encoded) in percent_encoded_utf8()
     ) {
         let input = format!("{}; filename*=UTF-8''{}", dtype, encoded);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cd.filename_ext(), Some(original.as_str()));
         prop_assert_eq!(cd.filename(), Some(original.as_str()));
@@ -188,7 +188,7 @@ proptest! {
             "{}; filename=\"{}\"; filename*=UTF-8''{}",
             dtype, ascii_name, encoded
         );
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         // filename* が優先
         prop_assert_eq!(cd.filename(), Some(utf8_name.as_str()));
@@ -207,7 +207,7 @@ proptest! {
     #[test]
     fn prop_content_disposition_form_data_name_roundtrip(name in ascii_filename()) {
         let input = format!("form-data; name=\"{}\"", name);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert!(cd.is_form_data());
         prop_assert_eq!(cd.name(), Some(name.as_str()));
@@ -222,7 +222,7 @@ proptest! {
         filename in ascii_filename()
     ) {
         let input = format!("form-data; name=\"{}\"; filename=\"{}\"", name, filename);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert!(cd.is_form_data());
         prop_assert_eq!(cd.name(), Some(name.as_str()));
@@ -246,7 +246,7 @@ proptest! {
         prop_assume!(!["filename", "name"].contains(&param_name.as_str()));
 
         let input = format!("{}; {}=\"{}\"", dtype, param_name, param_value);
-        let cd = ContentDisposition::parse(&input).unwrap();
+        let cd = ContentDisposition::parse(&input).expect("Content-Disposition のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cd.parameter(&param_name), Some(param_value.as_str()));
     }

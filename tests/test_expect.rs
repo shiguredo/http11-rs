@@ -27,7 +27,7 @@ fn test_expect_error_display() {
 
 #[test]
 fn test_expect_100_continue() {
-    let expect = Expect::parse("100-continue").unwrap();
+    let expect = Expect::parse("100-continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.has_100_continue());
     assert_eq!(expect.items().len(), 1);
     assert!(expect.items()[0].is_100_continue());
@@ -36,10 +36,10 @@ fn test_expect_100_continue() {
 #[test]
 fn test_expect_100_continue_case_insensitive() {
     // 大文字小文字を区別しない
-    let expect = Expect::parse("100-CONTINUE").unwrap();
+    let expect = Expect::parse("100-CONTINUE").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.has_100_continue());
 
-    let expect = Expect::parse("100-Continue").unwrap();
+    let expect = Expect::parse("100-Continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.has_100_continue());
 }
 
@@ -50,36 +50,36 @@ fn test_expect_100_continue_case_insensitive() {
 #[test]
 fn test_expect_escaped_backslash() {
     let input = r#"token="value\\with\\backslash""#;
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("value\\with\\backslash"));
 
     // ラウンドトリップ
     let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
+    let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect, reparsed);
 }
 
 #[test]
 fn test_expect_escaped_quote() {
     let input = r#"token="value\"with\"quotes""#;
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("value\"with\"quotes"));
 
     // ラウンドトリップ
     let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
+    let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect, reparsed);
 }
 
 #[test]
 fn test_expect_mixed_escapes() {
     let input = r#"token="\\\"mixed\\\"escapes\\""#;
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("\\\"mixed\\\"escapes\\"));
 
     // ラウンドトリップ
     let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
+    let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect, reparsed);
 }
 
@@ -89,16 +89,16 @@ fn test_expect_mixed_escapes() {
 
 #[test]
 fn test_expectation_value_none() {
-    let expect = Expect::parse("token").unwrap();
+    let expect = Expect::parse("token").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), None);
 }
 
 #[test]
 fn test_expectation_is_100_continue() {
-    let expect = Expect::parse("100-continue").unwrap();
+    let expect = Expect::parse("100-continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.items()[0].is_100_continue());
 
-    let expect = Expect::parse("other-token").unwrap();
+    let expect = Expect::parse("other-token").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(!expect.items()[0].is_100_continue());
 }
 
@@ -109,9 +109,9 @@ fn test_expectation_is_100_continue() {
 #[test]
 fn test_expect_parse_errors() {
     // RFC 9110 Section 5.6.1.2: 空フィールド値は空リストとして受理する
-    let expect = Expect::parse("").unwrap();
+    let expect = Expect::parse("").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.items().is_empty());
-    let expect = Expect::parse("   ").unwrap();
+    let expect = Expect::parse("   ").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.items().is_empty());
 
     // 不正なトークン (スペースを含む)
@@ -145,7 +145,7 @@ fn test_expect_parse_errors() {
     ));
 
     // RFC 9110 Section 5.6.1.2: 空要素は無視する
-    let expect = Expect::parse("token,,other").unwrap();
+    let expect = Expect::parse("token,,other").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items().len(), 2);
 }
 
@@ -156,7 +156,8 @@ fn test_expect_parse_errors() {
 #[test]
 fn test_expectation_display_with_quoting() {
     // 引用符が必要な値
-    let expect = Expect::parse("token=\"value with spaces\"").unwrap();
+    let expect = Expect::parse("token=\"value with spaces\"")
+        .expect("Expect のパースは成功するはず (実装バグ)");
     let displayed = expect.to_string();
     assert!(displayed.contains("\""));
     assert!(displayed.contains("value with spaces"));
@@ -165,7 +166,7 @@ fn test_expectation_display_with_quoting() {
 #[test]
 fn test_expectation_display_without_quoting() {
     // 引用符が不要な値
-    let expect = Expect::parse("token=simple").unwrap();
+    let expect = Expect::parse("token=simple").expect("Expect のパースは成功するはず (実装バグ)");
     let displayed = expect.to_string();
     assert_eq!(displayed, "token=simple");
 }
@@ -178,12 +179,12 @@ fn test_expectation_display_without_quoting() {
 fn test_expect_value_with_comma() {
     // カンマは引用符で囲む必要がある
     let input = r#"token="value,with,commas""#;
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("value,with,commas"));
 
     // ラウンドトリップ
     let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
+    let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect, reparsed);
 }
 
@@ -191,12 +192,12 @@ fn test_expect_value_with_comma() {
 fn test_expect_value_with_equals() {
     // = は引用符で囲む必要がある
     let input = r#"token="value=with=equals""#;
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("value=with=equals"));
 
     // ラウンドトリップ
     let displayed = expect.to_string();
-    let reparsed = Expect::parse(&displayed).unwrap();
+    let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect, reparsed);
 }
 
@@ -207,11 +208,13 @@ fn test_expect_value_with_equals() {
 #[test]
 fn test_expect_whitespace_handling() {
     // 前後の空白
-    let expect = Expect::parse("  100-continue  ").unwrap();
+    let expect =
+        Expect::parse("  100-continue  ").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.has_100_continue());
 
     // カンマ周りの空白
-    let expect = Expect::parse("token=value  ,  100-continue").unwrap();
+    let expect = Expect::parse("token=value  ,  100-continue")
+        .expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items().len(), 2);
     assert!(expect.has_100_continue());
 }
@@ -224,7 +227,7 @@ fn test_expect_whitespace_handling() {
 fn test_expect_quoted_with_special_chars() {
     // タブ文字
     let input = "token=\"value\twith\ttabs\"";
-    let expect = Expect::parse(input).unwrap();
+    let expect = Expect::parse(input).expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("value\twith\ttabs"));
 }
 
@@ -238,7 +241,7 @@ mod helpers;
 #[test]
 fn test_expect_quoted_string_rejects_ctl() {
     for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
-        let c = char::from_u32(code).unwrap();
+        let c = char::from_u32(code).expect("Expect のパースは成功するはず (実装バグ)");
         // qdtext 経路
         assert_eq!(
             Expect::parse(&format!("token=\"{c}\"")),
@@ -263,7 +266,7 @@ fn test_expect_quoted_string_rejects_ctl() {
 // 空 quoted-string `""` が受理される (リグレッション防止)
 #[test]
 fn test_expect_empty_quoted_string() {
-    let expect = Expect::parse("token=\"\"").unwrap();
+    let expect = Expect::parse("token=\"\"").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some(""));
 }
 
@@ -282,14 +285,15 @@ fn test_expect_unterminated_quote() {
 
 #[test]
 fn parse_simple() {
-    let expect = Expect::parse("100-continue").unwrap();
+    let expect = Expect::parse("100-continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.has_100_continue());
     assert_eq!(expect.items().len(), 1);
 }
 
 #[test]
 fn parse_extension() {
-    let expect = Expect::parse("foo=bar, 100-continue").unwrap();
+    let expect =
+        Expect::parse("foo=bar, 100-continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items().len(), 2);
     assert_eq!(expect.items()[0].token(), "foo");
     assert_eq!(expect.items()[0].value(), Some("bar"));
@@ -297,7 +301,8 @@ fn parse_extension() {
 
 #[test]
 fn parse_quoted_value() {
-    let expect = Expect::parse("token=\"va\\\\lue\"").unwrap();
+    let expect =
+        Expect::parse("token=\"va\\\\lue\"").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items()[0].value(), Some("va\\lue"));
 }
 
@@ -310,18 +315,20 @@ fn parse_invalid() {
 /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
 #[test]
 fn parse_empty_elements() {
-    let expect = Expect::parse("").unwrap();
+    let expect = Expect::parse("").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.items().is_empty());
 
-    let expect = Expect::parse(",").unwrap();
+    let expect = Expect::parse(",").expect("Expect のパースは成功するはず (実装バグ)");
     assert!(expect.items().is_empty());
 
-    let expect = Expect::parse("100-continue,,foo=bar").unwrap();
+    let expect =
+        Expect::parse("100-continue,,foo=bar").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.items().len(), 2);
 }
 
 #[test]
 fn display() {
-    let expect = Expect::parse("foo=bar, 100-continue").unwrap();
+    let expect =
+        Expect::parse("foo=bar, 100-continue").expect("Expect のパースは成功するはず (実装バグ)");
     assert_eq!(expect.to_string(), "foo=bar, 100-continue");
 }

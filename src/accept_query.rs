@@ -11,7 +11,7 @@
 //! ```rust
 //! use shiguredo_http11::accept_query::AcceptQuery;
 //!
-//! let aq = AcceptQuery::parse("application/sql, \"application/jsonpath\"").unwrap();
+//! let aq = AcceptQuery::parse("application/sql, \"application/jsonpath\"").expect("Accept-Query のパースは成功するはず (実装バグ)");
 //! assert_eq!(aq.items().len(), 2);
 //! assert_eq!(aq.items()[0].media_type(), "application");
 //! assert_eq!(aq.items()[0].subtype(), "sql");

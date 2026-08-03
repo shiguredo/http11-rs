@@ -32,7 +32,7 @@ use crate::validate::is_token_char;
 /// use shiguredo_http11::HeaderName;
 ///
 /// fn make_header(name: &str) -> HeaderName {
-///     name.try_into().unwrap() // コンパイルエラー: &str は &'static str ではない
+///     name.try_into().expect("ヘッダー名のパースは成功するはず (実装バグ)") // コンパイルエラー: &str は &'static str ではない
 /// }
 /// ```
 #[derive(Debug, Clone)]
@@ -296,7 +296,7 @@ mod tests {
     fn from_validated_parts_matches_new() {
         let names: &[&[u8]] = &[b"host", b"Content-Type", b"X-Custom"];
         for &name in names {
-            let v1 = HeaderName::new(name).unwrap();
+            let v1 = HeaderName::new(name).expect("ヘッダー名のパースは成功するはず (実装バグ)");
             let v2 = HeaderName::from_validated_bytes(name.to_vec());
             assert_eq!(v1, v2);
         }

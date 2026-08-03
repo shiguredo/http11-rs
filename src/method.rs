@@ -30,7 +30,7 @@ use crate::validate::is_token_char;
 /// use shiguredo_http11::Method;
 ///
 /// fn make_method(m: &str) -> Method {
-///     m.try_into().unwrap() // コンパイルエラー: &str は &'static str ではない
+///     m.try_into().expect("メソッドのパースは成功するはず (実装バグ)") // コンパイルエラー: &str は &'static str ではない
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -277,7 +277,7 @@ mod tests {
     fn from_validated_parts_matches_new() {
         let methods: &[&[u8]] = &[b"GET", b"post", b"Custom"];
         for &method in methods {
-            let v1 = Method::new(method).unwrap();
+            let v1 = Method::new(method).expect("メソッドのパースは成功するはず (実装バグ)");
             let v2 = Method::from_validated_bytes(method.to_vec());
             assert_eq!(v1, v2);
         }

@@ -27,7 +27,8 @@ fn test_cache_error_display() {
 // max-stale 値なし
 #[test]
 fn test_cache_control_max_stale_without_value() {
-    let cc = CacheControl::parse("max-stale").unwrap();
+    let cc =
+        CacheControl::parse("max-stale").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_stale(), Some(u64::MAX));
 }
 
@@ -35,9 +36,9 @@ fn test_cache_control_max_stale_without_value() {
 #[test]
 fn test_cache_control_parse_errors() {
     // 空文字列はデフォルトの CacheControl として扱う
-    let cc = CacheControl::parse("").unwrap();
+    let cc = CacheControl::parse("").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc, CacheControl::default());
-    let cc = CacheControl::parse("   ").unwrap();
+    let cc = CacheControl::parse("   ").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc, CacheControl::default());
 
     // 不正な数値
@@ -71,7 +72,7 @@ fn test_age_zero() {
     assert_eq!(age.seconds(), 0);
     assert_eq!(age.to_string(), "0");
 
-    let parsed = Age::parse("0").unwrap();
+    let parsed = Age::parse("0").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(parsed.seconds(), 0);
 }
 
@@ -109,7 +110,8 @@ fn test_expires_parse_errors() {
 // Expires to_header_value
 #[test]
 fn test_expires_to_header_value() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026)
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     let header = expires.to_header_value();
     assert!(header.contains("1994"));
     assert!(header.contains("Nov"));
@@ -142,13 +144,15 @@ fn test_cache_control_rejects_partial_close_quote() {
 
 #[test]
 fn test_cache_control_accepts_both_sides_quoted() {
-    let cc = CacheControl::parse("max-age=\"3600\"").unwrap();
+    let cc = CacheControl::parse("max-age=\"3600\"")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(3600));
 }
 
 #[test]
 fn test_cache_control_accepts_unquoted() {
-    let cc = CacheControl::parse("max-age=3600").unwrap();
+    let cc = CacheControl::parse("max-age=3600")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(3600));
 }
 
@@ -158,13 +162,15 @@ fn test_cache_control_accepts_unquoted() {
 
 #[test]
 fn test_cache_control_parse_max_age() {
-    let cc = CacheControl::parse("max-age=3600").unwrap();
+    let cc = CacheControl::parse("max-age=3600")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(3600));
 }
 
 #[test]
 fn test_cache_control_parse_multiple() {
-    let cc = CacheControl::parse("max-age=3600, public, no-transform").unwrap();
+    let cc = CacheControl::parse("max-age=3600, public, no-transform")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(3600));
     assert!(cc.is_public());
     assert!(cc.is_no_transform());
@@ -172,14 +178,16 @@ fn test_cache_control_parse_multiple() {
 
 #[test]
 fn test_cache_control_parse_no_store() {
-    let cc = CacheControl::parse("no-store").unwrap();
+    let cc =
+        CacheControl::parse("no-store").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert!(cc.is_no_store());
     assert!(!cc.is_cacheable());
 }
 
 #[test]
 fn test_cache_control_parse_private() {
-    let cc = CacheControl::parse("private, max-age=600").unwrap();
+    let cc = CacheControl::parse("private, max-age=600")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert!(cc.is_private());
     assert_eq!(cc.max_age(), Some(600));
 }
@@ -187,34 +195,39 @@ fn test_cache_control_parse_private() {
 #[test]
 fn test_cache_control_parse_no_cache_qualified() {
     // RFC 9111 Section 5.2.2.4: no-cache の修飾形式
-    let cc = CacheControl::parse("no-cache=\"Set-Cookie\"").unwrap();
+    let cc = CacheControl::parse("no-cache=\"Set-Cookie\"")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert!(cc.is_no_cache());
 }
 
 #[test]
 fn test_cache_control_parse_private_qualified() {
     // RFC 9111 Section 5.2.2.7: private の修飾形式
-    let cc = CacheControl::parse("private=\"Content-Type\"").unwrap();
+    let cc = CacheControl::parse("private=\"Content-Type\"")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert!(cc.is_private());
 }
 
 #[test]
 fn test_cache_control_parse_s_maxage() {
-    let cc = CacheControl::parse("public, s-maxage=86400").unwrap();
+    let cc = CacheControl::parse("public, s-maxage=86400")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert!(cc.is_public());
     assert_eq!(cc.s_maxage(), Some(86400));
 }
 
 #[test]
 fn test_cache_control_parse_must_revalidate() {
-    let cc = CacheControl::parse("max-age=0, must-revalidate").unwrap();
+    let cc = CacheControl::parse("max-age=0, must-revalidate")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(0));
     assert!(cc.is_must_revalidate());
 }
 
 #[test]
 fn test_cache_control_parse_immutable() {
-    let cc = CacheControl::parse("max-age=31536000, immutable").unwrap();
+    let cc = CacheControl::parse("max-age=31536000, immutable")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(31536000));
     assert!(cc.is_immutable());
 }
@@ -222,7 +235,7 @@ fn test_cache_control_parse_immutable() {
 #[test]
 fn test_cache_control_parse_empty() {
     // 空文字列はデフォルトの CacheControl として扱う
-    let cc = CacheControl::parse("").unwrap();
+    let cc = CacheControl::parse("").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc, CacheControl::default());
     assert_eq!(cc.max_age(), None);
     assert!(!cc.is_public());
@@ -263,13 +276,13 @@ fn test_cache_control_is_cacheable() {
 
 #[test]
 fn test_age_parse() {
-    let age = Age::parse("120").unwrap();
+    let age = Age::parse("120").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(age.seconds(), 120);
 }
 
 #[test]
 fn test_age_parse_zero() {
-    let age = Age::parse("0").unwrap();
+    let age = Age::parse("0").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(age.seconds(), 0);
 }
 
@@ -289,13 +302,15 @@ fn test_age_parse_invalid() {
 /// RFC 9111 Section 1.2.2: オーバーフロー時は 2^31 にクランプする
 #[test]
 fn test_age_parse_overflow_clamp() {
-    let age = Age::parse("99999999999999999999999").unwrap();
+    let age = Age::parse("99999999999999999999999")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(age.seconds(), 2_147_483_648);
 }
 
 #[test]
 fn test_cache_control_delta_seconds_overflow() {
-    let cc = CacheControl::parse("max-age=99999999999999999999999").unwrap();
+    let cc = CacheControl::parse("max-age=99999999999999999999999")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(cc.max_age(), Some(2_147_483_648));
 }
 
@@ -313,7 +328,8 @@ fn test_age_display() {
 
 #[test]
 fn test_expires_parse() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026)
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     assert_eq!(expires.date().year(), 1994);
     assert_eq!(expires.date().month(), 11);
     assert_eq!(expires.date().day(), 6);
@@ -327,7 +343,8 @@ fn test_expires_parse_invalid() {
 
 #[test]
 fn test_expires_display() {
-    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+    let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026)
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     let s = expires.to_string();
     assert!(s.contains("1994"));
     assert!(s.contains("Nov"));

@@ -45,13 +45,16 @@ fn test_content_coding_as_str() {
 // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
 #[test]
 fn test_content_encoding_parse_empty() {
-    let ce = ContentEncoding::parse("").unwrap();
+    let ce =
+        ContentEncoding::parse("").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert!(ce.encodings().is_empty());
 
-    let ce = ContentEncoding::parse("   ").unwrap();
+    let ce =
+        ContentEncoding::parse("   ").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert!(ce.encodings().is_empty());
 
-    let ce = ContentEncoding::parse(",,,").unwrap();
+    let ce =
+        ContentEncoding::parse(",,,").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert!(ce.encodings().is_empty());
 }
 
@@ -76,17 +79,20 @@ fn test_content_encoding_parse_errors() {
 
 #[test]
 fn test_content_encoding_trailing_comma() {
-    let ce = ContentEncoding::parse("gzip,").unwrap();
+    let ce = ContentEncoding::parse("gzip,")
+        .expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 1);
     assert!(ce.has_gzip());
 
-    let ce = ContentEncoding::parse("gzip, deflate,").unwrap();
+    let ce = ContentEncoding::parse("gzip, deflate,")
+        .expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 2);
 }
 
 #[test]
 fn test_content_encoding_empty_tokens() {
-    let ce = ContentEncoding::parse("gzip,, deflate").unwrap();
+    let ce = ContentEncoding::parse("gzip,, deflate")
+        .expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 2);
     assert!(ce.has_gzip());
     assert!(ce.has_deflate());
@@ -98,14 +104,16 @@ fn test_content_encoding_empty_tokens() {
 
 #[test]
 fn parse_single() {
-    let ce = ContentEncoding::parse("gzip").unwrap();
+    let ce =
+        ContentEncoding::parse("gzip").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 1);
     assert!(ce.has_gzip());
 }
 
 #[test]
 fn parse_multiple() {
-    let ce = ContentEncoding::parse("gzip, deflate, identity").unwrap();
+    let ce = ContentEncoding::parse("gzip, deflate, identity")
+        .expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 3);
     assert!(ce.has_deflate());
     assert!(ce.has_identity());
@@ -113,7 +121,8 @@ fn parse_multiple() {
 
 #[test]
 fn parse_unknown() {
-    let ce = ContentEncoding::parse("br").unwrap();
+    let ce =
+        ContentEncoding::parse("br").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.encodings().len(), 1);
     assert_eq!(ce.encodings()[0], ContentCoding::Other("br".to_string()));
 }
@@ -121,7 +130,8 @@ fn parse_unknown() {
 #[test]
 fn parse_empty() {
     // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
-    let ce = ContentEncoding::parse("").unwrap();
+    let ce =
+        ContentEncoding::parse("").expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert!(ce.encodings().is_empty());
 }
 
@@ -133,6 +143,7 @@ fn parse_invalid() {
 
 #[test]
 fn display() {
-    let ce = ContentEncoding::parse("GZIP, Deflate").unwrap();
+    let ce = ContentEncoding::parse("GZIP, Deflate")
+        .expect("Content-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ce.to_string(), "gzip, deflate");
 }

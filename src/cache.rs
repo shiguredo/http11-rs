@@ -10,7 +10,7 @@
 //! use shiguredo_http11::cache::{CacheControl, Age, Expires};
 //!
 //! // Cache-Control パース
-//! let cc = CacheControl::parse("max-age=3600, public").unwrap();
+//! let cc = CacheControl::parse("max-age=3600, public").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 //! assert_eq!(cc.max_age(), Some(3600));
 //! assert!(cc.is_public());
 //!
@@ -19,7 +19,7 @@
 //! assert_eq!(age.seconds(), 120);
 //!
 //! // Expires ヘッダー
-//! let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+//! let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 //! ```
 
 use crate::date::{DateError, HttpDate};
@@ -106,7 +106,7 @@ impl CacheControl {
     /// ```rust
     /// use shiguredo_http11::cache::CacheControl;
     ///
-    /// let cc = CacheControl::parse("max-age=3600, public").unwrap();
+    /// let cc = CacheControl::parse("max-age=3600, public").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     /// assert_eq!(cc.max_age(), Some(3600));
     /// assert!(cc.is_public());
     /// ```
@@ -425,7 +425,7 @@ impl Age {
     /// ```rust
     /// use shiguredo_http11::cache::Age;
     ///
-    /// let age = Age::parse("120").unwrap();
+    /// let age = Age::parse("120").expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     /// assert_eq!(age.seconds(), 120);
     /// ```
     pub fn parse(input: &str) -> Result<Self, CacheError> {
@@ -480,7 +480,7 @@ impl Expires {
     /// ```rust
     /// use shiguredo_http11::cache::Expires;
     ///
-    /// let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+    /// let expires = Expires::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
     /// assert_eq!(expires.date().year(), 1994);
     /// ```
     pub fn parse(input: &str, reference_year: u16) -> Result<Self, CacheError> {

@@ -520,7 +520,10 @@ fn submit_enable_ktls(
     .user_data(UserData::encode(conn_id, OpType::SetSockOpt));
 
     // 2. TLS_TX を設定
-    let ktls_tx = conn.ktls_tx.as_ref().unwrap();
+    let ktls_tx = conn
+        .ktls_tx
+        .as_ref()
+        .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
     let tx_op = opcode::SetSockOpt::new(
         Fd(fd),
         SOL_TLS,
@@ -533,7 +536,10 @@ fn submit_enable_ktls(
     .user_data(UserData::encode(conn_id, OpType::SetSockOpt));
 
     // 3. TLS_RX を設定
-    let ktls_rx = conn.ktls_rx.as_ref().unwrap();
+    let ktls_rx = conn
+        .ktls_rx
+        .as_ref()
+        .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
     let rx_op = opcode::SetSockOpt::new(
         Fd(fd),
         SOL_TLS,
@@ -609,8 +615,7 @@ fn drain_and_feed_leftover(
             "Request received (leftover drain)"
         );
 
-        let should_keep_alive =
-            request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
+        let should_keep_alive = request.is_keep_alive() && request_count < DEFAULT_MAX_REQUESTS;
 
         let response = build_response(&request, should_keep_alive)?;
         conn.pending_writes
@@ -638,7 +643,10 @@ fn handle_read(
         ConnectionState::HandshakeReading | ConnectionState::HandshakeWriting => {
             // TLS ハンドシェイク処理
             let data = conn.read_buf[..bytes_read].to_vec();
-            let tls_conn = conn.tls_conn.as_mut().unwrap();
+            let tls_conn = conn
+                .tls_conn
+                .as_mut()
+                .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
 
             // 受信データを TLS 接続に渡す
             let mut rd = std::io::Cursor::new(&data);
@@ -666,7 +674,10 @@ fn handle_read(
                 let conn = &mut connections[conn_id];
                 conn.write_buf.clear();
                 conn.write_offset = 0;
-                let tls_conn = conn.tls_conn.as_mut().unwrap();
+                let tls_conn = conn
+                    .tls_conn
+                    .as_mut()
+                    .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
                 tls_conn.write_tls(&mut conn.write_buf)?;
                 conn.state = ConnectionState::HandshakeWriting;
                 submit_write(ring, conn_id, fd, connections)?;
@@ -688,7 +699,10 @@ fn handle_read(
 
                 // tls_conn を取り出して秘密鍵を抽出
                 let conn = &mut connections[conn_id];
-                let mut tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn
+                    .tls_conn
+                    .take()
+                    .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
 
                 // RFC 8446 Section 4.4.4: TLS 1.3 では Client Finished と Application Data が
                 // 同一 flight で送信される (curl / openssl s_client 等の典型挙動)。
@@ -825,7 +839,10 @@ fn handle_write(
 
     match conn.state {
         ConnectionState::HandshakeWriting => {
-            let tls_conn = conn.tls_conn.as_ref().unwrap();
+            let tls_conn = conn
+                .tls_conn
+                .as_ref()
+                .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
             if !tls_conn.is_handshaking() {
                 info!(peer_addr = %peer_addr, "TLS handshake completed");
 
@@ -839,7 +856,10 @@ fn handle_write(
                 })?;
 
                 // tls_conn を取り出して秘密鍵を抽出
-                let mut tls_conn = conn.tls_conn.take().unwrap();
+                let mut tls_conn = conn
+                    .tls_conn
+                    .take()
+                    .expect("サーバーの起動 / 接続処理は成功するはず (実装バグ)");
 
                 // ハンドシェイク Write 完了経路でも、念のため rustls の
                 // received_plaintext を排出する。発火頻度は低い (Client Finished と
@@ -1137,10 +1157,7 @@ fn build_compressed_response(
     let mut response = Response::with_status(status)
         .header("Date", date)?
         .header("Content-Type", content_type)?
-        .header(
-            "Content-Length",
-            final_body.len().to_string(),
-        )?
+        .header("Content-Length", final_body.len().to_string())?
         .header("Server", "shiguredo_http11/0.1.0 (io_uring+kTLS)")?
         .header("Vary", "Accept-Encoding")?;
 

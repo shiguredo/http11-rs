@@ -24,9 +24,9 @@ fn token_string(max_len: usize) -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_vary_roundtrip(value in prop_oneof![Just("*".to_string()), proptest::collection::vec(token_string(8), 1..5).prop_map(|tokens| tokens.join(", "))]) {
-        let parsed = Vary::parse(&value).unwrap();
+        let parsed = Vary::parse(&value).expect("Vary のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = Vary::parse(&displayed).unwrap();
+        let reparsed = Vary::parse(&displayed).expect("Vary のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }

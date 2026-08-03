@@ -49,7 +49,7 @@ proptest! {
         if immutable { cc = cc.with_immutable(); }
 
         let header = cc.to_string();
-        let reparsed = CacheControl::parse(&header).unwrap();
+        let reparsed = CacheControl::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cc.max_age(), reparsed.max_age());
         prop_assert_eq!(cc.s_maxage(), reparsed.s_maxage());
@@ -106,7 +106,7 @@ proptest! {
         ];
 
         for input in inputs {
-            let cc = CacheControl::parse(&input).unwrap();
+            let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
             prop_assert_eq!(cc.max_age(), Some(max_age));
         }
     }
@@ -117,7 +117,7 @@ proptest! {
     #[test]
     fn prop_cache_control_max_stale_with_value(seconds in 0u64..86400) {
         let input = format!("max-stale={}", seconds);
-        let cc = CacheControl::parse(&input).unwrap();
+        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cc.max_stale(), Some(seconds));
     }
 }
@@ -127,7 +127,7 @@ proptest! {
     #[test]
     fn prop_cache_control_min_fresh(seconds in 0u64..86400) {
         let input = format!("min-fresh={}", seconds);
-        let cc = CacheControl::parse(&input).unwrap();
+        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cc.min_fresh(), Some(seconds));
     }
 }
@@ -137,7 +137,7 @@ proptest! {
     #[test]
     fn prop_cache_control_stale_while_revalidate(seconds in 0u64..86400) {
         let input = format!("stale-while-revalidate={}", seconds);
-        let cc = CacheControl::parse(&input).unwrap();
+        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cc.stale_while_revalidate(), Some(seconds));
     }
 }
@@ -147,7 +147,7 @@ proptest! {
     #[test]
     fn prop_cache_control_stale_if_error(seconds in 0u64..86400) {
         let input = format!("stale-if-error={}", seconds);
-        let cc = CacheControl::parse(&input).unwrap();
+        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cc.stale_if_error(), Some(seconds));
     }
 }
@@ -162,7 +162,7 @@ proptest! {
     fn prop_age_roundtrip(secs in seconds()) {
         let age = Age::new(secs);
         let header = age.to_string();
-        let reparsed = Age::parse(&header).unwrap();
+        let reparsed = Age::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(age.seconds(), reparsed.seconds());
     }
@@ -196,9 +196,9 @@ proptest! {
             dow, day, mon, year, hour, minute, second
         );
 
-        let expires = Expires::parse(&date_str, 2026).unwrap();
+        let expires = Expires::parse(&date_str, 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         let displayed = expires.to_string();
-        let reparsed = Expires::parse(&displayed, 2026).unwrap();
+        let reparsed = Expires::parse(&displayed, 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(expires.date().day(), reparsed.date().day());
         prop_assert_eq!(expires.date().month(), reparsed.date().month());

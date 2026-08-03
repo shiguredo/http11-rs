@@ -12,7 +12,7 @@
 //! ```rust
 //! use shiguredo_http11::trailer::Trailer;
 //!
-//! let trailer = Trailer::parse("X-Checksum, X-Test").unwrap();
+//! let trailer = Trailer::parse("X-Checksum, X-Test").expect("Trailer のパースは成功するはず (実装バグ)");
 //! assert_eq!(trailer.fields().len(), 2);
 //! ```
 

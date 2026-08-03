@@ -30,16 +30,16 @@ fn test_parse_empty() {
 
 #[test]
 fn test_parse_etag_list_any() {
-    let list = parse_etag_list("*").unwrap();
+    let list = parse_etag_list("*").expect("ETag のパースは成功するはず (実装バグ)");
     assert!(list.is_any());
 }
 
 #[test]
 fn test_etag_list_contains() {
-    let list = parse_etag_list("\"a\", W/\"b\"").unwrap();
-    let etag_a = EntityTag::strong("a").unwrap();
-    let etag_b = EntityTag::strong("b").unwrap();
-    let etag_c = EntityTag::strong("c").unwrap();
+    let list = parse_etag_list("\"a\", W/\"b\"").expect("ETag のパースは成功するはず (実装バグ)");
+    let etag_a = EntityTag::strong("a").expect("ETag のパースは成功するはず (実装バグ)");
+    let etag_b = EntityTag::strong("b").expect("ETag のパースは成功するはず (実装バグ)");
+    let etag_c = EntityTag::strong("c").expect("ETag のパースは成功するはず (実装バグ)");
 
     assert!(list.contains_weak(&etag_a));
     assert!(list.contains_weak(&etag_b));
@@ -52,7 +52,7 @@ fn test_etag_list_contains() {
 #[test]
 fn test_parse_etag_list_with_comma_in_tag() {
     // etagc はカンマを含み得る (0x2C は %x23-7E の範囲内)
-    let list = parse_etag_list("\"a,b\", \"c\"").unwrap();
+    let list = parse_etag_list("\"a,b\", \"c\"").expect("ETag のパースは成功するはず (実装バグ)");
     match list {
         ETagList::Tags(tags) => {
             assert_eq!(tags.len(), 2);
@@ -65,7 +65,7 @@ fn test_parse_etag_list_with_comma_in_tag() {
 
 #[test]
 fn test_parse_etag_list_weak_with_comma_in_tag() {
-    let list = parse_etag_list("W/\"x,y\", \"z\"").unwrap();
+    let list = parse_etag_list("W/\"x,y\", \"z\"").expect("ETag のパースは成功するはず (実装バグ)");
     match list {
         ETagList::Tags(tags) => {
             assert_eq!(tags.len(), 2);
@@ -79,10 +79,10 @@ fn test_parse_etag_list_weak_with_comma_in_tag() {
 
 #[test]
 fn test_etag_list_display() {
-    let list = parse_etag_list("\"a\", \"b\"").unwrap();
+    let list = parse_etag_list("\"a\", \"b\"").expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(list.to_string(), "\"a\", \"b\"");
 
-    let any = parse_etag_list("*").unwrap();
+    let any = parse_etag_list("*").expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(any.to_string(), "*");
 }
 
@@ -93,7 +93,7 @@ fn test_etag_list_display() {
 #[test]
 fn test_etag_obs_text_parse() {
     // obs-text (U+0080 以上) を含む ETag が正常にパースされる
-    let etag = EntityTag::parse("\"v\u{00A9}\"").unwrap();
+    let etag = EntityTag::parse("\"v\u{00A9}\"").expect("ETag のパースは成功するはず (実装バグ)");
     assert!(etag.is_strong());
     assert_eq!(etag.tag(), "v\u{00A9}");
 }
@@ -101,9 +101,9 @@ fn test_etag_obs_text_parse() {
 #[test]
 fn test_etag_obs_text_roundtrip() {
     // obs-text を含む ETag の Display → 再パースのラウンドトリップ
-    let etag = EntityTag::parse("\"v\u{00A9}\"").unwrap();
+    let etag = EntityTag::parse("\"v\u{00A9}\"").expect("ETag のパースは成功するはず (実装バグ)");
     let displayed = etag.to_string();
-    let reparsed = EntityTag::parse(&displayed).unwrap();
+    let reparsed = EntityTag::parse(&displayed).expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(etag.tag(), reparsed.tag());
     assert_eq!(etag.is_weak(), reparsed.is_weak());
 }
@@ -111,13 +111,13 @@ fn test_etag_obs_text_roundtrip() {
 #[test]
 fn test_etag_multibyte_char_parse() {
     // マルチバイト文字 (U+3042 "あ") を含む ETag のパース
-    let etag = EntityTag::parse("\"v\u{3042}\"").unwrap();
+    let etag = EntityTag::parse("\"v\u{3042}\"").expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(etag.tag(), "v\u{3042}");
 
     // strong/weak ビルダーでも受理される
-    let strong = EntityTag::strong("v\u{3042}").unwrap();
+    let strong = EntityTag::strong("v\u{3042}").expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(strong.tag(), "v\u{3042}");
-    let weak = EntityTag::weak("v\u{3042}").unwrap();
+    let weak = EntityTag::weak("v\u{3042}").expect("ETag のパースは成功するはず (実装バグ)");
     assert_eq!(weak.tag(), "v\u{3042}");
     assert!(weak.is_weak());
 }

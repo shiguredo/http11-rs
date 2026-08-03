@@ -82,11 +82,11 @@ fn valid_uri() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_content_location_absolute_uri_roundtrip(uri in absolute_uri()) {
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
         let display = cl.to_string();
 
         // Display した結果を再パースして path() が一致することを検証
-        let reparsed = ContentLocation::parse(&display).unwrap();
+        let reparsed = ContentLocation::parse(&display).expect("Content-Location のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cl.uri().path(), reparsed.uri().path());
     }
 }
@@ -101,7 +101,7 @@ proptest! {
     ) {
         let scheme = if secure { "https" } else { "http" };
         let uri = format!("{}://{}{}", scheme, host, p);
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
 
         prop_assert!(cl.uri().as_str().contains(&host));
     }
@@ -112,7 +112,7 @@ proptest! {
     #[test]
     fn prop_content_location_ipv4_host(addr in ipv4(), p in path()) {
         let uri = format!("http://{}{}", addr, p);
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
 
         prop_assert!(cl.uri().as_str().contains(&addr));
     }
@@ -126,7 +126,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_content_location_relative_uri_roundtrip(uri in relative_uri()) {
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
 
         // パスが正しく取得できる
         prop_assert!(cl.uri().path().starts_with('/'));
@@ -137,7 +137,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_content_location_path_only(p in path()) {
-        let cl = ContentLocation::parse(&p).unwrap();
+        let cl = ContentLocation::parse(&p).expect("Content-Location のパースは成功するはず (実装バグ)");
         prop_assert_eq!(cl.uri().path(), p.as_str());
     }
 }
@@ -147,7 +147,7 @@ proptest! {
     #[test]
     fn prop_content_location_path_with_query(p in path(), q in "[a-z]{1,8}=[a-z0-9]{1,8}") {
         let uri = format!("{}?{}", p, q);
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cl.uri().path(), p.as_str());
         prop_assert_eq!(cl.uri().query(), Some(q.as_str()));
@@ -171,7 +171,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_content_location_display(uri in valid_uri()) {
-        let cl = ContentLocation::parse(&uri).unwrap();
+        let cl = ContentLocation::parse(&uri).expect("Content-Location のパースは成功するはず (実装バグ)");
         let display = cl.to_string();
 
         // Display 結果を再パースできる

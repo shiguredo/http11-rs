@@ -57,14 +57,16 @@ fn test_content_location_parse_errors() {
 #[test]
 fn test_content_location_http_with_authority_ok() {
     // http:// 付きは正常
-    let cl = ContentLocation::parse("http://example.com/path").unwrap();
+    let cl = ContentLocation::parse("http://example.com/path")
+        .expect("Content-Location のパースは成功するはず (実装バグ)");
     assert_eq!(cl.uri().host(), Some("example.com"));
 }
 
 #[test]
 fn test_content_location_non_http_without_authority_ok() {
     // http/https でないスキームは "://" なしでも OK
-    let cl = ContentLocation::parse("urn:isbn:0451450523").unwrap();
+    let cl = ContentLocation::parse("urn:isbn:0451450523")
+        .expect("Content-Location のパースは成功するはず (実装バグ)");
     assert_eq!(cl.uri().scheme(), Some("urn"));
 }
 
@@ -74,13 +76,15 @@ fn test_content_location_non_http_without_authority_ok() {
 
 #[test]
 fn parse_absolute() {
-    let cl = ContentLocation::parse("https://example.com/path").unwrap();
+    let cl = ContentLocation::parse("https://example.com/path")
+        .expect("Content-Location のパースは成功するはず (実装バグ)");
     assert_eq!(cl.uri().as_str(), "https://example.com/path");
 }
 
 #[test]
 fn parse_relative() {
-    let cl = ContentLocation::parse("/assets/logo.png").unwrap();
+    let cl = ContentLocation::parse("/assets/logo.png")
+        .expect("Content-Location のパースは成功するはず (実装バグ)");
     assert_eq!(cl.uri().path(), "/assets/logo.png");
 }
 

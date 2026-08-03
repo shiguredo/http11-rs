@@ -39,9 +39,9 @@ proptest! {
         tokens in proptest::collection::vec(allowed_trailer_token(8), 1..5)
     ) {
         let header = tokens.join(", ");
-        let parsed = Trailer::parse(&header).unwrap();
+        let parsed = Trailer::parse(&header).expect("Trailer のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = Trailer::parse(&displayed).unwrap();
+        let reparsed = Trailer::parse(&displayed).expect("Trailer のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }

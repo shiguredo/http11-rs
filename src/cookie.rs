@@ -10,12 +10,12 @@
 //! use shiguredo_http11::cookie::{Cookie, SetCookie, SameSite};
 //!
 //! // Cookie ヘッダーパース
-//! let cookies = Cookie::parse("session=abc123; user=john").unwrap();
+//! let cookies = Cookie::parse("session=abc123; user=john").expect("Cookie のパースは成功するはず (実装バグ)");
 //! assert_eq!(cookies[0].name(), "session");
 //! assert_eq!(cookies[0].value(), "abc123");
 //!
 //! // Set-Cookie ヘッダーパース
-//! let set_cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
+//! let set_cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).expect("Cookie のパースは成功するはず (実装バグ)");
 //! assert_eq!(set_cookie.name(), "session");
 //! assert_eq!(set_cookie.value(), "abc123");
 //! assert_eq!(set_cookie.path(), Some("/"));
@@ -80,7 +80,7 @@ impl Cookie {
     /// ```rust
     /// use shiguredo_http11::cookie::Cookie;
     ///
-    /// let cookies = Cookie::parse("session=abc123; user=john").unwrap();
+    /// let cookies = Cookie::parse("session=abc123; user=john").expect("Cookie のパースは成功するはず (実装バグ)");
     /// assert_eq!(cookies.len(), 2);
     /// assert_eq!(cookies[0].name(), "session");
     /// assert_eq!(cookies[1].name(), "user");
@@ -212,7 +212,7 @@ impl SetCookie {
     /// ```rust
     /// use shiguredo_http11::cookie::SetCookie;
     ///
-    /// let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
+    /// let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).expect("Cookie のパースは成功するはず (実装バグ)");
     /// assert_eq!(cookie.name(), "session");
     /// assert_eq!(cookie.value(), "abc123");
     /// assert_eq!(cookie.path(), Some("/"));

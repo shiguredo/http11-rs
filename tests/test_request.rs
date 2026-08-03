@@ -285,7 +285,8 @@ fn test_header_name_rejects_empty() {
 
 #[test]
 fn test_request_header_rejects_crlf_in_value() {
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     for &value in &["evil\r\nEvil: injected", "evil\rinjected", "evil\ninjected"] {
         let r = req
             .clone()
@@ -300,7 +301,8 @@ fn test_request_header_rejects_crlf_in_value() {
 
 #[test]
 fn test_request_header_rejects_nul_in_value() {
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let result = req.header(HeaderName::from_static(b"X-Test"), "evil\0value");
     assert!(matches!(
         result,
@@ -311,7 +313,8 @@ fn test_request_header_rejects_nul_in_value() {
 #[test]
 fn test_request_header_accepts_empty_value() {
     // RFC 9110 Section 5.5: field-value = *field-content (空値は合法)
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let result = req.header(HeaderName::from_static(b"X-Empty"), "");
     assert!(result.is_ok());
 }
@@ -321,7 +324,8 @@ fn test_request_header_accepts_value_with_leading_trailing_whitespace() {
     // RFC 9110 §5.5 では「A field parsing implementation MUST exclude such whitespace」
     // と先頭/末尾空白の除外を要求しているが、現状では smuggling 防御に注力するため
     // trim を行わない。将来 trim を導入する予定の暫定動作。
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let result = req.header(
         HeaderName::from_static(b"X-Test"),
         " value with leading space ",
@@ -335,11 +339,12 @@ fn test_request_header_accepts_value_with_leading_trailing_whitespace() {
 
 #[test]
 fn test_request_add_header_appends_duplicate_names() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Set-Cookie"), "a=1")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Set-Cookie"), "b=2")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let cookies = req.get_headers("Set-Cookie");
     assert_eq!(cookies, vec!["a=1", "b=2"]);
 }
@@ -350,17 +355,19 @@ fn test_request_add_header_does_not_modify_self_on_invalid_name() {
     assert!(HeaderName::new(b"Bad Name").is_err());
 
     // 有効な名前は正常に動作する
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(req.get_header("Host"), Some("example.com"));
 }
 
 #[test]
 fn test_request_add_header_does_not_modify_self_on_invalid_value() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let result = req.add_header(HeaderName::from_static(b"X-Test"), "evil\r\ninjected");
     assert!(matches!(
         result,
@@ -376,38 +383,41 @@ fn test_request_add_header_does_not_modify_self_on_invalid_value() {
 
 #[test]
 fn test_request_set_header_overwrites_existing() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Host"), "old.example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.set_header(HeaderName::from_static(b"Host"), "new.example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(req.get_header("Host"), Some("new.example.com"));
     assert_eq!(req.get_headers("Host").len(), 1);
 }
 
 #[test]
 fn test_request_set_header_overwrites_case_insensitively() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Host"), "old.example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     // 大文字小文字違いでも同名と判定される
     req.set_header(HeaderName::from_static(b"HOST"), "new.example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let hosts = req.get_headers("Host");
     assert_eq!(hosts, vec!["new.example.com"]);
 }
 
 #[test]
 fn test_request_set_header_removes_all_duplicates() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"X-Test"), "v1")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"X-Test"), "v2")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"X-Test"), "v3")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.set_header(HeaderName::from_static(b"X-Test"), "new")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let values = req.get_headers("X-Test");
     assert_eq!(values, vec!["new"]);
 }
@@ -420,9 +430,10 @@ fn test_request_set_header_atomicity_on_invalid_name() {
 
 #[test]
 fn test_request_set_header_atomicity_on_invalid_value() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.add_header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     // 既存の Host を上書きしようとして失敗 → Host が消えないこと
     let result = req.set_header(HeaderName::from_static(b"Host"), "evil\r\ninjected");
     assert!(matches!(
@@ -434,9 +445,10 @@ fn test_request_set_header_atomicity_on_invalid_value() {
 
 #[test]
 fn test_request_set_header_inserts_when_not_present() {
-    let mut req = Request::new(Method::GET, "/").unwrap();
+    let mut req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.set_header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(req.get_header("Host"), Some("example.com"));
 }
 
@@ -447,7 +459,8 @@ fn test_request_set_header_inserts_when_not_present() {
 #[test]
 fn test_request_rejects_smuggling_te_cl_via_crlf_in_value() {
     // CRLF 注入による TE/CL 競合の偽装を構築時に拒否する
-    let req = Request::new(Method::POST, "/").unwrap();
+    let req = Request::new(Method::POST, "/")
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     let result = req.header(
         HeaderName::from_static(b"Transfer-Encoding"),
         "chunked\r\nContent-Length: 0",
@@ -499,9 +512,9 @@ fn test_request_rejects_smuggling_header_name_with_crlf() {
 #[test]
 fn test_request_accessors() {
     let req = Request::new(Method::GET, "/path")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Host"), "example.com")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .body(b"hello".to_vec());
     assert_eq!(req.method(), "GET");
     assert_eq!(req.uri(), "/path");
@@ -514,13 +527,16 @@ fn test_request_accessors() {
 
 #[test]
 fn test_request_body_bytes_none_by_default() {
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.body_bytes().is_none());
 }
 
 #[test]
 fn test_request_body_bytes_some_empty() {
-    let req = Request::new(Method::POST, "/").unwrap().body(Vec::new());
+    let req = Request::new(Method::POST, "/")
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
+        .body(Vec::new());
     assert_eq!(req.body_bytes(), Some(b"".as_slice()));
 }
 
@@ -531,7 +547,8 @@ fn test_request_body_bytes_some_empty() {
 /// without_body() / set_body() / clear_body() の動作
 #[test]
 fn test_request_body_mutators() {
-    let mut req = Request::new(Method::POST, "/").unwrap();
+    let mut req = Request::new(Method::POST, "/")
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     req.set_body(b"hello".to_vec());
     assert_eq!(req.body_bytes(), Some(b"hello".as_slice()));
 
@@ -539,7 +556,7 @@ fn test_request_body_mutators() {
     assert_eq!(req.body_bytes(), None);
 
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .body(b"hello".to_vec())
         .without_body();
     assert_eq!(req.body_bytes(), None);
@@ -552,14 +569,16 @@ fn test_request_body_mutators() {
 /// HTTP/1.1 で Connection ヘッダーなし → keep-alive
 #[test]
 fn test_request_is_keep_alive_http11_default() {
-    let req = Request::new(Method::GET, "/").unwrap();
+    let req =
+        Request::new(Method::GET, "/").expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_keep_alive(), "HTTP/1.1 はデフォルトで keep-alive");
 }
 
 /// HTTP/1.0 で Connection ヘッダーなし → keep-alive ではない
 #[test]
 fn test_request_is_keep_alive_http10_default_false() {
-    let req = Request::with_version(Method::GET, "/", "HTTP/1.0").unwrap();
+    let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(!req.is_keep_alive(), "HTTP/1.0 はデフォルトで非 keep-alive");
 }
 
@@ -567,9 +586,9 @@ fn test_request_is_keep_alive_http10_default_false() {
 #[test]
 fn test_request_is_keep_alive_http11_with_close() {
     let req = Request::new(Method::GET, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), "close")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(!req.is_keep_alive());
 }
 
@@ -577,9 +596,9 @@ fn test_request_is_keep_alive_http11_with_close() {
 #[test]
 fn test_request_is_keep_alive_http10_with_keep_alive() {
     let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), "keep-alive")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_keep_alive());
 }
 
@@ -594,14 +613,15 @@ fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
         "rtsp://example.com/m",
         "RTSP/1.1",
     )
-    .unwrap();
+    .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(
         !req.is_keep_alive(),
         "RTSP/1.1 はデフォルトで HTTP の keep-alive 判定対象外"
     );
 
     // 独自プロトコル
-    let req = Request::with_version(Method::GET, "/", "FOO/1.1").unwrap();
+    let req = Request::with_version(Method::GET, "/", "FOO/1.1")
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(
         !req.is_keep_alive(),
         "独自プロトコル FOO/1.1 もデフォルトで keep-alive 対象外"
@@ -613,9 +633,9 @@ fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
         "rtsp://example.com/m",
         "RTSP/1.1",
     )
-    .unwrap()
+    .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
     .header(HeaderName::from_static(b"Connection"), "keep-alive")
-    .unwrap();
+    .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(
         req.is_keep_alive(),
         "Connection: keep-alive が明示指定されれば true"
@@ -634,9 +654,9 @@ fn test_request_is_keep_alive_rtsp_or_foo_11_not_keep_alive_by_default() {
 #[test]
 fn test_request_is_keep_alive_nbsp_not_trimmed() {
     let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), "\u{00A0}keep-alive")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(
         !req.is_keep_alive(),
         "NBSP 前置のトークンは keep-alive と一致してはならない"
@@ -647,21 +667,21 @@ fn test_request_is_keep_alive_nbsp_not_trimmed() {
 #[test]
 fn test_request_is_keep_alive_htab_sp_trimmed() {
     let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), "\tkeep-alive")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_keep_alive(), "HTAB 前置は OWS として除去される");
 
     let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), " keep-alive")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_keep_alive(), "SP 前置は OWS として除去される");
 
     let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Connection"), "  keep-alive ")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_keep_alive(), "前後の SP は OWS として除去される");
 }
 
@@ -669,12 +689,12 @@ fn test_request_is_keep_alive_htab_sp_trimmed() {
 #[test]
 fn test_request_is_chunked_nbsp_not_trimmed() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(
             HeaderName::from_static(b"Transfer-Encoding"),
             "\u{00A0}chunked",
         )
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(
         !req.is_chunked(),
         "NBSP 前置のトークンは chunked と一致してはならない"
@@ -685,20 +705,20 @@ fn test_request_is_chunked_nbsp_not_trimmed() {
 #[test]
 fn test_request_is_chunked_htab_sp_trimmed() {
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Transfer-Encoding"), "\tchunked")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_chunked(), "HTAB 前置は OWS として除去される");
 
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Transfer-Encoding"), " chunked")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_chunked(), "SP 前置は OWS として除去される");
 
     let req = Request::new(Method::POST, "/")
-        .unwrap()
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)")
         .header(HeaderName::from_static(b"Transfer-Encoding"), "  chunked ")
-        .unwrap();
+        .expect("リクエストのパース / 構築は成功するはず (実装バグ)");
     assert!(req.is_chunked(), "前後の SP は OWS として除去される");
 }

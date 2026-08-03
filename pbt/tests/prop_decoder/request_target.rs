@@ -63,30 +63,30 @@ proptest! {
     fn prop_origin_form_with_get_succeeds(uri in origin_form_uri()) {
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "GET + origin-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 
     #[test]
     fn prop_origin_form_with_query_succeeds(uri in origin_form_with_query()) {
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "GET + origin-form?query は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 
     #[test]
     fn prop_origin_form_with_post_succeeds(uri in origin_form_uri()) {
         let request_line = format!("POST {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "POST + origin-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 }
 
@@ -99,10 +99,10 @@ proptest! {
     fn prop_absolute_form_with_get_succeeds(uri in absolute_form_uri()) {
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "GET + absolute-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 }
 
@@ -115,17 +115,17 @@ proptest! {
     fn prop_authority_form_with_connect_succeeds(uri in authority_form_uri()) {
         let request_line = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n\r\n", uri, uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "CONNECT + authority-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 
     #[test]
     fn prop_authority_form_with_get_fails(uri in authority_form_uri()) {
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "GET + authority-form は失敗すべき: {}", uri);
     }
@@ -134,7 +134,7 @@ proptest! {
     fn prop_authority_form_with_post_fails(uri in authority_form_uri()) {
         let request_line = format!("POST {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "POST + authority-form は失敗すべき: {}", uri);
     }
@@ -153,7 +153,7 @@ proptest! {
         let uri = format!("{}#{}", path, fragment);
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "fragment を含む request-target は失敗すべき: {}", uri);
     }
@@ -166,7 +166,7 @@ proptest! {
         let uri_with_fragment = format!("{}#{}", uri, fragment);
         let request_line = format!("GET {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri_with_fragment);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "fragment を含む absolute-form は失敗すべき: {}", uri_with_fragment);
     }
@@ -181,7 +181,7 @@ proptest! {
     fn prop_connect_with_origin_form_fails(uri in origin_form_uri()) {
         let request_line = format!("CONNECT {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "CONNECT + origin-form は失敗すべき: {}", uri);
     }
@@ -190,7 +190,7 @@ proptest! {
     fn prop_connect_with_absolute_form_fails(uri in absolute_form_uri()) {
         let request_line = format!("CONNECT {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "CONNECT + absolute-form は失敗すべき: {}", uri);
     }
@@ -205,27 +205,27 @@ proptest! {
     fn prop_options_with_origin_form_succeeds(uri in origin_form_uri()) {
         let request_line = format!("OPTIONS {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "OPTIONS + origin-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 
     #[test]
     fn prop_options_with_absolute_form_succeeds(uri in absolute_form_uri()) {
         let request_line = format!("OPTIONS {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "OPTIONS + absolute-form は成功すべき: {}", uri);
-        prop_assert!(result.unwrap().is_some());
+        prop_assert!(result.expect("リクエストターゲットのパースは成功するはず (実装バグ)").is_some());
     }
 
     #[test]
     fn prop_options_with_authority_form_fails(uri in authority_form_uri()) {
         let request_line = format!("OPTIONS {} HTTP/1.1\r\nHost: example.com\r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
+        decoder.feed(request_line.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err(), "OPTIONS + authority-form は失敗すべき: {}", uri);
     }
@@ -262,10 +262,10 @@ proptest! {
         let uri = format!("urn:{}:{}", nid, nss);
         let raw = format!("GET {} HTTP/1.1\r\nHost: \r\n\r\n", uri);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(raw.as_bytes()).unwrap();
+        decoder.feed(raw.as_bytes()).expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok(), "urn: の absolute-form は成功すべき: {}", uri);
-        let (head, _) = result.unwrap().unwrap();
+        let (head, _) = result.expect("結果は存在するはず (実装バグ)").expect("リクエストターゲットのパースは成功するはず (実装バグ)");
         prop_assert_eq!(head.uri(), uri.as_str());
     }
 }

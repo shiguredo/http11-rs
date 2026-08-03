@@ -4,19 +4,23 @@ use shiguredo_http11::content_language::ContentLanguage;
 
 #[test]
 fn parse_empty_elements() {
-    let cl = ContentLanguage::parse("").unwrap();
+    let cl =
+        ContentLanguage::parse("").expect("Content-Language のパースは成功するはず (実装バグ)");
     assert!(cl.tags().is_empty());
 
-    let cl = ContentLanguage::parse(",").unwrap();
+    let cl =
+        ContentLanguage::parse(",").expect("Content-Language のパースは成功するはず (実装バグ)");
     assert!(cl.tags().is_empty());
 
-    let cl = ContentLanguage::parse("en,,ja").unwrap();
+    let cl = ContentLanguage::parse("en,,ja")
+        .expect("Content-Language のパースは成功するはず (実装バグ)");
     assert_eq!(cl.tags().len(), 2);
 }
 
 #[test]
 fn display() {
-    let cl = ContentLanguage::parse("en-US, ja").unwrap();
+    let cl = ContentLanguage::parse("en-US, ja")
+        .expect("Content-Language のパースは成功するはず (実装バグ)");
     assert_eq!(cl.to_string(), "en-US, ja");
 }
 
@@ -27,6 +31,7 @@ fn parse_primary_subtag_alpha_only() {
     assert!(ContentLanguage::parse("123").is_err());
     assert!(ContentLanguage::parse("1ab").is_err());
     // 後続サブタグは ALPHA / DIGIT OK
-    let cl = ContentLanguage::parse("en-123").unwrap();
+    let cl = ContentLanguage::parse("en-123")
+        .expect("Content-Language のパースは成功するはず (実装バグ)");
     assert_eq!(cl.tags()[0], "en-123");
 }

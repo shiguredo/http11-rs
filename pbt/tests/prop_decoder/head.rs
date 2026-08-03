@@ -47,7 +47,7 @@ proptest! {
         // obs-fold (行頭スペース) はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n {}: {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -61,7 +61,7 @@ proptest! {
         // obs-fold (行頭タブ) はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n\t{}: {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -75,7 +75,7 @@ proptest! {
         // ヘッダー名に CR を含むとエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\r{}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -89,7 +89,7 @@ proptest! {
         // ヘッダー名に LF を含むとエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}\n{}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -103,7 +103,7 @@ proptest! {
         // コロンがないとエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} {}\r\n\r\n", header_name, header_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -116,7 +116,7 @@ proptest! {
         // 空のヘッダー名はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n: {}\r\n\r\n", header_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -130,7 +130,7 @@ proptest! {
         // ヘッダー名にスペースを含むとエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} {}: value\r\n\r\n", prefix, suffix);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -143,7 +143,7 @@ proptest! {
         // ヘッダー名の後にスペースがあるとエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{} : value\r\n\r\n", header_name);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -158,7 +158,7 @@ proptest! {
         // 無効な文字を含むヘッダー名はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}{}{}: value\r\n\r\n", prefix, invalid_char, suffix);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -174,7 +174,7 @@ proptest! {
         let header_name = format!("{}{}{}", prefix, special_char, suffix);
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}: value\r\n\r\n", header_name);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_ok());
     }
 }
@@ -196,11 +196,11 @@ proptest! {
         );
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}:{}\r\n\r\n", header_name, padded_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_ok());
         if let Ok(Some((head, _))) = result {
-            let header_value = head.get_header(&header_name).unwrap();
+            let header_value = head.get_header(&header_name).expect("ヘッダーのデコードは成功するはず (実装バグ)");
             prop_assert_eq!(header_value, value);
         }
     }
@@ -221,7 +221,7 @@ proptest! {
             content_length
         );
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -234,7 +234,7 @@ proptest! {
         // chunked 以外の Transfer-Encoding はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: {}\r\n\r\n", coding);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -253,7 +253,7 @@ proptest! {
             "chunked".repeat(after_comma.max(1))
         );
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -267,7 +267,7 @@ proptest! {
         // 有効要素なし → Transfer-Encoding なしとして受理する
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: \r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_ok());
     }
 }
@@ -288,8 +288,8 @@ proptest! {
             chunked_case
         );
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_code(), 200);
         prop_assert_eq!(body_kind, BodyKind::Chunked);
 
@@ -299,10 +299,10 @@ proptest! {
             if let Some(data) = decoder.peek_body() {
                 body.extend_from_slice(data);
                 let len = data.len();
-                if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+                if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).expect("ヘッダーのデコードは成功するはず (実装バグ)") {
                     break;
                 }
-            } else if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.progress().unwrap() {
+            } else if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.progress().expect("ヘッダーのデコードは成功するはず (実装バグ)") {
                 break;
             }
         }
@@ -325,7 +325,7 @@ proptest! {
             headers
         );
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         // 重複 chunked はエラーを返すべき
         prop_assert!(decoder.decode_headers().is_err());
     }
@@ -343,8 +343,8 @@ proptest! {
             chunk_size, body
         );
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::Chunked);
     }
 }
@@ -361,7 +361,7 @@ proptest! {
         // 数字でない Content-Length はエラー
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: {}\r\n\r\n", invalid_value);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -374,7 +374,7 @@ proptest! {
         // 空の Content-Length はエラー
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: \r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -391,7 +391,7 @@ proptest! {
             len1, len2
         );
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -413,15 +413,15 @@ proptest! {
         full_data.extend_from_slice(body_bytes);
 
         let mut decoder = RequestDecoder::new();
-        decoder.feed(&full_data).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(&full_data).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::ContentLength(actual_len as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).expect("ヘッダーのデコードは成功するはず (実装バグ)") {
                 break;
             }
         }
@@ -437,8 +437,8 @@ proptest! {
         // Content-Length: 0 はボディなし
         let data = format!("{} / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::ContentLength(0));
     }
 }
@@ -458,15 +458,15 @@ proptest! {
         let body_content = "x".repeat(length);
         let data = format!("GET / HTTP/1.1\r\nHost: localhost\r\n{}: {}\r\n\r\n{}", header_case, length, body_content);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::ContentLength(length as u64));
 
         let mut body = Vec::new();
         while let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).unwrap() {
+            if let shiguredo_http11::BodyProgress::Complete { .. } = decoder.consume_body(len).expect("ヘッダーのデコードは成功するはず (実装バグ)") {
                 break;
             }
         }
@@ -552,8 +552,8 @@ proptest! {
         } else {
             b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".to_vec()
         };
-        decoder.feed(&data).unwrap();
-        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(&data).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         if use_chunked {
             prop_assert!(head.is_chunked());
@@ -749,10 +749,10 @@ proptest! {
     fn prop_body_kind_content_length_matches_head(len in 0u64..1_000_000) {
         let data = format!("POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: {}\r\n\r\n", len);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(matches!(body_kind, BodyKind::ContentLength(n) if n == len));
-        prop_assert_eq!(head.content_length().unwrap(), Some(len));
+        prop_assert_eq!(head.content_length().expect("ヘッダーのデコードは成功するはず (実装バグ)"), Some(len));
     }
 }
 
@@ -762,9 +762,9 @@ proptest! {
     fn prop_no_content_length_header_returns_ok_none(method in "GET|HEAD|DELETE") {
         let data = format!("{} / HTTP/1.1\r\nHost: example.com\r\n\r\n", method);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
-        prop_assert_eq!(head.content_length().unwrap(), None);
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        prop_assert_eq!(head.content_length().expect("ヘッダーのデコードは成功するはず (実装バグ)"), None);
     }
 }
 
@@ -778,8 +778,8 @@ proptest! {
     fn prop_response_head_status_class_redirection(status in 300u16..=399) {
         let data = format!("HTTP/1.1 {} Redirect\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_class(), StatusClass::Redirection);
     }
 }
@@ -790,8 +790,8 @@ proptest! {
     fn prop_response_head_status_class_client_error(status in 400u16..=499) {
         let data = format!("HTTP/1.1 {} Error\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_class(), StatusClass::ClientError);
     }
 }
@@ -802,8 +802,8 @@ proptest! {
     fn prop_response_head_status_class_server_error(status in 500u16..=599) {
         let data = format!("HTTP/1.1 {} Error\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_class(), StatusClass::ServerError);
     }
 }
@@ -815,8 +815,8 @@ proptest! {
     fn prop_response_head_status_class_consistency(status in 100u16..=599) {
         let data = format!("HTTP/1.1 {} Status\r\n\r\n", status);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         let expected = StatusClass::from_status_code(status)
             .expect("100..=599 always classified");
         prop_assert_eq!(head.status_class(), expected);
@@ -834,12 +834,12 @@ proptest! {
             conn_value
         );
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert!(head.has_header("Connection"));
         prop_assert!(head.has_header("X-Custom"));
         prop_assert!(!head.has_header("X-Missing"));
-        prop_assert_eq!(head.connection().unwrap(), conn_value);
+        prop_assert_eq!(head.connection().expect("ヘッダーのデコードは成功するはず (実装バグ)"), conn_value);
     }
 }
 
@@ -851,8 +851,8 @@ proptest! {
     ) {
         let data = format!("GET / {}\r\nHost: localhost\r\n\r\n", version);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.version(), version);
     }
 }
@@ -877,8 +877,8 @@ proptest! {
         request_line.push_str("\r\n");
 
         let mut decoder = RequestDecoder::new();
-        decoder.feed(request_line.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(request_line.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_method = head.method().to_string();
         let orig_uri = head.uri().to_string();
@@ -893,8 +893,8 @@ proptest! {
 
         let encoded = request.encode_headers()?;
         let mut decoder2 = RequestDecoder::new();
-        decoder2.feed(&encoded).unwrap();
-        let (head2, _) = decoder2.decode_headers().unwrap().unwrap();
+        decoder2.feed(&encoded).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head2, _) = decoder2.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         prop_assert_eq!(head2.method(), orig_method.as_str());
         prop_assert_eq!(head2.uri(), orig_uri.as_str());
@@ -923,8 +923,8 @@ proptest! {
         status_line.push_str("\r\n");
 
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(status_line.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(status_line.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_version = head.version().to_string();
         let orig_status_code = head.status_code();
@@ -939,8 +939,8 @@ proptest! {
 
         let encoded = response.encode_headers()?;
         let mut decoder2 = ResponseDecoder::new();
-        decoder2.feed(&encoded).unwrap();
-        let (head2, _) = decoder2.decode_headers().unwrap().unwrap();
+        decoder2.feed(&encoded).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head2, _) = decoder2.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         prop_assert_eq!(head2.version(), orig_version.as_str());
         prop_assert_eq!(head2.status_code(), orig_status_code);
@@ -967,8 +967,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_method = head.method().to_string();
         let m = head.into_method();
@@ -986,8 +986,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_uri = head.uri().to_string();
         let u = head.into_uri();
@@ -1005,8 +1005,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_version = head.version().to_string();
         let v = head.into_version();
@@ -1024,8 +1024,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\nHost: localhost\r\n\r\n", method.as_str(), uri, version);
         let mut decoder = RequestDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_headers: Vec<_> = head.headers().to_vec();
         let h = head.into_headers();
@@ -1047,8 +1047,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\n\r\n", version, status, reason);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_version = head.version().to_string();
         let v = head.into_version();
@@ -1066,8 +1066,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\n\r\n", version, status, reason);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_reason = head.reason_phrase().to_string();
         let r = head.into_reason_phrase();
@@ -1085,8 +1085,8 @@ proptest! {
     ) {
         let data = format!("{} {} {}\r\n\r\n", version, status, reason);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
         let orig_headers: Vec<_> = head.headers().to_vec();
         let h = head.into_headers();

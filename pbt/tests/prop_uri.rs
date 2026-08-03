@@ -91,7 +91,7 @@ proptest! {
     #[test]
     fn prop_percent_encode_decode_roundtrip(s in "[ -~]{0,64}") {
         let encoded = percent_encode(&s);
-        let decoded = percent_decode(&encoded).unwrap();
+        let decoded = percent_decode(&encoded).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert_eq!(decoded, s);
     }
 }
@@ -101,7 +101,7 @@ proptest! {
     #[test]
     fn prop_percent_encode_decode_utf8_roundtrip(s in "\\PC{0,32}") {
         let encoded = percent_encode(&s);
-        let decoded = percent_decode(&encoded).unwrap();
+        let decoded = percent_decode(&encoded).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert_eq!(decoded, s);
     }
 }
@@ -178,7 +178,7 @@ proptest! {
             })
             .collect();
 
-        let decoded = percent_decode_bytes(&encoded).unwrap();
+        let decoded = percent_decode_bytes(&encoded).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert_eq!(decoded, data);
     }
 }
@@ -192,7 +192,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_absolute(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.scheme(), Some(s.as_str()));
         prop_assert_eq!(uri.host(), Some(h.as_str()));
@@ -207,7 +207,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_port(s in scheme(), h in hostname(), pt in port(), p in path()) {
         let uri_str = format!("{}://{}:{}{}", s, h, pt, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.scheme(), Some(s.as_str()));
         prop_assert_eq!(uri.host(), Some(h.as_str()));
@@ -221,7 +221,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_ipv4_host(addr in ipv4(), p in path()) {
         let uri_str = format!("http://{}{}", addr, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.host(), Some(addr.as_str()));
         prop_assert_eq!(uri.path(), p.as_str());
@@ -233,7 +233,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_ipv6_host(addr in ipv6(), p in path()) {
         let uri_str = format!("http://{}{}", addr, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.host(), Some(addr.as_str()));
         prop_assert_eq!(uri.path(), p.as_str());
@@ -245,7 +245,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_ipv6_with_port(addr in ipv6(), pt in port(), p in path()) {
         let uri_str = format!("http://{}:{}{}", addr, pt, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.host(), Some(addr.as_str()));
         prop_assert_eq!(uri.port(), Some(pt));
@@ -257,7 +257,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_userinfo(user in userinfo(), h in hostname(), p in path()) {
         let uri_str = format!("http://{}@{}{}", user, h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         // host() は userinfo を除いた値を返す
         prop_assert_eq!(uri.host(), Some(h.as_str()));
@@ -273,7 +273,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_userinfo_and_port(user in userinfo(), h in hostname(), pt in port()) {
         let uri_str = format!("http://{}@{}:{}/", user, h, pt);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.host(), Some(h.as_str()));
         prop_assert_eq!(uri.port(), Some(pt));
@@ -284,7 +284,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_uri_parse_relative(p in path()) {
-        let uri = Uri::parse(&p).unwrap();
+        let uri = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert!(uri.is_relative());
         prop_assert!(!uri.is_absolute());
@@ -300,7 +300,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_query(p in path(), q in query()) {
         let uri_str = format!("{}?{}", p, q);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.path(), p.as_str());
         prop_assert_eq!(uri.query(), Some(q.as_str()));
@@ -312,7 +312,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_fragment(p in path(), f in fragment()) {
         let uri_str = format!("{}#{}", p, f);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.path(), p.as_str());
         prop_assert_eq!(uri.fragment(), Some(f.as_str()));
@@ -324,7 +324,7 @@ proptest! {
     #[test]
     fn prop_uri_parse_with_query_and_fragment(p in path(), q in query(), f in fragment()) {
         let uri_str = format!("{}?{}#{}", p, q, f);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.path(), p.as_str());
         prop_assert_eq!(uri.query(), Some(q.as_str()));
@@ -345,7 +345,7 @@ proptest! {
         f in fragment()
     ) {
         let uri_str = format!("{}://{}@{}:{}{}?{}#{}", s, user, h, pt, p, q, f);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.scheme(), Some(s.as_str()));
         prop_assert_eq!(uri.host(), Some(h.as_str()));
@@ -365,7 +365,7 @@ proptest! {
     #[test]
     fn prop_uri_as_str(s in scheme(), h in hostname(), p in path()) {
         let uri_str = format!("{}://{}{}", s, h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.as_str(), uri_str.as_str());
     }
@@ -376,7 +376,7 @@ proptest! {
     #[test]
     fn prop_uri_origin_form(h in hostname(), p in path(), q in query()) {
         let uri_str = format!("http://{}{}?{}", h, p, q);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         let expected = format!("{}?{}", p, q);
         prop_assert_eq!(uri.origin_form(), expected);
@@ -388,7 +388,7 @@ proptest! {
     #[test]
     fn prop_uri_origin_form_empty_path(h in hostname()) {
         let uri_str = format!("http://{}", h);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.origin_form(), "/");
     }
@@ -399,7 +399,7 @@ proptest! {
     #[test]
     fn prop_uri_origin_form_no_query(h in hostname(), p in path()) {
         let uri_str = format!("http://{}{}", h, p);
-        let uri = Uri::parse(&uri_str).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(uri.origin_form(), p.as_str());
     }
@@ -413,9 +413,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_uri_resolve_absolute(s in scheme(), h in hostname(), p in path()) {
-        let base = Uri::parse("http://example.com/a/b").unwrap();
-        let reference = Uri::parse(&format!("{}://{}{}", s, h, p)).unwrap();
-        let resolved = resolve(&base, &reference).unwrap();
+        let base = Uri::parse("http://example.com/a/b").expect("URI のパースは成功するはず (実装バグ)");
+        let reference = Uri::parse(&format!("{}://{}{}", s, h, p)).expect("URI のパースは成功するはず (実装バグ)");
+        let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(resolved.scheme(), Some(s.as_str()));
         prop_assert_eq!(resolved.host(), Some(h.as_str()));
@@ -426,10 +426,10 @@ proptest! {
 proptest! {
     #[test]
     fn prop_uri_resolve_with_authority(h in hostname(), p in path()) {
-        let base = Uri::parse("http://example.com/a/b").unwrap();
+        let base = Uri::parse("http://example.com/a/b").expect("URI のパースは成功するはず (実装バグ)");
         let ref_str = format!("//{}{}", h, p);
-        let reference = Uri::parse(&ref_str).unwrap();
-        let resolved = resolve(&base, &reference).unwrap();
+        let reference = Uri::parse(&ref_str).expect("URI のパースは成功するはず (実装バグ)");
+        let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(resolved.scheme(), Some("http"));
         prop_assert_eq!(resolved.host(), Some(h.as_str()));
@@ -442,9 +442,9 @@ proptest! {
     fn prop_uri_resolve_absolute_path(segment in path_segment()) {
         // ドットセグメントを含まないシンプルなパスでテスト
         let p = format!("/{}", segment);
-        let base = Uri::parse("http://example.com/a/b/c").unwrap();
-        let reference = Uri::parse(&p).unwrap();
-        let resolved = resolve(&base, &reference).unwrap();
+        let base = Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
+        let reference = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
+        let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(resolved.scheme(), Some("http"));
         prop_assert_eq!(resolved.host(), Some("example.com"));
@@ -456,9 +456,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_uri_resolve_relative_path(segment in path_segment()) {
-        let base = Uri::parse("http://example.com/a/b/c").unwrap();
-        let reference = Uri::parse(&segment).unwrap();
-        let resolved = resolve(&base, &reference).unwrap();
+        let base = Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
+        let reference = Uri::parse(&segment).expect("URI のパースは成功するはず (実装バグ)");
+        let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert!(resolved.is_absolute());
         prop_assert_eq!(resolved.scheme(), Some("http"));
@@ -478,8 +478,8 @@ proptest! {
     #[test]
     fn prop_uri_normalize_lowercase(s in "[A-Z]{1,8}", h in "[A-Z]{1,16}") {
         let uri_str = format!("{}://{}/path", s, h);
-        let uri = Uri::parse(&uri_str).unwrap();
-        let normalized = normalize(&uri).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
+        let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
 
         let expected_scheme = s.to_ascii_lowercase();
         let expected_host = h.to_ascii_lowercase();
@@ -493,8 +493,8 @@ proptest! {
     #[test]
     fn prop_uri_normalize_with_query_and_fragment(s in scheme(), h in hostname(), q in query(), f in fragment()) {
         let uri_str = format!("{}://{}/path?{}#{}", s.to_uppercase(), h.to_uppercase(), q, f);
-        let uri = Uri::parse(&uri_str).unwrap();
-        let normalized = normalize(&uri).unwrap();
+        let uri = Uri::parse(&uri_str).expect("URI のパースは成功するはず (実装バグ)");
+        let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(normalized.query(), Some(q.as_str()));
         prop_assert_eq!(normalized.fragment(), Some(f.as_str()));
@@ -552,16 +552,16 @@ proptest! {
     // Uri::parse 後の authority は常に None。prop_assume! は不要。
     #[test]
     fn prop_uri_normalize_idempotent(p in path_inducing_double_slash()) {
-        let uri = Uri::parse(&p).unwrap();
-        let n1 = normalize(&uri).unwrap();
-        let n2 = normalize(&n1).unwrap();
+        let uri = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
+        let n1 = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
+        let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
     }
 
     #[test]
     fn prop_uri_normalize_no_authority_injection(p in path_inducing_double_slash()) {
-        let uri = Uri::parse(&p).unwrap();
-        let normalized = normalize(&uri).unwrap();
+        let uri = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
+        let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert!(normalized.authority().is_none(), "authority が新規に注入されないこと");
     }
 
@@ -569,8 +569,8 @@ proptest! {
     fn prop_uri_normalize_path_no_double_slash_without_authority(
         p in path_inducing_double_slash()
     ) {
-        let uri = Uri::parse(&p).unwrap();
-        let normalized = normalize(&uri).unwrap();
+        let uri = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
+        let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert!(
             !normalized.path().starts_with("//"),
             "authority なし URI の path は // で始まらない (RFC 3986 Section 3.3)"
@@ -585,12 +585,12 @@ proptest! {
     fn prop_uri_normalize_idempotent_with_colon_first_segment(
         p in path_with_colon_first_segment()
     ) {
-        let uri = Uri::parse(&p).unwrap();
+        let uri = Uri::parse(&p).expect("URI のパースは成功するはず (実装バグ)");
         // strategy は `%` 始まりなので Uri::parse の scheme 検出には引っかからない。
         prop_assert!(uri.scheme().is_none(), "strategy 由来の入力は scheme を持たない");
 
-        let n1 = normalize(&uri).unwrap();
-        let n2 = normalize(&n1).unwrap();
+        let n1 = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
+        let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
         prop_assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
         prop_assert!(n1.scheme().is_none(), "scheme が新規に注入されないこと");
     }

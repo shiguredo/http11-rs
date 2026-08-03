@@ -258,7 +258,7 @@ proptest! {
             }
         };
         let displayed = parsed.to_string();
-        let reparsed = AcceptQuery::parse(&displayed).unwrap();
+        let reparsed = AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -278,7 +278,7 @@ proptest! {
             }
         };
         let displayed = parsed.to_string();
-        let reparsed = AcceptQuery::parse(&displayed).unwrap();
+        let reparsed = AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -290,12 +290,12 @@ proptest! {
         range in media_range_token()
     ) {
         let header = format!("\"{}\"", escape_sf_string(&range));
-        let parsed = AcceptQuery::parse(&header).unwrap();
+        let parsed = AcceptQuery::parse(&header).expect("Accept-Query のパースは成功するはず (実装バグ)");
         // Display は Token 形式に正規化される
         let displayed = parsed.to_string();
         prop_assert!(!displayed.starts_with('"'), "Display は Token 形式になるべき: {}", displayed);
         // ラウンドトリップ
-        let reparsed = AcceptQuery::parse(&displayed).unwrap();
+        let reparsed = AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -307,12 +307,12 @@ proptest! {
         range in media_range_string_only()
     ) {
         let header = format!("\"{}\"", escape_sf_string(&range));
-        let parsed = AcceptQuery::parse(&header).unwrap();
+        let parsed = AcceptQuery::parse(&header).expect("Accept-Query のパースは成功するはず (実装バグ)");
         // Display は String 形式で出力される
         let displayed = parsed.to_string();
         prop_assert!(displayed.starts_with('"'), "Display は String 形式になるべき: {}", displayed);
         // ラウンドトリップ
-        let reparsed = AcceptQuery::parse(&displayed).unwrap();
+        let reparsed = AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -329,7 +329,7 @@ proptest! {
         subtype in media_subtype_token(8),
     ) {
         let header = format!("{}/{}", media_type, subtype);
-        let aq = AcceptQuery::parse(&header).unwrap();
+        let aq = AcceptQuery::parse(&header).expect("Accept-Query のパースは成功するはず (実装バグ)");
         let item = &aq.items()[0];
 
         prop_assert_eq!(item.media_type(), media_type.to_ascii_lowercase());
@@ -353,9 +353,9 @@ proptest! {
                 header.push_str(&format!(";{}=\"{}\"", k, escape_sf_string(v)));
             }
         }
-        let parsed = AcceptQuery::parse(&header).unwrap();
+        let parsed = AcceptQuery::parse(&header).expect("Accept-Query のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = AcceptQuery::parse(&displayed).unwrap();
+        let reparsed = AcceptQuery::parse(&displayed).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -367,7 +367,7 @@ proptest! {
         spaces in proptest::collection::vec(Just(' '), 0..8)
     ) {
         let input: String = spaces.into_iter().collect();
-        let aq = AcceptQuery::parse(&input).unwrap();
+        let aq = AcceptQuery::parse(&input).expect("Accept-Query のパースは成功するはず (実装バグ)");
         prop_assert!(aq.items().is_empty());
     }
 }

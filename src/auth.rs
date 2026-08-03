@@ -10,12 +10,12 @@
 //! use shiguredo_http11::auth::{BasicAuth, BearerToken, WwwAuthenticate};
 //!
 //! // クライアント: Authorization ヘッダーの作成 (Basic)
-//! let auth = BasicAuth::new("user", "password").unwrap();
+//! let auth = BasicAuth::new("user", "password").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 //! let header = auth.to_header_value();
 //! assert!(header.starts_with("Basic "));
 //!
 //! // サーバー: Authorization ヘッダーのパース (Basic)
-//! let auth = BasicAuth::parse("Basic dXNlcjpwYXNzd29yZA==").unwrap();
+//! let auth = BasicAuth::parse("Basic dXNlcjpwYXNzd29yZA==").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 //! assert_eq!(auth.username(), "user");
 //! assert_eq!(auth.password(), "password");
 //!
@@ -24,7 +24,7 @@
 //! assert_eq!(challenge.to_string(), "Basic realm=\"example.com\"");
 //!
 //! // クライアント: Authorization ヘッダーのパース (Bearer)
-//! let token = BearerToken::parse("Bearer abc.def").unwrap();
+//! let token = BearerToken::parse("Bearer abc.def").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 //! assert_eq!(token.token(), "abc.def");
 //! ```
 
@@ -163,7 +163,7 @@ impl BasicAuth {
     /// ```rust
     /// use shiguredo_http11::auth::BasicAuth;
     ///
-    /// let auth = BasicAuth::parse("Basic dXNlcjpwYXNzd29yZA==").unwrap();
+    /// let auth = BasicAuth::parse("Basic dXNlcjpwYXNzd29yZA==").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
     /// assert_eq!(auth.username(), "user");
     /// assert_eq!(auth.password(), "password");
     /// ```
@@ -223,7 +223,7 @@ impl BasicAuth {
     /// ```rust
     /// use shiguredo_http11::auth::BasicAuth;
     ///
-    /// let auth = BasicAuth::new("user", "password").unwrap();
+    /// let auth = BasicAuth::new("user", "password").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
     /// assert_eq!(auth.to_header_value(), "Basic dXNlcjpwYXNzd29yZA==");
     /// ```
     pub fn to_header_value(&self) -> String {
@@ -273,7 +273,7 @@ impl WwwAuthenticate {
     /// ```rust
     /// use shiguredo_http11::auth::WwwAuthenticate;
     ///
-    /// let auth = WwwAuthenticate::parse("Basic realm=\"example.com\"").unwrap();
+    /// let auth = WwwAuthenticate::parse("Basic realm=\"example.com\"").expect("認証ヘッダーのパースは成功するはず (実装バグ)");
     /// assert_eq!(auth.realm(), "example.com");
     /// ```
     pub fn parse(input: &str) -> Result<Self, AuthError> {

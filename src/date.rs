@@ -10,7 +10,7 @@
 //! use shiguredo_http11::date::HttpDate;
 //!
 //! // IMF-fixdate 形式のパース
-//! let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+//! let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").expect("日時のパースは成功するはず (実装バグ)");
 //! assert_eq!(date.year(), 1994);
 //! assert_eq!(date.month(), 11);
 //! assert_eq!(date.day(), 6);

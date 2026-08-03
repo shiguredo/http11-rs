@@ -10,12 +10,12 @@
 //! use shiguredo_http11::etag::EntityTag;
 //!
 //! // Strong ETag
-//! let etag = EntityTag::parse("\"abc123\"").unwrap();
+//! let etag = EntityTag::parse("\"abc123\"").expect("ETag のパースは成功するはず (実装バグ)");
 //! assert!(etag.is_strong());
 //! assert_eq!(etag.tag(), "abc123");
 //!
 //! // Weak ETag
-//! let etag = EntityTag::parse("W/\"abc123\"").unwrap();
+//! let etag = EntityTag::parse("W/\"abc123\"").expect("ETag のパースは成功するはず (実装バグ)");
 //! assert!(etag.is_weak());
 //! assert_eq!(etag.tag(), "abc123");
 //! ```
@@ -71,11 +71,11 @@ impl EntityTag {
     /// use shiguredo_http11::etag::EntityTag;
     ///
     /// // Strong ETag
-    /// let etag = EntityTag::parse("\"v1.0\"").unwrap();
+    /// let etag = EntityTag::parse("\"v1.0\"").expect("ETag のパースは成功するはず (実装バグ)");
     /// assert!(etag.is_strong());
     ///
     /// // Weak ETag
-    /// let etag = EntityTag::parse("W/\"v1.0\"").unwrap();
+    /// let etag = EntityTag::parse("W/\"v1.0\"").expect("ETag のパースは成功するはず (実装バグ)");
     /// assert!(etag.is_weak());
     /// ```
     pub fn parse(input: &str) -> Result<Self, ETagError> {

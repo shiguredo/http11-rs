@@ -169,22 +169,58 @@ mod tests {
 
     #[test]
     fn decode_basic() {
-        assert_eq!(decode("").unwrap(), b"");
-        assert_eq!(decode("Zg==").unwrap(), b"f");
-        assert_eq!(decode("Zm8=").unwrap(), b"fo");
-        assert_eq!(decode("Zm9v").unwrap(), b"foo");
-        assert_eq!(decode("Zm9vYg==").unwrap(), b"foob");
-        assert_eq!(decode("Zm9vYmE=").unwrap(), b"fooba");
-        assert_eq!(decode("Zm9vYmFy").unwrap(), b"foobar");
-        assert_eq!(decode("dXNlcjpwYXNzd29yZA==").unwrap(), b"user:password");
+        assert_eq!(
+            decode("").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b""
+        );
+        assert_eq!(
+            decode("Zg==").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"f"
+        );
+        assert_eq!(
+            decode("Zm8=").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"fo"
+        );
+        assert_eq!(
+            decode("Zm9v").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foo"
+        );
+        assert_eq!(
+            decode("Zm9vYg==").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foob"
+        );
+        assert_eq!(
+            decode("Zm9vYmE=").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"fooba"
+        );
+        assert_eq!(
+            decode("Zm9vYmFy").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foobar"
+        );
+        assert_eq!(
+            decode("dXNlcjpwYXNzd29yZA==").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"user:password"
+        );
     }
 
     #[test]
     fn decode_ignores_whitespace() {
-        assert_eq!(decode("Zm9v\n").unwrap(), b"foo");
-        assert_eq!(decode("Z m 9 v").unwrap(), b"foo");
-        assert_eq!(decode("Zm9v\r\n").unwrap(), b"foo");
-        assert_eq!(decode("Zm9v\t").unwrap(), b"foo");
+        assert_eq!(
+            decode("Zm9v\n").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foo"
+        );
+        assert_eq!(
+            decode("Z m 9 v").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foo"
+        );
+        assert_eq!(
+            decode("Zm9v\r\n").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foo"
+        );
+        assert_eq!(
+            decode("Zm9v\t").expect("Base64 のデコードは成功するはず (実装バグ)"),
+            b"foo"
+        );
     }
 
     #[test]

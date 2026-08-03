@@ -62,9 +62,12 @@ fn test_qvalue_parse_errors() {
 // QValue の比較
 #[test]
 fn test_qvalue_ordering() {
-    let q0 = QValue::parse("0").unwrap();
-    let q5 = QValue::parse("0.5").unwrap();
-    let q1 = QValue::parse("1").unwrap();
+    let q0 =
+        QValue::parse("0").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
+    let q5 =
+        QValue::parse("0.5").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
+    let q1 =
+        QValue::parse("1").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
 
     assert!(q0 < q5);
     assert!(q5 < q1);
@@ -74,20 +77,42 @@ fn test_qvalue_ordering() {
 // QValue 1.000, 1.00, 1.0 形式
 #[test]
 fn test_qvalue_one_variants() {
-    assert_eq!(QValue::parse("1").unwrap().value(), 1000);
+    assert_eq!(
+        QValue::parse("1")
+            .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)")
+            .value(),
+        1000
+    );
     assert!(QValue::parse("1.").is_err());
-    assert_eq!(QValue::parse("1.0").unwrap().value(), 1000);
-    assert_eq!(QValue::parse("1.00").unwrap().value(), 1000);
-    assert_eq!(QValue::parse("1.000").unwrap().value(), 1000);
+    assert_eq!(
+        QValue::parse("1.0")
+            .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)")
+            .value(),
+        1000
+    );
+    assert_eq!(
+        QValue::parse("1.00")
+            .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)")
+            .value(),
+        1000
+    );
+    assert_eq!(
+        QValue::parse("1.000")
+            .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)")
+            .value(),
+        1000
+    );
 }
 
 // Accept 空値テスト
 #[test]
 fn test_accept_parse_empty() {
     // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
-    let accept = Accept::parse("").unwrap();
+    let accept =
+        Accept::parse("").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert!(accept.items().is_empty());
-    let accept = Accept::parse("   ").unwrap();
+    let accept =
+        Accept::parse("   ").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert!(accept.items().is_empty());
 }
 
@@ -106,16 +131,19 @@ fn test_accept_parse_errors() {
 #[test]
 fn test_accept_edge_cases() {
     // 空のパートは無視
-    let accept = Accept::parse("text/html, , text/plain").unwrap();
+    let accept = Accept::parse("text/html, , text/plain")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept.items().len(), 2);
 
     // ワイルドカード
-    let accept = Accept::parse("*/*").unwrap();
+    let accept =
+        Accept::parse("*/*").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept.items()[0].media_type(), "*");
     assert_eq!(accept.items()[0].subtype(), "*");
 
     // サブタイプワイルドカード
-    let accept = Accept::parse("text/*").unwrap();
+    let accept = Accept::parse("text/*")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept.items()[0].media_type(), "text");
     assert_eq!(accept.items()[0].subtype(), "*");
 }
@@ -124,12 +152,14 @@ fn test_accept_edge_cases() {
 #[test]
 fn test_accept_quoted_param() {
     // 引用符付きパラメータ
-    let accept = Accept::parse("text/html; charset=\"utf-8\"").unwrap();
+    let accept = Accept::parse("text/html; charset=\"utf-8\"")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     let item = &accept.items()[0];
     assert_eq!(item.parameters()[0].1, "utf-8");
 
     // スペースを含む引用符付きパラメータ
-    let accept = Accept::parse("text/html; name=\"hello world\"").unwrap();
+    let accept = Accept::parse("text/html; name=\"hello world\"")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     let item = &accept.items()[0];
     assert_eq!(item.parameters()[0].1, "hello world");
 }
@@ -142,7 +172,8 @@ fn test_accept_quoted_param() {
 #[test]
 fn test_accept_charset_parse_empty() {
     // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
-    let ac = AcceptCharset::parse("").unwrap();
+    let ac = AcceptCharset::parse("")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert!(ac.items().is_empty());
 }
 
@@ -161,7 +192,8 @@ fn test_accept_charset_errors() {
 #[test]
 fn test_accept_encoding_parse_empty() {
     // RFC 9110 Section 12.5.3: 空の Accept-Encoding はコンテントコーディング不要を意味する
-    let ae = AcceptEncoding::parse("").unwrap();
+    let ae = AcceptEncoding::parse("")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert!(ae.items().is_empty());
 }
 
@@ -173,7 +205,8 @@ fn test_accept_encoding_parse_empty() {
 #[test]
 fn test_accept_language_parse_empty() {
     // RFC 9110 Section 5.6.1.2: 空の値は空リストとして受理する
-    let al = AcceptLanguage::parse("").unwrap();
+    let al = AcceptLanguage::parse("")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert!(al.items().is_empty());
 }
 
@@ -211,7 +244,8 @@ mod helpers;
 #[test]
 fn test_accept_quoted_string_rejects_ctl() {
     for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
-        let c = char::from_u32(code).unwrap();
+        let c = char::from_u32(code)
+            .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         // qdtext 経路
         assert_eq!(
             Accept::parse(&format!("text/html; charset=\"{c}\"")),
@@ -238,13 +272,15 @@ fn test_accept_quoted_string_rejects_ctl() {
 // (`needs_quoting("")` を `true` に修正したリグレッション防止)
 #[test]
 fn test_accept_empty_quoted_string() {
-    let accept = Accept::parse("text/html; ext=\"\"").unwrap();
+    let accept = Accept::parse("text/html; ext=\"\"")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     let params = accept.items()[0].parameters();
     assert_eq!(params, &[("ext".to_string(), "".to_string())]);
 
     let displayed = accept.to_string();
     assert!(displayed.contains("ext=\"\""), "Display 出力 {displayed:?}");
-    let reparsed = Accept::parse(&displayed).unwrap();
+    let reparsed = Accept::parse(&displayed)
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept, reparsed);
 }
 
@@ -263,7 +299,8 @@ fn test_accept_unterminated_quote() {
 
 #[test]
 fn parse_accept_simple() {
-    let accept = Accept::parse("text/html").unwrap();
+    let accept = Accept::parse("text/html")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept.items().len(), 1);
     let item = &accept.items()[0];
     assert_eq!(item.media_type(), "text");
@@ -273,7 +310,8 @@ fn parse_accept_simple() {
 
 #[test]
 fn parse_accept_wildcard() {
-    let accept = Accept::parse("text/*; q=0.5").unwrap();
+    let accept = Accept::parse("text/*; q=0.5")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     let item = &accept.items()[0];
     assert_eq!(item.subtype(), "*");
     assert_eq!(item.qvalue().value(), 500);
@@ -281,7 +319,8 @@ fn parse_accept_wildcard() {
 
 #[test]
 fn parse_accept_with_params() {
-    let accept = Accept::parse("text/html; level=1; q=0.7").unwrap();
+    let accept = Accept::parse("text/html; level=1; q=0.7")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     let item = &accept.items()[0];
     assert_eq!(item.parameters()[0].0, "level");
     assert_eq!(item.parameters()[0].1, "1");
@@ -295,28 +334,32 @@ fn parse_accept_invalid_q() {
 
 #[test]
 fn parse_accept_charset() {
-    let ac = AcceptCharset::parse("utf-8, iso-8859-1;q=0.5").unwrap();
+    let ac = AcceptCharset::parse("utf-8, iso-8859-1;q=0.5")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ac.items().len(), 2);
     assert_eq!(ac.items()[1].qvalue().value(), 500);
 }
 
 #[test]
 fn parse_accept_encoding() {
-    let ae = AcceptEncoding::parse("gzip, identity;q=0.2").unwrap();
+    let ae = AcceptEncoding::parse("gzip, identity;q=0.2")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(ae.items()[0].coding(), "gzip");
     assert_eq!(ae.items()[1].qvalue().value(), 200);
 }
 
 #[test]
 fn parse_accept_language() {
-    let al = AcceptLanguage::parse("en-US, ja;q=0.8").unwrap();
+    let al = AcceptLanguage::parse("en-US, ja;q=0.8")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(al.items()[0].language(), "en-US");
     assert_eq!(al.items()[1].qvalue().value(), 800);
 }
 
 #[test]
 fn display_accept() {
-    let accept = Accept::parse("text/html; q=0.5").unwrap();
+    let accept = Accept::parse("text/html; q=0.5")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(accept.to_string(), "text/html; q=0.5");
 }
 
@@ -327,6 +370,7 @@ fn parse_accept_language_primary_subtag_alpha_only() {
     assert!(AcceptLanguage::parse("123").is_err());
     assert!(AcceptLanguage::parse("1ab").is_err());
     // 後続サブタグは ALPHA / DIGIT OK
-    let al = AcceptLanguage::parse("en-123").unwrap();
+    let al = AcceptLanguage::parse("en-123")
+        .expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
     assert_eq!(al.items()[0].language(), "en-123");
 }

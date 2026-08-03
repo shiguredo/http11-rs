@@ -67,7 +67,7 @@ proptest! {
     #[test]
     fn prop_qvalue_parse_decimal(value in 0u16..=1000u16) {
         let q_str = accept_qvalue_string(value);
-        let q = QValue::parse(&q_str).unwrap();
+        let q = QValue::parse(&q_str).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(q.value(), value);
     }
 }
@@ -77,9 +77,9 @@ proptest! {
     #[test]
     fn prop_qvalue_display_roundtrip(value in 0u16..=1000u16) {
         let q_str = accept_qvalue_string(value);
-        let q = QValue::parse(&q_str).unwrap();
+        let q = QValue::parse(&q_str).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let displayed = q.to_string();
-        let reparsed = QValue::parse(&displayed).unwrap();
+        let reparsed = QValue::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(q.value(), reparsed.value());
     }
 }
@@ -106,9 +106,9 @@ proptest! {
             parts.push(part);
         }
         let header = parts.join(", ");
-        let parsed = Accept::parse(&header).unwrap();
+        let parsed = Accept::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = Accept::parse(&displayed).unwrap();
+        let reparsed = Accept::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -127,7 +127,7 @@ proptest! {
         let result = Accept::parse(&header);
         prop_assert!(result.is_ok());
 
-        let accept = result.unwrap();
+        let accept = result.expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &accept.items()[0];
         prop_assert_eq!(item.parameters().len(), 1);
         prop_assert_eq!(&item.parameters()[0].0, &param_name.to_ascii_lowercase());
@@ -141,7 +141,7 @@ proptest! {
     fn prop_accept_multiple_items(count in 2usize..=5usize) {
         let items: Vec<_> = (0..count).map(|i| format!("text/type{}", i)).collect();
         let header = items.join(", ");
-        let accept = Accept::parse(&header).unwrap();
+        let accept = Accept::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(accept.items().len(), count);
     }
 }
@@ -159,7 +159,7 @@ proptest! {
         } else {
             format!("{}/{}; q={}", media_type, subtype, accept_qvalue_string(q))
         };
-        let accept = Accept::parse(&header).unwrap();
+        let accept = Accept::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &accept.items()[0];
 
         prop_assert_eq!(item.media_type(), media_type.as_str());
@@ -190,9 +190,9 @@ proptest! {
             parts.push(part);
         }
         let header = parts.join(", ");
-        let parsed = AcceptCharset::parse(&header).unwrap();
+        let parsed = AcceptCharset::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = AcceptCharset::parse(&displayed).unwrap();
+        let reparsed = AcceptCharset::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }
@@ -209,7 +209,7 @@ proptest! {
         } else {
             format!("{}; q={}", charset, accept_qvalue_string(q))
         };
-        let ac = AcceptCharset::parse(&header).unwrap();
+        let ac = AcceptCharset::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &ac.items()[0];
 
         let expected_charset = charset.to_ascii_lowercase();
@@ -240,9 +240,9 @@ proptest! {
             parts.push(part);
         }
         let header = parts.join(", ");
-        let parsed = AcceptEncoding::parse(&header).unwrap();
+        let parsed = AcceptEncoding::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = AcceptEncoding::parse(&displayed).unwrap();
+        let reparsed = AcceptEncoding::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(reparsed.items().len(), parsed.items().len());
     }
 }
@@ -259,7 +259,7 @@ proptest! {
         } else {
             format!("{}; q={}", coding, accept_qvalue_string(q))
         };
-        let ae = AcceptEncoding::parse(&header).unwrap();
+        let ae = AcceptEncoding::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &ae.items()[0];
 
         let expected_coding = coding.to_ascii_lowercase();
@@ -290,9 +290,9 @@ proptest! {
             parts.push(part);
         }
         let header = parts.join(", ");
-        let parsed = AcceptLanguage::parse(&header).unwrap();
+        let parsed = AcceptLanguage::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = AcceptLanguage::parse(&displayed).unwrap();
+        let reparsed = AcceptLanguage::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         prop_assert_eq!(reparsed.items().len(), parsed.items().len());
     }
 }
@@ -309,7 +309,7 @@ proptest! {
         } else {
             format!("{}; q={}", tag, accept_qvalue_string(q))
         };
-        let al = AcceptLanguage::parse(&header).unwrap();
+        let al = AcceptLanguage::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &al.items()[0];
 
         prop_assert_eq!(item.language(), tag.as_str());
@@ -333,12 +333,12 @@ proptest! {
         } else {
             format!("{}/{}; q={}", media_type, subtype, accept_qvalue_string(q))
         };
-        let accept = Accept::parse(&header).unwrap();
+        let accept = Accept::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &accept.items()[0];
         let displayed = item.to_string();
 
         // Display からパースできる
-        let reparsed = Accept::parse(&displayed).unwrap();
+        let reparsed = Accept::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let reparsed_item = &reparsed.items()[0];
 
         prop_assert_eq!(item.media_type(), reparsed_item.media_type());
@@ -356,7 +356,7 @@ proptest! {
     #[test]
     fn prop_accept_quoted_obs_text_roundtrip(value in qdtext_value(0..=16)) {
         let header = format!("text/plain; ext=\"{}\"", value);
-        let accept = Accept::parse(&header).unwrap();
+        let accept = Accept::parse(&header).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let item = &accept.items()[0];
         prop_assert_eq!(item.parameters().len(), 1);
         prop_assert_eq!(&item.parameters()[0].0, "ext");
@@ -372,7 +372,7 @@ proptest! {
             displayed,
             value,
         );
-        let reparsed = Accept::parse(&displayed).unwrap();
+        let reparsed = Accept::parse(&displayed).expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
         let reparsed_item = &reparsed.items()[0];
         prop_assert_eq!(reparsed_item.parameters().len(), 1);
         prop_assert_eq!(&reparsed_item.parameters()[0].1, &value);

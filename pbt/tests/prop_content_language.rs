@@ -11,9 +11,9 @@ proptest! {
     #[test]
     fn prop_content_language_roundtrip(tags in proptest::collection::vec(language_tag(), 1..4)) {
         let header = tags.join(", ");
-        let parsed = ContentLanguage::parse(&header).unwrap();
+        let parsed = ContentLanguage::parse(&header).expect("Content-Language のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = ContentLanguage::parse(&displayed).unwrap();
+        let reparsed = ContentLanguage::parse(&displayed).expect("Content-Language のパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed, reparsed);
     }
 }

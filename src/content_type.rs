@@ -10,16 +10,16 @@
 //! use shiguredo_http11::content_type::ContentType;
 //!
 //! // 基本的な Content-Type
-//! let ct = ContentType::parse("text/html").unwrap();
+//! let ct = ContentType::parse("text/html").expect("Content-Type のパースは成功するはず (実装バグ)");
 //! assert_eq!(ct.media_type(), "text");
 //! assert_eq!(ct.subtype(), "html");
 //!
 //! // パラメータ付き
-//! let ct = ContentType::parse("text/html; charset=utf-8").unwrap();
+//! let ct = ContentType::parse("text/html; charset=utf-8").expect("Content-Type のパースは成功するはず (実装バグ)");
 //! assert_eq!(ct.charset(), Some("utf-8"));
 //!
 //! // multipart/form-data
-//! let ct = ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary").unwrap();
+//! let ct = ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary").expect("Content-Type のパースは成功するはず (実装バグ)");
 //! assert_eq!(ct.boundary(), Some("----WebKitFormBoundary"));
 //! ```
 
@@ -95,7 +95,7 @@ impl ContentType {
     /// ```rust
     /// use shiguredo_http11::content_type::ContentType;
     ///
-    /// let ct = ContentType::parse("text/html; charset=utf-8").unwrap();
+    /// let ct = ContentType::parse("text/html; charset=utf-8").expect("Content-Type のパースは成功するはず (実装バグ)");
     /// assert_eq!(ct.media_type(), "text");
     /// assert_eq!(ct.subtype(), "html");
     /// assert_eq!(ct.charset(), Some("utf-8"));

@@ -32,23 +32,40 @@ fn incomplete_content_length_body() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 100\r\n\r\n")
-        .unwrap();
-    decoder.feed(&[0u8; 50]).unwrap(); // 100 バイト中 50 バイトのみ
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    decoder
+        .feed(&[0u8; 50])
+        .expect("ボディのデコードは成功するはず (実装バグ)"); // 100 バイト中 50 バイトのみ
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::ContentLength(100)));
 
     // ボディを読み取っても Complete にならない
     let mut body = Vec::new();
     // peek_body() で 50 バイトを取得 → consume_body(50) は Advanced を返す
-    let data = decoder.peek_body().unwrap();
+    let data = decoder
+        .peek_body()
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     body.extend_from_slice(data);
     let len = data.len();
-    assert_eq!(decoder.consume_body(len).unwrap(), BodyProgress::Advanced);
+    assert_eq!(
+        decoder
+            .consume_body(len)
+            .expect("ボディのデコードは成功するはず (実装バグ)"),
+        BodyProgress::Advanced
+    );
 
     // 次の peek_body() は None (バッファが空) → progress() は NeedData を返す
     assert!(decoder.peek_body().is_none());
-    assert_eq!(decoder.progress().unwrap(), BodyProgress::NeedData);
+    assert_eq!(
+        decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)"),
+        BodyProgress::NeedData
+    );
 
     assert_eq!(body.len(), 50); // 50 バイトのみ読み取れた
 }
@@ -61,10 +78,15 @@ fn incomplete_chunked_body() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
-    decoder.feed(b"5\r\nhello\r\n").unwrap(); // 終端チャンク "0\r\n\r\n" がない
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    decoder
+        .feed(b"5\r\nhello\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)"); // 終端チャンク "0\r\n\r\n" がない
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     // ボディを読み取っても Complete にならない
@@ -73,7 +95,10 @@ fn incomplete_chunked_body() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     panic!("終端チャンク無しで Complete になってはならない")
                 }
@@ -81,7 +106,10 @@ fn incomplete_chunked_body() {
             }
         }
         // peek_body() が None → progress() で状態遷移を試みる
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 panic!("should not complete without terminating chunk")
             }
@@ -98,18 +126,25 @@ fn complete_content_length_body() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::ContentLength(5)));
 
     // peek_body() で 5 バイトを取得 → consume_body(5) で Complete に到達
     let mut body = Vec::new();
-    let data = decoder.peek_body().unwrap();
+    let data = decoder
+        .peek_body()
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     body.extend_from_slice(data);
     let len = data.len();
     assert!(matches!(
-        decoder.consume_body(len).unwrap(),
+        decoder
+            .consume_body(len)
+            .expect("ボディのデコードは成功するはず (実装バグ)"),
         BodyProgress::Complete { .. }
     ));
     assert_eq!(body, b"hello");
@@ -121,9 +156,12 @@ fn complete_chunked_body() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let mut body = Vec::new();
@@ -132,7 +170,10 @@ fn complete_chunked_body() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -141,7 +182,10 @@ fn complete_chunked_body() {
             }
         }
         // peek_body() が None → progress() で状態遷移を試みる
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 completed = true;
                 break;
@@ -161,10 +205,17 @@ fn complete_chunked_body() {
 fn close_delimited_mark_eof() {
     let mut decoder = ResponseDecoder::new();
     // Content-Length も Transfer-Encoding もない = close-delimited
-    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\n").unwrap();
-    decoder.feed(b"hello world").unwrap();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    decoder
+        .feed(b"hello world")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::CloseDelimited));
 
     // ボディを読み取る
@@ -172,7 +223,9 @@ fn close_delimited_mark_eof() {
     while let Some(data) = decoder.peek_body() {
         body.extend_from_slice(data);
         let len = data.len();
-        decoder.consume_body(len).unwrap();
+        decoder
+            .consume_body(len)
+            .expect("ボディのデコードは成功するはず (実装バグ)");
     }
 
     // まだ Complete ではない (is_close_delimited() で確認)
@@ -190,17 +243,27 @@ fn close_delimited_mark_eof() {
 #[test]
 fn close_delimited_decode_with_mark_eof() {
     let mut decoder = ResponseDecoder::new();
-    decoder.feed(b"HTTP/1.1 200 OK\r\n\r\nbody data").unwrap();
+    decoder
+        .feed(b"HTTP/1.1 200 OK\r\n\r\nbody data")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     // decode() はデータ不足で None を返す (close-delimited は mark_eof() が必要)
-    assert!(decoder.decode().unwrap().is_none());
+    assert!(
+        decoder
+            .decode()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+            .is_none()
+    );
     assert!(decoder.is_close_delimited());
 
     // EOF を通知
     decoder.mark_eof();
 
     // 再度 decode() を呼ぶと Response が返る
-    let response = decoder.decode().unwrap().unwrap();
+    let response = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(response.body_bytes(), Some(&b"body data"[..]));
 }
 
@@ -213,7 +276,7 @@ fn http10_with_transfer_encoding_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.0\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -232,11 +295,13 @@ fn http11_with_transfer_encoding_should_succeed() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_ok());
-    let (_, body_kind) = result.unwrap().unwrap();
+    let (_, body_kind) = result
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 }
 
@@ -248,7 +313,9 @@ fn assert_request_te_rejected(version: &str) {
         "POST / {}\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n",
         version
     );
-    decoder.feed(line.as_bytes()).unwrap();
+    decoder
+        .feed(line.as_bytes())
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
@@ -304,7 +371,7 @@ fn lower_case_http11_request_with_transfer_encoding_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / http/1.1\r\nHost: example.com\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(result.is_err());
 }
@@ -313,7 +380,9 @@ fn lower_case_http11_request_with_transfer_encoding_should_fail() {
 fn assert_response_te_rejected(version: &str) {
     let mut decoder = ResponseDecoder::new();
     let line = format!("{} 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n", version);
-    decoder.feed(line.as_bytes()).unwrap();
+    decoder
+        .feed(line.as_bytes())
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
@@ -371,7 +440,9 @@ fn foo10_response_with_transfer_encoding_should_fail() {
 /// のみ許容することを確認する。
 fn assert_request_te_rejected_with_unicode_whitespace(payload: &[u8]) {
     let mut decoder = RequestDecoder::new();
-    decoder.feed(payload).unwrap();
+    decoder
+        .feed(payload)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
@@ -416,8 +487,11 @@ fn request_te_with_htab_should_succeed() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: \tchunked\t\r\n\r\n")
-        .unwrap();
-    let result = decoder.decode_headers().unwrap().unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let result = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(result.1, BodyKind::Chunked));
 }
 
@@ -427,14 +501,19 @@ fn request_te_with_empty_list_element_should_succeed() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding:  ,chunked\r\n\r\n")
-        .unwrap();
-    let result = decoder.decode_headers().unwrap().unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let result = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(result.1, BodyKind::Chunked));
 }
 
 fn assert_response_te_rejected_with_unicode_whitespace(payload: &[u8]) {
     let mut decoder = ResponseDecoder::new();
-    decoder.feed(payload).unwrap();
+    decoder
+        .feed(payload)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
@@ -468,8 +547,11 @@ fn response_te_with_htab_should_succeed() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: \tchunked\t\r\n\r\n")
-        .unwrap();
-    let result = decoder.decode_headers().unwrap().unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let result = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(result.1, BodyKind::Chunked));
 }
 
@@ -485,8 +567,13 @@ fn trailer_declared_with_nbsp_should_not_match_section_name() {
     let response =
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTrailer: \xC2\xA0X-Test\r\n\r\n\
                      0\r\nX-Test: value\r\n\r\n";
-    decoder.feed(response).unwrap();
-    decoder.decode_headers().unwrap().unwrap();
+    decoder
+        .feed(response)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(
         decoder.progress().is_err(),
         "NBSP 込み申告と trailer-section の照合は Err を期待したが Ok を返した"
@@ -501,7 +588,7 @@ fn request_target_with_percent_encoded_null_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET /path%00file HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -519,7 +606,7 @@ fn request_target_without_percent_encoded_null_should_succeed() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET /path%20file HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_ok());
@@ -536,7 +623,9 @@ fn request_target_with_rfc3986_excluded_chars_should_fail() {
     for ch in excluded_chars {
         let mut decoder = RequestDecoder::new();
         let request = format!("GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n", ch);
-        decoder.feed(request.as_bytes()).unwrap();
+        decoder
+            .feed(request.as_bytes())
+            .expect("ボディのデコードは成功するはず (実装バグ)");
 
         let result = decoder.decode_headers();
         assert!(
@@ -557,14 +646,14 @@ fn request_target_with_incomplete_percent_encoding_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET /path% HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // %X のみ (1 桁)
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET /path%2 HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 }
 
@@ -579,7 +668,9 @@ fn request_target_with_invalid_hex_percent_encoding_should_fail() {
             "GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n",
             case
         );
-        decoder.feed(request.as_bytes()).unwrap();
+        decoder
+            .feed(request.as_bytes())
+            .expect("ボディのデコードは成功するはず (実装バグ)");
 
         let result = decoder.decode_headers();
         assert!(
@@ -602,7 +693,9 @@ fn request_target_with_valid_percent_encoding_should_succeed() {
             "GET /path{}file HTTP/1.1\r\nHost: example.com\r\n\r\n",
             case
         );
-        decoder.feed(request.as_bytes()).unwrap();
+        decoder
+            .feed(request.as_bytes())
+            .expect("ボディのデコードは成功するはず (実装バグ)");
 
         let result = decoder.decode_headers();
         assert!(
@@ -624,13 +717,18 @@ fn chunked_with_obs_text_in_extension_should_succeed() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     // chunk-extension に obs-text (0x80) を含む: 5;ext="\x80"\r\nhello\r\n0\r\n\r\n
     let chunk_with_obs_text: &[u8] = b"5;ext=\"\x80\"\r\nhello\r\n0\r\n\r\n";
-    decoder.feed(chunk_with_obs_text).unwrap();
+    decoder
+        .feed(chunk_with_obs_text)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     // ボディを正常に読み取れることを確認
@@ -640,7 +738,10 @@ fn chunked_with_obs_text_in_extension_should_succeed() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -648,7 +749,10 @@ fn chunked_with_obs_text_in_extension_should_succeed() {
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
         }
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 completed = true;
                 break;
@@ -670,12 +774,17 @@ fn chunked_with_bws_before_extension_should_succeed() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     // chunk-size と ";" の間に BWS: "5 ;ext\r\n"
-    decoder.feed(b"5 ;ext\r\nhello\r\n0\r\n\r\n").unwrap();
+    decoder
+        .feed(b"5 ;ext\r\nhello\r\n0\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let mut body = Vec::new();
@@ -684,7 +793,10 @@ fn chunked_with_bws_before_extension_should_succeed() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -692,7 +804,10 @@ fn chunked_with_bws_before_extension_should_succeed() {
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
         }
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 completed = true;
                 break;
@@ -712,12 +827,17 @@ fn chunked_with_leading_whitespace_should_fail() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     // chunk-size の前に空白: " 5;ext\r\n"
-    decoder.feed(b" 5;ext\r\nhello\r\n0\r\n\r\n").unwrap();
+    decoder
+        .feed(b" 5;ext\r\nhello\r\n0\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     // chunk-size の先頭空白はエラーになる
@@ -731,12 +851,17 @@ fn chunked_with_trailing_whitespace_without_extension_should_fail() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     // chunk-ext なしで chunk-size の後に空白: "5 \r\n"
-    decoder.feed(b"5 \r\nhello\r\n0\r\n\r\n").unwrap();
+    decoder
+        .feed(b"5 \r\nhello\r\n0\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let result = decoder.progress();
@@ -753,7 +878,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET http://[::1/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(result.is_err(), "対応していない '[' でエラーになるべき");
     assert!(
@@ -767,7 +892,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET http://]::1[/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(result.is_err(), "'[' より先に ']' があるとエラーになるべき");
     assert!(
@@ -781,7 +906,7 @@ fn absolute_form_with_unmatched_ipv6_brackets_should_fail() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET http://[[::1]/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(
         result.is_err(),
@@ -795,7 +920,7 @@ fn absolute_form_with_valid_ipv6_should_succeed() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"GET http://[::1]:8080/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_ok(), "正常な IPv6 リテラルは成功すべき");
@@ -812,7 +937,7 @@ fn test_transfer_encoding_invalid_token() {
     let mut decoder = RequestDecoder::new();
     decoder
         .feed(b"POST / HTTP/1.1\r\nHost: example.com\r\nTransfer-Encoding: chu/nked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(result.is_err());
     assert!(
@@ -826,7 +951,7 @@ fn test_transfer_encoding_invalid_token() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chu nked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let result = decoder.decode_headers();
     assert!(result.is_err());
     assert!(
@@ -847,11 +972,16 @@ fn test_chunk_ext_invalid_name() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     // chunk-ext-name にスペースを含む: "5;bad name\r\n"
-    decoder.feed(b"5;bad name\r\nhello\r\n0\r\n\r\n").unwrap();
+    decoder
+        .feed(b"5;bad name\r\nhello\r\n0\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let result = decoder.progress();
@@ -868,11 +998,16 @@ fn test_chunk_ext_valid_with_value() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     // 有効な chunk-ext: "5;name=value\r\nhello\r\n0\r\n\r\n"
-    decoder.feed(b"5;name=value\r\nhello\r\n0\r\n\r\n").unwrap();
+    decoder
+        .feed(b"5;name=value\r\nhello\r\n0\r\n\r\n")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let mut body = Vec::new();
@@ -881,7 +1016,10 @@ fn test_chunk_ext_valid_with_value() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -889,7 +1027,10 @@ fn test_chunk_ext_valid_with_value() {
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
         }
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 completed = true;
                 break;
@@ -908,13 +1049,16 @@ fn test_chunk_ext_valid_quoted_string() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     // 有効な quoted-string: 5;name="quoted value"\r\nhello\r\n0\r\n\r\n
     decoder
         .feed(b"5;name=\"quoted value\"\r\nhello\r\n0\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let mut body = Vec::new();
@@ -923,7 +1067,10 @@ fn test_chunk_ext_valid_quoted_string() {
         if let Some(data) = decoder.peek_body() {
             body.extend_from_slice(data);
             let len = data.len();
-            match decoder.consume_body(len).unwrap() {
+            match decoder
+                .consume_body(len)
+                .expect("ボディのデコードは成功するはず (実装バグ)")
+            {
                 BodyProgress::Complete { .. } => {
                     completed = true;
                     break;
@@ -931,7 +1078,10 @@ fn test_chunk_ext_valid_quoted_string() {
                 BodyProgress::Advanced | BodyProgress::NeedData => continue,
             }
         }
-        match decoder.progress().unwrap() {
+        match decoder
+            .progress()
+            .expect("ボディのデコードは成功するはず (実装バグ)")
+        {
             BodyProgress::Complete { .. } => {
                 completed = true;
                 break;
@@ -950,13 +1100,16 @@ fn test_chunk_ext_unterminated_quoted_string() {
     let mut decoder = ResponseDecoder::new();
     decoder
         .feed(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     // 未終端の quoted-string: 5;name="unterminated\r\nhello\r\n0\r\n\r\n
     decoder
         .feed(b"5;name=\"unterminated\r\nhello\r\n0\r\n\r\n")
-        .unwrap();
+        .expect("ボディのデコードは成功するはず (実装バグ)");
 
-    let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+    let (_, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(matches!(body_kind, BodyKind::Chunked));
 
     let result = decoder.progress();

@@ -14,7 +14,7 @@
 //! ```rust
 //! use shiguredo_http11::upgrade::Upgrade;
 //!
-//! let upgrade = Upgrade::parse("websocket, h2c/1.0").unwrap();
+//! let upgrade = Upgrade::parse("websocket, h2c/1.0").expect("Upgrade のパースは成功するはず (実装バグ)");
 //! assert!(upgrade.has_protocol("websocket"));
 //! ```
 

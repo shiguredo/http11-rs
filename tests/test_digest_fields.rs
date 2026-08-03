@@ -137,7 +137,8 @@ fn test_byte_sequence_trailing_content_error() {
 // 大文字アルゴリズム名 (正規化される)
 #[test]
 fn test_algorithm_case_normalization() {
-    let digest = ContentDigest::parse("SHA-256=:YWJj:").unwrap();
+    let digest = ContentDigest::parse("SHA-256=:YWJj:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items()[0].algorithm(), "sha-256");
     assert!(digest.get("sha-256").is_some());
     assert!(digest.get("SHA-256").is_some());
@@ -147,11 +148,13 @@ fn test_algorithm_case_normalization() {
 #[test]
 fn test_whitespace_handling() {
     // 前後の空白
-    let digest = ContentDigest::parse("  sha-256=:YWJj:  ").unwrap();
+    let digest = ContentDigest::parse("  sha-256=:YWJj:  ")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 1);
 
     // カンマの周りの空白
-    let digest = ContentDigest::parse("sha-256=:YWJj: , sha-512=:Zg==:").unwrap();
+    let digest = ContentDigest::parse("sha-256=:YWJj: , sha-512=:Zg==:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 2);
 }
 
@@ -159,25 +162,29 @@ fn test_whitespace_handling() {
 #[test]
 fn test_preference_boundary_values() {
     // 最小値
-    let want = WantContentDigest::parse("sha-256=0").unwrap();
+    let want = WantContentDigest::parse("sha-256=0")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(want.get("sha-256"), Some(0));
 
     // 最大値
-    let want = WantContentDigest::parse("sha-256=10").unwrap();
+    let want = WantContentDigest::parse("sha-256=10")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(want.get("sha-256"), Some(10));
 }
 
 /// 末尾カンマを受理 (RFC 9110 Section 5.6.1.2)
 #[test]
 fn test_digest_trailing_comma_accepted() {
-    let digest = ContentDigest::parse("sha-256=:YWJj:,").unwrap();
+    let digest = ContentDigest::parse("sha-256=:YWJj:,")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 1);
 }
 
 /// 先頭カンマを受理 (RFC 9110 Section 5.6.1.2)
 #[test]
 fn test_digest_leading_comma_accepted() {
-    let digest = ContentDigest::parse(",sha-256=:YWJj:").unwrap();
+    let digest = ContentDigest::parse(",sha-256=:YWJj:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 1);
 }
 
@@ -194,7 +201,8 @@ fn test_digest_empty_only_error() {
 
 #[test]
 fn parse_content_digest() {
-    let digest = ContentDigest::parse("sha-256=:YWJj:").unwrap();
+    let digest = ContentDigest::parse("sha-256=:YWJj:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 1);
     assert_eq!(digest.items()[0].algorithm(), "sha-256");
     assert_eq!(digest.items()[0].value().bytes(), b"abc");
@@ -202,13 +210,15 @@ fn parse_content_digest() {
 
 #[test]
 fn parse_repr_digest_multiple() {
-    let digest = ReprDigest::parse("sha-256=:YWJj:, sha-512=:Zg==:").unwrap();
+    let digest = ReprDigest::parse("sha-256=:YWJj:, sha-512=:Zg==:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.items().len(), 2);
 }
 
 #[test]
 fn parse_want_digest() {
-    let want = WantContentDigest::parse("sha-512=3, sha-256=10, unixsum=0").unwrap();
+    let want = WantContentDigest::parse("sha-512=3, sha-256=10, unixsum=0")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(want.items().len(), 3);
     assert_eq!(want.get("sha-256"), Some(10));
     assert_eq!(want.get("unixsum"), Some(0));
@@ -224,6 +234,7 @@ fn parse_invalid() {
 
 #[test]
 fn display() {
-    let digest = ContentDigest::parse("sha-256=:YWJj:").unwrap();
+    let digest = ContentDigest::parse("sha-256=:YWJj:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.to_string(), "sha-256=:YWJj:");
 }

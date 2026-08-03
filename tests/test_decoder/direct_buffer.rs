@@ -14,7 +14,9 @@ use shiguredo_http11::{DecoderLimits, Error, RequestDecoder, ResponseDecoder};
 #[test]
 fn response_mut_buf_zero_returns_empty_slice() {
     let mut decoder = ResponseDecoder::new();
-    let buf = decoder.mut_buf(0).unwrap();
+    let buf = decoder
+        .mut_buf(0)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(buf.is_empty());
     decoder.advance_buf(0);
     assert_eq!(decoder.remaining().len(), 0);
@@ -23,7 +25,9 @@ fn response_mut_buf_zero_returns_empty_slice() {
 #[test]
 fn request_mut_buf_zero_returns_empty_slice() {
     let mut decoder = RequestDecoder::new();
-    let buf = decoder.mut_buf(0).unwrap();
+    let buf = decoder
+        .mut_buf(0)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert!(buf.is_empty());
     decoder.advance_buf(0);
     assert_eq!(decoder.remaining().len(), 0);
@@ -32,7 +36,9 @@ fn request_mut_buf_zero_returns_empty_slice() {
 #[test]
 fn response_advance_zero_drops_pending() {
     let mut decoder = ResponseDecoder::new();
-    let _ = decoder.mut_buf(64).unwrap();
+    let _ = decoder
+        .mut_buf(64)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.advance_buf(0);
     // pending が破棄されてバッファは空のまま
     assert_eq!(decoder.remaining().len(), 0);
@@ -41,7 +47,9 @@ fn response_advance_zero_drops_pending() {
 #[test]
 fn request_advance_zero_drops_pending() {
     let mut decoder = RequestDecoder::new();
-    let _ = decoder.mut_buf(64).unwrap();
+    let _ = decoder
+        .mut_buf(64)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.advance_buf(0);
     assert_eq!(decoder.remaining().len(), 0);
 }
@@ -49,7 +57,9 @@ fn request_advance_zero_drops_pending() {
 #[test]
 fn response_advance_partial_drops_remainder() {
     let mut decoder = ResponseDecoder::new();
-    let buf = decoder.mut_buf(16).unwrap();
+    let buf = decoder
+        .mut_buf(16)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf[..4].copy_from_slice(b"abcd");
     decoder.advance_buf(4);
     assert_eq!(decoder.remaining(), b"abcd");
@@ -58,7 +68,9 @@ fn response_advance_partial_drops_remainder() {
 #[test]
 fn request_advance_partial_drops_remainder() {
     let mut decoder = RequestDecoder::new();
-    let buf = decoder.mut_buf(16).unwrap();
+    let buf = decoder
+        .mut_buf(16)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf[..4].copy_from_slice(b"abcd");
     decoder.advance_buf(4);
     assert_eq!(decoder.remaining(), b"abcd");
@@ -71,7 +83,9 @@ fn response_mut_buf_overflow_preserves_state() {
         ..Default::default()
     };
     let mut decoder = ResponseDecoder::with_limits(limits);
-    decoder.feed(b"hello").unwrap();
+    decoder
+        .feed(b"hello")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let prev = decoder.remaining().to_vec();
 
     match decoder.mut_buf(100) {
@@ -91,7 +105,9 @@ fn request_mut_buf_overflow_preserves_state() {
         ..Default::default()
     };
     let mut decoder = RequestDecoder::with_limits(limits);
-    decoder.feed(b"hello").unwrap();
+    decoder
+        .feed(b"hello")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let prev = decoder.remaining().to_vec();
 
     match decoder.mut_buf(100) {
@@ -107,10 +123,14 @@ fn request_mut_buf_overflow_preserves_state() {
 #[test]
 fn response_consecutive_mut_buf_drops_previous_pending() {
     let mut decoder = ResponseDecoder::new();
-    let buf = decoder.mut_buf(32).unwrap();
+    let buf = decoder
+        .mut_buf(32)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf[..3].copy_from_slice(b"foo");
     // advance_buf を呼ばずに 2 回目の mut_buf
-    let buf2 = decoder.mut_buf(8).unwrap();
+    let buf2 = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(buf2.len(), 8);
     decoder.advance_buf(3);
     // 1 回目の pending は破棄される
@@ -120,9 +140,13 @@ fn response_consecutive_mut_buf_drops_previous_pending() {
 #[test]
 fn request_consecutive_mut_buf_drops_previous_pending() {
     let mut decoder = RequestDecoder::new();
-    let buf = decoder.mut_buf(32).unwrap();
+    let buf = decoder
+        .mut_buf(32)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf[..3].copy_from_slice(b"foo");
-    let buf2 = decoder.mut_buf(8).unwrap();
+    let buf2 = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(buf2.len(), 8);
     decoder.advance_buf(3);
     assert_eq!(decoder.remaining().len(), 3);
@@ -133,7 +157,9 @@ fn request_consecutive_mut_buf_drops_previous_pending() {
 #[should_panic(expected = "feed called with pending mut_buf")]
 fn response_feed_with_pending_panics_in_debug() {
     let mut decoder = ResponseDecoder::new();
-    let _ = decoder.mut_buf(8).unwrap();
+    let _ = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let _ = decoder.feed(b"x");
 }
 
@@ -142,17 +168,23 @@ fn response_feed_with_pending_panics_in_debug() {
 #[should_panic(expected = "feed called with pending mut_buf")]
 fn request_feed_with_pending_panics_in_debug() {
     let mut decoder = RequestDecoder::new();
-    let _ = decoder.mut_buf(8).unwrap();
+    let _ = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     let _ = decoder.feed(b"x");
 }
 
 #[test]
 fn response_reset_clears_pending() {
     let mut decoder = ResponseDecoder::new();
-    let _ = decoder.mut_buf(64).unwrap();
+    let _ = decoder
+        .mut_buf(64)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.reset();
     // 再度 mut_buf を呼んでも問題なし
-    let buf = decoder.mut_buf(8).unwrap();
+    let buf = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(buf.len(), 8);
     decoder.advance_buf(0);
 }
@@ -160,9 +192,13 @@ fn response_reset_clears_pending() {
 #[test]
 fn request_reset_clears_pending() {
     let mut decoder = RequestDecoder::new();
-    let _ = decoder.mut_buf(64).unwrap();
+    let _ = decoder
+        .mut_buf(64)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.reset();
-    let buf = decoder.mut_buf(8).unwrap();
+    let buf = decoder
+        .mut_buf(8)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(buf.len(), 8);
     decoder.advance_buf(0);
 }
@@ -185,7 +221,9 @@ fn request_available_buf_default_is_max() {
 fn response_available_buf_after_feed() {
     let mut decoder = ResponseDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"hello").unwrap();
+    decoder
+        .feed(b"hello")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(decoder.available_buf(), max - 5);
 }
 
@@ -193,7 +231,9 @@ fn response_available_buf_after_feed() {
 fn request_available_buf_after_feed() {
     let mut decoder = RequestDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"hello").unwrap();
+    decoder
+        .feed(b"hello")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(decoder.available_buf(), max - 5);
 }
 
@@ -201,8 +241,12 @@ fn request_available_buf_after_feed() {
 fn response_available_buf_after_mut_buf() {
     let mut decoder = ResponseDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
-    let _ = decoder.mut_buf(7).unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let _ = decoder
+        .mut_buf(7)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     // pending を含めて差し引かれる (3 + 7 = 10)
     assert_eq!(decoder.available_buf(), max - 10);
     decoder.advance_buf(2);
@@ -212,8 +256,12 @@ fn response_available_buf_after_mut_buf() {
 fn request_available_buf_after_mut_buf() {
     let mut decoder = RequestDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
-    let _ = decoder.mut_buf(7).unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let _ = decoder
+        .mut_buf(7)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     assert_eq!(decoder.available_buf(), max - 10);
     decoder.advance_buf(2);
 }
@@ -222,8 +270,12 @@ fn request_available_buf_after_mut_buf() {
 fn response_available_buf_after_advance_partial() {
     let mut decoder = ResponseDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
-    let _ = decoder.mut_buf(7).unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let _ = decoder
+        .mut_buf(7)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.advance_buf(4);
     // 3 + 4 = 7 が確定
     assert_eq!(decoder.available_buf(), max - 7);
@@ -233,8 +285,12 @@ fn response_available_buf_after_advance_partial() {
 fn request_available_buf_after_advance_partial() {
     let mut decoder = RequestDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
-    let _ = decoder.mut_buf(7).unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
+    let _ = decoder
+        .mut_buf(7)
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.advance_buf(4);
     assert_eq!(decoder.available_buf(), max - 7);
 }
@@ -243,7 +299,9 @@ fn request_available_buf_after_advance_partial() {
 fn response_available_buf_after_reset() {
     let mut decoder = ResponseDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.reset();
     assert_eq!(decoder.available_buf(), max);
 }
@@ -252,7 +310,9 @@ fn response_available_buf_after_reset() {
 fn request_available_buf_after_reset() {
     let mut decoder = RequestDecoder::new();
     let max = decoder.limits().max_buffer_size;
-    decoder.feed(b"abc").unwrap();
+    decoder
+        .feed(b"abc")
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     decoder.reset();
     assert_eq!(decoder.available_buf(), max);
 }
@@ -263,12 +323,14 @@ fn request_available_buf_after_reset() {
 fn response_mut_buf_decodes_headers() {
     let mut decoder = ResponseDecoder::new();
     let data = b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
-    let buf = decoder.mut_buf(data.len()).unwrap();
+    let buf = decoder
+        .mut_buf(data.len())
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf.copy_from_slice(data);
     decoder.advance_buf(data.len());
     let response = decoder
         .decode()
-        .unwrap()
+        .expect("ボディのデコードは成功するはず (実装バグ)")
         .expect("response がデコードされるべき");
     assert_eq!(response.status_code(), 200);
     assert_eq!(response.body_bytes(), Some(b"hello".as_slice()));
@@ -278,12 +340,14 @@ fn response_mut_buf_decodes_headers() {
 fn request_mut_buf_decodes_headers() {
     let mut decoder = RequestDecoder::new();
     let data = b"POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 5\r\n\r\nhello";
-    let buf = decoder.mut_buf(data.len()).unwrap();
+    let buf = decoder
+        .mut_buf(data.len())
+        .expect("ボディのデコードは成功するはず (実装バグ)");
     buf.copy_from_slice(data);
     decoder.advance_buf(data.len());
     let request = decoder
         .decode()
-        .unwrap()
+        .expect("ボディのデコードは成功するはず (実装バグ)")
         .expect("request がデコードされるべき");
     assert_eq!(request.method(), "POST");
     assert_eq!(request.body_bytes(), Some(b"hello".as_slice()));

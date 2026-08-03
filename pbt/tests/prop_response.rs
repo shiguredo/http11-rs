@@ -158,13 +158,13 @@ proptest! {
     #[test]
     fn prop_response_with_status_roundtrip(status in iana_status_code()) {
         let response = Response::with_status(status);
-        let bytes = response.encode().unwrap();
+        let bytes = response.encode().expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(&bytes).unwrap();
+        decoder.feed(&bytes).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         let (head, _body_kind) = decoder
             .decode_headers()
-            .unwrap()
+            .expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
             .expect("ヘッダーが揃っているべき");
 
         prop_assert_eq!(head.status_code(), status.code());
@@ -178,7 +178,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_status_class(code in status_code_full_range()) {
-        let response = Response::new(code, "OK").unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         let expected = StatusClass::from_status_code(code).expect("100..=599 always classified");
         prop_assert_eq!(response.status_class(), expected);
     }
@@ -188,7 +188,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_new_default_version(code in status_code(), phrase in reason_phrase()) {
-        let response = Response::new(code, &phrase).unwrap();
+        let response = Response::new(code, &phrase).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(HttpHead::version(&response), "HTTP/1.1");
         prop_assert_eq!(response.status_code(), code);
@@ -203,7 +203,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_with_version(version in http_version(), code in status_code(), phrase in reason_phrase()) {
-        let response = Response::with_version(&version, code, &phrase).unwrap();
+        let response = Response::with_version(&version, code, &phrase).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(HttpHead::version(&response), &version);
         prop_assert_eq!(response.status_code(), code);
@@ -222,7 +222,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_header_builder(code in status_code(), name in header_name(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap().header(name.clone(), &value).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").header(name.clone(), &value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(HttpHead::headers(&response).len(), 1);
         prop_assert_eq!(&HttpHead::headers(&response)[0].0, &name);
@@ -234,9 +234,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_header_builder_chain(code in status_code(), headers in proptest::collection::vec((header_name(), header_value()), 1..5)) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         for (name, value) in &headers {
-            response = response.header(name.clone(), value).unwrap();
+            response = response.header(name.clone(), value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         }
 
         prop_assert_eq!(HttpHead::headers(&response).len(), headers.len());
@@ -251,7 +251,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_body_builder(code in status_code(), body_data in proptest::collection::vec(any::<u8>(), 0..256)) {
-        let response = Response::new(code, "OK").unwrap().body(body_data.clone());
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").body(body_data.clone());
 
         prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
@@ -261,7 +261,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_omit_body_builder(code in status_code(), omit in any::<bool>()) {
-        let response = Response::new(code, "OK").unwrap().omit_body(omit);
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").omit_body(omit);
         prop_assert_eq!(response.is_body_omitted(), omit);
     }
 }
@@ -274,8 +274,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_get_header_case_insensitive(code in status_code(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap()
-            .header(HeaderName::from_static(b"Content-Type"), &value).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
+            .header(HeaderName::from_static(b"Content-Type"), &value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(response.get_header("Content-Type"), Some(value.as_str()));
         prop_assert_eq!(response.get_header("content-type"), Some(value.as_str()));
@@ -287,9 +287,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_get_headers_multiple(code in status_code(), values in proptest::collection::vec(header_value(), 1..5)) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         for value in &values {
-            response = response.header(HeaderName::from_static(b"Set-Cookie"), value).unwrap();
+            response = response.header(HeaderName::from_static(b"Set-Cookie"), value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         }
         let headers = response.get_headers("set-cookie");
         prop_assert_eq!(headers.len(), values.len());
@@ -303,8 +303,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_get_headers_case_insensitive(code in status_code(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap()
-            .header(HeaderName::from_static(b"Set-Cookie"), &value).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
+            .header(HeaderName::from_static(b"Set-Cookie"), &value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(response.get_headers("set-cookie").len(), 1);
         prop_assert_eq!(response.get_headers("SET-COOKIE").len(), 1);
@@ -315,7 +315,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_has_header(code in status_code(), name in header_name(), value in header_value()) {
-        let response = Response::new(code, "OK").unwrap().header(name.clone(), &value).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").header(name.clone(), &value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert!(response.has_header(name.as_str()));
         prop_assert!(response.has_header(&name.as_str().to_lowercase()));
@@ -332,7 +332,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_connection_header(code in status_code(), conn_value in prop_oneof![Just("keep-alive"), Just("close"), Just("Keep-Alive"), Just("Close")]) {
-        let response = Response::new(code, "OK").unwrap().header(HeaderName::from_static(b"Connection"), conn_value).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").header(HeaderName::from_static(b"Connection"), conn_value).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
         prop_assert_eq!(response.connection(), Some(conn_value));
     }
@@ -346,10 +346,10 @@ proptest! {
 proptest! {
     #[test]
     fn prop_response_content_length(code in status_code(), len in 0usize..1_000_000) {
-        let response = Response::new(code, "OK").unwrap()
-            .header(HeaderName::from_static(b"Content-Length"), len.to_string()).unwrap();
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
+            .header(HeaderName::from_static(b"Content-Length"), len.to_string()).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
 
-        prop_assert_eq!(response.content_length().unwrap(), Some(len as u64));
+        prop_assert_eq!(response.content_length().expect("レスポンスのパース / 構築は成功するはず (実装バグ)"), Some(len as u64));
     }
 }
 
@@ -465,7 +465,7 @@ proptest! {
         bad_char in invalid_header_value_char(),
     ) {
         let value = format!("good{bad_char}bad");
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         let result = response.add_header(name.clone(), &value);
         let is_invalid = matches!(result, Err(EncodeError::InvalidHeaderValue { .. }));
         prop_assert!(is_invalid);
@@ -483,7 +483,7 @@ proptest! {
         code in status_code(),
         body_data in proptest::collection::vec(any::<u8>(), 0..256),
     ) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         response.set_body(body_data.clone());
         prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
@@ -496,7 +496,7 @@ proptest! {
         code in status_code(),
         body_data in proptest::collection::vec(any::<u8>(), 0..256),
     ) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         response.set_body(body_data);
         response.clear_body();
         prop_assert!(response.body_bytes().is_none());
@@ -510,7 +510,7 @@ proptest! {
         code in status_code(),
         body_data in proptest::collection::vec(any::<u8>(), 0..256),
     ) {
-        let response = Response::new(code, "OK").unwrap()
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
             .body(body_data)
             .without_body();
         prop_assert!(response.body_bytes().is_none());
@@ -524,7 +524,7 @@ proptest! {
         code in status_code(),
         omit in any::<bool>(),
     ) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         response.set_omit_body(omit);
         prop_assert_eq!(response.is_body_omitted(), omit);
     }
@@ -537,11 +537,11 @@ proptest! {
         code in status_code(),
         headers in proptest::collection::vec((header_name(), header_value()), 1..5),
     ) {
-        let mut response = Response::new(code, "OK").unwrap();
+        let mut response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         // 1 つ目だけは add_header(..)?... のチェイン形式で呼べないので unwrap で受ける
         // ここでは for ループで unwrap するが、内部的には Result<&mut Self, _> を消費している。
         for (name, value) in &headers {
-            response.add_header(name.clone(), value.as_str()).unwrap();
+            response.add_header(name.clone(), value.as_str()).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         }
         prop_assert_eq!(HttpHead::headers(&response).len(), headers.len());
         for (i, (name, value)) in headers.iter().enumerate() {
@@ -560,11 +560,11 @@ proptest! {
         value in header_value(),
     ) {
         // &str
-        let mut r1 = Response::new(code, "OK").unwrap();
-        r1.add_header(name.clone(), value.as_str()).unwrap();
+        let mut r1 = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
+        r1.add_header(name.clone(), value.as_str()).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         // String (ムーブ)
-        let mut r2 = Response::new(code, "OK").unwrap();
-        r2.add_header(name.clone(), value.clone()).unwrap();
+        let mut r2 = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
+        r2.add_header(name.clone(), value.clone()).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
         prop_assert_eq!(r1.get_header(name.as_str()), Some(value.as_str()));
         prop_assert_eq!(r2.get_header(name.as_str()), Some(value.as_str()));
     }
@@ -577,7 +577,7 @@ proptest! {
         code in status_code(),
         body_data in proptest::collection::vec(any::<u8>(), 0..256),
     ) {
-        let response = Response::new(code, "OK").unwrap().body(body_data.clone());
+        let response = Response::new(code, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)").body(body_data.clone());
         prop_assert_eq!(response.body_bytes(), Some(body_data.as_slice()));
     }
 }

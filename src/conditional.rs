@@ -12,16 +12,16 @@
 //! use shiguredo_http11::date::HttpDate;
 //!
 //! // If-Match
-//! let if_match = IfMatch::parse("\"abc\", \"def\"").unwrap();
-//! let etag = EntityTag::strong("abc").unwrap();
+//! let if_match = IfMatch::parse("\"abc\", \"def\"").expect("条件付きリクエストのパースは成功するはず (実装バグ)");
+//! let etag = EntityTag::strong("abc").expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 //! assert!(if_match.matches(&etag));
 //!
 //! // If-None-Match
-//! let if_none_match = IfNoneMatch::parse("*").unwrap();
+//! let if_none_match = IfNoneMatch::parse("*").expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 //! assert!(if_none_match.is_any());
 //!
 //! // If-Modified-Since
-//! let if_mod = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).unwrap();
+//! let if_mod = IfModifiedSince::parse("Sun, 06 Nov 1994 08:49:37 GMT", 2026).expect("条件付きリクエストのパースは成功するはず (実装バグ)");
 //! let _ = if_mod.date();
 //! ```
 

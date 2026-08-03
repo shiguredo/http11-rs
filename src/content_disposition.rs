@@ -10,12 +10,12 @@
 //! use shiguredo_http11::content_disposition::{ContentDisposition, DispositionType};
 //!
 //! // attachment with filename
-//! let cd = ContentDisposition::parse("attachment; filename=\"example.txt\"").unwrap();
+//! let cd = ContentDisposition::parse("attachment; filename=\"example.txt\"").expect("Content-Disposition のパースは成功するはず (実装バグ)");
 //! assert_eq!(cd.disposition_type(), DispositionType::Attachment);
 //! assert_eq!(cd.filename(), Some("example.txt"));
 //!
 //! // inline
-//! let cd = ContentDisposition::parse("inline").unwrap();
+//! let cd = ContentDisposition::parse("inline").expect("Content-Disposition のパースは成功するはず (実装バグ)");
 //! assert_eq!(cd.disposition_type(), DispositionType::Inline);
 //! ```
 
@@ -152,7 +152,7 @@ impl ContentDisposition {
     /// ```rust
     /// use shiguredo_http11::content_disposition::{ContentDisposition, DispositionType};
     ///
-    /// let cd = ContentDisposition::parse("attachment; filename=\"report.pdf\"").unwrap();
+    /// let cd = ContentDisposition::parse("attachment; filename=\"report.pdf\"").expect("Content-Disposition のパースは成功するはず (実装バグ)");
     /// assert_eq!(cd.disposition_type(), DispositionType::Attachment);
     /// assert_eq!(cd.filename(), Some("report.pdf"));
     /// ```

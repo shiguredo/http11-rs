@@ -127,7 +127,8 @@ fn test_content_disposition_invalid_utf8_sequence() {
 #[test]
 fn test_content_disposition_escape_quote_in_filename() {
     // パース時のエスケープ解除
-    let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#).unwrap();
+    let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#)
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("file\"name.txt"));
 
     // Display 時のエスケープ
@@ -139,7 +140,8 @@ fn test_content_disposition_escape_quote_in_filename() {
 #[test]
 fn test_content_disposition_escape_backslash_in_filename() {
     // パース時のエスケープ解除
-    let cd = ContentDisposition::parse(r#"attachment; filename="path\\file.txt""#).unwrap();
+    let cd = ContentDisposition::parse(r#"attachment; filename="path\\file.txt""#)
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("path\\file.txt"));
 
     // Display 時のエスケープ
@@ -176,13 +178,15 @@ fn test_content_disposition_parse_errors() {
 
     // RFC 6266 Section 4.1: 拡張 disposition-type は有効なトークンであれば受け入れられる
     // "unknown" と "download" は有効なトークンなので Unknown バリアントとしてパースされる
-    let cd = ContentDisposition::parse("unknown").unwrap();
+    let cd = ContentDisposition::parse("unknown")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(
         cd.disposition_type(),
         DispositionType::Unknown("unknown".to_string())
     );
 
-    let cd = ContentDisposition::parse("download").unwrap();
+    let cd = ContentDisposition::parse("download")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(
         cd.disposition_type(),
         DispositionType::Unknown("download".to_string())
@@ -206,17 +210,20 @@ fn test_content_disposition_parse_errors() {
 #[test]
 fn test_content_disposition_empty_parameter_parts() {
     // 末尾のセミコロン
-    let cd = ContentDisposition::parse("attachment;").unwrap();
+    let cd = ContentDisposition::parse("attachment;")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_attachment());
 
     // 連続したセミコロン
-    let cd = ContentDisposition::parse("attachment;; filename=\"test.txt\"").unwrap();
+    let cd = ContentDisposition::parse("attachment;; filename=\"test.txt\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("test.txt"));
 }
 
 #[test]
 fn test_content_disposition_parameter_without_equals() {
-    let cd = ContentDisposition::parse("attachment; filename").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_attachment());
     assert_eq!(cd.filename(), None);
 }
@@ -227,10 +234,12 @@ fn test_content_disposition_parameter_without_equals() {
 
 #[test]
 fn test_content_disposition_parameter_case_insensitive() {
-    let cd = ContentDisposition::parse("attachment; FILENAME=\"test.txt\"").unwrap();
+    let cd = ContentDisposition::parse("attachment; FILENAME=\"test.txt\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("test.txt"));
 
-    let cd = ContentDisposition::parse("form-data; NAME=\"field\"").unwrap();
+    let cd = ContentDisposition::parse("form-data; NAME=\"field\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.name(), Some("field"));
 }
 
@@ -348,7 +357,8 @@ fn test_content_disposition_trailing_nbsp_not_stripped() {
 #[test]
 fn test_content_disposition_sp_htab_stripped_as_ows() {
     // SP と HTAB は OWS として正しく除去される
-    let cd = ContentDisposition::parse(" \tattachment\t ").unwrap();
+    let cd = ContentDisposition::parse(" \tattachment\t ")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.disposition_type(), DispositionType::Attachment);
 }
 
@@ -358,7 +368,8 @@ fn test_content_disposition_sp_htab_stripped_as_ows() {
 
 #[test]
 fn test_parse_inline() {
-    let cd = ContentDisposition::parse("inline").unwrap();
+    let cd = ContentDisposition::parse("inline")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.disposition_type(), DispositionType::Inline);
     assert!(cd.is_inline());
     assert!(!cd.is_attachment());
@@ -366,27 +377,31 @@ fn test_parse_inline() {
 
 #[test]
 fn test_parse_attachment() {
-    let cd = ContentDisposition::parse("attachment").unwrap();
+    let cd = ContentDisposition::parse("attachment")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.disposition_type(), DispositionType::Attachment);
     assert!(cd.is_attachment());
 }
 
 #[test]
 fn test_parse_attachment_with_filename() {
-    let cd = ContentDisposition::parse("attachment; filename=\"example.txt\"").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename=\"example.txt\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_attachment());
     assert_eq!(cd.filename(), Some("example.txt"));
 }
 
 #[test]
 fn test_parse_filename_without_quotes() {
-    let cd = ContentDisposition::parse("attachment; filename=example.txt").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename=example.txt")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("example.txt"));
 }
 
 #[test]
 fn test_parse_filename_with_escape() {
-    let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#).unwrap();
+    let cd = ContentDisposition::parse(r#"attachment; filename="file\"name.txt""#)
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("file\"name.txt"));
 }
 
@@ -394,7 +409,7 @@ fn test_parse_filename_with_escape() {
 fn test_parse_filename_ext() {
     let cd =
         ContentDisposition::parse("attachment; filename*=UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.txt")
-            .unwrap();
+            .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("日本語.txt"));
     assert_eq!(cd.filename_ext(), Some("日本語.txt"));
 }
@@ -404,21 +419,23 @@ fn test_filename_ext_priority() {
     let cd = ContentDisposition::parse(
         "attachment; filename=\"fallback.txt\"; filename*=UTF-8''preferred.txt",
     )
-    .unwrap();
+    .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("preferred.txt"));
     assert_eq!(cd.filename_ascii(), Some("fallback.txt"));
 }
 
 #[test]
 fn test_parse_form_data() {
-    let cd = ContentDisposition::parse("form-data; name=\"field1\"").unwrap();
+    let cd = ContentDisposition::parse("form-data; name=\"field1\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_form_data());
     assert_eq!(cd.name(), Some("field1"));
 }
 
 #[test]
 fn test_parse_form_data_with_filename() {
-    let cd = ContentDisposition::parse("form-data; name=\"file\"; filename=\"image.png\"").unwrap();
+    let cd = ContentDisposition::parse("form-data; name=\"file\"; filename=\"image.png\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_form_data());
     assert_eq!(cd.name(), Some("file"));
     assert_eq!(cd.filename(), Some("image.png"));
@@ -426,7 +443,8 @@ fn test_parse_form_data_with_filename() {
 
 #[test]
 fn test_parse_case_insensitive() {
-    let cd = ContentDisposition::parse("ATTACHMENT; FILENAME=\"test.txt\"").unwrap();
+    let cd = ContentDisposition::parse("ATTACHMENT; FILENAME=\"test.txt\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert!(cd.is_attachment());
     assert_eq!(cd.filename(), Some("test.txt"));
 }
@@ -490,13 +508,15 @@ fn test_ext_value_invalid_char() {
 
 #[test]
 fn test_ext_value_valid_chars() {
-    let cd = ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename*=UTF-8''test-file_v1.0.txt")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("test-file_v1.0.txt"));
 }
 
 #[test]
 fn test_unknown_disposition_type() {
-    let cd = ContentDisposition::parse("signal").unwrap();
+    let cd = ContentDisposition::parse("signal")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(
         cd.disposition_type(),
         DispositionType::Unknown("signal".to_string())
@@ -505,7 +525,8 @@ fn test_unknown_disposition_type() {
 
 #[test]
 fn test_unknown_disposition_type_with_params() {
-    let cd = ContentDisposition::parse("notification; id=123").unwrap();
+    let cd = ContentDisposition::parse("notification; id=123")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(
         cd.disposition_type(),
         DispositionType::Unknown("notification".to_string())
@@ -515,7 +536,8 @@ fn test_unknown_disposition_type_with_params() {
 
 #[test]
 fn test_unknown_disposition_type_case_insensitive() {
-    let cd = ContentDisposition::parse("CUSTOM-TYPE").unwrap();
+    let cd = ContentDisposition::parse("CUSTOM-TYPE")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(
         cd.disposition_type(),
         DispositionType::Unknown("custom-type".to_string())
@@ -534,7 +556,8 @@ fn test_invalid_disposition_type_special_char() {
 
 #[test]
 fn test_unknown_disposition_display() {
-    let cd = ContentDisposition::parse("custom-type; name=\"test\"").unwrap();
+    let cd = ContentDisposition::parse("custom-type; name=\"test\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     let s = cd.to_string();
     assert!(s.starts_with("custom-type"));
 }
@@ -551,12 +574,14 @@ fn test_invalid_token_parameter_value_space() {
 
 #[test]
 fn test_valid_token_parameter_value() {
-    let cd = ContentDisposition::parse("attachment; filename=valid-token_v1.0").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename=valid-token_v1.0")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("valid-token_v1.0"));
 }
 
 #[test]
 fn test_quoted_special_chars() {
-    let cd = ContentDisposition::parse("attachment; filename=\"hello@world.txt\"").unwrap();
+    let cd = ContentDisposition::parse("attachment; filename=\"hello@world.txt\"")
+        .expect("Content-Disposition のパースは成功するはず (実装バグ)");
     assert_eq!(cd.filename(), Some("hello@world.txt"));
 }

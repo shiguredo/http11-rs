@@ -10,7 +10,7 @@
 //! use shiguredo_http11::uri::{Uri, percent_encode, percent_decode};
 //!
 //! // URI パース
-//! let uri = Uri::parse("https://example.com:8080/path?query=value#fragment").unwrap();
+//! let uri = Uri::parse("https://example.com:8080/path?query=value#fragment").expect("URI のパースは成功するはず (実装バグ)");
 //! assert_eq!(uri.scheme(), Some("https"));
 //! assert_eq!(uri.host(), Some("example.com"));
 //! assert_eq!(uri.port(), Some(8080));
@@ -23,7 +23,7 @@
 //! assert_eq!(encoded, "hello%20world");
 //!
 //! // パーセントデコーディング
-//! let decoded = percent_decode("hello%20world").unwrap();
+//! let decoded = percent_decode("hello%20world").expect("URI のパースは成功するはず (実装バグ)");
 //! assert_eq!(decoded, "hello world");
 //! ```
 
@@ -269,8 +269,8 @@ fn to_hex_char(nibble: u8) -> char {
 /// ```rust
 /// use shiguredo_http11::uri::percent_decode;
 ///
-/// assert_eq!(percent_decode("hello%20world").unwrap(), "hello world");
-/// assert_eq!(percent_decode("%E6%97%A5%E6%9C%AC%E8%AA%9E").unwrap(), "日本語");
+/// assert_eq!(percent_decode("hello%20world").expect("URI のパースは成功するはず (実装バグ)"), "hello world");
+/// assert_eq!(percent_decode("%E6%97%A5%E6%9C%AC%E8%AA%9E").expect("URI のパースは成功するはず (実装バグ)"), "日本語");
 /// ```
 pub fn percent_decode(input: &str) -> Result<String, UriError> {
     let bytes = percent_decode_bytes(input)?;
@@ -349,7 +349,7 @@ impl Uri {
     /// ```rust
     /// use shiguredo_http11::uri::Uri;
     ///
-    /// let uri = Uri::parse("https://example.com/path?query#fragment").unwrap();
+    /// let uri = Uri::parse("https://example.com/path?query#fragment").expect("URI のパースは成功するはず (実装バグ)");
     /// assert_eq!(uri.scheme(), Some("https"));
     /// assert_eq!(uri.host(), Some("example.com"));
     /// assert_eq!(uri.path(), "/path");
@@ -765,9 +765,9 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
 /// ```rust
 /// use shiguredo_http11::uri::{Uri, resolve};
 ///
-/// let base = Uri::parse("http://example.com/a/b/c").unwrap();
-/// let relative = Uri::parse("../d").unwrap();
-/// let resolved = resolve(&base, &relative).unwrap();
+/// let base = Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
+/// let relative = Uri::parse("../d").expect("URI のパースは成功するはず (実装バグ)");
+/// let resolved = resolve(&base, &relative).expect("URI のパースは成功するはず (実装バグ)");
 /// assert_eq!(resolved.as_str(), "http://example.com/a/d");
 /// ```
 pub fn resolve(base: &Uri, reference: &Uri) -> Result<Uri, UriError> {

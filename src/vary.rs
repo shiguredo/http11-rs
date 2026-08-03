@@ -9,7 +9,7 @@
 //! ```rust
 //! use shiguredo_http11::vary::Vary;
 //!
-//! let vary = Vary::parse("Accept-Encoding, User-Agent").unwrap();
+//! let vary = Vary::parse("Accept-Encoding, User-Agent").expect("Vary のパースは成功するはず (実装バグ)");
 //! assert_eq!(vary.fields().len(), 2);
 //! ```
 

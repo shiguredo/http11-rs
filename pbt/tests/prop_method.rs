@@ -20,7 +20,7 @@ proptest! {
     /// 受理された値の as_bytes() は入力バイト列と一致する（非破壊性）
     #[test]
     fn as_bytes_returns_original(method in valid_method()) {
-        let m = Method::new(&method).unwrap();
+        let m = Method::new(&method).expect("メソッドのパースは成功するはず (実装バグ)");
         prop_assert_eq!(m.as_bytes(), method.as_slice());
     }
 
@@ -29,8 +29,8 @@ proptest! {
     fn eq_is_case_sensitive(method in valid_method()) {
         let lower: Vec<u8> = method.iter().map(|b| b.to_ascii_lowercase()).collect();
         let upper: Vec<u8> = method.iter().map(|b| b.to_ascii_uppercase()).collect();
-        let m1 = Method::new(&lower).unwrap();
-        let m2 = Method::new(&upper).unwrap();
+        let m1 = Method::new(&lower).expect("メソッドのパースは成功するはず (実装バグ)");
+        let m2 = Method::new(&upper).expect("メソッドのパースは成功するはず (実装バグ)");
 
         // 大文字小文字の変換で変化があった場合のみ NE になる
         if lower == upper {
@@ -48,8 +48,8 @@ proptest! {
         let r2: Result<Method, _> = static_bytes.try_into();
         prop_assert!(r1.is_ok());
         prop_assert!(r2.is_ok());
-        let b1 = r1.unwrap().as_bytes().to_vec();
-        let b2 = r2.unwrap().as_bytes().to_vec();
+        let b1 = r1.expect("メソッドのパースは成功するはず (実装バグ)").as_bytes().to_vec();
+        let b2 = r2.expect("メソッドのパースは成功するはず (実装バグ)").as_bytes().to_vec();
         prop_assert_eq!(b1, b2);
     }
 
@@ -65,8 +65,8 @@ proptest! {
         let r2: Result<Method, _> = static_str.try_into();
         prop_assert!(r1.is_ok());
         prop_assert!(r2.is_ok());
-        let b1 = r1.unwrap().as_bytes().to_vec();
-        let b2 = r2.unwrap().as_bytes().to_vec();
+        let b1 = r1.expect("メソッドのパースは成功するはず (実装バグ)").as_bytes().to_vec();
+        let b2 = r2.expect("メソッドのパースは成功するはず (実装バグ)").as_bytes().to_vec();
         prop_assert_eq!(b1, b2);
     }
 }

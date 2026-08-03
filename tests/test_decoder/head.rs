@@ -19,7 +19,9 @@ use shiguredo_http11::{RequestDecoder, ResponseDecoder};
 fn test_header_value_control_char_nul_error() {
     let data = b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Bad: hello\x00world\r\n\r\n";
     let mut decoder = RequestDecoder::new();
-    decoder.feed(data).unwrap();
+    decoder
+        .feed(data)
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -30,7 +32,9 @@ fn test_header_value_control_char_nul_error() {
 fn test_header_value_control_char_bel_error() {
     let data = b"GET / HTTP/1.1\r\nHost: localhost\r\nX-Bad: hello\x07world\r\n\r\n";
     let mut decoder = RequestDecoder::new();
-    decoder.feed(data).unwrap();
+    decoder
+        .feed(data)
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -45,7 +49,9 @@ fn test_header_value_control_char_bel_error() {
 fn test_request_http11_missing_host_error() {
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.1\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -56,7 +62,9 @@ fn test_request_http11_missing_host_error() {
 fn test_request_http11_multiple_host_error() {
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.1\r\nHost: a.com\r\nHost: b.com\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -67,9 +75,13 @@ fn test_request_http11_multiple_host_error() {
 fn test_request_http11_empty_host_ok() {
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.1\r\nHost: \r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
-    let result = decoder.decode_headers().unwrap();
+    let result = decoder
+        .decode_headers()
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(result.is_some());
 }
 
@@ -78,7 +90,9 @@ fn test_request_http11_empty_host_ok() {
 fn test_request_http11_invalid_host_value_error() {
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.1\r\nHost: :invalid:host:\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -93,8 +107,12 @@ fn test_request_http11_invalid_host_value_error() {
 fn test_request_decoder_default() {
     let mut decoder = RequestDecoder::default();
     let request = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
-    let result = decoder.decode_headers().unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    let result = decoder
+        .decode_headers()
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(result.is_some());
 }
 
@@ -103,8 +121,12 @@ fn test_request_decoder_default() {
 fn test_response_decoder_default() {
     let mut decoder = ResponseDecoder::default();
     let response = "HTTP/1.1 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
-    let result = decoder.decode_headers().unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    let result = decoder
+        .decode_headers()
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(result.is_some());
 }
 
@@ -118,25 +140,33 @@ fn test_request_invalid_protocol_version_error() {
     // "/" がない
     let mut decoder = RequestDecoder::new();
     let request = "GET / INVALID\r\nHost: localhost\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // "/" の後にドットがない
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/11\r\nHost: localhost\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // ドットの後に数字がない
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.\r\nHost: localhost\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // バージョン部分に 3 つのドット区切り
     let mut decoder = RequestDecoder::new();
     let request = "GET / HTTP/1.1.1\r\nHost: localhost\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 }
 
@@ -146,7 +176,9 @@ fn test_request_invalid_method_error() {
     // メソッドに不正な文字を含む (トークン文字でない)
     let data = b"G\x01T / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     let mut decoder = RequestDecoder::new();
-    decoder.feed(data).unwrap();
+    decoder
+        .feed(data)
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -157,7 +189,9 @@ fn test_request_invalid_method_error() {
 fn test_request_invalid_request_target_error() {
     let data = b"GET /path\x01invalid HTTP/1.1\r\nHost: localhost\r\n\r\n";
     let mut decoder = RequestDecoder::new();
-    decoder.feed(data).unwrap();
+    decoder
+        .feed(data)
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -173,19 +207,25 @@ fn test_response_invalid_protocol_version_error() {
     // "/" がない
     let mut decoder = ResponseDecoder::new();
     let response = "INVALID 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // "/" の後にドットがない
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/11 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 
     // ドットの後に数字がない
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1. 200 OK\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(decoder.decode_headers().is_err());
 }
 
@@ -200,7 +240,9 @@ fn test_response_invalid_protocol_version_error() {
 fn test_response_content_length_with_nbsp_is_rejected() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 200 OK\r\nContent-Length: \u{A0}5\r\n\r\nhello";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(
         decoder.decode_headers().is_err(),
         "NBSP を含む Content-Length は拒否される想定"
@@ -211,7 +253,9 @@ fn test_response_content_length_with_nbsp_is_rejected() {
 fn test_request_content_length_with_ideographic_space_is_rejected() {
     let mut decoder = RequestDecoder::new();
     let request = "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: \u{3000}5\r\n\r\nhello";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
     assert!(
         decoder.decode_headers().is_err(),
         "全角空白を含む Content-Length は拒否される想定"
@@ -223,7 +267,9 @@ fn test_request_content_length_with_ideographic_space_is_rejected() {
 fn test_response_status_code_out_of_range_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 600 Error\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -234,7 +280,9 @@ fn test_response_status_code_out_of_range_error() {
 fn test_response_status_code_too_low_error() {
     let mut decoder = ResponseDecoder::new();
     let response = "HTTP/1.1 099 Error\r\n\r\n";
-    decoder.feed(response.as_bytes()).unwrap();
+    decoder
+        .feed(response.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -249,7 +297,9 @@ fn test_request_http_empty_host_error() {
     // http:///path は空 host で不正
     let mut decoder = RequestDecoder::new();
     let request = "GET http:///path HTTP/1.1\r\nHost: \r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -260,7 +310,9 @@ fn test_request_https_port_only_host_error() {
     // https://:443/path は空 host で不正
     let mut decoder = RequestDecoder::new();
     let request = "GET https://:443/path HTTP/1.1\r\nHost: \r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -275,7 +327,9 @@ fn test_request_http_without_double_slash_error() {
     // http:foo は "://" がないので不正
     let mut decoder = RequestDecoder::new();
     let request = "GET http:foo HTTP/1.1\r\nHost: \r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -286,7 +340,9 @@ fn test_request_https_without_double_slash_error() {
     // https:path は "://" がないので不正
     let mut decoder = RequestDecoder::new();
     let request = "GET https:path HTTP/1.1\r\nHost: \r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_err());
@@ -297,7 +353,9 @@ fn test_request_http_with_double_slash_ok() {
     // http://example.com/path は正常
     let mut decoder = RequestDecoder::new();
     let request = "GET http://example.com/path HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    decoder.feed(request.as_bytes()).unwrap();
+    decoder
+        .feed(request.as_bytes())
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
 
     let result = decoder.decode_headers();
     assert!(result.is_ok());
@@ -314,10 +372,11 @@ mod http_head_content_length {
     use shiguredo_http11::{Error, HeaderName, Method, Request, Response};
 
     fn make_request_with_cl(values: &[&str]) -> Request {
-        let mut req = Request::new(Method::POST, "/").unwrap();
+        let mut req =
+            Request::new(Method::POST, "/").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         req = req
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("ヘッダーのデコードは成功するはず (実装バグ)");
         for v in values {
             req = req.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
         }
@@ -325,7 +384,8 @@ mod http_head_content_length {
     }
 
     fn make_response_with_cl(values: &[&str]) -> Response {
-        let mut res = Response::new(200, "OK").unwrap();
+        let mut res =
+            Response::new(200, "OK").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         for v in values {
             res = res.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
         }
@@ -337,13 +397,15 @@ mod http_head_content_length {
     }
     impl AddHeaderClone for Request {
         fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
-            self.add_header(name, value).unwrap();
+            self.add_header(name, value)
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
             self
         }
     }
     impl AddHeaderClone for Response {
         fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
-            self.add_header(name, value).unwrap();
+            self.add_header(name, value)
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
             self
         }
     }
@@ -351,7 +413,11 @@ mod http_head_content_length {
     #[test]
     fn test_request_content_length_single_value() {
         let req = make_request_with_cl(&["100"]);
-        assert_eq!(req.content_length().unwrap(), Some(100));
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 
     #[test]
@@ -363,20 +429,32 @@ mod http_head_content_length {
     #[test]
     fn test_request_content_length_leading_zero_accepted() {
         let req = make_request_with_cl(&["0100"]);
-        assert_eq!(req.content_length().unwrap(), Some(100));
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 
     #[test]
     fn test_request_content_length_ows_trimmed() {
         // ASCII OWS は trim 対象 (旧実装は None を返していた)
         let req = make_request_with_cl(&[" 100 "]);
-        assert_eq!(req.content_length().unwrap(), Some(100));
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 
     #[test]
     fn test_request_content_length_comma_same_value_merged() {
         let req = make_request_with_cl(&["100, 100"]);
-        assert_eq!(req.content_length().unwrap(), Some(100));
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 
     #[test]
@@ -389,7 +467,11 @@ mod http_head_content_length {
     #[test]
     fn test_request_content_length_multi_line_same_value() {
         let req = make_request_with_cl(&["100", "100"]);
-        assert_eq!(req.content_length().unwrap(), Some(100));
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 
     #[test]
@@ -402,10 +484,14 @@ mod http_head_content_length {
     #[test]
     fn test_request_content_length_absent() {
         let req = Request::new(Method::GET, "/")
-            .unwrap()
+            .expect("ヘッダーのデコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
-        assert_eq!(req.content_length().unwrap(), None);
+            .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        assert_eq!(
+            req.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            None
+        );
     }
 
     #[test]
@@ -417,7 +503,11 @@ mod http_head_content_length {
     #[test]
     fn test_response_content_length_ows_trimmed() {
         let res = make_response_with_cl(&[" 100 "]);
-        assert_eq!(res.content_length().unwrap(), Some(100));
+        assert_eq!(
+            res.content_length()
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)"),
+            Some(100)
+        );
     }
 }
 

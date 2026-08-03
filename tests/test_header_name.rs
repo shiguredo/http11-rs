@@ -7,7 +7,7 @@ fn from_static_matches_new_known_inputs() {
     let names: &[&[u8]] = &[b"host", b"content-type", b"x-custom-header"];
     for &name in names {
         assert_eq!(
-            HeaderName::new(name).unwrap(),
+            HeaderName::new(name).expect("ヘッダー名のパースは成功するはず (実装バグ)"),
             HeaderName::from_static(name)
         );
     }
@@ -30,22 +30,24 @@ fn new_rejects_invalid_bytes() {
 
 #[test]
 fn as_bytes_returns_original() {
-    let h = HeaderName::new(b"Host").unwrap();
+    let h = HeaderName::new(b"Host").expect("ヘッダー名のパースは成功するはず (実装バグ)");
     assert_eq!(h.as_bytes(), b"Host");
 }
 
 #[test]
 fn eq_is_case_insensitive() {
-    let h1 = HeaderName::new(b"host").unwrap();
-    let h2 = HeaderName::new(b"HOST").unwrap();
-    let h3 = HeaderName::new(b"Host").unwrap();
+    let h1 = HeaderName::new(b"host").expect("ヘッダー名のパースは成功するはず (実装バグ)");
+    let h2 = HeaderName::new(b"HOST").expect("ヘッダー名のパースは成功するはず (実装バグ)");
+    let h3 = HeaderName::new(b"Host").expect("ヘッダー名のパースは成功するはず (実装バグ)");
     assert_eq!(h1, h2);
     assert_eq!(h2, h3);
 }
 
 #[test]
 fn try_from_static_str_valid() {
-    let h: HeaderName = "Host".try_into().unwrap();
+    let h: HeaderName = "Host"
+        .try_into()
+        .expect("ヘッダー名のパースは成功するはず (実装バグ)");
     assert_eq!(h.as_str(), "Host");
     assert_eq!(h.as_bytes(), b"Host");
 }
@@ -64,7 +66,9 @@ fn try_from_static_str_invalid() {
 
 #[test]
 fn try_from_static_bytes_valid() {
-    let h: HeaderName = (b"Host" as &'static [u8]).try_into().unwrap();
+    let h: HeaderName = (b"Host" as &'static [u8])
+        .try_into()
+        .expect("ヘッダー名のパースは成功するはず (実装バグ)");
     assert_eq!(h.as_str(), "Host");
 }
 

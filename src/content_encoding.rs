@@ -9,7 +9,7 @@
 //! ```rust
 //! use shiguredo_http11::content_encoding::ContentEncoding;
 //!
-//! let ce = ContentEncoding::parse("gzip, deflate").unwrap();
+//! let ce = ContentEncoding::parse("gzip, deflate").expect("Content-Encoding のパースは成功するはず (実装バグ)");
 //! assert!(ce.has_gzip());
 //! assert!(ce.has_deflate());
 //! ```

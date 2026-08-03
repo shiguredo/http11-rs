@@ -11,9 +11,9 @@ use shiguredo_http11::etag::{EntityTag, parse_etag_list};
 proptest! {
     #[test]
     fn prop_etag_strong_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
-        let etag = EntityTag::strong(&tag).unwrap();
+        let etag = EntityTag::strong(&tag).expect("ETag のパースは成功するはず (実装バグ)");
         let displayed = etag.to_string();
-        let reparsed = EntityTag::parse(&displayed).unwrap();
+        let reparsed = EntityTag::parse(&displayed).expect("ETag のパースは成功するはず (実装バグ)");
 
         prop_assert!(reparsed.is_strong());
         prop_assert_eq!(reparsed.tag(), tag.as_str());
@@ -24,9 +24,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_etag_weak_roundtrip(tag in "[a-zA-Z0-9_-]{0,32}") {
-        let etag = EntityTag::weak(&tag).unwrap();
+        let etag = EntityTag::weak(&tag).expect("ETag のパースは成功するはず (実装バグ)");
         let displayed = etag.to_string();
-        let reparsed = EntityTag::parse(&displayed).unwrap();
+        let reparsed = EntityTag::parse(&displayed).expect("ETag のパースは成功するはず (実装バグ)");
 
         prop_assert!(reparsed.is_weak());
         prop_assert_eq!(reparsed.tag(), tag.as_str());
@@ -42,13 +42,13 @@ proptest! {
         } else {
             EntityTag::strong(&tag1)
         }
-        .unwrap();
+        .expect("ETag のパースは成功するはず (実装バグ)");
         let e2 = if weak2 {
             EntityTag::weak(&tag2)
         } else {
             EntityTag::strong(&tag2)
         }
-        .unwrap();
+        .expect("ETag のパースは成功するはず (実装バグ)");
 
         // Strong 比較: 両方 strong で tag が同じ場合のみ true
         let expected = !weak1 && !weak2 && tag1 == tag2;
@@ -65,13 +65,13 @@ proptest! {
         } else {
             EntityTag::strong(&tag1)
         }
-        .unwrap();
+        .expect("ETag のパースは成功するはず (実装バグ)");
         let e2 = if weak2 {
             EntityTag::weak(&tag2)
         } else {
             EntityTag::strong(&tag2)
         }
-        .unwrap();
+        .expect("ETag のパースは成功するはず (実装バグ)");
 
         // Weak 比較: tag が同じ場合は true (weak フラグは無視)
         let expected = tag1 == tag2;
@@ -86,11 +86,11 @@ proptest! {
         let etag_strs: Vec<String> = tags.iter().map(|t| format!("\"{}\"", t)).collect();
         let list_str = etag_strs.join(", ");
 
-        let list = parse_etag_list(&list_str).unwrap();
+        let list = parse_etag_list(&list_str).expect("ETag のパースは成功するはず (実装バグ)");
         let displayed = list.to_string();
 
         // 再パース
-        let reparsed = parse_etag_list(&displayed).unwrap();
+        let reparsed = parse_etag_list(&displayed).expect("ETag のパースは成功するはず (実装バグ)");
         prop_assert_eq!(list, reparsed);
     }
 }

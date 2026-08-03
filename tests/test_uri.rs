@@ -91,7 +91,7 @@ fn test_uri_parse_invalid_scheme_starts_with_digit() {
 #[test]
 fn test_uri_parse_invalid_scheme_invalid_char() {
     // ! はスキームに使えないため、スキームとして認識されず相対パスとして解釈される
-    let uri = Uri::parse("ht!tp://example.com").unwrap();
+    let uri = Uri::parse("ht!tp://example.com").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), None);
     assert_eq!(uri.path(), "ht!tp://example.com");
 }
@@ -134,17 +134,18 @@ fn test_uri_parse_invalid_ipv6_invalid_after_bracket() {
 // 空パス参照の解決 (base のパスを使用)
 #[test]
 fn test_uri_resolve_empty_path() {
-    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+    let base =
+        Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
 
     // 空パス + クエリ
-    let reference = Uri::parse("?newquery").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("?newquery").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/c");
     assert_eq!(resolved.query(), Some("newquery"));
 
     // 空パス + フラグメント
-    let reference = Uri::parse("#newfrag").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("#newfrag").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/c");
     assert_eq!(resolved.query(), None); // base のクエリを使用
     assert_eq!(resolved.fragment(), Some("newfrag"));
@@ -153,53 +154,56 @@ fn test_uri_resolve_empty_path() {
 // 空パス参照 (base にクエリがある場合)
 #[test]
 fn test_uri_resolve_empty_path_with_base_query() {
-    let base = Uri::parse("http://example.com/path?basequery").unwrap();
+    let base = Uri::parse("http://example.com/path?basequery")
+        .expect("URI のパースは成功するはず (実装バグ)");
 
     // 空パス、クエリなし -> base のクエリを継承
-    let reference = Uri::parse("#frag").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("#frag").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.query(), Some("basequery"));
 }
 
 // `..` を含む相対パスの解決
 #[test]
 fn test_uri_resolve_dotdot() {
-    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+    let base =
+        Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
 
-    let reference = Uri::parse("../d").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("../d").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/d");
 
-    let reference = Uri::parse("../../d").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("../../d").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/d");
 
-    let reference = Uri::parse("../../../d").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("../../../d").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/d"); // ルートを超えない
 }
 
 // `.` を含む相対パスの解決
 #[test]
 fn test_uri_resolve_dot() {
-    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+    let base =
+        Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
 
-    let reference = Uri::parse("./d").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("./d").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/d");
 
-    let reference = Uri::parse("././d").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("././d").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/d");
 }
 
 // base に authority があり、パスが空の場合
 #[test]
 fn test_uri_resolve_base_empty_path() {
-    let base = Uri::parse("http://example.com").unwrap();
+    let base = Uri::parse("http://example.com").expect("URI のパースは成功するはず (実装バグ)");
 
-    let reference = Uri::parse("relative").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("relative").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/relative");
 }
 
@@ -210,8 +214,9 @@ fn test_uri_resolve_base_empty_path() {
 // 正規化でドットセグメントが除去される
 #[test]
 fn test_uri_normalize_removes_dot_segments() {
-    let uri = Uri::parse("http://example.com/a/b/../c/./d").unwrap();
-    let normalized = normalize(&uri).unwrap();
+    let uri = Uri::parse("http://example.com/a/b/../c/./d")
+        .expect("URI のパースは成功するはず (実装バグ)");
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.path(), "/a/c/d");
 }
 
@@ -219,13 +224,14 @@ fn test_uri_normalize_removes_dot_segments() {
 #[test]
 fn test_uri_normalize_percent_encoding() {
     // unreserved 文字のエンコードはデコードされる
-    let uri = Uri::parse("http://example.com/%61%62%63").unwrap(); // abc
-    let normalized = normalize(&uri).unwrap();
+    let uri =
+        Uri::parse("http://example.com/%61%62%63").expect("URI のパースは成功するはず (実装バグ)"); // abc
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.path(), "/abc");
 
     // reserved 文字のエンコードは大文字で保持
-    let uri = Uri::parse("http://example.com/%2f").unwrap(); // /
-    let normalized = normalize(&uri).unwrap();
+    let uri = Uri::parse("http://example.com/%2f").expect("URI のパースは成功するはず (実装バグ)"); // /
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.path(), "/%2F");
 }
 
@@ -233,9 +239,9 @@ fn test_uri_normalize_percent_encoding() {
 // ケースで normalize が冪等であること (RFC 3986 Section 3.3)
 #[test]
 fn test_uri_normalize_idempotent_with_dotdot_double_slash() {
-    let uri = Uri::parse("/..//YYYYYYYY/#").unwrap();
-    let n1 = normalize(&uri).unwrap();
-    let n2 = normalize(&n1).unwrap();
+    let uri = Uri::parse("/..//YYYYYYYY/#").expect("URI のパースは成功するはず (実装バグ)");
+    let n1 = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
+    let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
     assert_eq!(
         n1.path(),
@@ -252,11 +258,11 @@ fn test_uri_normalize_idempotent_with_colon_first_segment() {
     // base="S55", reference="%55:;:/." を resolve すると path="%55:;:/" になり、
     // normalize で %55 が "U" にデコードされ "U:;:/" となるため、
     // 再 parse 時に "U" が scheme として誤解釈されていた。
-    let base = Uri::parse("S55").unwrap();
-    let reference = Uri::parse("%55:;:/.").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
-    let n1 = normalize(&resolved).unwrap();
-    let n2 = normalize(&n1).unwrap();
+    let base = Uri::parse("S55").expect("URI のパースは成功するはず (実装バグ)");
+    let reference = Uri::parse("%55:;:/.").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
+    let n1 = normalize(&resolved).expect("URI のパースは成功するはず (実装バグ)");
+    let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
     assert!(n1.scheme().is_none(), "scheme が誤って注入されないこと");
     assert!(n1.authority().is_none(), "authority が None で保たれること");
@@ -266,9 +272,9 @@ fn test_uri_normalize_idempotent_with_colon_first_segment() {
 // (RFC 3986 Section 6.2.2: percent-encoding 正規化 → dot-segment 除去の順)
 #[test]
 fn test_uri_normalize_idempotent_with_encoded_dot_segment() {
-    let uri = Uri::parse("/a/%2E/b/%2E%2E/c").unwrap();
-    let n1 = normalize(&uri).unwrap();
-    let n2 = normalize(&n1).unwrap();
+    let uri = Uri::parse("/a/%2E/b/%2E%2E/c").expect("URI のパースは成功するはず (実装バグ)");
+    let n1 = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
+    let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(n1.as_str(), n2.as_str(), "normalize は冪等であること");
     assert_eq!(
         n1.path(),
@@ -280,9 +286,9 @@ fn test_uri_normalize_idempotent_with_encoded_dot_segment() {
 // scheme 付き + authority なしでも同様に冪等であること
 #[test]
 fn test_uri_normalize_scheme_only_double_slash() {
-    let uri = Uri::parse("file:/..//Y/").unwrap();
-    let n1 = normalize(&uri).unwrap();
-    let n2 = normalize(&n1).unwrap();
+    let uri = Uri::parse("file:/..//Y/").expect("URI のパースは成功するはず (実装バグ)");
+    let n1 = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
+    let n2 = normalize(&n1).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(n1.scheme(), Some("file"), "scheme が file で保たれること");
     assert!(
         n1.authority().is_none(),
@@ -304,42 +310,46 @@ fn test_uri_normalize_scheme_only_double_slash() {
 #[test]
 fn test_remove_dot_segments_edge_cases() {
     // RFC 3986 Section 5.2.4 の remove_dot_segments エッジケース
-    let base = Uri::parse("http://example.com/base/").unwrap();
+    let base =
+        Uri::parse("http://example.com/base/").expect("URI のパースは成功するはず (実装バグ)");
 
     // . のみ
-    let reference = Uri::parse(".").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse(".").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/base/");
 
     // .. のみ
-    let reference = Uri::parse("..").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("..").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/");
 
     // /. で終わる
-    let uri = Uri::parse("http://example.com/a/b/.").unwrap();
-    let normalized = normalize(&uri).unwrap();
+    let uri =
+        Uri::parse("http://example.com/a/b/.").expect("URI のパースは成功するはず (実装バグ)");
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.path(), "/a/b/");
 
     // /.. で終わる
-    let uri = Uri::parse("http://example.com/a/b/..").unwrap();
-    let normalized = normalize(&uri).unwrap();
+    let uri =
+        Uri::parse("http://example.com/a/b/..").expect("URI のパースは成功するはず (実装バグ)");
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.path(), "/a/");
 }
 
 // ./ と ../ で始まるパス
 #[test]
 fn test_remove_dot_segments_leading_dots() {
-    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+    let base =
+        Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
 
     // ./ で始まる
-    let reference = Uri::parse("./x").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("./x").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/x");
 
     // ../ で始まる
-    let reference = Uri::parse("../x").unwrap();
-    let resolved = resolve(&base, &reference).unwrap();
+    let reference = Uri::parse("../x").expect("URI のパースは成功するはず (実装バグ)");
+    let resolved = resolve(&base, &reference).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/x");
 }
 
@@ -350,17 +360,18 @@ fn test_remove_dot_segments_leading_dots() {
 #[test]
 fn test_uri_scheme_edge_cases() {
     // スキームに + - . を含む
-    let uri = Uri::parse("custom+scheme://host/path").unwrap();
+    let uri =
+        Uri::parse("custom+scheme://host/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("custom+scheme"));
 
-    let uri = Uri::parse("my-scheme://host/path").unwrap();
+    let uri = Uri::parse("my-scheme://host/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("my-scheme"));
 
-    let uri = Uri::parse("my.scheme://host/path").unwrap();
+    let uri = Uri::parse("my.scheme://host/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("my.scheme"));
 
     // コロンで始まる (スキームなし)
-    let uri = Uri::parse(":path").unwrap();
+    let uri = Uri::parse(":path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), None);
     assert_eq!(uri.path(), ":path");
 }
@@ -371,7 +382,7 @@ fn test_uri_scheme_edge_cases() {
 
 #[test]
 fn test_uri_empty_authority() {
-    let uri = Uri::parse("file:///path/to/file").unwrap();
+    let uri = Uri::parse("file:///path/to/file").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("file"));
     assert_eq!(uri.authority(), Some(""));
     // 空の authority の場合、host() は空文字列の Some を返す
@@ -415,7 +426,8 @@ fn test_uri_parse_invalid_host_bracket_in_reg_name() {
 // パーセントエンコーディングを含む reg-name は受理
 #[test]
 fn test_uri_parse_valid_host_percent_encoded() {
-    let uri = Uri::parse("http://exam%70le.com/path").unwrap();
+    let uri =
+        Uri::parse("http://exam%70le.com/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("exam%70le.com"));
 }
 
@@ -454,10 +466,12 @@ fn test_uri_parse_empty_ip_literal() {
 // 有効な IPv6 アドレスは受理
 #[test]
 fn test_uri_parse_valid_ipv6() {
-    let uri = Uri::parse("http://[2001:db8::1]/path").unwrap();
+    let uri =
+        Uri::parse("http://[2001:db8::1]/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("[2001:db8::1]"));
 
-    let uri = Uri::parse("http://[::ffff:192.168.1.1]:8080/path").unwrap();
+    let uri = Uri::parse("http://[::ffff:192.168.1.1]:8080/path")
+        .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("[::ffff:192.168.1.1]"));
     assert_eq!(uri.port(), Some(8080));
 }
@@ -465,7 +479,7 @@ fn test_uri_parse_valid_ipv6() {
 // 有効な IPvFuture は受理
 #[test]
 fn test_uri_parse_valid_ipv_future() {
-    let uri = Uri::parse("http://[v1.test]/path").unwrap();
+    let uri = Uri::parse("http://[v1.test]/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("[v1.test]"));
 }
 
@@ -512,15 +526,18 @@ fn test_uri_parse_invalid_userinfo_control_char() {
 // 有効な userinfo は受理
 #[test]
 fn test_uri_parse_valid_userinfo() {
-    let uri = Uri::parse("http://user:pass@example.com/path").unwrap();
+    let uri = Uri::parse("http://user:pass@example.com/path")
+        .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("example.com"));
 
     // パーセントエンコーディング含む userinfo
-    let uri = Uri::parse("http://user%40name@example.com/").unwrap();
+    let uri = Uri::parse("http://user%40name@example.com/")
+        .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("example.com"));
 
     // sub-delims を含む userinfo
-    let uri = Uri::parse("http://u$er!@example.com/").unwrap();
+    let uri =
+        Uri::parse("http://u$er!@example.com/").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("example.com"));
 }
 
@@ -530,7 +547,8 @@ fn test_uri_parse_valid_userinfo() {
 
 #[test]
 fn test_uri_empty_port() {
-    let uri = Uri::parse("http://example.com:/path").unwrap();
+    let uri =
+        Uri::parse("http://example.com:/path").expect("URI のパースは成功するはず (実装バグ)");
     // 空ポートの場合、host には : が含まれる (実装の動作)
     assert_eq!(uri.host(), Some("example.com:"));
     assert_eq!(uri.port(), None);
@@ -551,10 +569,17 @@ fn test_percent_encode() {
 
 #[test]
 fn test_percent_decode() {
-    assert_eq!(percent_decode("hello").unwrap(), "hello");
-    assert_eq!(percent_decode("hello%20world").unwrap(), "hello world");
     assert_eq!(
-        percent_decode("%E6%97%A5%E6%9C%AC%E8%AA%9E").unwrap(),
+        percent_decode("hello").expect("URI のパースは成功するはず (実装バグ)"),
+        "hello"
+    );
+    assert_eq!(
+        percent_decode("hello%20world").expect("URI のパースは成功するはず (実装バグ)"),
+        "hello world"
+    );
+    assert_eq!(
+        percent_decode("%E6%97%A5%E6%9C%AC%E8%AA%9E")
+            .expect("URI のパースは成功するはず (実装バグ)"),
         "日本語"
     );
 }
@@ -570,7 +595,7 @@ fn test_percent_decode_invalid() {
 fn test_uri_parse_full() {
     let uri =
         Uri::parse("https://user:pass@example.com:8080/path/to/resource?query=value#fragment")
-            .unwrap();
+            .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("https"));
     assert_eq!(uri.authority(), Some("user:pass@example.com:8080"));
     assert_eq!(uri.host(), Some("example.com"));
@@ -582,7 +607,7 @@ fn test_uri_parse_full() {
 
 #[test]
 fn test_uri_parse_simple() {
-    let uri = Uri::parse("http://example.com").unwrap();
+    let uri = Uri::parse("http://example.com").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), Some("http"));
     assert_eq!(uri.host(), Some("example.com"));
     assert_eq!(uri.port(), None);
@@ -593,7 +618,7 @@ fn test_uri_parse_simple() {
 
 #[test]
 fn test_uri_parse_path_only() {
-    let uri = Uri::parse("/path/to/resource").unwrap();
+    let uri = Uri::parse("/path/to/resource").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), None);
     assert_eq!(uri.host(), None);
     assert_eq!(uri.path(), "/path/to/resource");
@@ -601,7 +626,7 @@ fn test_uri_parse_path_only() {
 
 #[test]
 fn test_uri_parse_relative() {
-    let uri = Uri::parse("../other/path").unwrap();
+    let uri = Uri::parse("../other/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.scheme(), None);
     assert!(uri.is_relative());
     assert_eq!(uri.path(), "../other/path");
@@ -609,38 +634,53 @@ fn test_uri_parse_relative() {
 
 #[test]
 fn test_uri_parse_ipv6() {
-    let uri = Uri::parse("http://[::1]:8080/path").unwrap();
+    let uri = Uri::parse("http://[::1]:8080/path").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.host(), Some("[::1]"));
     assert_eq!(uri.port(), Some(8080));
 }
 
 #[test]
 fn test_origin_form() {
-    let uri = Uri::parse("http://example.com/path?query").unwrap();
+    let uri =
+        Uri::parse("http://example.com/path?query").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.origin_form(), "/path?query");
 
-    let uri = Uri::parse("http://example.com").unwrap();
+    let uri = Uri::parse("http://example.com").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(uri.origin_form(), "/");
 }
 
 #[test]
 fn test_resolve() {
-    let base = Uri::parse("http://example.com/a/b/c").unwrap();
+    let base =
+        Uri::parse("http://example.com/a/b/c").expect("URI のパースは成功するはず (実装バグ)");
 
-    let resolved = resolve(&base, &Uri::parse("../d").unwrap()).unwrap();
+    let resolved = resolve(
+        &base,
+        &Uri::parse("../d").expect("URI のパースは成功するはず (実装バグ)"),
+    )
+    .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/d");
 
-    let resolved = resolve(&base, &Uri::parse("/absolute").unwrap()).unwrap();
+    let resolved = resolve(
+        &base,
+        &Uri::parse("/absolute").expect("URI のパースは成功するはず (実装バグ)"),
+    )
+    .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/absolute");
 
-    let resolved = resolve(&base, &Uri::parse("relative").unwrap()).unwrap();
+    let resolved = resolve(
+        &base,
+        &Uri::parse("relative").expect("URI のパースは成功するはず (実装バグ)"),
+    )
+    .expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(resolved.path(), "/a/b/relative");
 }
 
 #[test]
 fn test_normalize_authority_userinfo_preserved() {
-    let uri = Uri::parse("http://UserName:PassWord@EXAMPLE.COM/path").unwrap();
-    let normalized = normalize(&uri).unwrap();
+    let uri = Uri::parse("http://UserName:PassWord@EXAMPLE.COM/path")
+        .expect("URI のパースは成功するはず (実装バグ)");
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(
         normalized.authority(),
         Some("UserName:PassWord@example.com")
@@ -649,8 +689,9 @@ fn test_normalize_authority_userinfo_preserved() {
 
 #[test]
 fn test_normalize_authority_without_userinfo() {
-    let uri = Uri::parse("http://EXAMPLE.COM:8080/path").unwrap();
-    let normalized = normalize(&uri).unwrap();
+    let uri =
+        Uri::parse("http://EXAMPLE.COM:8080/path").expect("URI のパースは成功するはず (実装バグ)");
+    let normalized = normalize(&uri).expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(normalized.authority(), Some("example.com:8080"));
 }
 
@@ -660,7 +701,10 @@ fn test_normalize_authority_without_userinfo() {
 fn test_scheme_from_static_matches_new() {
     let schemes: &[&[u8]] = &[b"http", b"https", b"ws", b"wss", b"rtsp"];
     for &scheme in schemes {
-        assert_eq!(Scheme::new(scheme).unwrap(), Scheme::from_static(scheme));
+        assert_eq!(
+            Scheme::new(scheme).expect("URI のパースは成功するはず (実装バグ)"),
+            Scheme::from_static(scheme)
+        );
     }
 }
 
@@ -681,9 +725,9 @@ fn test_scheme_new_rejects_colon() {
 
 #[test]
 fn test_scheme_eq_is_case_insensitive() {
-    let h1 = Scheme::new(b"http").unwrap();
-    let h2 = Scheme::new(b"HTTP").unwrap();
-    let h3 = Scheme::new(b"Http").unwrap();
+    let h1 = Scheme::new(b"http").expect("URI のパースは成功するはず (実装バグ)");
+    let h2 = Scheme::new(b"HTTP").expect("URI のパースは成功するはず (実装バグ)");
+    let h3 = Scheme::new(b"Http").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(h1, h2);
     assert_eq!(h2, h3);
 }

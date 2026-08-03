@@ -253,7 +253,7 @@ fn test_digest_auth_accepts_username_star_with_utf8() {
 #[test]
 fn test_digest_auth_accepts_username_ascii_only() {
     let input = "Digest username=\"alice\", realm=\"r\", nonce=\"n\", uri=\"/\", response=\"resp\"";
-    let auth = DigestAuth::parse(input).unwrap();
+    let auth = DigestAuth::parse(input).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
     assert_eq!(auth.username(), Some("alice"));
     assert_eq!(auth.username_decoded().as_deref(), Some("alice"));
 }
@@ -362,7 +362,7 @@ fn test_basic_auth_sp_htab_stripped_as_ows() {
     // SP と HTAB は OWS として除去される
     let result = BasicAuth::parse(" \tBasic dXNlcjpwYXNz\t ");
     assert!(result.is_ok());
-    let auth = result.unwrap();
+    let auth = result.expect("認証ヘッダーのパースは成功するはず (実装バグ)");
     assert_eq!(auth.username(), "user");
     assert_eq!(auth.password(), "pass");
 }

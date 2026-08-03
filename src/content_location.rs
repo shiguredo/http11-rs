@@ -9,7 +9,7 @@
 //! ```rust
 //! use shiguredo_http11::content_location::ContentLocation;
 //!
-//! let cl = ContentLocation::parse("/assets/logo.png").unwrap();
+//! let cl = ContentLocation::parse("/assets/logo.png").expect("Content-Location のパースは成功するはず (実装バグ)");
 //! assert_eq!(cl.uri().path(), "/assets/logo.png");
 //! ```
 

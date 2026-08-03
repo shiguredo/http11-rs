@@ -54,11 +54,13 @@ fn test_day_of_week_short_name() {
 #[test]
 fn test_date_leap_second() {
     // 60秒 (うるう秒) は許可
-    let date = HttpDate::parse("Sun, 06 Nov 1994 23:59:60 GMT").unwrap();
+    let date = HttpDate::parse("Sun, 06 Nov 1994 23:59:60 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.second(), 60);
 
     // new() でも許可
-    let date = HttpDate::new(DayOfWeek::Sunday, 6, 11, 1994, 23, 59, 60).unwrap();
+    let date = HttpDate::new(DayOfWeek::Sunday, 6, 11, 1994, 23, 59, 60)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.second(), 60);
 }
 
@@ -168,7 +170,8 @@ fn test_date_rfc850_all_days_of_week() {
 
     for (expected_dow, dow_name) in long_days {
         let date_str = format!("{}, 06-Nov-94 08:49:37 GMT", dow_name);
-        let date = HttpDate::parse_rfc850(&date_str, 2026).unwrap();
+        let date =
+            HttpDate::parse_rfc850(&date_str, 2026).expect("日時のパースは成功するはず (実装バグ)");
         assert_eq!(date.day_of_week(), expected_dow);
     }
 }
@@ -201,13 +204,15 @@ fn test_date_month_day_validation() {
 #[test]
 fn test_date_february_leap_year() {
     // うるう年の 2 月 29 日は有効
-    let date = HttpDate::new(DayOfWeek::Tuesday, 29, 2, 2000, 0, 0, 0).unwrap();
+    let date = HttpDate::new(DayOfWeek::Tuesday, 29, 2, 2000, 0, 0, 0)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day(), 29);
     assert_eq!(date.month(), 2);
     assert_eq!(date.year(), 2000);
 
     // うるう年の 2 月 28 日も有効
-    let date = HttpDate::new(DayOfWeek::Monday, 28, 2, 2000, 0, 0, 0).unwrap();
+    let date = HttpDate::new(DayOfWeek::Monday, 28, 2, 2000, 0, 0, 0)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day(), 28);
 
     // 平年の 2 月 29 日は拒否
@@ -217,7 +222,8 @@ fn test_date_february_leap_year() {
     ));
 
     // 平年の 2 月 28 日は有効
-    let date = HttpDate::new(DayOfWeek::Wednesday, 28, 2, 2001, 0, 0, 0).unwrap();
+    let date = HttpDate::new(DayOfWeek::Wednesday, 28, 2, 2001, 0, 0, 0)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day(), 28);
 }
 
@@ -225,7 +231,8 @@ fn test_date_february_leap_year() {
 fn test_date_30_day_months() {
     // 4/6/9/11 月の 30 日は有効、31 日は拒否
     for month in [4, 6, 9, 11] {
-        let date = HttpDate::new(DayOfWeek::Monday, 30, month, 2000, 0, 0, 0).unwrap();
+        let date = HttpDate::new(DayOfWeek::Monday, 30, month, 2000, 0, 0, 0)
+            .expect("日時のパースは成功するはず (実装バグ)");
         assert_eq!(date.day(), 30);
 
         assert!(matches!(
@@ -239,7 +246,8 @@ fn test_date_30_day_months() {
 fn test_date_31_day_months() {
     // 1/3/5/7/8/10/12 月の 31 日は有効
     for month in [1, 3, 5, 7, 8, 10, 12] {
-        let date = HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0).unwrap();
+        let date = HttpDate::new(DayOfWeek::Monday, 31, month, 2000, 0, 0, 0)
+            .expect("日時のパースは成功するはず (実装バグ)");
         assert_eq!(date.day(), 31);
     }
 }
@@ -254,7 +262,8 @@ fn test_date_rfc850_format_errors() {
 #[test]
 fn test_date_rfc850_4digit_year() {
     // RFC 9110 §5.6.7 ABNF では 2DIGIT 固定だが、Postel 原則で 4 桁年も受理する。
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 1994);
 }
 
@@ -272,7 +281,8 @@ fn test_date_nbsp_not_stripped_as_ows() {
 #[test]
 fn test_date_sp_htab_stripped_as_ows() {
     // SP と HTAB は OWS として正しく除去される
-    let date = HttpDate::parse(" \tSun, 06 Nov 1994 08:49:37 GMT\t ").unwrap();
+    let date = HttpDate::parse(" \tSun, 06 Nov 1994 08:49:37 GMT\t ")
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 1994);
 }
 
@@ -291,7 +301,8 @@ fn test_date_rfc850_nbsp_after_comma_not_stripped() {
 
 #[test]
 fn test_parse_imf_fixdate() {
-    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day_of_week(), DayOfWeek::Sunday);
     assert_eq!(date.day(), 6);
     assert_eq!(date.month(), 11);
@@ -311,7 +322,8 @@ fn test_parse_rejects_rfc850() {
 
 #[test]
 fn test_parse_rfc850() {
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-94 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-94 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day_of_week(), DayOfWeek::Sunday);
     assert_eq!(date.day(), 6);
     assert_eq!(date.month(), 11);
@@ -323,13 +335,15 @@ fn test_parse_rfc850() {
 
 #[test]
 fn test_parse_rfc850_4digit_year_accepted() {
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-1994 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 1994);
 }
 
 #[test]
 fn test_parse_asctime() {
-    let date = HttpDate::parse("Sun Nov  6 08:49:37 1994").unwrap();
+    let date =
+        HttpDate::parse("Sun Nov  6 08:49:37 1994").expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.day_of_week(), DayOfWeek::Sunday);
     assert_eq!(date.day(), 6);
     assert_eq!(date.month(), 11);
@@ -341,34 +355,42 @@ fn test_parse_asctime() {
 
 #[test]
 fn test_display() {
-    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.to_string(), "Sun, 06 Nov 1994 08:49:37 GMT");
 }
 
 #[test]
 fn test_parse_rfc850_2digit_year() {
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-20 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-20 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 2020);
 
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-76 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-76 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 2076);
 
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-77 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-77 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 1977);
 
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-99 08:49:37 GMT", 2026).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-99 08:49:37 GMT", 2026)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 1999);
 }
 
 #[test]
 fn test_parse_rfc850_2digit_year_boundary() {
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-00 08:49:37 GMT", 2050).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-00 08:49:37 GMT", 2050)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 2000);
 
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-01 08:49:37 GMT", 2050).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-01 08:49:37 GMT", 2050)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 2001);
 
-    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-50 08:49:37 GMT", 2050).unwrap();
+    let date = HttpDate::parse_rfc850("Sunday, 06-Nov-50 08:49:37 GMT", 2050)
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.year(), 2050);
 }
 
@@ -409,7 +431,8 @@ fn test_parse_not_gmt() {
 
 #[test]
 fn test_leap_second() {
-    let date = HttpDate::parse("Sun, 06 Nov 1994 23:59:60 GMT").unwrap();
+    let date = HttpDate::parse("Sun, 06 Nov 1994 23:59:60 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
     assert_eq!(date.second(), 60);
 }
 
@@ -430,7 +453,7 @@ fn test_all_months() {
         (12, "Dec"),
     ] {
         let date_str = format!("Sun, 06 {} 1994 08:49:37 GMT", name);
-        let date = HttpDate::parse(&date_str).unwrap();
+        let date = HttpDate::parse(&date_str).expect("日時のパースは成功するはず (実装バグ)");
         assert_eq!(date.month(), month);
     }
 }
@@ -447,16 +470,19 @@ fn test_all_days_of_week() {
         (DayOfWeek::Saturday, "Sat"),
     ] {
         let date_str = format!("{}, 06 Nov 1994 08:49:37 GMT", name);
-        let date = HttpDate::parse(&date_str).unwrap();
+        let date = HttpDate::parse(&date_str).expect("日時のパースは成功するはず (実装バグ)");
         assert_eq!(date.day_of_week(), dow);
     }
 }
 
 #[test]
 fn test_ord() {
-    let d1 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
-    let d2 = HttpDate::parse("Mon, 07 Nov 1994 08:49:37 GMT").unwrap();
-    let d3 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    let d1 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
+    let d2 = HttpDate::parse("Mon, 07 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
+    let d3 = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
 
     assert!(d1 < d2);
     assert!(d2 > d1);

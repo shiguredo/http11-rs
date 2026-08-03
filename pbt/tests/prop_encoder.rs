@@ -107,10 +107,10 @@ proptest! {
     #[test]
     fn prop_encode_request_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method.clone(), &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
-        let encoded = encode_request(&req).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
 
         let request_line = format!("{} {} HTTP/1.1\r\n", method, uri);
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -128,12 +128,12 @@ proptest! {
         header_value in header_value()
     ) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(header_name.clone(), &header_value)
-            .unwrap();
-        let encoded = encode_request(&req).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let header_line = format!("{}: {}\r\n", header_name, header_value);
@@ -145,11 +145,11 @@ proptest! {
     #[test]
     fn prop_encode_request_with_body(method in http_method(), uri in uri(), data in body()) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .body(data.clone());
-        let encoded = encode_request(&req).unwrap();
+        let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
 
         if !data.is_empty() {
             let encoded_str = String::from_utf8_lossy(&encoded);
@@ -167,8 +167,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_basic(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase).unwrap();
-        let encoded = encode_response(&res).unwrap();
+        let res = Response::new(status, phrase).expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
 
         let status_line = format!("HTTP/1.1 {} {}\r\n", status, phrase);
         let encoded_str = String::from_utf8_lossy(&encoded);
@@ -187,10 +187,10 @@ proptest! {
     ) {
         let header_line = format!("{}: {}\r\n", header_name, header_value);
         let res = Response::new(status, phrase)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(header_name, header_value.as_str())
-            .unwrap();
-        let encoded = encode_response(&res).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         prop_assert!(encoded_str.contains(&header_line));
@@ -200,8 +200,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_response_with_body(status in status_code(), phrase in reason_phrase(), data in body()) {
-        let res = Response::new(status, phrase).unwrap().body(data.clone());
-        let encoded = encode_response(&res).unwrap();
+        let res = Response::new(status, phrase).expect("エンコードは成功するはず (実装バグ)").body(data.clone());
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
 
         let status_has_body = !((100..200).contains(&status) || status == 204 || status == 304);
 
@@ -221,11 +221,11 @@ proptest! {
         content_length in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), content_length.to_string())
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .omit_body(true);
-        let encoded = encode_response(&res).unwrap();
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let cl_header = format!("Content-Length: {}\r\n", content_length);
@@ -240,9 +240,9 @@ proptest! {
         status in 200..204u16
     ) {
         let res = Response::new(status, "OK")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .omit_body(true);
-        let encoded = encode_response(&res).unwrap();
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         prop_assert!(!encoded_str.contains("Content-Length"));
@@ -339,10 +339,10 @@ proptest! {
     #[test]
     fn prop_encode_request_headers_basic(method in http_method(), uri in uri()) {
         let req = Request::new(method.clone(), &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
-        let encoded = encode_request_headers(&req).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_request_headers(&req).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let request_line = format!("{} {} HTTP/1.1\r\n", method, uri);
@@ -360,10 +360,10 @@ proptest! {
     #[test]
     fn prop_encode_response_headers_basic(status in status_code(), phrase in reason_phrase()) {
         let res = Response::new(status, phrase)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Type"), "text/html")
-            .unwrap();
-        let encoded = encode_response_headers(&res).unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
+        let encoded = encode_response_headers(&res).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
 
         let status_line = format!("HTTP/1.1 {} {}\r\n", status, phrase);
@@ -380,7 +380,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_required_for_http11(method in http_method(), uri in uri()) {
-        let req = Request::new(method, &uri).unwrap();
+        let req = Request::new(method, &uri).expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -389,7 +389,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_encode_request_host_optional_for_http10(method in http_method(), uri in uri()) {
-        let req = Request::with_version(method, &uri, "HTTP/1.0").unwrap();
+        let req = Request::with_version(method, &uri, "HTTP/1.0").expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request(&req);
         prop_assert!(result.is_ok());
     }
@@ -407,13 +407,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request(&req);
         prop_assert!(matches!(
             result,
@@ -429,11 +429,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response(&res);
         prop_assert!(matches!(
             result,
@@ -452,9 +452,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
@@ -477,9 +477,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), "0")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
@@ -519,7 +519,7 @@ proptest! {
     ) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header(HeaderName::from_static(b"Transfer-Encoding"), &te_value)
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
@@ -536,7 +536,7 @@ proptest! {
     fn prop_encode_response_205_with_cl_nonzero_always_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
@@ -558,9 +558,9 @@ proptest! {
         data in proptest::collection::vec(any::<u8>(), 1..128)
     ) {
         let res = Response::with_status(StatusCode::NOT_MODIFIED).body(data);
-        let encoded = encode_response(&res).unwrap();
+        let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
         let encoded_str = String::from_utf8_lossy(&encoded);
-        let header_end = encoded_str.find("\r\n\r\n").unwrap();
+        let header_end = encoded_str.find("\r\n\r\n").expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(encoded.len(), header_end + 4);
     }
 }
@@ -578,11 +578,11 @@ proptest! {
         host2 in "[a-z]{3,8}\\.org"
     ) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), &host1)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), &host2)
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request(&req);
         prop_assert!(matches!(result, Err(EncodeError::DuplicateHostHeader)));
     }
@@ -599,7 +599,7 @@ proptest! {
         method in http_method(),
         uri in uri()
     ) {
-        let req = Request::new(method, &uri).unwrap();
+        let req = Request::new(method, &uri).expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request_headers(&req);
         prop_assert!(matches!(result, Err(EncodeError::MissingHostHeader)));
     }
@@ -614,13 +614,13 @@ proptest! {
         cl in 1usize..10000
     ) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_request_headers(&req);
         prop_assert!(matches!(
             result,
@@ -641,11 +641,11 @@ proptest! {
         cl in 1usize..10000
     ) {
         let res = Response::new(status, "OK")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response_headers(&res);
         prop_assert!(matches!(
             result,
@@ -661,9 +661,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code }) => {
@@ -683,9 +683,9 @@ proptest! {
         status in prop_oneof![100u16..200, Just(204u16)]
     ) {
         let res = Response::new(status, "Info")
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Length"), "0")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code }) => {
@@ -709,7 +709,7 @@ proptest! {
     ) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header(HeaderName::from_static(b"Transfer-Encoding"), &te_value)
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenTransferEncoding { status_code: 205 }) => {}
@@ -726,7 +726,7 @@ proptest! {
     fn prop_encode_response_headers_205_with_cl_nonzero_error(cl in 1usize..10000) {
         let res = Response::with_status(StatusCode::RESET_CONTENT)
             .header(HeaderName::from_static(b"Content-Length"), cl.to_string())
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let result = encode_response_headers(&res);
         match result {
             Err(EncodeError::ForbiddenContentLength { status_code: 205 }) => {}
@@ -746,9 +746,9 @@ proptest! {
     #[test]
     fn prop_request_encode_equals_free_function(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let via_method = req.encode();
         let via_free = encode_request(&req);
         prop_assert_eq!(via_method, via_free);
@@ -759,7 +759,7 @@ proptest! {
     /// Response::encode() は encode_response() と同じ結果を返す
     #[test]
     fn prop_response_encode_equals_free_function(status in status_code(), phrase in reason_phrase()) {
-        let res = Response::new(status, phrase).unwrap();
+        let res = Response::new(status, phrase).expect("エンコードは成功するはず (実装バグ)");
         let via_method = res.encode();
         let via_free = encode_response(&res);
         prop_assert_eq!(via_method, via_free);
@@ -771,9 +771,9 @@ proptest! {
     #[test]
     fn prop_request_encode_headers_equals_free_function(method in http_method(), uri in uri()) {
         let req = Request::new(method, &uri)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Host"), "example.com")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let via_method = req.encode_headers();
         let via_free = encode_request_headers(&req);
         prop_assert_eq!(via_method, via_free);
@@ -788,9 +788,9 @@ proptest! {
         phrase in reason_phrase()
     ) {
         let res = Response::new(status, phrase)
-            .unwrap()
+            .expect("エンコードは成功するはず (実装バグ)")
             .header(HeaderName::from_static(b"Content-Type"), "text/html")
-            .unwrap();
+            .expect("エンコードは成功するはず (実装バグ)");
         let via_method = res.encode_headers();
         let via_free = encode_response_headers(&res);
         prop_assert_eq!(via_method, via_free);
@@ -810,16 +810,16 @@ proptest! {
         let mut encoder = ResponseEncoder::new();
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);
 
-        let finish_status = encoder.finish(&mut output).unwrap();
+        let finish_status = encoder.finish(&mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert!(finish_status.is_complete());
 
         encoder.reset();
-        let status2 = encoder.compress_body(&data, &mut output).unwrap();
+        let status2 = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status2.consumed(), data.len());
     }
 }
@@ -833,16 +833,16 @@ proptest! {
         let mut encoder = RequestEncoder::new();
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);
 
-        let finish_status = encoder.finish(&mut output).unwrap();
+        let finish_status = encoder.finish(&mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert!(finish_status.is_complete());
 
         encoder.reset();
-        let status2 = encoder.compress_body(&data, &mut output).unwrap();
+        let status2 = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status2.consumed(), data.len());
     }
 }
@@ -856,7 +856,7 @@ proptest! {
         let mut encoder: ResponseEncoder = ResponseEncoder::default();
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);
@@ -872,7 +872,7 @@ proptest! {
         let mut encoder: RequestEncoder = RequestEncoder::default();
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);
@@ -889,7 +889,7 @@ proptest! {
         let mut encoder = ResponseEncoder::with_compressor(compressor);
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);
@@ -906,7 +906,7 @@ proptest! {
         let mut encoder = RequestEncoder::with_compressor(compressor);
         let mut output = vec![0u8; 512];
 
-        let status = encoder.compress_body(&data, &mut output).unwrap();
+        let status = encoder.compress_body(&data, &mut output).expect("エンコードは成功するはず (実装バグ)");
         prop_assert_eq!(status.consumed(), data.len());
         prop_assert_eq!(status.produced(), data.len());
         prop_assert_eq!(&output[..data.len()], &data[..]);

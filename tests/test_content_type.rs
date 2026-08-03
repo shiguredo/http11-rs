@@ -27,10 +27,26 @@ fn test_content_type_error_display() {
 // is_json()
 #[test]
 fn test_content_type_is_json() {
-    assert!(ContentType::parse("application/json").unwrap().is_json());
-    assert!(ContentType::parse("APPLICATION/JSON").unwrap().is_json());
-    assert!(!ContentType::parse("text/json").unwrap().is_json());
-    assert!(!ContentType::parse("application/xml").unwrap().is_json());
+    assert!(
+        ContentType::parse("application/json")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_json()
+    );
+    assert!(
+        ContentType::parse("APPLICATION/JSON")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_json()
+    );
+    assert!(
+        !ContentType::parse("text/json")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_json()
+    );
+    assert!(
+        !ContentType::parse("application/xml")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_json()
+    );
 }
 
 // is_form_data()
@@ -38,17 +54,17 @@ fn test_content_type_is_json() {
 fn test_content_type_is_form_data() {
     assert!(
         ContentType::parse("multipart/form-data")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_data()
     );
     assert!(
         ContentType::parse("MULTIPART/FORM-DATA")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_data()
     );
     assert!(
         !ContentType::parse("multipart/mixed")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_data()
     );
 }
@@ -58,17 +74,17 @@ fn test_content_type_is_form_data() {
 fn test_content_type_is_form_urlencoded() {
     assert!(
         ContentType::parse("application/x-www-form-urlencoded")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_urlencoded()
     );
     assert!(
         ContentType::parse("APPLICATION/X-WWW-FORM-URLENCODED")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_urlencoded()
     );
     assert!(
         !ContentType::parse("application/json")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_form_urlencoded()
     );
 }
@@ -139,16 +155,19 @@ fn test_content_type_parse_errors() {
 #[test]
 fn test_content_type_edge_cases() {
     // 末尾のセミコロン
-    let ct = ContentType::parse("text/html;").unwrap();
+    let ct =
+        ContentType::parse("text/html;").expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.mime_type(), "text/html");
     assert!(ct.parameters().is_empty());
 
     // 複数のセミコロン
-    let ct = ContentType::parse("text/html;;;").unwrap();
+    let ct =
+        ContentType::parse("text/html;;;").expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.mime_type(), "text/html");
 
     // 連続するセミコロン
-    let ct = ContentType::parse("text/html; ; charset=utf-8").unwrap();
+    let ct = ContentType::parse("text/html; ; charset=utf-8")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.charset(), Some("utf-8"));
 }
 
@@ -156,11 +175,13 @@ fn test_content_type_edge_cases() {
 #[test]
 fn test_content_type_semicolon_in_quoted_value() {
     // セミコロンを含む引用符付き値
-    let ct = ContentType::parse("text/plain; name=\"a;b\"").unwrap();
+    let ct = ContentType::parse("text/plain; name=\"a;b\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some("a;b"));
 
     // セミコロンを含む値の後に別のパラメータ
-    let ct = ContentType::parse("text/plain; name=\"a;b\"; charset=utf-8").unwrap();
+    let ct = ContentType::parse("text/plain; name=\"a;b\"; charset=utf-8")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some("a;b"));
     assert_eq!(ct.charset(), Some("utf-8"));
 }
@@ -168,14 +189,16 @@ fn test_content_type_semicolon_in_quoted_value() {
 // 引用符のみの値
 #[test]
 fn test_content_type_quote_only_value() {
-    let ct = ContentType::parse("text/plain; name=\"\\\"\"").unwrap();
+    let ct = ContentType::parse("text/plain; name=\"\\\"\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some("\""));
 }
 
 // 空の引用符付き値
 #[test]
 fn test_content_type_empty_quoted_value() {
-    let ct = ContentType::parse("text/plain; name=\"\"").unwrap();
+    let ct = ContentType::parse("text/plain; name=\"\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some(""));
 }
 
@@ -189,7 +212,7 @@ mod helpers;
 #[test]
 fn test_content_type_quoted_string_rejects_ctl() {
     for &code in helpers::quoted_string::ALL_CTLS_EXCEPT_HTAB {
-        let c = char::from_u32(code).unwrap();
+        let c = char::from_u32(code).expect("Content-Type のパースは成功するはず (実装バグ)");
         // qdtext 経路
         assert_eq!(
             ContentType::parse(&format!("text/html; charset=\"{c}\"")),
@@ -216,12 +239,14 @@ fn test_content_type_quoted_string_rejects_ctl() {
 // (`needs_quoting("")` を `true` に修正したリグレッション防止)
 #[test]
 fn test_content_type_empty_quoted_value_roundtrip() {
-    let ct = ContentType::parse("text/plain; ext=\"\"").unwrap();
+    let ct = ContentType::parse("text/plain; ext=\"\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("ext"), Some(""));
 
     let displayed = ct.to_string();
     assert!(displayed.contains("ext=\"\""), "Display 出力 {displayed:?}");
-    let reparsed = ContentType::parse(&displayed).unwrap();
+    let reparsed =
+        ContentType::parse(&displayed).expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(reparsed.parameter("ext"), Some(""));
 }
 
@@ -246,7 +271,8 @@ fn test_content_type_trailing_nbsp_not_stripped() {
 #[test]
 fn test_content_type_sp_htab_stripped_as_ows() {
     // SP と HTAB は OWS として正しく除去される
-    let ct = ContentType::parse(" \ttext/html\t ").unwrap();
+    let ct = ContentType::parse(" \ttext/html\t ")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
 }
@@ -257,7 +283,8 @@ fn test_content_type_sp_htab_stripped_as_ows() {
 
 #[test]
 fn test_parse_simple() {
-    let ct = ContentType::parse("text/html").unwrap();
+    let ct =
+        ContentType::parse("text/html").expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
     assert_eq!(ct.mime_type(), "text/html");
@@ -266,7 +293,8 @@ fn test_parse_simple() {
 
 #[test]
 fn test_parse_with_charset() {
-    let ct = ContentType::parse("text/html; charset=utf-8").unwrap();
+    let ct = ContentType::parse("text/html; charset=utf-8")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
     assert_eq!(ct.charset(), Some("utf-8"));
@@ -274,20 +302,23 @@ fn test_parse_with_charset() {
 
 #[test]
 fn test_parse_with_quoted_charset() {
-    let ct = ContentType::parse("text/html; charset=\"utf-8\"").unwrap();
+    let ct = ContentType::parse("text/html; charset=\"utf-8\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.charset(), Some("utf-8"));
 }
 
 #[test]
 fn test_parse_multipart() {
-    let ct = ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary").unwrap();
+    let ct = ContentType::parse("multipart/form-data; boundary=----WebKitFormBoundary")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert!(ct.is_form_data());
     assert_eq!(ct.boundary(), Some("----WebKitFormBoundary"));
 }
 
 #[test]
 fn test_parse_case_insensitive() {
-    let ct = ContentType::parse("TEXT/HTML; CHARSET=UTF-8").unwrap();
+    let ct = ContentType::parse("TEXT/HTML; CHARSET=UTF-8")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
     assert_eq!(ct.charset(), Some("UTF-8")); // 値は大文字小文字を保持
@@ -295,33 +326,38 @@ fn test_parse_case_insensitive() {
 
 #[test]
 fn test_parse_multiple_parameters() {
-    let ct = ContentType::parse("text/plain; charset=utf-8; boundary=something").unwrap();
+    let ct = ContentType::parse("text/plain; charset=utf-8; boundary=something")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.charset(), Some("utf-8"));
     assert_eq!(ct.boundary(), Some("something"));
 }
 
 #[test]
 fn test_parse_json() {
-    let ct = ContentType::parse("application/json").unwrap();
+    let ct = ContentType::parse("application/json")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert!(ct.is_json());
 }
 
 #[test]
 fn test_parse_form_urlencoded() {
-    let ct = ContentType::parse("application/x-www-form-urlencoded").unwrap();
+    let ct = ContentType::parse("application/x-www-form-urlencoded")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert!(ct.is_form_urlencoded());
 }
 
 #[test]
 fn test_parse_with_spaces() {
-    let ct = ContentType::parse("  text/html  ;  charset = utf-8  ").unwrap();
+    let ct = ContentType::parse("  text/html  ;  charset = utf-8  ")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.media_type(), "text");
     assert_eq!(ct.subtype(), "html");
 }
 
 #[test]
 fn test_parse_quoted_with_escape() {
-    let ct = ContentType::parse("text/plain; name=\"hello\\\"world\"").unwrap();
+    let ct = ContentType::parse("text/plain; name=\"hello\\\"world\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some("hello\"world"));
 }
 
@@ -354,24 +390,40 @@ fn test_display_quoted() {
 
 #[test]
 fn test_is_text() {
-    assert!(ContentType::parse("text/plain").unwrap().is_text());
-    assert!(ContentType::parse("text/html").unwrap().is_text());
-    assert!(!ContentType::parse("application/json").unwrap().is_text());
+    assert!(
+        ContentType::parse("text/plain")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_text()
+    );
+    assert!(
+        ContentType::parse("text/html")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_text()
+    );
+    assert!(
+        !ContentType::parse("application/json")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_text()
+    );
 }
 
 #[test]
 fn test_is_multipart() {
     assert!(
         ContentType::parse("multipart/form-data")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_multipart()
     );
     assert!(
         ContentType::parse("multipart/mixed")
-            .unwrap()
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
             .is_multipart()
     );
-    assert!(!ContentType::parse("text/plain").unwrap().is_multipart());
+    assert!(
+        !ContentType::parse("text/plain")
+            .expect("Content-Type のパースは成功するはず (実装バグ)")
+            .is_multipart()
+    );
 }
 
 // 修正 3: パラメータ値のトークン検証 (RFC 9110 Section 5.6.2)
@@ -388,19 +440,22 @@ fn test_invalid_token_parameter_value_space() {
 
 #[test]
 fn test_valid_token_parameter_value() {
-    let ct = ContentType::parse("text/plain; charset=utf-8").unwrap();
+    let ct = ContentType::parse("text/plain; charset=utf-8")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.charset(), Some("utf-8"));
 }
 
 #[test]
 fn test_valid_token_parameter_value_complex() {
-    let ct = ContentType::parse("application/octet-stream; name=file-v1.0_test").unwrap();
+    let ct = ContentType::parse("application/octet-stream; name=file-v1.0_test")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.parameter("name"), Some("file-v1.0_test"));
 }
 
 #[test]
 fn test_quoted_special_chars() {
-    let ct = ContentType::parse("text/plain; charset=\"hello@world\"").unwrap();
+    let ct = ContentType::parse("text/plain; charset=\"hello@world\"")
+        .expect("Content-Type のパースは成功するはず (実装バグ)");
     assert_eq!(ct.charset(), Some("hello@world"));
 }
 

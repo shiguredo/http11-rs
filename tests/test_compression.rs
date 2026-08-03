@@ -9,7 +9,8 @@ fn make_continue() -> CompressionStatus {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 32];
     // input <= output なので Continue が返る
-    comp.compress(b"abcdefghij", &mut output).unwrap()
+    comp.compress(b"abcdefghij", &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)")
 }
 
 /// NoCompression::compress で OutputFull ステータスを取得する
@@ -17,14 +18,16 @@ fn make_output_full() -> CompressionStatus {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 7];
     // input > output なので OutputFull が返る
-    comp.compress(b"abcdefghij", &mut output).unwrap()
+    comp.compress(b"abcdefghij", &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)")
 }
 
 /// NoCompression::finish で Complete ステータスを取得する
 fn make_complete() -> CompressionStatus {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 32];
-    comp.finish(&mut output).unwrap()
+    comp.finish(&mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)")
 }
 
 #[test]
@@ -74,7 +77,9 @@ fn test_no_compression_compress() {
     let input = b"Hello, World!";
     let mut output = vec![0u8; 32];
 
-    let status = comp.compress(input, &mut output).unwrap();
+    let status = comp
+        .compress(input, &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert_eq!(status.consumed(), 13);
     assert_eq!(status.produced(), 13);
     assert_eq!(&output[..13], input);
@@ -86,7 +91,9 @@ fn test_no_compression_compress_output_full() {
     let input = b"Hello, World!";
     let mut output = vec![0u8; 5];
 
-    let status = comp.compress(input, &mut output).unwrap();
+    let status = comp
+        .compress(input, &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert!(status.is_output_full());
     assert_eq!(status.consumed(), 5);
     assert_eq!(status.produced(), 5);
@@ -98,7 +105,9 @@ fn test_no_compression_finish() {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 32];
 
-    let status = comp.finish(&mut output).unwrap();
+    let status = comp
+        .finish(&mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert!(status.is_complete());
     assert_eq!(status.consumed(), 0);
     assert_eq!(status.produced(), 0);
@@ -109,7 +118,8 @@ fn test_no_compression_already_finished() {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 32];
 
-    comp.finish(&mut output).unwrap();
+    comp.finish(&mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert_eq!(
         comp.finish(&mut output).unwrap_err(),
         CompressionError::AlreadyFinished
@@ -125,11 +135,14 @@ fn test_no_compression_reset_compressor() {
     let mut comp = NoCompression::new();
     let mut output = vec![0u8; 32];
 
-    comp.finish(&mut output).unwrap();
+    comp.finish(&mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     Compressor::reset(&mut comp);
 
     // リセット後は再度使用可能
-    let status = comp.compress(b"test", &mut output).unwrap();
+    let status = comp
+        .compress(b"test", &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert_eq!(status.consumed(), 4);
 }
 
@@ -141,7 +154,9 @@ fn test_no_compression_reset_decompressor() {
 
     // リセット後も使用可能
     let mut output = vec![0u8; 32];
-    let status = decomp.decompress(b"test", &mut output).unwrap();
+    let status = decomp
+        .decompress(b"test", &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert_eq!(status.consumed(), 4);
 }
 
@@ -151,7 +166,9 @@ fn test_no_compression_decompress() {
     let input = b"Hello, World!";
     let mut output = vec![0u8; 32];
 
-    let status = decomp.decompress(input, &mut output).unwrap();
+    let status = decomp
+        .decompress(input, &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert_eq!(status.consumed(), 13);
     assert_eq!(status.produced(), 13);
     assert_eq!(&output[..13], input);
@@ -163,7 +180,9 @@ fn test_no_compression_decompress_output_full() {
     let input = b"Hello, World!";
     let mut output = vec![0u8; 5];
 
-    let status = decomp.decompress(input, &mut output).unwrap();
+    let status = decomp
+        .decompress(input, &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert!(status.is_output_full());
     assert_eq!(status.consumed(), 5);
     assert_eq!(status.produced(), 5);
@@ -175,7 +194,9 @@ fn test_no_compression_decompress_complete() {
     let mut output = vec![0u8; 32];
 
     // 空入力で Complete を返す
-    let status = decomp.decompress(&[], &mut output).unwrap();
+    let status = decomp
+        .decompress(&[], &mut output)
+        .expect("圧縮の処理は成功するはず (実装バグ)");
     assert!(status.is_complete());
 }
 

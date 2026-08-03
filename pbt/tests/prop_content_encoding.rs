@@ -30,7 +30,7 @@ fn custom_encoding() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_content_encoding_custom_roundtrip(enc in custom_encoding()) {
-        let ce = ContentEncoding::parse(&enc).unwrap();
+        let ce = ContentEncoding::parse(&enc).expect("Content-Encoding のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(ce.encodings().len(), 1);
 
@@ -49,7 +49,7 @@ proptest! {
     #[test]
     fn prop_content_encoding_multiple(encodings in proptest::collection::vec(standard_encoding(), 1..5)) {
         let input = encodings.join(", ");
-        let ce = ContentEncoding::parse(&input).unwrap();
+        let ce = ContentEncoding::parse(&input).expect("Content-Encoding のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(ce.encodings().len(), encodings.len());
     }

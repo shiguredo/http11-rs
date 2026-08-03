@@ -10,10 +10,10 @@
 //! ```rust
 //! use shiguredo_http11::digest_fields::{ContentDigest, WantContentDigest};
 //!
-//! let digest = ContentDigest::parse("sha-256=:YWJj:").unwrap();
+//! let digest = ContentDigest::parse("sha-256=:YWJj:").expect("Digest フィールドのパースは成功するはず (実装バグ)");
 //! assert_eq!(digest.items()[0].algorithm(), "sha-256");
 //!
-//! let want = WantContentDigest::parse("sha-256=1, sha-512=3").unwrap();
+//! let want = WantContentDigest::parse("sha-256=1, sha-512=3").expect("Digest フィールドのパースは成功するはず (実装バグ)");
 //! assert_eq!(want.items().len(), 2);
 //! ```
 

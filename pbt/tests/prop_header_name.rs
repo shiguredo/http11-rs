@@ -20,7 +20,7 @@ proptest! {
     /// 受理された値の as_bytes() は入力バイト列と一致する（非破壊性）
     #[test]
     fn as_bytes_returns_original(name in valid_header_name()) {
-        let h = HeaderName::new(&name).unwrap();
+        let h = HeaderName::new(&name).expect("ヘッダー名のパースは成功するはず (実装バグ)");
         prop_assert_eq!(h.as_bytes(), name.as_slice());
     }
 
@@ -29,8 +29,8 @@ proptest! {
     fn eq_is_case_insensitive(name in valid_header_name()) {
         let lower: Vec<u8> = name.iter().map(|b| b.to_ascii_lowercase()).collect();
         let upper: Vec<u8> = name.iter().map(|b| b.to_ascii_uppercase()).collect();
-        let h1 = HeaderName::new(&lower).unwrap();
-        let h2 = HeaderName::new(&upper).unwrap();
+        let h1 = HeaderName::new(&lower).expect("ヘッダー名のパースは成功するはず (実装バグ)");
+        let h2 = HeaderName::new(&upper).expect("ヘッダー名のパースは成功するはず (実装バグ)");
         prop_assert_eq!(h1, h2);
     }
 
@@ -42,8 +42,8 @@ proptest! {
         let r2: Result<HeaderName, _> = static_bytes.try_into();
         prop_assert!(r1.is_ok());
         prop_assert!(r2.is_ok());
-        let b1 = r1.unwrap().as_bytes().to_vec();
-        let b2 = r2.unwrap().as_bytes().to_vec();
+        let b1 = r1.expect("ヘッダー名のパースは成功するはず (実装バグ)").as_bytes().to_vec();
+        let b2 = r2.expect("ヘッダー名のパースは成功するはず (実装バグ)").as_bytes().to_vec();
         prop_assert_eq!(b1, b2);
     }
 
@@ -59,8 +59,8 @@ proptest! {
         let r2: Result<HeaderName, _> = static_str.try_into();
         prop_assert!(r1.is_ok());
         prop_assert!(r2.is_ok());
-        let b1 = r1.unwrap().as_bytes().to_vec();
-        let b2 = r2.unwrap().as_bytes().to_vec();
+        let b1 = r1.expect("ヘッダー名のパースは成功するはず (実装バグ)").as_bytes().to_vec();
+        let b2 = r2.expect("ヘッダー名のパースは成功するはず (実装バグ)").as_bytes().to_vec();
         prop_assert_eq!(b1, b2);
     }
 }

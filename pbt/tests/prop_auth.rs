@@ -88,9 +88,9 @@ fn password_with_colon() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_basic_auth_roundtrip(username in "[a-zA-Z][a-zA-Z0-9_]{0,15}", password in "[a-zA-Z0-9!@#$%^&*]{0,16}") {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let header = auth.to_header_value();
-        let reparsed = BasicAuth::parse(&header).unwrap();
+        let reparsed = BasicAuth::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(auth.username(), reparsed.username());
         prop_assert_eq!(auth.password(), reparsed.password());
@@ -101,9 +101,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_basic_auth_colon_in_password(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in password_with_colon()) {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let header = auth.to_header_value();
-        let reparsed = BasicAuth::parse(&header).unwrap();
+        let reparsed = BasicAuth::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(reparsed.username(), username.as_str());
         prop_assert_eq!(reparsed.password(), password.as_str());
@@ -118,11 +118,11 @@ proptest! {
         username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
         password in "[a-zA-Z0-9]{0,16}",
     ) {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let canonical = auth.to_header_value();
         // スキーム名を差し替え
         let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
-        let parsed = BasicAuth::parse(&header).unwrap();
+        let parsed = BasicAuth::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(parsed.username(), username.as_str());
         prop_assert_eq!(parsed.password(), password.as_str());
@@ -141,7 +141,7 @@ proptest! {
     ) {
         let auth = WwwAuthenticate::basic(&realm).with_charset_utf8();
         let header = auth.to_string();
-        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+        let reparsed = WwwAuthenticate::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(reparsed.realm(), realm.as_str());
         prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
@@ -156,7 +156,7 @@ proptest! {
         realm in param_value(),
     ) {
         let header = format!("{} realm=\"{}\"", scheme, realm);
-        let parsed = WwwAuthenticate::parse(&header).unwrap();
+        let parsed = WwwAuthenticate::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(parsed.realm(), realm.as_str());
     }
@@ -170,9 +170,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_bearer_token_roundtrip(token in token68_string(1, 64)) {
-        let bearer = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
+        let bearer = BearerToken::parse(&format!("Bearer {}", token)).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let header = bearer.to_header_value();
-        let reparsed = BearerToken::parse(&header).unwrap();
+        let reparsed = BearerToken::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(bearer.token(), reparsed.token());
         prop_assert_eq!(bearer.token(), token.as_str());
@@ -183,8 +183,8 @@ proptest! {
 proptest! {
     #[test]
     fn prop_bearer_token_case_insensitive(token in token68_string(1, 32)) {
-        let lower = BearerToken::parse(&format!("bearer {}", token)).unwrap();
-        let upper = BearerToken::parse(&format!("Bearer {}", token)).unwrap();
+        let lower = BearerToken::parse(&format!("bearer {}", token)).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
+        let upper = BearerToken::parse(&format!("Bearer {}", token)).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(lower.token(), upper.token());
     }
@@ -199,7 +199,7 @@ proptest! {
     #[test]
     fn prop_bearer_challenge_roundtrip(realm in param_value(), error in prop_oneof![Just("invalid_token"), Just("invalid_request"), Just("insufficient_scope")]) {
         let header = format!("Bearer realm=\"{}\", error=\"{}\"", realm, error);
-        let challenge = BearerChallenge::parse(&header).unwrap();
+        let challenge = BearerChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(challenge.param("realm"), Some(realm.as_str()));
         prop_assert_eq!(challenge.param("error"), Some(error));
@@ -224,7 +224,7 @@ proptest! {
             "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
             username, realm, nonce, uri, response
         );
-        let auth = DigestAuth::parse(&header).unwrap();
+        let auth = DigestAuth::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(auth.username(), Some(username.as_str()));
         prop_assert_eq!(auth.realm(), Some(realm.as_str()));
@@ -252,7 +252,7 @@ proptest! {
             "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
             username, realm, nonce, uri, response
         );
-        let auth = DigestAuth::parse(&header).unwrap();
+        let auth = DigestAuth::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(auth.param("USERNAME"), Some(username.as_str()));
         prop_assert_eq!(auth.param("REALM"), Some(realm.as_str()));
@@ -268,7 +268,7 @@ proptest! {
     #[test]
     fn prop_digest_challenge_roundtrip(realm in param_value(), nonce in param_value()) {
         let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
-        let challenge = DigestChallenge::parse(&header).unwrap();
+        let challenge = DigestChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(challenge.realm(), Some(realm.as_str()));
         prop_assert_eq!(challenge.nonce(), Some(nonce.as_str()));
@@ -287,9 +287,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_authorization_basic_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let header = auth.to_header_value();
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Basic(basic) = parsed {
             prop_assert_eq!(basic.username(), username.as_str());
@@ -305,7 +305,7 @@ proptest! {
     #[test]
     fn prop_authorization_bearer_roundtrip(token in token68_string(1, 32)) {
         let header = format!("Bearer {}", token);
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Bearer(bearer) = &parsed {
             prop_assert_eq!(bearer.token(), token.as_str());
@@ -333,7 +333,7 @@ proptest! {
             "Digest username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
             username, realm, nonce, uri, response
         );
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Digest(digest) = &parsed {
             prop_assert_eq!(digest.username(), Some(username.as_str()));
@@ -356,7 +356,7 @@ proptest! {
     #[test]
     fn prop_auth_challenge_basic_roundtrip(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Basic(basic) = &parsed {
             prop_assert_eq!(basic.realm(), realm.as_str());
@@ -375,7 +375,7 @@ proptest! {
     #[test]
     fn prop_auth_challenge_bearer_roundtrip(realm in param_value()) {
         let header = format!("Bearer realm=\"{}\"", realm);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Bearer(_) = &parsed {
             // OK
@@ -394,7 +394,7 @@ proptest! {
     #[test]
     fn prop_auth_challenge_digest_roundtrip(realm in param_value(), nonce in param_value()) {
         let header = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Digest(digest) = &parsed {
             prop_assert_eq!(digest.realm(), Some(realm.as_str()));
@@ -420,10 +420,10 @@ proptest! {
         username in "[a-zA-Z][a-zA-Z0-9]{0,7}",
         password in "[a-zA-Z0-9]{0,16}",
     ) {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let canonical = auth.to_header_value();
         let header = format!("{} {}", scheme, &canonical["Basic ".len()..]);
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Basic(basic) = parsed {
             prop_assert_eq!(basic.username(), username.as_str());
@@ -440,7 +440,7 @@ proptest! {
         token in token68_string(1, 32),
     ) {
         let header = format!("{} {}", scheme, token);
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Bearer(bearer) = parsed {
             prop_assert_eq!(bearer.token(), token.as_str());
@@ -464,7 +464,7 @@ proptest! {
             "{} username=\"{}\", realm=\"{}\", nonce=\"{}\", uri=\"{}\", response=\"{}\"",
             scheme, username, realm, nonce, uri, response
         );
-        let parsed = Authorization::parse(&header).unwrap();
+        let parsed = Authorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Digest(digest) = parsed {
             prop_assert_eq!(digest.username(), Some(username.as_str()));
@@ -485,7 +485,7 @@ proptest! {
         realm in param_value(),
     ) {
         let header = format!("{} realm=\"{}\"", scheme, realm);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Basic(basic) = parsed {
             prop_assert_eq!(basic.realm(), realm.as_str());
@@ -502,7 +502,7 @@ proptest! {
         realm in param_value(),
     ) {
         let header = format!("{} realm=\"{}\"", scheme, realm);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Bearer(_) = parsed {
             // OK
@@ -520,7 +520,7 @@ proptest! {
         nonce in param_value(),
     ) {
         let header = format!("{} realm=\"{}\", nonce=\"{}\"", scheme, realm, nonce);
-        let parsed = AuthChallenge::parse(&header).unwrap();
+        let parsed = AuthChallenge::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Digest(digest) = parsed {
             prop_assert_eq!(digest.realm(), Some(realm.as_str()));
@@ -538,9 +538,9 @@ proptest! {
 proptest! {
     #[test]
     fn prop_proxy_authorization_roundtrip(username in "[a-zA-Z][a-zA-Z0-9]{0,7}", password in "[a-zA-Z0-9]{0,16}") {
-        let auth = BasicAuth::new(&username, &password).unwrap();
+        let auth = BasicAuth::new(&username, &password).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         let header = auth.to_header_value();
-        let proxy_auth = ProxyAuthorization::parse(&header).unwrap();
+        let proxy_auth = ProxyAuthorization::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let Authorization::Basic(basic) = proxy_auth.authorization() {
             prop_assert_eq!(basic.username(), username.as_str());
@@ -564,7 +564,7 @@ proptest! {
     #[test]
     fn prop_proxy_authenticate_roundtrip(realm in param_value()) {
         let header = format!("Basic realm=\"{}\"", realm);
-        let proxy_auth = ProxyAuthenticate::parse(&header).unwrap();
+        let proxy_auth = ProxyAuthenticate::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         if let AuthChallenge::Basic(basic) = proxy_auth.challenge() {
             prop_assert_eq!(basic.realm(), realm.as_str());
@@ -588,7 +588,7 @@ proptest! {
     fn prop_www_authenticate_roundtrip(realm in "[a-z]{1,8}\\.[a-z]{2,6}") {
         let auth = WwwAuthenticate::basic(&realm);
         let header = auth.to_string();
-        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+        let reparsed = WwwAuthenticate::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(auth.realm(), reparsed.realm());
     }
@@ -600,7 +600,7 @@ proptest! {
     fn prop_www_authenticate_with_charset_utf8_roundtrip(realm in "[a-z]{1,8}\\.[a-z]{2,6}") {
         let auth = WwwAuthenticate::basic(&realm).with_charset_utf8();
         let header = auth.to_string();
-        let reparsed = WwwAuthenticate::parse(&header).unwrap();
+        let reparsed = WwwAuthenticate::parse(&header).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(reparsed.realm(), realm.as_str());
         prop_assert_eq!(reparsed.charset(), Some("UTF-8"));
@@ -617,11 +617,11 @@ proptest! {
     #[test]
     fn prop_www_authenticate_obs_text_roundtrip(realm in qdtext_realm()) {
         let input = format!("Basic realm=\"{}\"", realm);
-        let parsed = WwwAuthenticate::parse(&input).unwrap();
+        let parsed = WwwAuthenticate::parse(&input).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed.realm(), realm.as_str());
 
         let displayed = parsed.to_string();
-        let reparsed = WwwAuthenticate::parse(&displayed).unwrap();
+        let reparsed = WwwAuthenticate::parse(&displayed).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         prop_assert_eq!(reparsed.realm(), realm.as_str());
     }
 }
@@ -635,12 +635,12 @@ proptest! {
         nonce in qdtext_realm(),
     ) {
         let input = format!("Digest realm=\"{}\", nonce=\"{}\"", realm, nonce);
-        let parsed = DigestChallenge::parse(&input).unwrap();
+        let parsed = DigestChallenge::parse(&input).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         prop_assert_eq!(parsed.realm(), Some(realm.as_str()));
         prop_assert_eq!(parsed.nonce(), Some(nonce.as_str()));
 
         let displayed = parsed.to_header_value();
-        let reparsed = DigestChallenge::parse(&displayed).unwrap();
+        let reparsed = DigestChallenge::parse(&displayed).expect("認証ヘッダーのパースは成功するはず (実装バグ)");
         prop_assert_eq!(reparsed.realm(), Some(realm.as_str()));
         prop_assert_eq!(reparsed.nonce(), Some(nonce.as_str()));
     }

@@ -76,7 +76,7 @@ proptest! {
     #[test]
     fn prop_expect_token_value_roundtrip(t in token(), v in token_value()) {
         let input = format!("{}={}", t, v);
-        let expect = Expect::parse(&input).unwrap();
+        let expect = Expect::parse(&input).expect("Expect のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(expect.items().len(), 1);
         prop_assert_eq!(expect.items()[0].token(), t.to_ascii_lowercase());
@@ -84,7 +84,7 @@ proptest! {
 
         // ラウンドトリップ
         let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(expect, reparsed);
     }
 }
@@ -95,7 +95,7 @@ proptest! {
     fn prop_expect_quoted_value_roundtrip(t in token(), v in quoted_string_content()) {
         let escaped = escape_for_quoted_string(&v);
         let input = format!("{}=\"{}\"", t, escaped);
-        let expect = Expect::parse(&input).unwrap();
+        let expect = Expect::parse(&input).expect("Expect のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(expect.items().len(), 1);
         prop_assert_eq!(expect.items()[0].token(), t.to_ascii_lowercase());
@@ -103,7 +103,7 @@ proptest! {
 
         // ラウンドトリップ
         let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(expect, reparsed);
     }
 }
@@ -120,7 +120,7 @@ proptest! {
         t2 in token()
     ) {
         let input = format!("{}={}, {}", t1, v1, t2);
-        let expect = Expect::parse(&input).unwrap();
+        let expect = Expect::parse(&input).expect("Expect のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(expect.items().len(), 2);
         prop_assert_eq!(expect.items()[0].token(), t1.to_ascii_lowercase());
@@ -130,7 +130,7 @@ proptest! {
 
         // ラウンドトリップ
         let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(expect, reparsed);
     }
 }
@@ -140,7 +140,7 @@ proptest! {
     #[test]
     fn prop_expect_with_100_continue(t in token(), v in token_value()) {
         let input = format!("{}={}, 100-continue", t, v);
-        let expect = Expect::parse(&input).unwrap();
+        let expect = Expect::parse(&input).expect("Expect のパースは成功するはず (実装バグ)");
 
         prop_assert!(expect.has_100_continue());
         prop_assert_eq!(expect.items().len(), 2);
@@ -149,7 +149,7 @@ proptest! {
 
         // ラウンドトリップ
         let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(expect, reparsed);
     }
 }
@@ -169,14 +169,14 @@ proptest! {
         // 引用符付き値 + トークン値 + 100-continue
         let escaped_v1 = escape_for_quoted_string(&v1);
         let input = format!("{}=\"{}\", {}={}, 100-continue", t1, escaped_v1, t2, v2);
-        let expect = Expect::parse(&input).unwrap();
+        let expect = Expect::parse(&input).expect("Expect のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(expect.items().len(), 3);
         prop_assert!(expect.has_100_continue());
 
         // ラウンドトリップ
         let displayed = expect.to_string();
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(expect, reparsed);
     }
 }
@@ -190,7 +190,7 @@ proptest! {
     #[test]
     fn prop_expect_quoted_obs_text_roundtrip(t in token(), value in qdtext_value(0..=16)) {
         let header = format!("{}=\"{}\"", t, value);
-        let expect = Expect::parse(&header).unwrap();
+        let expect = Expect::parse(&header).expect("Expect のパースは成功するはず (実装バグ)");
         let item = &expect.items()[0];
         prop_assert_eq!(item.value(), Some(value.as_str()));
 
@@ -204,7 +204,7 @@ proptest! {
             displayed,
             value,
         );
-        let reparsed = Expect::parse(&displayed).unwrap();
+        let reparsed = Expect::parse(&displayed).expect("Expect のパースは成功するはず (実装バグ)");
         prop_assert_eq!(reparsed.items()[0].value(), Some(value.as_str()));
     }
 }

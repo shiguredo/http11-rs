@@ -10,13 +10,14 @@ fn parse_invalid() {
 /// RFC 9110 Section 5.6.1.2: 空フィールド値・空要素は受理する
 #[test]
 fn parse_empty_elements() {
-    let trailer = Trailer::parse("").unwrap();
+    let trailer = Trailer::parse("").expect("Trailer のパースは成功するはず (実装バグ)");
     assert!(trailer.fields().is_empty());
 
-    let trailer = Trailer::parse(",").unwrap();
+    let trailer = Trailer::parse(",").expect("Trailer のパースは成功するはず (実装バグ)");
     assert!(trailer.fields().is_empty());
 
-    let trailer = Trailer::parse("X-Checksum,,X-Test").unwrap();
+    let trailer =
+        Trailer::parse("X-Checksum,,X-Test").expect("Trailer のパースは成功するはず (実装バグ)");
     assert_eq!(trailer.fields().len(), 2);
 }
 
@@ -179,7 +180,8 @@ fn prohibited_field_in_list() {
 #[test]
 fn allowed_fields() {
     // 許可されたフィールドは通る (拡張カテゴリのフィールドは含めない)
-    let trailer = Trailer::parse("X-Checksum, X-Custom, X-Trace-Id").unwrap();
+    let trailer = Trailer::parse("X-Checksum, X-Custom, X-Trace-Id")
+        .expect("Trailer のパースは成功するはず (実装バグ)");
     assert_eq!(trailer.fields().len(), 3);
 }
 

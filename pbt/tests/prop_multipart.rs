@@ -48,19 +48,19 @@ fn valid_mime_type() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_multipart_text_field_roundtrip(name in valid_field_name(), value in valid_text_value()) {
-        let body = MultipartBuilder::with_boundary("test-boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("test-boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new("test-boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("test-boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part = parser.next_part().unwrap().unwrap();
+        let part = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part.name(), Some(name.as_str()));
         prop_assert_eq!(part.body_str(), Some(value.as_str()));
         prop_assert!(!part.is_file());
 
-        prop_assert!(parser.next_part().unwrap().is_none());
+        prop_assert!(parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)").is_none());
     }
 }
 
@@ -73,23 +73,23 @@ proptest! {
         name2 in valid_field_name(),
         value2 in "[a-zA-Z0-9]{0,16}"
     ) {
-        let body = MultipartBuilder::with_boundary("boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name1, &value1)
             .text_field(&name2, &value2)
             .build();
 
-        let mut parser = MultipartParser::new("boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part1 = parser.next_part().unwrap().unwrap();
+        let part1 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part1.name(), Some(name1.as_str()));
         prop_assert_eq!(part1.body_str(), Some(value1.as_str()));
 
-        let part2 = parser.next_part().unwrap().unwrap();
+        let part2 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part2.name(), Some(name2.as_str()));
         prop_assert_eq!(part2.body_str(), Some(value2.as_str()));
 
-        prop_assert!(parser.next_part().unwrap().is_none());
+        prop_assert!(parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)").is_none());
     }
 }
 
@@ -101,20 +101,20 @@ proptest! {
         filename in valid_filename(),
         data in proptest::collection::vec(any::<u8>(), 0..64)
     ) {
-        let body = MultipartBuilder::with_boundary("file-boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("file-boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name, &filename, "application/octet-stream", &data)
             .build();
 
-        let mut parser = MultipartParser::new("file-boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("file-boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part = parser.next_part().unwrap().unwrap();
+        let part = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part.name(), Some(name.as_str()));
         prop_assert_eq!(part.filename(), Some(filename.as_str()));
         prop_assert!(part.is_file());
         prop_assert_eq!(part.body(), data.as_slice());
 
-        prop_assert!(parser.next_part().unwrap().is_none());
+        prop_assert!(parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)").is_none());
     }
 }
 
@@ -154,13 +154,13 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_part_with_content_type(name in valid_field_name(), mime_type in valid_mime_type()) {
-        let ct = ContentType::parse(&mime_type).unwrap();
+        let ct = ContentType::parse(&mime_type).expect("マルチパートのパースは成功するはず (実装バグ)");
         let part = Part::new(&name)
             .with_body(b"test")
             .with_content_type(ct.clone());
 
         prop_assert!(part.content_type().is_some());
-        prop_assert_eq!(part.content_type().unwrap().media_type(), ct.media_type());
+        prop_assert_eq!(part.content_type().expect("マルチパートのパースは成功するはず (実装バグ)").media_type(), ct.media_type());
     }
 }
 
@@ -172,17 +172,17 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_parser_is_finished(name in valid_field_name(), value in valid_text_value()) {
-        let body = MultipartBuilder::with_boundary("boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new("boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
         prop_assert!(!parser.is_finished());
 
-        let _ = parser.next_part().unwrap();
-        let _ = parser.next_part().unwrap(); // None を取得
+        let _ = parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)");
+        let _ = parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)"); // None を取得
 
         prop_assert!(parser.is_finished());
     }
@@ -209,7 +209,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_builder_with_boundary(boundary in valid_boundary()) {
-        let builder = MultipartBuilder::with_boundary(&boundary).unwrap();
+        let builder = MultipartBuilder::with_boundary(&boundary).expect("マルチパートのパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(builder.boundary(), boundary.as_str());
         prop_assert!(builder.content_type().contains(&boundary));
@@ -220,7 +220,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_builder_content_type(boundary in valid_boundary()) {
-        let builder = MultipartBuilder::with_boundary(&boundary).unwrap();
+        let builder = MultipartBuilder::with_boundary(&boundary).expect("マルチパートのパースは成功するはず (実装バグ)");
         let content_type = builder.content_type();
         let expected_boundary = format!("boundary={}", boundary);
 
@@ -241,14 +241,14 @@ proptest! {
         name in valid_field_name(),
         value in valid_text_value()
     ) {
-        let body = MultipartBuilder::with_boundary(&boundary).unwrap()
+        let body = MultipartBuilder::with_boundary(&boundary).expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name, &value)
             .build();
 
-        let mut parser = MultipartParser::new(&boundary).unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new(&boundary).expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part = parser.next_part().unwrap().unwrap();
+        let part = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part.name(), Some(name.as_str()));
         prop_assert_eq!(part.body_str(), Some(value.as_str()));
     }
@@ -264,19 +264,19 @@ proptest! {
         filename in valid_filename(),
         data in proptest::collection::vec(any::<u8>(), 0..32)
     ) {
-        let body = MultipartBuilder::with_boundary("mixed-boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("mixed-boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&text_name, &text_value)
             .file_field(&file_name, &filename, "application/octet-stream", &data)
             .build();
 
-        let mut parser = MultipartParser::new("mixed-boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("mixed-boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part1 = parser.next_part().unwrap().unwrap();
+        let part1 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part1.name(), Some(text_name.as_str()));
         prop_assert!(!part1.is_file());
 
-        let part2 = parser.next_part().unwrap().unwrap();
+        let part2 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part2.name(), Some(file_name.as_str()));
         prop_assert!(part2.is_file());
         prop_assert_eq!(part2.filename(), Some(filename.as_str()));
@@ -293,18 +293,18 @@ proptest! {
         name2 in valid_field_name(),
         filename2 in valid_filename()
     ) {
-        let body = MultipartBuilder::with_boundary("files-boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("files-boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name1, &filename1, "text/plain", b"content1")
             .file_field(&name2, &filename2, "image/png", b"content2")
             .build();
 
-        let mut parser = MultipartParser::new("files-boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("files-boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part1 = parser.next_part().unwrap().unwrap();
+        let part1 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part1.filename(), Some(filename1.as_str()));
 
-        let part2 = parser.next_part().unwrap().unwrap();
+        let part2 = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part2.filename(), Some(filename2.as_str()));
     }
 }
@@ -313,14 +313,14 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_empty_value_roundtrip(name in valid_field_name()) {
-        let body = MultipartBuilder::with_boundary("boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name, "")
             .build();
 
-        let mut parser = MultipartParser::new("boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part = parser.next_part().unwrap().unwrap();
+        let part = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part.name(), Some(name.as_str()));
         prop_assert_eq!(part.body_str(), Some(""));
     }
@@ -330,14 +330,14 @@ proptest! {
 proptest! {
     #[test]
     fn prop_multipart_empty_file_roundtrip(name in valid_field_name(), filename in valid_filename()) {
-        let body = MultipartBuilder::with_boundary("boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name, &filename, "application/octet-stream", &[])
             .build();
 
-        let mut parser = MultipartParser::new("boundary").unwrap();
-        parser.feed(&body).unwrap();
+        let mut parser = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        parser.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
 
-        let part = parser.next_part().unwrap().unwrap();
+        let part = parser.next_part().expect("結果は存在するはず (実装バグ)").expect("マルチパートのパースは成功するはず (実装バグ)");
         prop_assert_eq!(part.filename(), Some(filename.as_str()));
         prop_assert!(part.body().is_empty());
     }
@@ -352,12 +352,12 @@ proptest! {
             !matches!(*b, b'\r' | b'-' | b' ' | b'\t')
         })
     ) {
-        let mut parser = MultipartParser::new("b").unwrap();
+        let mut parser = MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
         let mut input: Vec<u8> = b"--b".to_vec();
         input.push(invalid_byte);
         // ダミーの後続データ (boundary 直後判定が走るのに十分な長さを確保)
         input.extend_from_slice(b"XContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n");
-        parser.feed(&input).unwrap();
+        parser.feed(&input).expect("マルチパートのパースは成功するはず (実装バグ)");
         let result = parser.next_part();
         prop_assert!(
             matches!(result, Err(shiguredo_http11::multipart::MultipartError::InvalidPart)),
@@ -379,24 +379,24 @@ proptest! {
         value2 in valid_text_value(),
         split in 1usize..200,
     ) {
-        let body = MultipartBuilder::with_boundary("boundary").unwrap()
+        let body = MultipartBuilder::with_boundary("boundary").expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&name1, &value1)
             .text_field(&name2, &value2)
             .build();
 
         // bulk feed
-        let mut bulk = MultipartParser::new("boundary").unwrap();
-        bulk.feed(&body).unwrap();
+        let mut bulk = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        bulk.feed(&body).expect("マルチパートのパースは成功するはず (実装バグ)");
         let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
-        while let Some(part) = bulk.next_part().unwrap() {
+        while let Some(part) = bulk.next_part().expect("マルチパートのパースは成功するはず (実装バグ)") {
             bulk_parts.push(part.body().to_vec());
         }
         prop_assert!(bulk.is_finished());
 
         // chunk-split feed
         let split = split.min(body.len().saturating_sub(1)).max(1);
-        let mut split_parser = MultipartParser::new("boundary").unwrap();
-        split_parser.feed(&body[..split]).unwrap();
+        let mut split_parser = MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+        split_parser.feed(&body[..split]).expect("マルチパートのパースは成功するはず (実装バグ)");
         let mut split_parts: Vec<Vec<u8>> = Vec::new();
         loop {
             match split_parser.next_part() {
@@ -406,8 +406,8 @@ proptest! {
                 Err(e) => prop_assert!(false, "予期しないエラー: {:?}", e),
             }
         }
-        split_parser.feed(&body[split..]).unwrap();
-        while let Some(part) = split_parser.next_part().unwrap() {
+        split_parser.feed(&body[split..]).expect("マルチパートのパースは成功するはず (実装バグ)");
+        while let Some(part) = split_parser.next_part().expect("マルチパートのパースは成功するはず (実装バグ)") {
             split_parts.push(part.body().to_vec());
         }
 

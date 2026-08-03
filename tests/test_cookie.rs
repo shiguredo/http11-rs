@@ -30,9 +30,10 @@ fn test_cookie_error_display() {
 #[test]
 fn test_set_cookie_with_expires() {
     // 有効な日付で Expires をテスト
-    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT").unwrap();
+    let date = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     let cookie = SetCookie::new("session", "abc123")
-        .unwrap()
+        .expect("Cookie のパースは成功するはず (実装バグ)")
         .with_expires(date.clone());
 
     assert_eq!(cookie.expires(), Some(&date));
@@ -40,19 +41,21 @@ fn test_set_cookie_with_expires() {
     let displayed = cookie.to_string();
     assert!(displayed.contains("Expires="));
 
-    let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
+    let reparsed =
+        SetCookie::parse(&displayed, 2026).expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(reparsed.expires(), Some(&date));
 }
 
 #[test]
 fn test_set_cookie_expires_roundtrip() {
     let input = "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT";
-    let cookie = SetCookie::parse(input, 2026).unwrap();
+    let cookie = SetCookie::parse(input, 2026).expect("Cookie のパースは成功するはず (実装バグ)");
 
     assert!(cookie.expires().is_some());
 
     let displayed = cookie.to_string();
-    let reparsed = SetCookie::parse(&displayed, 2026).unwrap();
+    let reparsed =
+        SetCookie::parse(&displayed, 2026).expect("Cookie のパースは成功するはず (実装バグ)");
 
     assert_eq!(cookie.expires(), reparsed.expires());
 }
@@ -65,7 +68,7 @@ fn test_set_cookie_expires_roundtrip() {
 fn test_cookie_quoted_value() {
     // 引用符付きの値 (cookie-octet のみ)
     let input = "name=\"quotedvalue\"";
-    let cookies = Cookie::parse(input).unwrap();
+    let cookies = Cookie::parse(input).expect("Cookie のパースは成功するはず (実装バグ)");
 
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].name(), "name");
@@ -86,7 +89,7 @@ fn test_cookie_quoted_value_with_space_rejected() {
 fn test_set_cookie_quoted_value() {
     // 引用符付きの値 (cookie-octet のみ)
     let input = "name=\"quotedvalue\"; Path=/";
-    let cookie = SetCookie::parse(input, 2026).unwrap();
+    let cookie = SetCookie::parse(input, 2026).expect("Cookie のパースは成功するはず (実装バグ)");
 
     assert_eq!(cookie.name(), "name");
     assert_eq!(cookie.value(), "quotedvalue");
@@ -147,11 +150,13 @@ fn test_set_cookie_parse_errors() {
     ));
 
     // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される (エラーにならない)
-    let cookie = SetCookie::parse("name=value; Max-Age=notanumber", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Max-Age=notanumber", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.max_age().is_none());
 
     // RFC 6265 Section 5.2.2: 先頭が "+" は DIGIT でも "-" でもないため無視される
-    let cookie = SetCookie::parse("name=value; Max-Age=+10", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Max-Age=+10", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.max_age().is_none());
 
     // 不正な SameSite
@@ -161,7 +166,8 @@ fn test_set_cookie_parse_errors() {
     ));
 
     // RFC 6265 Section 5.2.1: 不正な Expires は無視される (エラーにならない)
-    let cookie = SetCookie::parse("name=value; Expires=not a date", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Expires=not a date", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.expires().is_none());
 }
 
@@ -172,23 +178,28 @@ fn test_set_cookie_parse_errors() {
 #[test]
 fn test_set_cookie_domain_normalization() {
     // 先頭の "." を除去する
-    let cookie = SetCookie::parse("name=value; Domain=.example.com", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.example.com", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // 小文字に変換する
-    let cookie = SetCookie::parse("name=value; Domain=Example.COM", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=Example.COM", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // 先頭の "." 除去と小文字化の両方を適用する
-    let cookie = SetCookie::parse("name=value; Domain=.Example.COM", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.Example.COM", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("example.com"));
 
     // "." のみの場合は無視する
-    let cookie = SetCookie::parse("name=value; Domain=.", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=.", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // 空の場合は無視する
-    let cookie = SetCookie::parse("name=value; Domain=", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 }
 
@@ -203,15 +214,18 @@ fn test_set_cookie_domain_multi_leading_dot_rejected() {
     // parse -> to_string -> parse の fixed-point 性を担保するための strict 化。
 
     // ".." → strip で "." 残留 → 無視
-    let cookie = SetCookie::parse("name=value; Domain=..", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=..", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // "..." → strip で ".." 残留 → 無視
-    let cookie = SetCookie::parse("name=value; Domain=...", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=...", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // "..foo" → strip で ".foo" 残留 → 無視
-    let cookie = SetCookie::parse("name=value; Domain=..foo", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=..foo", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 }
 
@@ -221,23 +235,28 @@ fn test_set_cookie_domain_non_ldh_rejected() {
     // と "." のみを許容する。RFC 6265bis Section 5.1.2 で IDN は punycode (LDH) 必須と規定。
 
     // 空白を含む → 無視 (".trim()" は edge のみで内部は残る)
-    let cookie = SetCookie::parse("name=value; Domain=foo bar", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo bar", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // NUL を含む → 無視
-    let cookie = SetCookie::parse("name=value; Domain=foo\0bar", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo\0bar", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // 制御文字を含む → 無視
-    let cookie = SetCookie::parse("name=value; Domain=foo\u{6}bar", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo\u{6}bar", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // strip 後に non-LDH が出るケース (leading dot の直後に空白) → 無視
-    let cookie = SetCookie::parse("name=value; Domain=. foo", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=. foo", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 
     // 非 ASCII (生 UTF-8) → 無視 (IDN は punycode で渡される想定)
-    let cookie = SetCookie::parse("name=value; Domain=日本.example", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=日本.example", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.domain().is_none());
 }
 
@@ -245,18 +264,22 @@ fn test_set_cookie_domain_non_ldh_rejected() {
 fn test_set_cookie_domain_intermediate_dot_preserved() {
     // 中間の連続 dot は parser では弾かない (strip 対象は leading のみ)。
     // Display 出力は元値をそのまま吐き、再 parse でも変化しないので roundtrip は閉じる。
-    let cookie = SetCookie::parse("name=value; Domain=foo..bar", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo..bar", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("foo..bar"));
-    let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
+    let reparsed = SetCookie::parse(&cookie.to_string(), 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(reparsed.domain(), Some("foo..bar"));
 }
 
 #[test]
 fn test_set_cookie_domain_trailing_dot_preserved() {
     // trailing dot (FQDN を明示する形式) は LDH+dot のみで構成されるため受理する。
-    let cookie = SetCookie::parse("name=value; Domain=foo.bar.", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo.bar.", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("foo.bar."));
-    let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
+    let reparsed = SetCookie::parse(&cookie.to_string(), 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(reparsed.domain(), Some("foo.bar."));
 }
 
@@ -264,9 +287,11 @@ fn test_set_cookie_domain_trailing_dot_preserved() {
 fn test_set_cookie_domain_hyphen_preserved() {
     // hyphen は LDH に含まれるため受理する。RFC 1034/1123 的に leading/trailing hyphen の
     // label は invalid だが、本実装はそこまで踏み込まない (roundtrip は閉じる)。
-    let cookie = SetCookie::parse("name=value; Domain=foo-bar.example", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Domain=foo-bar.example", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("foo-bar.example"));
-    let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
+    let reparsed = SetCookie::parse(&cookie.to_string(), 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(reparsed.domain(), Some("foo-bar.example"));
 }
 
@@ -274,8 +299,10 @@ fn test_set_cookie_domain_hyphen_preserved() {
 fn test_set_cookie_domain_multi_leading_dot_roundtrip_closed() {
     // crash 入力の最小再現: Display -> 再 parse で domain が一致する
     // (旧実装では Some(".") → None で不一致だった)。
-    let cookie = SetCookie::parse("3=; Domain=..", 2026).unwrap();
-    let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
+    let cookie =
+        SetCookie::parse("3=; Domain=..", 2026).expect("Cookie のパースは成功するはず (実装バグ)");
+    let reparsed = SetCookie::parse(&cookie.to_string(), 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), reparsed.domain());
     assert!(cookie.domain().is_none());
 }
@@ -287,8 +314,10 @@ fn test_set_cookie_domain_leading_dot_space_roundtrip_closed() {
     // strip 後に leading space が残ったまま store されていたが、
     // Display 出力を再 parse すると attr_value.trim() で space が削られ不一致になる。
     // 本修正で non-LDH 文字を含む domain 値を一律 reject するようにし、roundtrip を閉じる。
-    let cookie = SetCookie::parse("2n=; domain=. foo", 2026).unwrap();
-    let reparsed = SetCookie::parse(&cookie.to_string(), 2026).unwrap();
+    let cookie = SetCookie::parse("2n=; domain=. foo", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
+    let reparsed = SetCookie::parse(&cookie.to_string(), 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), reparsed.domain());
     assert!(cookie.domain().is_none());
 }
@@ -300,22 +329,25 @@ fn test_set_cookie_domain_leading_dot_space_roundtrip_closed() {
 #[test]
 fn test_cookie_empty_part() {
     // セミコロンの後に空白のみ
-    let cookies = Cookie::parse("name=value; ").unwrap();
+    let cookies = Cookie::parse("name=value; ").expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies.len(), 1);
 
     // 連続するセミコロン
-    let cookies = Cookie::parse("name=value;;other=val").unwrap();
+    let cookies =
+        Cookie::parse("name=value;;other=val").expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies.len(), 2);
 }
 
 #[test]
 fn test_set_cookie_empty_part() {
     // セミコロンの後に空白のみ
-    let cookie = SetCookie::parse("name=value; ", 2026).unwrap();
+    let cookie =
+        SetCookie::parse("name=value; ", 2026).expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "name");
 
     // 連続するセミコロン (空パートは無視)
-    let cookie = SetCookie::parse("name=value;; Secure", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value;; Secure", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.secure());
 }
 
@@ -326,12 +358,14 @@ fn test_set_cookie_empty_part() {
 #[test]
 fn test_set_cookie_unknown_attribute() {
     // 未知の属性は無視される
-    let cookie = SetCookie::parse("name=value; UnknownAttr=something; Secure", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; UnknownAttr=something; Secure", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "name");
     assert!(cookie.secure());
 
     // 値なしの未知の属性
-    let cookie = SetCookie::parse("name=value; UnknownFlag; HttpOnly", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; UnknownFlag; HttpOnly", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.http_only());
 }
 
@@ -420,7 +454,8 @@ fn test_cookie_parse_only_semicolons() {
 
 #[test]
 fn test_set_cookie_max_age_negative_clamped_to_zero() {
-    let cookie = SetCookie::parse("name=value; Max-Age=-3600", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Max-Age=-3600", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.max_age(), Some(0));
 }
 
@@ -430,7 +465,8 @@ fn test_set_cookie_max_age_negative_clamped_to_zero() {
 
 #[test]
 fn test_set_cookie_path_empty_is_none() {
-    let cookie = SetCookie::parse("name=value; Path=", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; Path=", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.path().is_none());
 }
 
@@ -448,7 +484,8 @@ fn test_cookie_pair_nbsp_not_stripped_as_ows() {
 #[test]
 fn test_set_cookie_nbsp_in_attribute_not_stripped() {
     // 属性名の前後の NBSP は OWS として除去されない
-    let cookie = SetCookie::parse("name=value; \u{00A0}Path=/", 2026).unwrap();
+    let cookie = SetCookie::parse("name=value; \u{00A0}Path=/", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     // NBSP が属性名の一部として残り、Path として認識されない
     assert!(cookie.path().is_none());
 }
@@ -459,7 +496,8 @@ fn test_set_cookie_nbsp_in_attribute_not_stripped() {
 
 #[test]
 fn test_cookie_parse_single() {
-    let cookies = Cookie::parse("session=abc123").unwrap();
+    let cookies =
+        Cookie::parse("session=abc123").expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies.len(), 1);
     assert_eq!(cookies[0].name(), "session");
     assert_eq!(cookies[0].value(), "abc123");
@@ -467,7 +505,8 @@ fn test_cookie_parse_single() {
 
 #[test]
 fn test_cookie_parse_multiple() {
-    let cookies = Cookie::parse("session=abc123; user=john").unwrap();
+    let cookies = Cookie::parse("session=abc123; user=john")
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies.len(), 2);
     assert_eq!(cookies[0].name(), "session");
     assert_eq!(cookies[0].value(), "abc123");
@@ -477,7 +516,8 @@ fn test_cookie_parse_multiple() {
 
 #[test]
 fn test_cookie_parse_with_spaces() {
-    let cookies = Cookie::parse("  session = abc123 ; user = john  ").unwrap();
+    let cookies = Cookie::parse("  session = abc123 ; user = john  ")
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies.len(), 2);
     assert_eq!(cookies[0].name(), "session");
     assert_eq!(cookies[0].value(), "abc123");
@@ -490,13 +530,15 @@ fn test_cookie_parse_empty() {
 
 #[test]
 fn test_cookie_display() {
-    let cookie = Cookie::new("session", "abc123").unwrap();
+    let cookie =
+        Cookie::new("session", "abc123").expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.to_string(), "session=abc123");
 }
 
 #[test]
 fn test_set_cookie_parse_simple() {
-    let cookie = SetCookie::parse("session=abc123", 2026).unwrap();
+    let cookie =
+        SetCookie::parse("session=abc123", 2026).expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "session");
     assert_eq!(cookie.value(), "abc123");
     assert!(!cookie.secure());
@@ -505,7 +547,8 @@ fn test_set_cookie_parse_simple() {
 
 #[test]
 fn test_set_cookie_parse_with_attributes() {
-    let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; Path=/; HttpOnly; Secure", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "session");
     assert_eq!(cookie.value(), "abc123");
     assert_eq!(cookie.path(), Some("/"));
@@ -515,13 +558,15 @@ fn test_set_cookie_parse_with_attributes() {
 
 #[test]
 fn test_set_cookie_parse_with_domain() {
-    let cookie = SetCookie::parse("session=abc123; Domain=example.com", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; Domain=example.com", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.domain(), Some("example.com"));
 }
 
 #[test]
 fn test_set_cookie_parse_with_max_age() {
-    let cookie = SetCookie::parse("session=abc123; Max-Age=3600", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; Max-Age=3600", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.max_age(), Some(3600));
 }
 
@@ -531,26 +576,29 @@ fn test_set_cookie_parse_with_expires() {
         "session=abc123; Expires=Sun, 06 Nov 1994 08:49:37 GMT",
         2026,
     )
-    .unwrap();
+    .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.expires().is_some());
 }
 
 #[test]
 fn test_set_cookie_parse_with_samesite() {
-    let cookie = SetCookie::parse("session=abc123; SameSite=Strict", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; SameSite=Strict", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.same_site(), Some(SameSite::Strict));
 
-    let cookie = SetCookie::parse("session=abc123; SameSite=Lax", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; SameSite=Lax", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.same_site(), Some(SameSite::Lax));
 
-    let cookie = SetCookie::parse("session=abc123; SameSite=None", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; SameSite=None", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.same_site(), Some(SameSite::None));
 }
 
 #[test]
 fn test_set_cookie_display() {
     let cookie = SetCookie::new("session", "abc123")
-        .unwrap()
+        .expect("Cookie のパースは成功するはず (実装バグ)")
         .with_path("/")
         .with_secure(true)
         .with_http_only(true);
@@ -564,7 +612,7 @@ fn test_set_cookie_display() {
 #[test]
 fn test_set_cookie_builder() {
     let cookie = SetCookie::new("session", "abc123")
-        .unwrap()
+        .expect("Cookie のパースは成功するはず (実装バグ)")
         .with_domain("example.com")
         .with_path("/app")
         .with_max_age(3600)
@@ -584,14 +632,16 @@ fn test_set_cookie_builder() {
 
 #[test]
 fn test_cookie_parse_quoted_value() {
-    let cookies = Cookie::parse("session=\"abc123\"").unwrap();
+    let cookies =
+        Cookie::parse("session=\"abc123\"").expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookies[0].value(), "abc123");
 }
 
 #[test]
 fn test_set_cookie_invalid_expires_ignored() {
     // RFC 6265 Section 5.2.1: 不正な Expires は無視される
-    let cookie = SetCookie::parse("session=abc123; Expires=invalid-date", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; Expires=invalid-date", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "session");
     assert_eq!(cookie.value(), "abc123");
     assert!(cookie.expires().is_none());
@@ -600,7 +650,8 @@ fn test_set_cookie_invalid_expires_ignored() {
 #[test]
 fn test_set_cookie_invalid_max_age_ignored() {
     // RFC 6265 Section 5.2.2: 不正な Max-Age は無視される
-    let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number", 2026).unwrap();
+    let cookie = SetCookie::parse("session=abc123; Max-Age=not-a-number", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
     assert_eq!(cookie.name(), "session");
     assert_eq!(cookie.value(), "abc123");
     assert!(cookie.max_age().is_none());

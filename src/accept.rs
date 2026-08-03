@@ -9,10 +9,10 @@
 //! ```rust
 //! use shiguredo_http11::accept::{Accept, AcceptEncoding};
 //!
-//! let accept = Accept::parse("text/html; q=0.5, */*; q=0.1").unwrap();
+//! let accept = Accept::parse("text/html; q=0.5, */*; q=0.1").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
 //! assert_eq!(accept.items().len(), 2);
 //!
-//! let encoding = AcceptEncoding::parse("gzip, identity;q=0.2").unwrap();
+//! let encoding = AcceptEncoding::parse("gzip, identity;q=0.2").expect("Accept / Accept-Encoding のパースは成功するはず (実装バグ)");
 //! assert_eq!(encoding.items().len(), 2);
 //! ```
 

@@ -15,7 +15,7 @@ proptest! {
         // ステータスコードがないステータス行はエラー
         let data = format!("{}\r\n\r\n", version);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -28,7 +28,7 @@ proptest! {
         // 数字でないステータスコードはエラー
         let data = format!("HTTP/1.1 {} OK\r\n\r\n", invalid_code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -41,8 +41,8 @@ proptest! {
         // reason phrase なしは OK
         let data = format!("HTTP/1.1 {}\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_code(), status_code);
         prop_assert_eq!(head.reason_phrase(), "");
     }
@@ -61,8 +61,8 @@ proptest! {
         let data = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", content_length);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("HEAD");
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -76,8 +76,8 @@ proptest! {
         let data = format!("HTTP/1.1 {} OK\r\nTransfer-Encoding: chunked\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
         decoder.set_request_method("HEAD");
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -95,8 +95,8 @@ proptest! {
         // 1xx レスポンスは Content-Length があってもボディなし
         let data = format!("HTTP/1.1 {} Continue\r\nContent-Length: {}\r\n\r\n", code, content_length);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -109,8 +109,8 @@ proptest! {
         // 204 No Content はボディなし
         let data = format!("HTTP/1.1 204 No Content\r\nContent-Length: {}\r\n\r\n", content_length);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -123,8 +123,8 @@ proptest! {
         // 304 Not Modified はボディなし
         let data = format!("HTTP/1.1 304 Not Modified\r\nContent-Length: {}\r\n\r\n", content_length);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::None);
     }
 }
@@ -137,8 +137,8 @@ proptest! {
         // 199 以下は 1xx
         let data = format!("HTTP/1.1 {} Info\r\n\r\n", code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (head, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(head.status_class(), StatusClass::Informational);
         prop_assert_eq!(body_kind, BodyKind::None);
     }
@@ -152,8 +152,8 @@ proptest! {
         // 200-299 は成功
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (head, _) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (head, _) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         // 204 は特別扱い
         if code != 204 {
             prop_assert_eq!(head.status_class(), StatusClass::Successful);
@@ -169,8 +169,8 @@ proptest! {
         // 200-203 はボディあり可能
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 5\r\n\r\nhello", code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert_eq!(body_kind, BodyKind::ContentLength(5));
     }
 }
@@ -189,7 +189,7 @@ proptest! {
         data.push(invalid_byte);
         data.extend(b"OK\r\n\r\n");
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(&data).unwrap();
+        decoder.feed(&data).expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -207,7 +207,7 @@ proptest! {
         data.push(invalid_byte);
         data.extend(b"\r\n\r\n");
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(&data).unwrap();
+        decoder.feed(&data).expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert!(decoder.decode_headers().is_err());
     }
 }
@@ -235,7 +235,7 @@ proptest! {
             version
         );
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
         let result = decoder.decode_headers();
         prop_assert!(result.is_err());
     }
@@ -247,8 +247,8 @@ proptest! {
     fn prop_response_te_accepted_for_http11(_dummy in 0u8..1) {
         let data = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data).unwrap();
-        let (_, body_kind) = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let (_, body_kind) = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         prop_assert!(matches!(body_kind, BodyKind::Chunked));
     }
 }
@@ -265,9 +265,9 @@ proptest! {
         // ボディなしレスポンスの場合、2 回目の decode_headers は Ok(None)
         let data = format!("HTTP/1.1 {} OK\r\nContent-Length: 0\r\n\r\n", status_code);
         let mut decoder = ResponseDecoder::new();
-        decoder.feed(data.as_bytes()).unwrap();
-        let _ = decoder.decode_headers().unwrap().unwrap();
+        decoder.feed(data.as_bytes()).expect("レスポンスのデコードは成功するはず (実装バグ)");
+        let _ = decoder.decode_headers().expect("結果は存在するはず (実装バグ)").expect("レスポンスのデコードは成功するはず (実装バグ)");
         // 2回目は次のメッセージがないので Ok(None)
-        prop_assert!(decoder.decode_headers().unwrap().is_none());
+        prop_assert!(decoder.decode_headers().expect("レスポンスのデコードは成功するはず (実装バグ)").is_none());
     }
 }

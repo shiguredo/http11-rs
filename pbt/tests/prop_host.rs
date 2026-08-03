@@ -57,7 +57,7 @@ fn ipv6_addr() -> impl Strategy<Value = String> {
 proptest! {
     #[test]
     fn prop_host_hostname_roundtrip(name in hostname()) {
-        let host = Host::parse(&name).unwrap();
+        let host = Host::parse(&name).expect("Host のパースは成功するはず (実装バグ)");
         prop_assert_eq!(host.host(), name.as_str());
         prop_assert_eq!(host.port(), None);
         prop_assert!(!host.is_ipv6());
@@ -73,7 +73,7 @@ proptest! {
     #[test]
     fn prop_host_hostname_port_roundtrip(name in hostname(), port in valid_port()) {
         let input = format!("{}:{}", name, port);
-        let host = Host::parse(&input).unwrap();
+        let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), name.as_str());
         prop_assert_eq!(host.port(), Some(port));
@@ -93,7 +93,7 @@ proptest! {
 proptest! {
     #[test]
     fn prop_host_ipv4_roundtrip(addr in ipv4_addr()) {
-        let host = Host::parse(&addr).unwrap();
+        let host = Host::parse(&addr).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), addr.as_str());
         prop_assert_eq!(host.port(), None);
@@ -106,7 +106,7 @@ proptest! {
     #[test]
     fn prop_host_ipv4_port_roundtrip(addr in ipv4_addr(), port in valid_port()) {
         let input = format!("{}:{}", addr, port);
-        let host = Host::parse(&input).unwrap();
+        let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), addr.as_str());
         prop_assert_eq!(host.port(), Some(port));
@@ -122,7 +122,7 @@ proptest! {
     #[test]
     fn prop_host_ipv6_roundtrip(addr in ipv6_addr()) {
         let input = format!("[{}]", addr);
-        let host = Host::parse(&input).unwrap();
+        let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), input.as_str());
         prop_assert_eq!(host.port(), None);
@@ -135,7 +135,7 @@ proptest! {
     #[test]
     fn prop_host_ipv6_port_roundtrip(addr in ipv6_addr(), port in valid_port()) {
         let input = format!("[{}]:{}", addr, port);
-        let host = Host::parse(&input).unwrap();
+        let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), format!("[{}]", addr));
         prop_assert_eq!(host.port(), Some(port));
@@ -152,7 +152,7 @@ proptest! {
     #[test]
     fn prop_host_percent_encoded(hex1 in "[0-9A-Fa-f]{2}", hex2 in "[0-9A-Fa-f]{2}") {
         let input = format!("example%{}.test%{}", hex1, hex2);
-        let host = Host::parse(&input).unwrap();
+        let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(host.host(), input.as_str());
     }

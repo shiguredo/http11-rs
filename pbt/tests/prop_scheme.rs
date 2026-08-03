@@ -20,7 +20,7 @@ proptest! {
     /// 受理された値の as_bytes() は入力バイト列と一致する（非破壊性）
     #[test]
     fn as_bytes_returns_original(scheme in valid_scheme()) {
-        let s = Scheme::new(&scheme).unwrap();
+        let s = Scheme::new(&scheme).expect("スキームのパースは成功するはず (実装バグ)");
         prop_assert_eq!(s.as_bytes(), scheme.as_slice());
     }
 
@@ -29,8 +29,8 @@ proptest! {
     fn eq_is_case_insensitive(scheme in valid_scheme()) {
         let lower: Vec<u8> = scheme.iter().map(|b| b.to_ascii_lowercase()).collect();
         let upper: Vec<u8> = scheme.iter().map(|b| b.to_ascii_uppercase()).collect();
-        let h1 = Scheme::new(&lower).unwrap();
-        let h2 = Scheme::new(&upper).unwrap();
+        let h1 = Scheme::new(&lower).expect("スキームのパースは成功するはず (実装バグ)");
+        let h2 = Scheme::new(&upper).expect("スキームのパースは成功するはず (実装バグ)");
         prop_assert_eq!(h1, h2);
     }
 }

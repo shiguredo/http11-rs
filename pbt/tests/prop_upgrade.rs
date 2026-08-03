@@ -36,9 +36,9 @@ proptest! {
         }
 
         let header = parts.join(", ");
-        let parsed = Upgrade::parse(&header).unwrap();
+        let parsed = Upgrade::parse(&header).expect("Upgrade のパースは成功するはず (実装バグ)");
         let displayed = parsed.to_string();
-        let reparsed = Upgrade::parse(&displayed).unwrap();
+        let reparsed = Upgrade::parse(&displayed).expect("Upgrade のパースは成功するはず (実装バグ)");
         prop_assert_eq!(&parsed, &reparsed);
         prop_assert!(parsed.has_protocol(&first_protocol));
     }

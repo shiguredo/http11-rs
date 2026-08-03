@@ -54,10 +54,16 @@ fn test_multipart_part_headers() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("field"));
     assert_eq!(part.headers().len(), 1);
     assert_eq!(&part.headers()[0].0, "X-Custom-Header");
@@ -72,10 +78,16 @@ fn test_multipart_part_body_str_non_utf8() {
         \xff\xfe\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(part.body_str().is_none());
     assert!(!part.body().is_empty());
 }
@@ -88,25 +100,43 @@ fn test_multipart_part_body_str_non_utf8() {
 #[test]
 fn test_multipart_parser_finished_returns_none() {
     let body = MultipartBuilder::with_boundary("boundary")
-        .unwrap()
+        .expect("マルチパートのパースは成功するはず (実装バグ)")
         .text_field("field", "value")
         .build();
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(&body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(&body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let _ = parser.next_part().unwrap(); // part を取得
-    let _ = parser.next_part().unwrap(); // None で完了
+    let _ = parser
+        .next_part()
+        .expect("マルチパートのパースは成功するはず (実装バグ)"); // part を取得
+    let _ = parser
+        .next_part()
+        .expect("マルチパートのパースは成功するはず (実装バグ)"); // None で完了
 
     // 完了後も None を返す
-    assert!(parser.next_part().unwrap().is_none());
-    assert!(parser.next_part().unwrap().is_none());
+    assert!(
+        parser
+            .next_part()
+            .expect("マルチパートのパースは成功するはず (実装バグ)")
+            .is_none()
+    );
+    assert!(
+        parser
+            .next_part()
+            .expect("マルチパートのパースは成功するはず (実装バグ)")
+            .is_none()
+    );
 }
 
 // 空のパーサー
 #[test]
 fn test_multipart_parser_empty() {
-    let mut parser = MultipartParser::new("boundary").unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
 
     // データを feed しないと Incomplete
     assert!(matches!(
@@ -120,8 +150,11 @@ fn test_multipart_parser_empty() {
 fn test_multipart_parser_invalid_header() {
     let body = b"--boundary\r\n\xff\xfe: value\r\n\r\ntest\r\n--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(matches!(
         parser.next_part(),
@@ -134,10 +167,18 @@ fn test_multipart_parser_invalid_header() {
 fn test_multipart_parser_end_boundary_only() {
     let body = b"--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    assert!(parser.next_part().unwrap().is_none());
+    assert!(
+        parser
+            .next_part()
+            .expect("マルチパートのパースは成功するはず (実装バグ)")
+            .is_none()
+    );
     assert!(parser.is_finished());
 }
 
@@ -151,11 +192,17 @@ fn test_multipart_parser_end_boundary_only() {
 fn test_multipart_parser_end_boundary_at_buffer_tail_without_crlf() {
     let body = b"--boundary--";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(
-        parser.next_part().unwrap().is_none(),
+        parser
+            .next_part()
+            .expect("マルチパートのパースは成功するはず (実装バグ)")
+            .is_none(),
         "終端境界がバッファ末尾ピッタリの場合も None を返す想定"
     );
     assert!(parser.is_finished());
@@ -167,17 +214,23 @@ fn test_multipart_parser_part_then_end_boundary_at_tail() {
     let body =
         b"--boundary\r\nContent-Disposition: form-data; name=\"f\"\r\n\r\nval\r\n--boundary--";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     let part = parser
         .next_part()
-        .unwrap()
+        .expect("マルチパートのパースは成功するはず (実装バグ)")
         .expect("最初のパートが取れる想定");
     assert_eq!(part.body(), b"val");
 
     assert!(
-        parser.next_part().unwrap().is_none(),
+        parser
+            .next_part()
+            .expect("マルチパートのパースは成功するはず (実装バグ)")
+            .is_none(),
         "終端境界後の None 判定が成立する想定"
     );
     assert!(parser.is_finished());
@@ -199,18 +252,25 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
         --boundary--\r\n";
 
     // bulk parser (一括 feed)
-    let mut bulk = MultipartParser::new("boundary").unwrap();
-    bulk.feed(body).unwrap();
+    let mut bulk =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    bulk.feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     let mut bulk_parts: Vec<Vec<u8>> = Vec::new();
-    while let Some(part) = bulk.next_part().unwrap() {
+    while let Some(part) = bulk
+        .next_part()
+        .expect("マルチパートのパースは成功するはず (実装バグ)")
+    {
         bulk_parts.push(part.body().to_vec());
     }
 
     // byte-by-byte parser (1 バイトずつ feed → 都度 next_part を試す)
-    let mut bb = MultipartParser::new("boundary").unwrap();
+    let mut bb =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
     let mut bb_parts: Vec<Vec<u8>> = Vec::new();
     for &b in body {
-        bb.feed(&[b]).unwrap();
+        bb.feed(&[b])
+            .expect("マルチパートのパースは成功するはず (実装バグ)");
         // 取れるところまで next_part を消費する
         loop {
             match bb.next_part() {
@@ -248,13 +308,14 @@ fn test_multipart_parser_byte_by_byte_feed_matches_bulk_feed() {
 // パートを取り出した上で is_finished() == true に遷移する
 #[test]
 fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary").unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
     // inner_delimiter (\r\n--boundary) の直後まで送る。残り 2 バイト (`--`) は別 chunk。
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
         )
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     let part = parser
         .next_part()
@@ -263,7 +324,9 @@ fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 
-    parser.feed(b"--\r\n").unwrap();
+    parser
+        .feed(b"--\r\n")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(
         matches!(parser.next_part(), Ok(None)),
         "close-delimiter (`--`) を補給したら Ok(None) を返す想定"
@@ -277,12 +340,13 @@ fn test_multipart_parser_close_delimiter_split_after_inner_delimiter() {
 // 次パート区切り (`\r\n`) の手前で chunk が切れた後に補給すると次パートが正しく取り出せる
 #[test]
 fn test_multipart_parser_next_part_split_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary").unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
         )
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     let part1 = parser
         .next_part()
@@ -293,7 +357,7 @@ fn test_multipart_parser_next_part_split_after_inner_delimiter() {
 
     parser
         .feed(b"\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\nworld\r\n--boundary--\r\n")
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     let part2 = parser
         .next_part()
@@ -310,22 +374,30 @@ fn test_multipart_parser_next_part_split_after_inner_delimiter() {
 // もう 1 バイト補給すると終端と判定する
 #[test]
 fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
-    let mut parser = MultipartParser::new("boundary").unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
         )
-        .unwrap();
-    let _ = parser.next_part().unwrap().unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
+    let _ = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    parser.feed(b"-").unwrap();
+    parser
+        .feed(b"-")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(matches!(
         parser.next_part(),
         Err(MultipartError::Incomplete)
     ));
     assert!(!parser.is_finished());
 
-    parser.feed(b"-\r\n").unwrap();
+    parser
+        .feed(b"-\r\n")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(matches!(parser.next_part(), Ok(None)));
     assert!(parser.is_finished());
 }
@@ -334,16 +406,22 @@ fn test_multipart_parser_close_delimiter_split_one_byte_at_a_time() {
 // InvalidPart を返す
 #[test]
 fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
-    let mut parser = MultipartParser::new("boundary").unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(
             b"--boundary\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--boundary",
         )
-        .unwrap();
-    let _ = parser.next_part().unwrap().unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
+    let _ = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     // 不正な 2 バイト (`xy`) を補給
-    parser.feed(b"xy").unwrap();
+    parser
+        .feed(b"xy")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(matches!(
         parser.next_part(),
         Err(MultipartError::InvalidPart)
@@ -356,12 +434,15 @@ fn test_multipart_parser_invalid_bytes_after_inner_delimiter() {
 
 // `--<boundary>X` で X が CRLF / `--` / SP / HTAB のいずれでもない場合は InvalidPart
 fn assert_invalid_after_dash_boundary(extra: &[u8]) {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     let mut input: Vec<u8> = b"--b".to_vec();
     input.extend_from_slice(extra);
     input
         .extend_from_slice(b"Content-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n");
-    parser.feed(&input).unwrap();
+    parser
+        .feed(&input)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     let result = parser.next_part();
     assert!(
         matches!(result, Err(MultipartError::InvalidPart)),
@@ -409,11 +490,15 @@ fn test_multipart_parser_dash_boundary_followed_by_non_ascii_is_rejected() {
 // SP / HTAB の transport-padding を伴う dash-boundary は寛容受理する
 #[test]
 fn test_multipart_parser_dash_boundary_with_space_padding_is_accepted() {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(b"--b \t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
-        .unwrap();
-    let part = parser.next_part().unwrap().unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
     assert!(matches!(parser.next_part(), Ok(None)));
@@ -422,11 +507,15 @@ fn test_multipart_parser_dash_boundary_with_space_padding_is_accepted() {
 
 #[test]
 fn test_multipart_parser_dash_boundary_with_tab_padding_is_accepted() {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(b"--b\t\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
-        .unwrap();
-    let part = parser.next_part().unwrap().unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 }
@@ -434,8 +523,11 @@ fn test_multipart_parser_dash_boundary_with_tab_padding_is_accepted() {
 // transport-padding 中で buffer が尽きたケースは Incomplete を返し、追加 feed 後に再開できる
 #[test]
 fn test_multipart_parser_dash_boundary_incomplete_during_transport_padding() {
-    let mut parser = MultipartParser::new("b").unwrap();
-    parser.feed(b"--b  ").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(b"--b  ")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert!(matches!(
         parser.next_part(),
         Err(MultipartError::Incomplete)
@@ -443,8 +535,11 @@ fn test_multipart_parser_dash_boundary_incomplete_during_transport_padding() {
 
     parser
         .feed(b"\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b--\r\n")
-        .unwrap();
-    let part = parser.next_part().unwrap().unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 }
@@ -461,8 +556,11 @@ fn test_multipart_missing_content_disposition() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(matches!(
         parser.next_part(),
@@ -477,8 +575,11 @@ fn test_multipart_empty_headers_missing_content_disposition() {
     // 空ヘッダーセクションは \r\n\r\n として表現する
     let body = b"--boundary\r\n\r\n\r\nvalue\r\n--boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(matches!(
         parser.next_part(),
@@ -494,8 +595,11 @@ fn test_multipart_invalid_content_disposition_type() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(matches!(
         parser.next_part(),
@@ -507,7 +611,7 @@ fn test_multipart_invalid_content_disposition_type() {
 #[test]
 fn test_multipart_parser_buffer_overflow() {
     let mut parser = MultipartParser::new("boundary")
-        .unwrap()
+        .expect("マルチパートのパースは成功するはず (実装バグ)")
         .with_max_buffer_size(10);
 
     let result = parser.feed(b"12345678901"); // 11 バイト > 10 バイト上限
@@ -524,7 +628,7 @@ fn test_multipart_parser_buffer_overflow() {
 #[test]
 fn test_multipart_parser_buffer_within_limit() {
     let mut parser = MultipartParser::new("boundary")
-        .unwrap()
+        .expect("マルチパートのパースは成功するはず (実装バグ)")
         .with_max_buffer_size(100);
     assert!(parser.feed(b"hello").is_ok());
 }
@@ -537,8 +641,11 @@ fn test_multipart_missing_name_parameter() {
         value\r\n\
         --boundary--\r\n";
 
-    let mut parser = MultipartParser::new("boundary").unwrap();
-    parser.feed(body).unwrap();
+    let mut parser =
+        MultipartParser::new("boundary").expect("マルチパートのパースは成功するはず (実装バグ)");
+    parser
+        .feed(body)
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
     assert!(matches!(
         parser.next_part(),
@@ -553,7 +660,8 @@ fn test_multipart_missing_name_parameter() {
 /// 内部デリミタ + transport-padding + CRLF が正しく処理されること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(
             b"--b\r\n\
@@ -564,13 +672,19 @@ fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
               world\r\n\
               --b--\r\n",
         )
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("b"));
     assert_eq!(part.body(), b"world");
 
@@ -581,7 +695,8 @@ fn test_multipart_parser_inner_delimiter_transport_padding_crlf() {
 /// 内部デリミタ + transport-padding + close-delimiter が正しく処理されること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_close() {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     parser
         .feed(
             b"--b\r\n\
@@ -589,9 +704,12 @@ fn test_multipart_parser_inner_delimiter_transport_padding_close() {
               hello\r\n\
               --b \t--\r\n",
         )
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 
@@ -602,13 +720,17 @@ fn test_multipart_parser_inner_delimiter_transport_padding_close() {
 /// transport-padding 途中で feed が切れた場合も正常に継続できること
 #[test]
 fn test_multipart_parser_inner_delimiter_transport_padding_incomplete() {
-    let mut parser = MultipartParser::new("b").unwrap();
+    let mut parser =
+        MultipartParser::new("b").expect("マルチパートのパースは成功するはず (実装バグ)");
     // 最初のパート + inner delimiter + transport-padding 途中で feed を切る
     parser
         .feed(b"--b\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\nhello\r\n--b ")
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("a"));
     assert_eq!(part.body(), b"hello");
 
@@ -621,9 +743,12 @@ fn test_multipart_parser_inner_delimiter_transport_padding_incomplete() {
     // 残りの transport-padding + CRLF + 次のパートを feed
     parser
         .feed(b"\t\r\nContent-Disposition: form-data; name=\"b\"\r\n\r\nworld\r\n--b--\r\n")
-        .unwrap();
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
 
-    let part = parser.next_part().unwrap().unwrap();
+    let part = parser
+        .next_part()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("マルチパートのパースは成功するはず (実装バグ)");
     assert_eq!(part.name(), Some("b"));
     assert_eq!(part.body(), b"world");
 

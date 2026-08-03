@@ -71,7 +71,7 @@ proptest! {
         if start < total {
             let bounds = spec.to_bounds(total);
             prop_assert!(bounds.is_some());
-            let (s, e) = bounds.unwrap();
+            let (s, e) = bounds.expect("Range のパースは成功するはず (実装バグ)");
             prop_assert_eq!(s, start);
             prop_assert_eq!(e, total - 1);
         } else {
@@ -88,7 +88,7 @@ proptest! {
         let bounds = spec.to_bounds(total);
 
         prop_assert!(bounds.is_some());
-        let (s, e) = bounds.unwrap();
+        let (s, e) = bounds.expect("Range のパースは成功するはず (実装バグ)");
         prop_assert!(s <= e);
         prop_assert_eq!(e, total - 1);
         // 長さがトータルを超える場合は 0 から開始
@@ -132,9 +132,9 @@ proptest! {
         };
 
         let input = format!("bytes={}-{}", start, end);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
         let displayed = range.to_string();
-        let reparsed = Range::parse(&displayed).unwrap();
+        let reparsed = Range::parse(&displayed).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(range.unit(), reparsed.unit());
         prop_assert_eq!(range.ranges().len(), reparsed.ranges().len());
@@ -146,9 +146,9 @@ proptest! {
     #[test]
     fn prop_range_suffix_roundtrip(length in 1u64..10000) {
         let input = format!("bytes=-{}", length);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
 
-        match range.first().unwrap() {
+        match range.first().expect("Range のパースは成功するはず (実装バグ)") {
             RangeSpec::Suffix { length: l } => prop_assert_eq!(*l, length),
             _ => prop_assert!(false, "Suffix を期待"),
         }
@@ -160,9 +160,9 @@ proptest! {
     #[test]
     fn prop_range_from_start_roundtrip(start in 0u64..10000) {
         let input = format!("bytes={}-", start);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
 
-        match range.first().unwrap() {
+        match range.first().expect("Range のパースは成功するはず (実装バグ)") {
             RangeSpec::FromStart { start: s } => prop_assert_eq!(*s, start),
             _ => prop_assert!(false, "FromStart を期待"),
         }
@@ -183,7 +183,7 @@ proptest! {
 
         let cr = ContentRange::new_bytes(start, end, complete_length);
         let displayed = cr.to_string();
-        let reparsed = ContentRange::parse(&displayed).unwrap();
+        let reparsed = ContentRange::parse(&displayed).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cr.start(), reparsed.start());
         prop_assert_eq!(cr.end(), reparsed.end());
@@ -199,17 +199,17 @@ proptest! {
 
         // bytes の場合
         let input = format!("bytes={}-{}", start, end);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
         prop_assert!(range.is_bytes());
 
         // BYTES (大文字) の場合も true
         let input2 = format!("BYTES={}-{}", start, end);
-        let range2 = Range::parse(&input2).unwrap();
+        let range2 = Range::parse(&input2).expect("Range のパースは成功するはず (実装バグ)");
         prop_assert!(range2.is_bytes());
 
         // 他の単位の場合は false
         let input3 = format!("custom={}-{}", start, end);
-        let range3 = Range::parse(&input3).unwrap();
+        let range3 = Range::parse(&input3).expect("Range のパースは成功するはず (実装バグ)");
         prop_assert!(!range3.is_bytes());
     }
 }
@@ -221,10 +221,10 @@ proptest! {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes={}-{}", start, end);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert!(range.first().is_some());
-        match range.first().unwrap() {
+        match range.first().expect("Range のパースは成功するはず (実装バグ)") {
             RangeSpec::Range { start: s, end: e } => {
                 prop_assert_eq!(*s, start);
                 prop_assert_eq!(*e, end);
@@ -247,7 +247,7 @@ proptest! {
         let (start2, end2) = if start2 <= end2 { (start2, end2) } else { (end2, start2) };
 
         let input = format!("bytes={}-{}, {}-{}", start1, end1, start2, end2);
-        let range = Range::parse(&input).unwrap();
+        let range = Range::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(range.ranges().len(), 2);
     }
@@ -306,7 +306,7 @@ proptest! {
     fn prop_content_range_unsatisfied_display_roundtrip(total in 100u64..10000) {
         let cr = ContentRange::unsatisfied("bytes", total);
         let displayed = cr.to_string();
-        let reparsed = ContentRange::parse(&displayed).unwrap();
+        let reparsed = ContentRange::parse(&displayed).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert!(reparsed.is_unsatisfied());
         prop_assert_eq!(reparsed.complete_length(), Some(total));
@@ -320,7 +320,7 @@ proptest! {
         let (start, end) = if start <= end { (start, end) } else { (end, start) };
 
         let input = format!("bytes {}-{}/*", start, end);
-        let cr = ContentRange::parse(&input).unwrap();
+        let cr = ContentRange::parse(&input).expect("Range のパースは成功するはず (実装バグ)");
 
         prop_assert_eq!(cr.start(), Some(start));
         prop_assert_eq!(cr.end(), Some(end));

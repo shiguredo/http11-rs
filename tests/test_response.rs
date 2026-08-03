@@ -108,9 +108,9 @@ fn test_response_with_version_crlf() {
 fn test_response_set_header_overwrite() {
     let mut r = Response::with_status(StatusCode::OK);
     r.add_header(HeaderName::from_static(b"X-Custom"), "first")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     r.set_header(HeaderName::from_static(b"X-Custom"), "second")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(r.get_headers("X-Custom").len(), 1);
     assert_eq!(r.get_header("X-Custom"), Some("second"));
 }
@@ -119,9 +119,9 @@ fn test_response_set_header_overwrite() {
 fn test_response_set_header_case_insensitive_overwrite() {
     let mut r = Response::with_status(StatusCode::OK);
     r.add_header(HeaderName::from_static(b"CONTENT-TYPE"), "text/plain")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     r.set_header(HeaderName::from_static(b"Content-Type"), "text/html")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(r.get_header("Content-Type"), Some("text/html"));
     assert_eq!(r.get_headers("Content-Type").len(), 1);
 }
@@ -131,7 +131,7 @@ fn test_response_set_header_atomic_on_validation_failure() {
     // バリデーション失敗時に既存ヘッダーが消えないことを確認 (アトミック性)
     let mut r = Response::with_status(StatusCode::OK);
     r.add_header(HeaderName::from_static(b"X-Custom"), "first")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     let result = r.set_header(HeaderName::from_static(b"X-Custom"), "bad\r\nvalue");
     assert!(matches!(
         result,
@@ -159,7 +159,8 @@ fn test_response_accessors() {
     assert!(!r.is_body_omitted());
 
     // with_version はカスタムバージョン用なのでそのまま残す
-    let r2 = Response::with_version("HTTP/1.0", 404, "Not Found").unwrap();
+    let r2 = Response::with_version("HTTP/1.0", 404, "Not Found")
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(HttpHead::version(&r2), "HTTP/1.0");
     assert_eq!(r2.status_code(), 404);
     assert_eq!(r2.reason_phrase(), "Not Found");
@@ -186,7 +187,8 @@ fn test_response_with_status_basic() {
 fn test_response_with_status_equivalent_to_new() {
     // with_status(StatusCode::OK) と new(200, "OK") は同一の Response を生成する
     let via_status = Response::with_status(StatusCode::OK);
-    let via_new = Response::new(200, "OK").unwrap();
+    let via_new =
+        Response::new(200, "OK").expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(via_status, via_new);
 }
 
@@ -202,7 +204,7 @@ fn test_response_with_status_404() {
 fn test_response_with_status_chains_with_builders() {
     let r = Response::with_status(StatusCode::CREATED)
         .header(HeaderName::from_static(b"Content-Type"), "application/json")
-        .unwrap()
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
         .body(b"{}".to_vec());
     assert_eq!(r.status_code(), 201);
     assert_eq!(r.reason_phrase(), "Created");
@@ -214,8 +216,11 @@ fn test_response_with_status_chains_with_builders() {
 fn test_response_with_status_encodable() {
     // with_status で構築した Response は encoder の二重バリデーションを通過する
     let r = Response::with_status(StatusCode::NO_CONTENT);
-    let bytes = r.encode().unwrap();
-    let s = core::str::from_utf8(&bytes).unwrap();
+    let bytes = r
+        .encode()
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
+    let s =
+        core::str::from_utf8(&bytes).expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert!(s.starts_with("HTTP/1.1 204 No Content\r\n"));
 }
 
@@ -225,8 +230,12 @@ fn test_response_encode_reason_phrase_absent_via_decoder() {
     // RFC 9112 Section 4: status-line ABNF で reason-phrase は OPTIONAL
     use shiguredo_http11::ResponseDecoder;
     let mut decoder = ResponseDecoder::new();
-    decoder.feed(b"HTTP/1.1 200 \r\n\r\n").unwrap();
-    let response = decoder.decode_headers().unwrap();
+    decoder
+        .feed(b"HTTP/1.1 200 \r\n\r\n")
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
+    let response = decoder
+        .decode_headers()
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     // decode_headers は本テストではボディ完了まで進まないので、別経路で完了させる
     // ここでは decode_headers の戻り値を使って構築済みの Response を再送信できるかは
     // 統合テストとして見ないが、validate_response_fields が空 reason-phrase を許容する
@@ -299,9 +308,9 @@ fn test_response_add_header_chain() {
     // add_header のチェイン: Result<&mut Self, E> を unwrap で消費して連結
     let mut r = Response::with_status(StatusCode::OK);
     r.add_header(HeaderName::from_static(b"X-A"), "1")
-        .unwrap()
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)")
         .add_header(HeaderName::from_static(b"X-B"), "2")
-        .unwrap();
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     assert_eq!(r.get_headers("X-A"), vec!["1"]);
     assert_eq!(r.get_headers("X-B"), vec!["2"]);
 }
@@ -310,7 +319,8 @@ fn test_response_add_header_chain() {
 fn test_response_add_header_chain_partial_failure() {
     // 先行ヘッダーは成功し、後続のバリデーションエラーは先行を破壊しない
     let mut r = Response::with_status(StatusCode::OK);
-    r.add_header(HeaderName::from_static(b"X-A"), "1").unwrap();
+    r.add_header(HeaderName::from_static(b"X-A"), "1")
+        .expect("レスポンスのパース / 構築は成功するはず (実装バグ)");
     let result = r.add_header(HeaderName::from_static(b"X-B"), "bad\r\nvalue");
     assert!(result.is_err());
     assert_eq!(r.get_headers("X-A"), vec!["1"]);

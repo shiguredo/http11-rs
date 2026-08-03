@@ -10,7 +10,7 @@
 //! use shiguredo_http11::range::{Range, ContentRange, AcceptRanges};
 //!
 //! // Range ヘッダーパース
-//! let range = Range::parse("bytes=0-499").unwrap();
+//! let range = Range::parse("bytes=0-499").expect("Range のパースは成功するはず (実装バグ)");
 //! assert_eq!(range.unit(), "bytes");
 //! let specs = range.ranges();
 //! assert_eq!(specs.len(), 1);
@@ -20,7 +20,7 @@
 //! assert_eq!(cr.to_string(), "bytes 0-499/1000");
 //!
 //! // Accept-Ranges ヘッダーパース
-//! let ar = AcceptRanges::parse("bytes").unwrap();
+//! let ar = AcceptRanges::parse("bytes").expect("Range のパースは成功するはず (実装バグ)");
 //! assert!(ar.accepts_bytes());
 //! ```
 
@@ -135,15 +135,15 @@ impl Range {
     /// use shiguredo_http11::range::Range;
     ///
     /// // 単一範囲
-    /// let range = Range::parse("bytes=0-499").unwrap();
+    /// let range = Range::parse("bytes=0-499").expect("Range のパースは成功するはず (実装バグ)");
     /// assert_eq!(range.unit(), "bytes");
     ///
     /// // 複数範囲
-    /// let range = Range::parse("bytes=0-499, 1000-1499").unwrap();
+    /// let range = Range::parse("bytes=0-499, 1000-1499").expect("Range のパースは成功するはず (実装バグ)");
     /// assert_eq!(range.ranges().len(), 2);
     ///
     /// // 末尾から
-    /// let range = Range::parse("bytes=-500").unwrap();
+    /// let range = Range::parse("bytes=-500").expect("Range のパースは成功するはず (実装バグ)");
     /// ```
     pub fn parse(input: &str) -> Result<Self, RangeError> {
         let input = trim_ows(input);
