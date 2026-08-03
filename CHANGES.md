@@ -31,6 +31,20 @@
 - [UPDATE] `find_bytes` の `match` 式を `?` 演算子に書き換える
   - `cargo clippy -- -D warnings` の `clippy::question_mark` 警告 (rust-1.97.0 で追加) を解消する
   - @voluntas
+- [UPDATE] テストコードの `.unwrap()` を `.expect()` に置き換え、パニックが「絶対に発生しない想定 (実装バグ)」であることがメッセージから分かるようにする
+  - @voluntas
+- [UPDATE] `mod.rs` を廃止し、モジュール構成を `<module>.rs` + `<module>/<submodule>.rs` に統一する
+  - @voluntas
+- [UPDATE] リバースプロキシの例で接続プールを `Mutex` 保護から単一タスク所有 + mpsc チャネル構成に置き換える
+  - @voluntas
+- [UPDATE] pre-commit フックから `cargo test` を外し、pre-push でのみ実行するようにする
+  - @voluntas
+- [FIX] ライブラリ API の変更に追従できずビルドできない fuzz ターゲットを修正する
+  - @voluntas
+- [FIX] `encode_response_headers` の Content-Length 整合性検証が `omit_body(true)` を考慮しない問題を修正する
+  - `encode_response` 側と同じ条件 (ボディが空のときのみ検証スキップ) に統一する
+  - リバースプロキシの例で発生していた Content-Length 不一致エラーを解消する
+  - @voluntas
 
 ## 2026.6.1
 
