@@ -10,7 +10,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Response, encode_response};
+use shiguredo_http11::{HeaderName, Response, encode_response};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzResponse {
@@ -34,11 +34,16 @@ fuzz_target!(|input: FuzzResponse| {
         omit_body,
     } = input;
     // バリデーション失敗は早期 return (fuzzer は次の入力に進める)
-    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+    let Ok(mut response) =
+        Response::with_version(version.as_str(), status_code, reason_phrase.as_str())
+    else {
         return;
     };
     for (name, value) in &headers {
-        if response.add_header(name, value).is_err() {
+        let Ok(header_name) = HeaderName::new(name) else {
+            return;
+        };
+        if response.add_header(header_name, value.as_str()).is_err() {
             return;
         }
     }

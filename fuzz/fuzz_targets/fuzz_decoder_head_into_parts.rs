@@ -11,7 +11,9 @@ use shiguredo_http11::{Request, RequestDecoder, Response, ResponseDecoder};
 fuzz_target!(|data: &[u8]| {
     // --- RequestHead 経路 ---
     let mut decoder = RequestDecoder::new();
-    if decoder.feed(data).is_ok() && let Ok(Some((head, _))) = decoder.decode_headers() {
+    if decoder.feed(data).is_ok()
+        && let Ok(Some((head, _))) = decoder.decode_headers()
+    {
         let (method, uri, version, headers) = head.into_parts();
         let mut request = match Request::with_version(method, uri, version) {
             Ok(r) => r,
@@ -25,7 +27,9 @@ fuzz_target!(|data: &[u8]| {
 
     // --- ResponseHead 経路 ---
     let mut decoder = ResponseDecoder::new();
-    if decoder.feed(data).is_ok() && let Ok(Some((head, _))) = decoder.decode_headers() {
+    if decoder.feed(data).is_ok()
+        && let Ok(Some((head, _))) = decoder.decode_headers()
+    {
         let (version, status_code, reason_phrase, headers) = head.into_parts();
         let mut response = match Response::with_version(version, status_code, reason_phrase) {
             Ok(r) => r,

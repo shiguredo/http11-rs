@@ -21,8 +21,8 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{RequestEncoder, ResponseEncoder};
 use shiguredo_http11::compression::{CompressionError, CompressionStatus};
+use shiguredo_http11::{RequestEncoder, ResponseEncoder};
 
 #[derive(Arbitrary, Debug)]
 enum FuzzOp {

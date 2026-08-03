@@ -10,7 +10,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Request, encode_request};
+use shiguredo_http11::{HeaderName, Method, Request, encode_request};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzRequest {
@@ -33,11 +33,17 @@ fuzz_target!(|input: FuzzRequest| {
     } = input;
     // 構築時バリデーションが失敗する任意入力は早期 return する。
     // encoder の panic 安全性は構築を通過した Request にだけ問えばよい。
-    let Ok(mut request) = Request::with_version(&method, &uri, &version) else {
+    let Ok(method) = Method::new(&method) else {
+        return;
+    };
+    let Ok(mut request) = Request::with_version(method, uri.as_str(), version.as_str()) else {
         return;
     };
     for (name, value) in &headers {
-        if request.add_header(name, value).is_err() {
+        let Ok(header_name) = HeaderName::new(name) else {
+            return;
+        };
+        if request.add_header(header_name, value.as_str()).is_err() {
             return;
         }
     }

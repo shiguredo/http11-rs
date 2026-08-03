@@ -10,7 +10,7 @@
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::{
-    BodyKind, BodyProgress, Request, RequestDecoder, Response, ResponseDecoder,
+    BodyKind, BodyProgress, HeaderName, Method, Request, RequestDecoder, Response, ResponseDecoder,
 };
 
 #[derive(Arbitrary, Debug)]
@@ -62,11 +62,17 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             .cloned()
             .collect();
 
-        let Ok(mut request) = Request::new(&fuzz_req.method, &fuzz_req.uri) else {
+        let Ok(method) = Method::new(&fuzz_req.method) else {
+            return;
+        };
+        let Ok(mut request) = Request::new(method, fuzz_req.uri.as_str()) else {
             return;
         };
         for (name, value) in &valid_headers {
-            if request.add_header(name, value).is_err() {
+            let Ok(header_name) = HeaderName::new(name) else {
+                return;
+            };
+            if request.add_header(header_name, value.as_str()).is_err() {
                 return;
             }
         }
@@ -128,7 +134,10 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             Err(_) => return,
         };
         for (name, value) in &valid_headers {
-            if response.add_header(name, value).is_err() {
+            let Ok(header_name) = HeaderName::new(name) else {
+                return;
+            };
+            if response.add_header(header_name, value.as_str()).is_err() {
                 return;
             }
         }

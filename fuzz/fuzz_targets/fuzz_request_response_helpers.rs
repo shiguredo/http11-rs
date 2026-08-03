@@ -9,7 +9,7 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Request, Response};
+use shiguredo_http11::{HeaderName, Method, Request, Response};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzRequest {
@@ -37,11 +37,17 @@ fn exercise_request(input: FuzzRequest) {
         headers,
         body,
     } = input;
-    let Ok(mut request) = Request::with_version(&method, &uri, &version) else {
+    let Ok(method) = Method::new(&method) else {
+        return;
+    };
+    let Ok(mut request) = Request::with_version(method, uri.as_str(), version.as_str()) else {
         return;
     };
     for (name, value) in &headers {
-        if request.add_header(name, value).is_err() {
+        let Ok(header_name) = HeaderName::new(name) else {
+            return;
+        };
+        if request.add_header(header_name, value.as_str()).is_err() {
             return;
         }
     }
@@ -67,11 +73,16 @@ fn exercise_response(input: FuzzResponse) {
         headers,
         body,
     } = input;
-    let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase) else {
+    let Ok(mut response) =
+        Response::with_version(version.as_str(), status_code, reason_phrase.as_str())
+    else {
         return;
     };
     for (name, value) in &headers {
-        if response.add_header(name, value).is_err() {
+        let Ok(header_name) = HeaderName::new(name) else {
+            return;
+        };
+        if response.add_header(header_name, value.as_str()).is_err() {
             return;
         }
     }

@@ -8,7 +8,9 @@
 
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
-use shiguredo_http11::{Request, Response, encode_request_headers, encode_response_headers};
+use shiguredo_http11::{
+    HeaderName, Method, Request, Response, encode_request_headers, encode_response_headers,
+};
 
 #[derive(Arbitrary, Debug)]
 struct FuzzRequest {
@@ -36,9 +38,17 @@ fuzz_target!(|input: FuzzInput| {
     let FuzzInput { request, response } = input;
 
     // Request 側
-    if let Ok(mut req) = Request::with_version(&request.method, &request.uri, &request.version) {
+    let Ok(method) = Method::new(&request.method) else {
+        return;
+    };
+    if let Ok(mut req) =
+        Request::with_version(method, request.uri.as_str(), request.version.as_str())
+    {
         for (name, value) in &request.headers {
-            if req.add_header(name, value).is_err() {
+            let Ok(header_name) = HeaderName::new(name) else {
+                break;
+            };
+            if req.add_header(header_name, value.as_str()).is_err() {
                 break;
             }
         }
@@ -49,12 +59,15 @@ fuzz_target!(|input: FuzzInput| {
 
     // Response 側
     if let Ok(mut res) = Response::with_version(
-        &response.version,
+        response.version.as_str(),
         response.status_code,
-        &response.reason_phrase,
+        response.reason_phrase.as_str(),
     ) {
         for (name, value) in &response.headers {
-            if res.add_header(name, value).is_err() {
+            let Ok(header_name) = HeaderName::new(name) else {
+                break;
+            };
+            if res.add_header(header_name, value.as_str()).is_err() {
                 break;
             }
         }
