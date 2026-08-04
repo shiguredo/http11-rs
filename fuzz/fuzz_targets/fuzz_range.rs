@@ -15,10 +15,22 @@ use shiguredo_http11::range::{AcceptRanges, ContentRange, Range};
 fuzz_target!(|data: &[u8]| {
     // ContentRange::new_bytes() の直接構築経路
     if data.len() >= 16 {
-        let start = u64::from_le_bytes(data[0..8].try_into().unwrap());
-        let end = u64::from_le_bytes(data[8..16].try_into().unwrap());
+        let start = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .expect("長さ 16 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)"),
+        );
+        let end = u64::from_le_bytes(
+            data[8..16]
+                .try_into()
+                .expect("長さ 16 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)"),
+        );
         let complete_length = if data.len() >= 24 {
-            Some(u64::from_le_bytes(data[16..24].try_into().unwrap()))
+            Some(u64::from_le_bytes(
+                data[16..24]
+                    .try_into()
+                    .expect("長さ 24 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)"),
+            ))
         } else {
             None
         };

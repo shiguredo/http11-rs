@@ -15,7 +15,8 @@ fuzz_target!(|data: &[u8]| {
     let boundaries = ["boundary", "----WebKitFormBoundary", "abc123", "---"];
 
     for boundary in boundaries {
-        let mut parser = MultipartParser::new(boundary).unwrap();
+        let mut parser = MultipartParser::new(boundary)
+            .expect("固定の境界文字列のパーサー構築は成功するはず (実装バグ)");
         let _ = parser.feed(data);
 
         // パニックしなければ OK

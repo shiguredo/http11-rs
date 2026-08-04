@@ -201,8 +201,11 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
 }
 
 fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
-    let mut request = Request::new("POST", "/").unwrap();
-    request.add_header("Transfer-Encoding", "chunked").unwrap();
+    let mut request = Request::new("POST", "/")
+        .expect("固定のメソッドとターゲットの構築は成功するはず (実装バグ)");
+    request
+        .add_header("Transfer-Encoding", "chunked")
+        .expect("固定のヘッダー追加は成功するはず (実装バグ)");
     let mut encoded = match encode_request_headers(&request) {
         Ok(v) => v,
         Err(_) => return,
@@ -214,7 +217,9 @@ fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
 
 fn exercise_response(body: &[u8], expected: &[u8], split_size: usize) {
     let mut response = Response::with_status(StatusCode::OK);
-    response.add_header("Transfer-Encoding", "chunked").unwrap();
+    response
+        .add_header("Transfer-Encoding", "chunked")
+        .expect("固定のヘッダー追加は成功するはず (実装バグ)");
     let mut encoded = match encode_response_headers(&response) {
         Ok(v) => v,
         Err(_) => return,
