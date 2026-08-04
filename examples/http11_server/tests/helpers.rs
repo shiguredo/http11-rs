@@ -4,8 +4,21 @@
 //! - `Drop` で確実にプロセスを kill する RAII ガード
 //! - curl が PATH に無い場合は panic で即座に失敗
 //! - `rcgen` で自己署名証明書を実行時生成 (fixture cert の期限切れを回避)
+//!
+//! # 可視性について
+//!
+//! 各テストバイナリは独立した crate としてビルドされ、`mod helpers;` で本ファイル全体を
+//! 取り込む。`spawn_https_server` / `generate_self_signed` / `https_url` は https_tls
+//! でのみ、`spawn_http_server` / `http_url` は http_* 系テストでのみ使用されるため、
+//! どのバイナリでも必ず未使用の関数が発生する。
+//!
+//! `pub fn` の未使用は `#[expect(dead_code)]` で満たせない (pub は外部公開の可能性が
+//! あるとみなされるため) ことから、テストバイナリ内で閉じることを明示する
+//! `pub(crate)` にする。`#[expect]` は「このファイル内で dead_code が発生する」ことを
+//! 宣言するもので、将来すべての関数が全バイナリから使われるようになった場合は
+//! `unfulfilled_lint_expectations` で気づける。
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -25,7 +38,7 @@ const PORT_READ_TIMEOUT: Duration = Duration::from_secs(7);
 ///
 /// CLAUDE.md「`#[ignore]` を使わない」に従い、環境差での skip ではなく
 /// 明示的に失敗させて原因を分かりやすくする。
-pub fn ensure_curl() {
+pub(crate) fn ensure_curl() {
     let status = std::process::Command::new("curl")
         .arg("--version")
         .stdout(Stdio::null())
@@ -40,19 +53,19 @@ pub fn ensure_curl() {
 /// 起動済みサーバーへのハンドル
 ///
 /// `Drop` で `kill_on_drop(true)` に従ってプロセスが終了する。
-pub struct ServerHandle {
+pub(crate) struct ServerHandle {
     child: Option<Child>,
     pub port: u16,
 }
 
 impl ServerHandle {
     /// HTTP URL を組み立てる
-    pub fn http_url(&self, path: &str) -> String {
+    pub(crate) fn http_url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{}", self.port, path)
     }
 
     /// HTTPS URL を組み立てる (host は localhost、curl --resolve と組み合わせる前提)
-    pub fn https_url(&self, path: &str) -> String {
+    pub(crate) fn https_url(&self, path: &str) -> String {
         format!("https://localhost:{}{}", self.port, path)
     }
 }
@@ -67,7 +80,7 @@ impl Drop for ServerHandle {
 }
 
 /// HTTP サーバーを `--port 0` で起動し、LISTENING_PORT を読むまで待機する
-pub async fn spawn_http_server() -> ServerHandle {
+pub(crate) async fn spawn_http_server() -> ServerHandle {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_http11_server"));
     cmd.arg("--port")
         .arg("0")
@@ -79,7 +92,7 @@ pub async fn spawn_http_server() -> ServerHandle {
 }
 
 /// HTTPS サーバーを `--port 0 --tls --cert <p> --key <p>` で起動し、LISTENING_PORT を読むまで待機する
-pub async fn spawn_https_server(cert_path: &Path, key_path: &Path) -> ServerHandle {
+pub(crate) async fn spawn_https_server(cert_path: &Path, key_path: &Path) -> ServerHandle {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_http11_server"));
     cmd.arg("--port")
         .arg("0")
@@ -125,7 +138,7 @@ fn parse_listening_port(line: &str) -> Option<u16> {
 }
 
 /// curl の実行結果
-pub struct CurlOutput {
+pub(crate) struct CurlOutput {
     pub stdout: Vec<u8>,
     pub stderr: String,
     pub status: i32,
@@ -133,13 +146,13 @@ pub struct CurlOutput {
 
 impl CurlOutput {
     /// stdout を UTF-8 文字列として参照する (検証用)
-    pub fn stdout_string(&self) -> String {
+    pub(crate) fn stdout_string(&self) -> String {
         String::from_utf8_lossy(&self.stdout).into_owned()
     }
 }
 
 /// curl を引数列で同期実行する (内部で spawn_blocking)
-pub async fn run_curl<I, S>(args: I) -> CurlOutput
+pub(crate) async fn run_curl<I, S>(args: I) -> CurlOutput
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -164,7 +177,7 @@ where
 ///
 /// SAN に `DNS:localhost` と `IP:127.0.0.1` を入れて curl の hostname 検証を通過させる。
 /// 戻り値: (一時ディレクトリのガード, cert.pem のパス, key.pem のパス)
-pub fn generate_self_signed() -> (TempDir, PathBuf, PathBuf) {
+pub(crate) fn generate_self_signed() -> (TempDir, PathBuf, PathBuf) {
     let mut params = CertificateParams::default();
     params
         .distinguished_name
@@ -194,7 +207,7 @@ pub fn generate_self_signed() -> (TempDir, PathBuf, PathBuf) {
 /// レスポンスのヘッダー文字列から `name: value` の値を取得する (case-insensitive)
 ///
 /// curl `-i` や `-D -` で取得した行ベースのヘッダーから対象を探す簡易ヘルパー。
-pub fn find_header<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
+pub(crate) fn find_header<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
     for line in headers.lines() {
         if let Some((k, v)) = line.split_once(':')
             && k.trim().eq_ignore_ascii_case(name)
@@ -208,7 +221,7 @@ pub fn find_header<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
 /// curl `-i` で取得した「ヘッダー + 空行 + ボディ」の出力を分割する
 ///
 /// HTTP/1.x のレスポンス形式に従い、最初に出現する `\r\n\r\n` または `\n\n` で分ける。
-pub fn split_headers_body(raw: &[u8]) -> (String, Vec<u8>) {
+pub(crate) fn split_headers_body(raw: &[u8]) -> (String, Vec<u8>) {
     let crlf = b"\r\n\r\n";
     let lf = b"\n\n";
     if let Some(pos) = find_subsequence(raw, crlf) {

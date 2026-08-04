@@ -5,13 +5,20 @@
 //! - カスタム `nginx.conf` を `/etc/nginx/conf.d/default.conf` にコピーした構成も組める
 //! - コンテナは `ContainerAsync` の Drop で自動停止する
 //!
-//! `#![allow(dead_code)]` を有効にしている理由:
-//! `tests/<name>.rs` ごとに別バイナリとしてビルドされ、各バイナリは `mod helpers;` で
-//! 本ファイル全体を取り込む。例えば basic テスト視点では `spawn_nginx_with_files` が、
-//! streaming テスト視点では `spawn_nginx_default` が「使われない」と判定されるため、
-//! file-level の `#![allow(dead_code)]` で抑止する必要がある (個別に `#[allow]` を付けると煩雑になる)。
+//! # 可視性について
+//!
+//! 各テストバイナリは独立した crate としてビルドされ、`mod helpers;` で本ファイル全体を
+//! 取り込む。`spawn_nginx_default` は nginx_basic でのみ、`spawn_nginx_with_files` は
+//! nginx_streaming / nginx_upload でのみ使用されるため、どのバイナリでも必ずどちらか
+//! 一方が未使用と判定される。
+//!
+//! `pub fn` の未使用は `#[expect(dead_code)]` で満たせない (pub は外部公開の可能性が
+//! あるとみなされるため) ことから、テストバイナリ内で閉じることを明示する
+//! `pub(crate)` にする。`#[expect]` は「このファイル内で dead_code が発生する」ことを
+//! 宣言するもので、将来すべての関数が全バイナリから使われるようになった場合は
+//! `unfulfilled_lint_expectations` で気づける。
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use std::process::Stdio;
 
@@ -36,7 +43,7 @@ const NGINX_INTERNAL_PORT: u16 = 80;
 ///
 /// CLAUDE.md「`#[ignore]` を使わない」に従い、環境差での skip ではなく
 /// 明示的に失敗させて原因を分かりやすくする。
-pub fn ensure_docker() {
+pub(crate) fn ensure_docker() {
     let status = std::process::Command::new("docker")
         .arg("version")
         .arg("--format")
@@ -54,7 +61,7 @@ pub fn ensure_docker() {
 ///
 /// `ContainerAsync` を保持することで Drop 時に testcontainers が自動的に
 /// コンテナを停止 / 削除する。`port` は host 側に publish された TCP ポート。
-pub struct NginxHandle {
+pub(crate) struct NginxHandle {
     // Drop 時にコンテナを停止するためフィールドとして保持する (直接参照はしない)
     _container: ContainerAsync<GenericImage>,
     pub port: u16,
@@ -62,13 +69,13 @@ pub struct NginxHandle {
 
 impl NginxHandle {
     /// `http://127.0.0.1:PORT/path` 形式の URL を組み立てる
-    pub fn http_url(&self, path: &str) -> String {
+    pub(crate) fn http_url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{}", self.port, path)
     }
 }
 
 /// `nginx:1.27-alpine` をデフォルト構成で起動する
-pub async fn spawn_nginx_default() -> NginxHandle {
+pub(crate) async fn spawn_nginx_default() -> NginxHandle {
     let image = GenericImage::new(NGINX_IMAGE_NAME, NGINX_IMAGE_TAG)
         .with_exposed_port(NGINX_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_either_std(NGINX_READY_LOG));
@@ -81,7 +88,7 @@ pub async fn spawn_nginx_default() -> NginxHandle {
 /// `default.conf` を上書きすればデフォルト server 定義を完全に置き換えられる。
 /// `files` は `(コンテナ内パス, 内容)` の組のスライス。`/usr/share/nginx/html/` 配下に
 /// 静的ファイルを置きたい場合や、テスト用 fixture を仕込みたい場合に使う。
-pub async fn spawn_nginx_with_files(conf: &str, files: &[(&str, Vec<u8>)]) -> NginxHandle {
+pub(crate) async fn spawn_nginx_with_files(conf: &str, files: &[(&str, Vec<u8>)]) -> NginxHandle {
     let mut request = GenericImage::new(NGINX_IMAGE_NAME, NGINX_IMAGE_TAG)
         .with_exposed_port(NGINX_INTERNAL_PORT.tcp())
         .with_wait_for(WaitFor::message_on_either_std(NGINX_READY_LOG))
