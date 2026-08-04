@@ -378,7 +378,9 @@ mod http_head_content_length {
             .header(HeaderName::from_static(b"Host"), "example.com")
             .expect("ヘッダーのデコードは成功するはず (実装バグ)");
         for v in values {
-            req = req.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
+            req = req
+                .header(HeaderName::from_static(b"Content-Length"), *v)
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
         }
         req
     }
@@ -387,27 +389,11 @@ mod http_head_content_length {
         let mut res =
             Response::new(200, "OK").expect("ヘッダーのデコードは成功するはず (実装バグ)");
         for v in values {
-            res = res.add_header_clone(HeaderName::from_static(b"Content-Length"), v);
+            res = res
+                .header(HeaderName::from_static(b"Content-Length"), *v)
+                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
         }
         res
-    }
-
-    trait AddHeaderClone: Sized {
-        fn add_header_clone(self, name: HeaderName, value: &str) -> Self;
-    }
-    impl AddHeaderClone for Request {
-        fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
-            self.add_header(name, value)
-                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
-            self
-        }
-    }
-    impl AddHeaderClone for Response {
-        fn add_header_clone(mut self, name: HeaderName, value: &str) -> Self {
-            self.add_header(name, value)
-                .expect("ヘッダーのデコードは成功するはず (実装バグ)");
-            self
-        }
     }
 
     #[test]
