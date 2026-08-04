@@ -741,7 +741,7 @@ mod peek_body_decompressed {
     /// (peek_body_decompressed が `decompress(&[], output)` を呼ぶ振る舞いの検証)
     #[test]
     fn drain_internal_buffer_after_body_exhausted() {
-        /// テスト用 stub: feed 時に `produce_per_byte` 倍の出力を内部 buffer に蓄積する
+        /// テスト用の実装: feed 時に `produce_per_byte` 倍の出力を内部 buffer に蓄積する
         struct BufferingDecompressor {
             buffered: Vec<u8>,
             produce_per_byte: usize,

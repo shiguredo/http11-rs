@@ -18,7 +18,7 @@ use shiguredo_http11::{BodyKind, HttpHead, RequestDecoder, ResponseDecoder};
 use std::cell::Cell;
 use std::rc::Rc;
 
-/// テスト用 stub: NoCompression をラップし reset() 呼び出し回数をカウントする
+/// テスト用のラッパー実装: NoCompression をラップし reset() 呼び出し回数をカウントする
 struct CountingDecompressor {
     inner: NoCompression,
     reset_count: Rc<Cell<usize>>,
