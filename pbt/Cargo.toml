@@ -7,7 +7,7 @@ publish = false
 
 [dependencies]
 # Property-Based Testing のストラテジ生成と検証
-proptest = "1.11"
+noprop = "0.2"
 
 [dev-dependencies]
 shiguredo_http11.workspace = true

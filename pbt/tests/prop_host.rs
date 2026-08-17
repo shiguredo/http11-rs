@@ -1,52 +1,77 @@
 //! Host ヘッダーのプロパティテスト
 
-use proptest::prelude::*;
 use shiguredo_http11::host::Host;
 
 // ========================================
-// Strategy 定義
+// ジェネレータ定義
 // ========================================
 
 // 有効なホスト名文字
-fn hostname_char() -> impl Strategy<Value = char> {
-    prop_oneof![
-        prop::char::range('a', 'z'),
-        prop::char::range('A', 'Z'),
-        prop::char::range('0', '9'),
-        Just('-'),
-    ]
+fn hostname_char(ctx: &mut noprop::TestCaseContext) -> char {
+    match noprop::sample_usize_in(ctx, 0..4) {
+        0 => char::from(b'a' + noprop::sample_usize_in(ctx, 0..26) as u8),
+        1 => char::from(b'A' + noprop::sample_usize_in(ctx, 0..26) as u8),
+        2 => char::from(b'0' + noprop::sample_usize_in(ctx, 0..10) as u8),
+        _ => '-',
+    }
 }
 
-fn hostname_label() -> impl Strategy<Value = String> {
-    proptest::collection::vec(hostname_char(), 1..16).prop_map(|chars| chars.into_iter().collect())
+fn hostname_label(ctx: &mut noprop::TestCaseContext) -> String {
+    let len = noprop::sample_usize_in(ctx, 1..=15);
+    let mut s = String::with_capacity(len);
+    for _ in 0..len {
+        s.push(hostname_char(ctx));
+    }
+    s
 }
 
-fn hostname() -> impl Strategy<Value = String> {
-    proptest::collection::vec(hostname_label(), 1..4).prop_map(|labels| labels.join("."))
+fn hostname(ctx: &mut noprop::TestCaseContext) -> String {
+    let labels = noprop::sample_usize_in(ctx, 1..=3);
+    let mut parts = Vec::with_capacity(labels);
+    for _ in 0..labels {
+        parts.push(hostname_label(ctx));
+    }
+    parts.join(".")
 }
 
 // 有効なポート番号
-fn valid_port() -> impl Strategy<Value = u16> {
-    1u16..=65535
+fn valid_port(ctx: &mut noprop::TestCaseContext) -> u16 {
+    noprop::sample_usize_in(ctx, 1..=65535) as u16
 }
 
 // IPv4 アドレス
-fn ipv4_addr() -> impl Strategy<Value = String> {
-    (0u8..=255, 0u8..=255, 0u8..=255, 0u8..=255)
-        .prop_map(|(a, b, c, d)| format!("{}.{}.{}.{}", a, b, c, d))
+fn ipv4_addr(ctx: &mut noprop::TestCaseContext) -> String {
+    let octets = [
+        noprop::sample_u8(ctx),
+        noprop::sample_u8(ctx),
+        noprop::sample_u8(ctx),
+        noprop::sample_u8(ctx),
+    ];
+    format!("{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3])
 }
 
 // IPv6 アドレス (簡易版)
-fn ipv6_addr() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("::1".to_string()),
-        Just("::".to_string()),
-        Just("fe80::1".to_string()),
-        Just("2001:db8::1".to_string()),
-        Just("::ffff:192.168.1.1".to_string()),
-        (0u16..=0xffff, 0u16..=0xffff, 0u16..=0xffff, 0u16..=0xffff)
-            .prop_map(|(a, b, c, d)| format!("2001:db8::{:x}:{:x}:{:x}:{:x}", a, b, c, d)),
-    ]
+fn ipv6_addr(ctx: &mut noprop::TestCaseContext) -> String {
+    match noprop::sample_usize_in(ctx, 0..6) {
+        0 => "::1".to_string(),
+        1 => "::".to_string(),
+        2 => "fe80::1".to_string(),
+        3 => "2001:db8::1".to_string(),
+        4 => "::ffff:192.168.1.1".to_string(),
+        _ => format!(
+            "2001:db8::{:x}:{:x}:{:x}:{:x}",
+            noprop::sample_u16(ctx),
+            noprop::sample_u16(ctx),
+            noprop::sample_u16(ctx),
+            noprop::sample_u16(ctx),
+        ),
+    }
+}
+
+// パーセントエンコーディング用の 16 進文字 (0-9 / A-F / a-f)
+fn hex_digit_char(ctx: &mut noprop::TestCaseContext) -> char {
+    const HEX: &[u8] = b"0123456789ABCDEFabcdef";
+    HEX[noprop::sample_usize_in(ctx, 0..HEX.len())] as char
 }
 
 // ========================================
@@ -54,35 +79,62 @@ fn ipv6_addr() -> impl Strategy<Value = String> {
 // ========================================
 
 // ホスト名ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_hostname_roundtrip(name in hostname()) {
+#[test]
+fn prop_host_hostname_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let name = hostname(ctx);
         let host = Host::parse(&name).expect("Host のパースは成功するはず (実装バグ)");
-        prop_assert_eq!(host.host(), name.as_str());
-        prop_assert_eq!(host.port(), None);
-        prop_assert!(!host.is_ipv6());
+        assert_eq!(host.host(), name.as_str());
+        assert_eq!(host.port(), None);
+        assert!(!host.is_ipv6());
 
         // Display
         let display = host.to_string();
-        prop_assert_eq!(display, name);
-    }
+        assert_eq!(display, name);
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ホスト名 + ポートラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_hostname_port_roundtrip(name in hostname(), port in valid_port()) {
+#[test]
+fn prop_host_hostname_port_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let name = hostname(ctx);
+        let port = valid_port(ctx);
         let input = format!("{}:{}", name, port);
         let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), name.as_str());
-        prop_assert_eq!(host.port(), Some(port));
-        prop_assert!(!host.is_ipv6());
+        assert_eq!(host.host(), name.as_str());
+        assert_eq!(host.port(), Some(port));
+        assert!(!host.is_ipv6());
 
         // Display
         let display = host.to_string();
-        prop_assert_eq!(display, input);
-    }
+        assert_eq!(display, input);
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -90,27 +142,54 @@ proptest! {
 // ========================================
 
 // IPv4 ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_ipv4_roundtrip(addr in ipv4_addr()) {
+#[test]
+fn prop_host_ipv4_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let addr = ipv4_addr(ctx);
         let host = Host::parse(&addr).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), addr.as_str());
-        prop_assert_eq!(host.port(), None);
-        prop_assert!(!host.is_ipv6());
-    }
+        assert_eq!(host.host(), addr.as_str());
+        assert_eq!(host.port(), None);
+        assert!(!host.is_ipv6());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // IPv4 + ポートラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_ipv4_port_roundtrip(addr in ipv4_addr(), port in valid_port()) {
+#[test]
+fn prop_host_ipv4_port_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let addr = ipv4_addr(ctx);
+        let port = valid_port(ctx);
         let input = format!("{}:{}", addr, port);
         let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), addr.as_str());
-        prop_assert_eq!(host.port(), Some(port));
-    }
+        assert_eq!(host.host(), addr.as_str());
+        assert_eq!(host.port(), Some(port));
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -118,29 +197,56 @@ proptest! {
 // ========================================
 
 // IPv6 ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_ipv6_roundtrip(addr in ipv6_addr()) {
+#[test]
+fn prop_host_ipv6_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let addr = ipv6_addr(ctx);
         let input = format!("[{}]", addr);
         let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), input.as_str());
-        prop_assert_eq!(host.port(), None);
-        prop_assert!(host.is_ipv6());
-    }
+        assert_eq!(host.host(), input.as_str());
+        assert_eq!(host.port(), None);
+        assert!(host.is_ipv6());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // IPv6 + ポートラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_host_ipv6_port_roundtrip(addr in ipv6_addr(), port in valid_port()) {
+#[test]
+fn prop_host_ipv6_port_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let addr = ipv6_addr(ctx);
+        let port = valid_port(ctx);
         let input = format!("[{}]:{}", addr, port);
         let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), format!("[{}]", addr));
-        prop_assert_eq!(host.port(), Some(port));
-        prop_assert!(host.is_ipv6());
-    }
+        assert_eq!(host.host(), format!("[{}]", addr));
+        assert_eq!(host.port(), Some(port));
+        assert!(host.is_ipv6());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -148,12 +254,26 @@ proptest! {
 // ========================================
 
 // パーセントエンコーディングを含むホスト名
-proptest! {
-    #[test]
-    fn prop_host_percent_encoded(hex1 in "[0-9A-Fa-f]{2}", hex2 in "[0-9A-Fa-f]{2}") {
-        let input = format!("example%{}.test%{}", hex1, hex2);
+#[test]
+fn prop_host_percent_encoded() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let hex1 = [hex_digit_char(ctx), hex_digit_char(ctx)];
+        let hex2 = [hex_digit_char(ctx), hex_digit_char(ctx)];
+        let input = format!("example%{}{}.test%{}{}", hex1[0], hex1[1], hex2[0], hex2[1]);
         let host = Host::parse(&input).expect("Host のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(host.host(), input.as_str());
-    }
+        assert_eq!(host.host(), input.as_str());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
