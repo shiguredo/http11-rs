@@ -48,6 +48,9 @@
   - nginx.conf は起動時に読まれるため bind mount で投入する (macOS の with_copy_to は start 後に投入されるため)
   - 大容量レスポンスの途中切断を避けるため published port ではなくコンテナ IP 直結で接続する
   - @voluntas
+- [FIX] canary.py の `cargo update shiguredo_http11` が Cargo.lock 上の複数バージョンで曖昧になる問題を修正する
+  - `cargo update -p shiguredo_http11@<更新前バージョン>` で workspace の path 版だけを更新する
+  - @voluntas
 - [FIX] ライブラリ API の変更に追従できずビルドできない fuzz ターゲットを修正する
   - @voluntas
 - [FIX] `encode_response_headers` の Content-Length 整合性検証が `omit_body(true)` を考慮しない問題を修正する

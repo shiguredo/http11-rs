@@ -4,8 +4,9 @@ import subprocess
 from typing import Optional
 
 
-# ファイルを読み込み、バージョンを更新
-def update_version(file_path: str, dry_run: bool) -> Optional[str]:
+# ファイルを読み込み、バージョンを更新する
+# 戻り値は (更新前バージョン, 更新後バージョン)。キャンセル時は None。
+def update_version(file_path: str, dry_run: bool) -> Optional[tuple[str, str]]:
     with open(file_path, "r", encoding="utf-8") as f:
         content: str = f.read()
 
@@ -82,16 +83,22 @@ def update_version(file_path: str, dry_run: bool) -> Optional[str]:
             f.write(new_content)
         print(f"Version updated in Cargo.toml to {new_version}")
 
-    return new_version
+    return current_version, new_version
 
 
-# cargo update shiguredo_http11 を実行
-def run_cargo_update(dry_run: bool) -> None:
+# cargo update -p shiguredo_http11@<更新前バージョン> を実行する
+#
+# Cargo.lock には workspace の path 版と、shiguredo_container 経由の
+# crates.io 版が共存する。パッケージ名だけ指定すると ambiguous になる。
+# Cargo.toml を書き換えた直後の lock には新バージョンがまだ無いため、
+# bump 前のバージョンで path 版だけを指定して更新する。
+def run_cargo_update(current_version: str, dry_run: bool) -> None:
+    package_spec: str = f"shiguredo_http11@{current_version}"
     if dry_run:
-        print("Dry-run: Would run 'cargo update shiguredo_http11'")
+        print(f"Dry-run: Would run 'cargo update -p {package_spec}'")
     else:
-        subprocess.run(["cargo", "update", "shiguredo_http11"], check=True)
-        print("cargo update shiguredo_http11 executed")
+        subprocess.run(["cargo", "update", "-p", package_spec], check=True)
+        print(f"cargo update -p {package_spec} executed")
 
 
 # git コミット、タグ、プッシュを実行
@@ -135,13 +142,15 @@ def main() -> None:
     cargo_toml_path: str = "Cargo.toml"
 
     # バージョン更新
-    new_version: Optional[str] = update_version(cargo_toml_path, args.dry_run)
+    versions: Optional[tuple[str, str]] = update_version(cargo_toml_path, args.dry_run)
 
-    if not new_version:
+    if not versions:
         return  # ユーザーが確認をキャンセルした場合、処理を中断
 
-    # cargo update shiguredo_http11 を実行
-    run_cargo_update(args.dry_run)
+    current_version, new_version = versions
+
+    # cargo update -p shiguredo_http11@<更新前バージョン> を実行する
+    run_cargo_update(current_version, args.dry_run)
 
     # バージョン更新後に git commit
     git_commit_version(new_version, args.dry_run)
