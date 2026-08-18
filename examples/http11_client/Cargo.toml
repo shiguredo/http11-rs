@@ -39,15 +39,8 @@ noflate = "0.1"
 zstd = "0.13"
 
 [dev-dependencies]
-# Docker コンテナ起動 (実 nginx 相手の integration test)
-testcontainers = {
-  version = "0.27",
-  default-features = false,
-  features = [
-    # 暗号バックエンド (AGENTS.md: 暗号ライブラリは aws-lc-rs)
-    "aws-lc-rs",
-  ]
-}
+# コンテナ起動 (実 nginx 相手の integration test、Linux は Docker / macOS は Apple Container)
+shiguredo_container = "2026.1.0-canary.11"
 # 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
 tokio = {
   version = "1.53",

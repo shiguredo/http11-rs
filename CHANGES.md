@@ -43,6 +43,11 @@
   - @voluntas
 - [UPDATE] pre-commit フックから `cargo test` を外し、pre-push でのみ実行するようにする
   - @voluntas
+- [UPDATE] examples/http11_client の integration test のコンテナ管理を testcontainers から shiguredo_container に移行する
+  - shiguredo_container (Linux は Docker / macOS は Apple Container) で実 nginx を起動する
+  - nginx.conf は起動時に読まれるため bind mount で投入する (macOS の with_copy_to は start 後に投入されるため)
+  - 大容量レスポンスの途中切断を避けるため published port ではなくコンテナ IP 直結で接続する
+  - @voluntas
 - [FIX] ライブラリ API の変更に追従できずビルドできない fuzz ターゲットを修正する
   - @voluntas
 - [FIX] `encode_response_headers` の Content-Length 整合性検証が `omit_body(true)` を考慮しない問題を修正する

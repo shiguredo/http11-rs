@@ -94,7 +94,6 @@ async fn fetch_with_headers(
 
 #[tokio::test]
 async fn chunked_response_decoded_properly() {
-    helpers::ensure_docker();
     // gzip filter を確実に通すために十分なサイズのテキストを用意する
     let body_text = "lorem ipsum dolor sit amet ".repeat(512);
     let nginx = helpers::spawn_nginx_with_files(
@@ -134,7 +133,6 @@ async fn chunked_response_decoded_properly() {
 
 #[tokio::test]
 async fn large_body_received_completely() {
-    helpers::ensure_docker();
     // 1 MiB の決定論的バイト列 (パターン検証可能)
     let body: Vec<u8> = (0..1024 * 1024).map(|i| (i % 251) as u8).collect();
     let nginx = helpers::spawn_nginx_with_files(
@@ -165,7 +163,6 @@ async fn large_body_received_completely() {
 
 #[tokio::test]
 async fn connection_close_terminates_request() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_with_files(
         CONF_CLOSE,
         &[(
@@ -202,7 +199,6 @@ async fn connection_close_terminates_request() {
 /// 1 MiB 級のレスポンスを受信できることを確かめるストレステスト。
 #[tokio::test]
 async fn streams_large_gzip_body() {
-    helpers::ensure_docker();
     // 1 MiB 程度の繰り返しテキスト (gzip filter が確実に走り、複数チャンクに分かれる量)
     let body_text = "lorem ipsum dolor sit amet ".repeat(40_000);
     let nginx = helpers::spawn_nginx_with_files(
@@ -258,7 +254,6 @@ async fn streams_large_gzip_body() {
 /// 内部 buffer を完全に drain できることを確認する (ライブラリ側の挙動検証)。
 #[tokio::test]
 async fn peek_body_decompressed_streams_gzip() {
-    helpers::ensure_docker();
     // 1 MiB 程度の繰り返しテキスト (gzip filter が確実に走り、複数チャンクに分かれる量)
     let body_text = "lorem ipsum dolor sit amet ".repeat(40_000);
     let nginx = helpers::spawn_nginx_with_files(
