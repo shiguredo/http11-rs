@@ -23,6 +23,10 @@
 
 ### misc
 
+- [UPDATE] PBT 基盤を proptest から noprop に置き換える
+  - `pbt/Cargo.toml` の依存を `noprop = "0.2"` に置き換え、`pbt/tests/prop_*.rs` の全テストを noprop の命令型スタイル (素の Rust クロージャ) で書き直す
+  - ジェネレータを valid-by-construction にし、空振り検証を防ぐカバレッジゲートと `rejected_cases == 0` の検証を各テストに追加する
+  - @voluntas
 - [ADD] ヘッダー個数・サイズ上限によるメモリ枯渇防御を検証する PBT を追加する
   - 同名ヘッダー・空値ヘッダーの大量送信が個数制限に計上されること、デコード済みヘッダーが個数 x 行サイズで有界であること、トレーラーの大量送信も個数制限で拒否されることを検証する
   - @voluntas

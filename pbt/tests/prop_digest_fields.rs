@@ -1,36 +1,44 @@
 //! Digest Fields のプロパティテスト (RFC 9530)
 
-use proptest::prelude::*;
 use shiguredo_http11::digest_fields::{
     ContentDigest, ReprDigest, WantContentDigest, WantReprDigest,
 };
 
 // ========================================
-// Strategy 定義
+// ジェネレータ定義
 // ========================================
 
 // 有効なアルゴリズム名
-fn valid_algorithm() -> impl Strategy<Value = String> {
-    prop_oneof![
-        Just("sha-256".to_string()),
-        Just("sha-512".to_string()),
-        Just("sha-384".to_string()),
-        Just("md5".to_string()),
-        Just("unixsum".to_string()),
-        Just("unixcksum".to_string()),
-        Just("adler32".to_string()),
-        Just("crc32c".to_string()),
-    ]
+fn valid_algorithm(ctx: &mut noprop::TestCaseContext) -> String {
+    noprop::sample_choice(
+        ctx,
+        &[
+            "sha-256",
+            "sha-512",
+            "sha-384",
+            "md5",
+            "unixsum",
+            "unixcksum",
+            "adler32",
+            "crc32c",
+        ],
+    )
+    .to_string()
 }
 
 // 有効な優先度 (0-10)
-fn valid_weight() -> impl Strategy<Value = u8> {
-    0u8..=10
+fn valid_weight(ctx: &mut noprop::TestCaseContext) -> u8 {
+    noprop::sample_usize_in(ctx, 0..=10) as u8
 }
 
 // 任意のバイト列 (digest 値)
-fn digest_bytes() -> impl Strategy<Value = Vec<u8>> {
-    proptest::collection::vec(any::<u8>(), 1..64)
+fn digest_bytes(ctx: &mut noprop::TestCaseContext) -> Vec<u8> {
+    let len = noprop::sample_usize_in(ctx, 1..64);
+    let mut v = Vec::with_capacity(len);
+    for _ in 0..len {
+        v.push(noprop::sample_u8(ctx));
+    }
+    v
 }
 
 // Base64 エンコード用の関数 (テスト用)
@@ -74,88 +82,173 @@ fn base64_encode(input: &[u8]) -> String {
 // ========================================
 
 // 単一のダイジェストパース
-proptest! {
-    #[test]
-    fn prop_content_digest_parse_single(
-        algorithm in valid_algorithm(),
-        data in digest_bytes()
-    ) {
+#[test]
+fn prop_content_digest_parse_single() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(digest.items().len(), 1);
-        prop_assert_eq!(digest.items()[0].algorithm(), algorithm.as_str());
-    }
+        let digest = ContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(digest.items().len(), 1, "アイテム数が 1 であること");
+        assert_eq!(
+            digest.items()[0].algorithm(),
+            algorithm.as_str(),
+            "アルゴリズム名が一致すること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // 複数のダイジェストパース
-proptest! {
-    #[test]
-    fn prop_content_digest_parse_multiple(
-        data1 in digest_bytes(),
-        data2 in digest_bytes()
-    ) {
+#[test]
+fn prop_content_digest_parse_multiple() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let data1 = digest_bytes(ctx);
+        let data2 = digest_bytes(ctx);
         let b64_1 = base64_encode(&data1);
         let b64_2 = base64_encode(&data2);
         let input = format!("sha-256=:{}:, sha-512=:{}:", b64_1, b64_2);
 
-        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(digest.items().len(), 2);
-        prop_assert_eq!(digest.items()[0].algorithm(), "sha-256");
-        prop_assert_eq!(digest.items()[1].algorithm(), "sha-512");
-    }
+        let digest = ContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(digest.items().len(), 2, "アイテム数が 2 であること");
+        assert_eq!(
+            digest.items()[0].algorithm(),
+            "sha-256",
+            "先頭のアルゴリズム名が一致すること",
+        );
+        assert_eq!(
+            digest.items()[1].algorithm(),
+            "sha-512",
+            "2 番目のアルゴリズム名が一致すること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // get メソッド
-proptest! {
-    #[test]
-    fn prop_content_digest_get(
-        algorithm in valid_algorithm(),
-        data in digest_bytes()
-    ) {
+#[test]
+fn prop_content_digest_get() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let digest = ContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
 
         // 大文字小文字を無視して取得
-        prop_assert!(digest.get(&algorithm).is_some());
-        prop_assert!(digest.get(&algorithm.to_uppercase()).is_some());
+        assert!(
+            digest.get(&algorithm).is_some(),
+            "アルゴリズム名で取得できること"
+        );
+        assert!(
+            digest.get(&algorithm.to_uppercase()).is_some(),
+            "大文字のアルゴリズム名でも取得できること",
+        );
 
         // 存在しないアルゴリズム
-        prop_assert!(digest.get("nonexistent").is_none());
-    }
+        assert!(
+            digest.get("nonexistent").is_none(),
+            "存在しないアルゴリズムは None になること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // Display ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_content_digest_display_roundtrip(data in digest_bytes()) {
+#[test]
+fn prop_content_digest_display_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let digest = ContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = digest.to_string();
 
         // 再パース可能
         let reparsed = ContentDigest::parse(&display);
-        prop_assert!(reparsed.is_ok());
-    }
+        assert!(reparsed.is_ok(), "再パースは成功するはず (実装バグ)");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // DigestValue::bytes
-proptest! {
-    #[test]
-    fn prop_digest_value_bytes(data in digest_bytes()) {
+#[test]
+fn prop_digest_value_bytes() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let digest = ContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let value = digest.items()[0].value();
 
-        prop_assert_eq!(value.bytes(), data.as_slice());
-    }
+        assert_eq!(value.bytes(), data.as_slice(), "バイト列が一致すること");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -163,66 +256,126 @@ proptest! {
 // ========================================
 
 // 単一のダイジェストパース
-proptest! {
-    #[test]
-    fn prop_repr_digest_parse_single(
-        algorithm in valid_algorithm(),
-        data in digest_bytes()
-    ) {
+#[test]
+fn prop_repr_digest_parse_single() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(digest.items().len(), 1);
-        prop_assert_eq!(digest.items()[0].algorithm(), algorithm.as_str());
-    }
+        let digest =
+            ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(digest.items().len(), 1, "アイテム数が 1 であること");
+        assert_eq!(
+            digest.items()[0].algorithm(),
+            algorithm.as_str(),
+            "アルゴリズム名が一致すること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // 複数のダイジェストパース
-proptest! {
-    #[test]
-    fn prop_repr_digest_parse_multiple(
-        data1 in digest_bytes(),
-        data2 in digest_bytes()
-    ) {
+#[test]
+fn prop_repr_digest_parse_multiple() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let data1 = digest_bytes(ctx);
+        let data2 = digest_bytes(ctx);
         let b64_1 = base64_encode(&data1);
         let b64_2 = base64_encode(&data2);
         let input = format!("sha-256=:{}:, sha-512=:{}:", b64_1, b64_2);
 
-        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(digest.items().len(), 2);
-    }
+        let digest =
+            ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(digest.items().len(), 2, "アイテム数が 2 であること");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // get メソッド
-proptest! {
-    #[test]
-    fn prop_repr_digest_get(
-        algorithm in valid_algorithm(),
-        data in digest_bytes()
-    ) {
+#[test]
+fn prop_repr_digest_get() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("{}=:{}:", algorithm, b64);
 
-        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert!(digest.get(&algorithm).is_some());
-        prop_assert!(digest.get("nonexistent").is_none());
-    }
+        let digest =
+            ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert!(
+            digest.get(&algorithm).is_some(),
+            "アルゴリズム名で取得できること"
+        );
+        assert!(
+            digest.get("nonexistent").is_none(),
+            "存在しないアルゴリズムは None になること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // Display ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_repr_digest_display_roundtrip(data in digest_bytes()) {
+#[test]
+fn prop_repr_digest_display_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let data = digest_bytes(ctx);
         let b64 = base64_encode(&data);
         let input = format!("sha-256=:{}:", b64);
 
-        let digest = ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let digest =
+            ReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = digest.to_string();
 
         let reparsed = ReprDigest::parse(&display);
-        prop_assert!(reparsed.is_ok());
-    }
+        assert!(reparsed.is_ok(), "再パースは成功するはず (実装バグ)");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -230,68 +383,139 @@ proptest! {
 // ========================================
 
 // 単一の優先度パース
-proptest! {
-    #[test]
-    fn prop_want_content_digest_parse_single(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_content_digest_parse_single() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.items().len(), 1);
-        prop_assert_eq!(want.items()[0].algorithm(), algorithm.as_str());
-        prop_assert_eq!(want.items()[0].weight(), weight);
-    }
+        let want = WantContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(want.items().len(), 1, "アイテム数が 1 であること");
+        assert_eq!(
+            want.items()[0].algorithm(),
+            algorithm.as_str(),
+            "アルゴリズム名が一致すること",
+        );
+        assert_eq!(want.items()[0].weight(), weight, "優先度が一致すること");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // 複数の優先度パース
-proptest! {
-    #[test]
-    fn prop_want_content_digest_parse_multiple(
-        weight1 in valid_weight(),
-        weight2 in valid_weight()
-    ) {
+#[test]
+fn prop_want_content_digest_parse_multiple() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let weight1 = valid_weight(ctx);
+        let weight2 = valid_weight(ctx);
         let input = format!("sha-256={}, sha-512={}", weight1, weight2);
 
-        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.items().len(), 2);
-        prop_assert_eq!(want.items()[0].weight(), weight1);
-        prop_assert_eq!(want.items()[1].weight(), weight2);
-    }
+        let want = WantContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(want.items().len(), 2, "アイテム数が 2 であること");
+        assert_eq!(
+            want.items()[0].weight(),
+            weight1,
+            "先頭の優先度が一致すること"
+        );
+        assert_eq!(
+            want.items()[1].weight(),
+            weight2,
+            "2 番目の優先度が一致すること"
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // get メソッド
-proptest! {
-    #[test]
-    fn prop_want_content_digest_get(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_content_digest_get() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.get(&algorithm), Some(weight));
-        prop_assert_eq!(want.get(&algorithm.to_uppercase()), Some(weight));
-        prop_assert!(want.get("nonexistent").is_none());
-    }
+        let want = WantContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(
+            want.get(&algorithm),
+            Some(weight),
+            "アルゴリズム名で取得できること"
+        );
+        assert_eq!(
+            want.get(&algorithm.to_uppercase()),
+            Some(weight),
+            "大文字のアルゴリズム名でも取得できること",
+        );
+        assert!(
+            want.get("nonexistent").is_none(),
+            "存在しないアルゴリズムは None になること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // Display ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_want_content_digest_display_roundtrip(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_content_digest_display_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantContentDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let want = WantContentDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = want.to_string();
 
         let reparsed = WantContentDigest::parse(&display);
-        prop_assert!(reparsed.is_ok());
-    }
+        assert!(reparsed.is_ok(), "再パースは成功するはず (実装バグ)");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
@@ -299,63 +523,122 @@ proptest! {
 // ========================================
 
 // 単一の優先度パース
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_parse_single(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_repr_digest_parse_single() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.items().len(), 1);
-        prop_assert_eq!(want.items()[0].algorithm(), algorithm.as_str());
-        prop_assert_eq!(want.items()[0].weight(), weight);
-    }
+        let want = WantReprDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(want.items().len(), 1, "アイテム数が 1 であること");
+        assert_eq!(
+            want.items()[0].algorithm(),
+            algorithm.as_str(),
+            "アルゴリズム名が一致すること",
+        );
+        assert_eq!(want.items()[0].weight(), weight, "優先度が一致すること");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // 複数の優先度パース
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_parse_multiple(
-        weight1 in valid_weight(),
-        weight2 in valid_weight()
-    ) {
+#[test]
+fn prop_want_repr_digest_parse_multiple() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let weight1 = valid_weight(ctx);
+        let weight2 = valid_weight(ctx);
         let input = format!("sha-256={}, sha-512={}", weight1, weight2);
 
-        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.items().len(), 2);
-    }
+        let want = WantReprDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(want.items().len(), 2, "アイテム数が 2 であること");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // get メソッド
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_get(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_repr_digest_get() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
-        prop_assert_eq!(want.get(&algorithm), Some(weight));
-        prop_assert!(want.get("nonexistent").is_none());
-    }
+        let want = WantReprDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        assert_eq!(
+            want.get(&algorithm),
+            Some(weight),
+            "アルゴリズム名で取得できること"
+        );
+        assert!(
+            want.get("nonexistent").is_none(),
+            "存在しないアルゴリズムは None になること",
+        );
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // Display ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_want_repr_digest_display_roundtrip(
-        algorithm in valid_algorithm(),
-        weight in valid_weight()
-    ) {
+#[test]
+fn prop_want_repr_digest_display_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let algorithm = valid_algorithm(ctx);
+        let weight = valid_weight(ctx);
         let input = format!("{}={}", algorithm, weight);
 
-        let want = WantReprDigest::parse(&input).expect("Digest フィールドのパースは成功するはず (実装バグ)");
+        let want = WantReprDigest::parse(&input)
+            .expect("Digest フィールドのパースは成功するはず (実装バグ)");
         let display = want.to_string();
 
         let reparsed = WantReprDigest::parse(&display);
-        prop_assert!(reparsed.is_ok());
-    }
+        assert!(reparsed.is_ok(), "再パースは成功するはず (実装バグ)");
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }

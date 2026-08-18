@@ -1,103 +1,156 @@
 //! キャッシュヘッダーのプロパティテスト
 
-use proptest::prelude::*;
 use shiguredo_http11::cache::{Age, CacheControl, Expires};
 
 // ========================================
-// Strategy 定義
+// ジェネレータ定義
 // ========================================
 
 // 秒数 (0 から 1 年)
-fn seconds() -> impl Strategy<Value = u64> {
-    0u64..31536001 // 1 年 + 1
+fn seconds(ctx: &mut noprop::TestCaseContext) -> u64 {
+    noprop::sample_u64_in(ctx, 0..=31_536_000) // 1 年 + 1
 }
 
 // ========================================
 // CacheControl のテスト
 // ========================================
 
-// 全ディレクティブのラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_cache_control_all_directives_roundtrip(
-        max_age in prop::option::of(seconds()),
-        s_maxage in prop::option::of(seconds()),
-        no_cache in any::<bool>(),
-        no_store in any::<bool>(),
-        no_transform in any::<bool>(),
-        must_revalidate in any::<bool>(),
-        proxy_revalidate in any::<bool>(),
-        is_public in any::<bool>(),
-        is_private in any::<bool>(),
-        immutable in any::<bool>()
-    ) {
+/// 全ディレクティブのラウンドトリップ
+#[test]
+fn prop_cache_control_all_directives_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
         // 空の CacheControl もラウンドトリップ可能
         let mut cc = CacheControl::new();
-        if let Some(ma) = max_age {
-            cc = cc.with_max_age(ma);
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_max_age(seconds(ctx));
         }
-        if let Some(sma) = s_maxage {
-            cc = cc.with_s_maxage(sma);
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_s_maxage(seconds(ctx));
         }
-        if no_cache { cc = cc.with_no_cache(); }
-        if no_store { cc = cc.with_no_store(); }
-        if no_transform { cc = cc.with_no_transform(); }
-        if must_revalidate { cc = cc.with_must_revalidate(); }
-        if proxy_revalidate { cc = cc.with_proxy_revalidate(); }
-        if is_public { cc = cc.with_public(); }
-        if is_private { cc = cc.with_private(); }
-        if immutable { cc = cc.with_immutable(); }
-
-        let header = cc.to_string();
-        let reparsed = CacheControl::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-
-        prop_assert_eq!(cc.max_age(), reparsed.max_age());
-        prop_assert_eq!(cc.s_maxage(), reparsed.s_maxage());
-        prop_assert_eq!(cc.is_no_cache(), reparsed.is_no_cache());
-        prop_assert_eq!(cc.is_no_store(), reparsed.is_no_store());
-        prop_assert_eq!(cc.is_no_transform(), reparsed.is_no_transform());
-        prop_assert_eq!(cc.is_must_revalidate(), reparsed.is_must_revalidate());
-        prop_assert_eq!(cc.is_proxy_revalidate(), reparsed.is_proxy_revalidate());
-        prop_assert_eq!(cc.is_public(), reparsed.is_public());
-        prop_assert_eq!(cc.is_private(), reparsed.is_private());
-        prop_assert_eq!(cc.is_immutable(), reparsed.is_immutable());
-    }
-}
-
-// is_cacheable の正確性
-proptest! {
-    #[test]
-    fn prop_cache_control_is_cacheable(
-        max_age in prop::option::of(seconds()),
-        s_maxage in prop::option::of(seconds()),
-        no_store in any::<bool>(),
-        is_public in any::<bool>()
-    ) {
-        let mut cc = CacheControl::new();
-        if let Some(ma) = max_age {
-            cc = cc.with_max_age(ma);
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_no_cache();
         }
-        if let Some(sma) = s_maxage {
-            cc = cc.with_s_maxage(sma);
-        }
-        if no_store {
+        if noprop::sample_bool(ctx) {
             cc = cc.with_no_store();
         }
-        if is_public {
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_no_transform();
+        }
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_must_revalidate();
+        }
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_proxy_revalidate();
+        }
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_public();
+        }
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_private();
+        }
+        if noprop::sample_bool(ctx) {
+            cc = cc.with_immutable();
+        }
+
+        let header = cc.to_string();
+        let reparsed =
+            CacheControl::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+
+        assert_eq!(cc.max_age(), reparsed.max_age());
+        assert_eq!(cc.s_maxage(), reparsed.s_maxage());
+        assert_eq!(cc.is_no_cache(), reparsed.is_no_cache());
+        assert_eq!(cc.is_no_store(), reparsed.is_no_store());
+        assert_eq!(cc.is_no_transform(), reparsed.is_no_transform());
+        assert_eq!(cc.is_must_revalidate(), reparsed.is_must_revalidate());
+        assert_eq!(cc.is_proxy_revalidate(), reparsed.is_proxy_revalidate());
+        assert_eq!(cc.is_public(), reparsed.is_public());
+        assert_eq!(cc.is_private(), reparsed.is_private());
+        assert_eq!(cc.is_immutable(), reparsed.is_immutable());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
+}
+
+/// is_cacheable の正確性
+#[test]
+fn prop_cache_control_is_cacheable() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let cacheable_cases = std::cell::Cell::new(0usize);
+    let not_cacheable_cases = std::cell::Cell::new(0usize);
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let mut cc = CacheControl::new();
+        let has_max_age = noprop::sample_bool(ctx);
+        if has_max_age {
+            cc = cc.with_max_age(seconds(ctx));
+        }
+        let has_s_maxage = noprop::sample_bool(ctx);
+        if has_s_maxage {
+            cc = cc.with_s_maxage(seconds(ctx));
+        }
+        let has_no_store = noprop::sample_bool(ctx);
+        if has_no_store {
+            cc = cc.with_no_store();
+        }
+        let has_public = noprop::sample_bool(ctx);
+        if has_public {
             cc = cc.with_public();
         }
 
         // no-store があれば cacheable ではない
         // そうでなければ public または max-age または s-maxage があれば cacheable
-        let expected = !no_store && (is_public || max_age.is_some() || s_maxage.is_some());
-        prop_assert_eq!(cc.is_cacheable(), expected);
-    }
+        let expected = !has_no_store && (has_public || has_max_age || has_s_maxage);
+        let actual = cc.is_cacheable();
+        assert_eq!(actual, expected);
+
+        // 比較の両側 (cacheable / not cacheable) が実行されたことを検証するゲート
+        if actual {
+            cacheable_cases.set(cacheable_cases.get() + 1);
+        } else {
+            not_cacheable_cases.set(not_cacheable_cases.get() + 1);
+        }
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    // p(cacheable) = P(no-store なし) * P(public/max-age/s-maxage いずれか)
+    //               = 1/2 * (1 - (1/2)^3) = 7/16 ≈ 0.44
+    // p(not cacheable) ≈ 0.56 のため、256 ケースでどちらもほぼ確実に実行される
+    assert!(
+        cacheable_cases.get() > 0,
+        "cacheable が true になるケースが 1 回も実行されていない\n{runner}"
+    );
+    assert!(
+        not_cacheable_cases.get() > 0,
+        "cacheable が false になるケースが 1 回も実行されていない\n{runner}"
+    );
+    Ok(())
 }
 
-// 大文字小文字混在
-proptest! {
-    #[test]
-    fn prop_cache_control_case_insensitive(max_age in 0u64..86400) {
+/// 大文字小文字混在
+#[test]
+fn prop_cache_control_case_insensitive() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let max_age = noprop::sample_u64_in(ctx, 0..86_400);
         let inputs = [
             format!("MAX-AGE={}", max_age),
             format!("Max-Age={}", max_age),
@@ -106,83 +159,165 @@ proptest! {
         ];
 
         for input in inputs {
-            let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-            prop_assert_eq!(cc.max_age(), Some(max_age));
+            let cc = CacheControl::parse(&input)
+                .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+            assert_eq!(cc.max_age(), Some(max_age));
         }
-    }
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
-// max-stale 値あり
-proptest! {
-    #[test]
-    fn prop_cache_control_max_stale_with_value(seconds in 0u64..86400) {
+/// max-stale 値あり
+#[test]
+fn prop_cache_control_max_stale_with_value() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let seconds = noprop::sample_u64_in(ctx, 0..86_400);
         let input = format!("max-stale={}", seconds);
-        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-        prop_assert_eq!(cc.max_stale(), Some(seconds));
-    }
+        let cc =
+            CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        assert_eq!(cc.max_stale(), Some(seconds));
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
-// min-fresh
-proptest! {
-    #[test]
-    fn prop_cache_control_min_fresh(seconds in 0u64..86400) {
+/// min-fresh
+#[test]
+fn prop_cache_control_min_fresh() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let seconds = noprop::sample_u64_in(ctx, 0..86_400);
         let input = format!("min-fresh={}", seconds);
-        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-        prop_assert_eq!(cc.min_fresh(), Some(seconds));
-    }
+        let cc =
+            CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        assert_eq!(cc.min_fresh(), Some(seconds));
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
-// stale-while-revalidate
-proptest! {
-    #[test]
-    fn prop_cache_control_stale_while_revalidate(seconds in 0u64..86400) {
+/// stale-while-revalidate
+#[test]
+fn prop_cache_control_stale_while_revalidate() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let seconds = noprop::sample_u64_in(ctx, 0..86_400);
         let input = format!("stale-while-revalidate={}", seconds);
-        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-        prop_assert_eq!(cc.stale_while_revalidate(), Some(seconds));
-    }
+        let cc =
+            CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        assert_eq!(cc.stale_while_revalidate(), Some(seconds));
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
-// stale-if-error
-proptest! {
-    #[test]
-    fn prop_cache_control_stale_if_error(seconds in 0u64..86400) {
+/// stale-if-error
+#[test]
+fn prop_cache_control_stale_if_error() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let seconds = noprop::sample_u64_in(ctx, 0..86_400);
         let input = format!("stale-if-error={}", seconds);
-        let cc = CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
-        prop_assert_eq!(cc.stale_if_error(), Some(seconds));
-    }
+        let cc =
+            CacheControl::parse(&input).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        assert_eq!(cc.stale_if_error(), Some(seconds));
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
 // Age のテスト
 // ========================================
 
-// Age ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_age_roundtrip(secs in seconds()) {
+/// Age ラウンドトリップ
+#[test]
+fn prop_age_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let secs = seconds(ctx);
         let age = Age::new(secs);
         let header = age.to_string();
-        let reparsed = Age::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        let reparsed =
+            Age::parse(&header).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(age.seconds(), reparsed.seconds());
-    }
+        assert_eq!(age.seconds(), reparsed.seconds());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
 
 // ========================================
 // Expires のテスト
 // ========================================
 
-// Expires ラウンドトリップ
-proptest! {
-    #[test]
-    fn prop_expires_roundtrip(
-        day in 1u8..=28,
-        month in 1u8..=12,
-        year in 1990u16..=2100,
-        hour in 0u8..=23,
-        minute in 0u8..=59,
-        second in 0u8..=59
-    ) {
+/// Expires ラウンドトリップ
+#[test]
+fn prop_expires_roundtrip() -> noprop::TestResult {
+    let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
+    let mut runner = noprop::Runner::new(seed);
+
+    runner.run(256, |ctx| {
+        let day = noprop::sample_usize_in(ctx, 1..=28) as u8;
+        let month = noprop::sample_usize_in(ctx, 1..=12) as u8;
+        let year = noprop::sample_usize_in(ctx, 1990..=2100) as u16;
+        let hour = noprop::sample_usize_in(ctx, 0..=23) as u8;
+        let minute = noprop::sample_usize_in(ctx, 0..=59) as u8;
+        let second = noprop::sample_usize_in(ctx, 0..=59) as u8;
         let dow_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         let month_names = [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -196,15 +331,26 @@ proptest! {
             dow, day, mon, year, hour, minute, second
         );
 
-        let expires = Expires::parse(&date_str, 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        let expires = Expires::parse(&date_str, 2026)
+            .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
         let displayed = expires.to_string();
-        let reparsed = Expires::parse(&displayed, 2026).expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+        let reparsed = Expires::parse(&displayed, 2026)
+            .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
 
-        prop_assert_eq!(expires.date().day(), reparsed.date().day());
-        prop_assert_eq!(expires.date().month(), reparsed.date().month());
-        prop_assert_eq!(expires.date().year(), reparsed.date().year());
-        prop_assert_eq!(expires.date().hour(), reparsed.date().hour());
-        prop_assert_eq!(expires.date().minute(), reparsed.date().minute());
-        prop_assert_eq!(expires.date().second(), reparsed.date().second());
-    }
+        assert_eq!(expires.date().day(), reparsed.date().day());
+        assert_eq!(expires.date().month(), reparsed.date().month());
+        assert_eq!(expires.date().year(), reparsed.date().year());
+        assert_eq!(expires.date().hour(), reparsed.date().hour());
+        assert_eq!(expires.date().minute(), reparsed.date().minute());
+        assert_eq!(expires.date().second(), reparsed.date().second());
+        Ok(())
+    })?;
+
+    // ジェネレータは valid-by-construction であり、ケース棄却が発生しないことの検証
+    assert_eq!(
+        runner.stats().rejected_cases,
+        0,
+        "ジェネレータが valid-by-construction であること\n{runner}"
+    );
+    Ok(())
 }
