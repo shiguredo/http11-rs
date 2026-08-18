@@ -60,7 +60,6 @@ fn generate_10mb_binary() -> Vec<u8> {
 /// WebDAV PUT で 10 MiB のバイナリをアップロードし、GET で取得して完全一致を検証する
 #[tokio::test]
 async fn put_10mb_binary_roundtrip() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_with_files(CONF_WEBDAV, &[]).await;
     let body = generate_10mb_binary();
 
@@ -135,7 +134,6 @@ async fn put_10mb_binary_roundtrip() {
 /// 200 が返れば全ボディが転送完了したことの確認となる。
 #[tokio::test]
 async fn post_10mb_binary_accepted() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_with_files(CONF_POST_SINK, &[]).await;
     let body = generate_10mb_binary();
 
@@ -191,7 +189,6 @@ async fn post_10mb_binary_accepted() {
 /// 413 Request Entity Too Large が返る。エラーパスの確認。
 #[tokio::test]
 async fn post_10mb_rejected_by_size_limit() {
-    helpers::ensure_docker();
     let conf = r#"
 server {
     listen 80;

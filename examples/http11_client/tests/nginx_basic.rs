@@ -41,7 +41,6 @@ async fn fetch(
 
 #[tokio::test]
 async fn get_root_returns_200_html() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
     let response = fetch(&nginx, Method::GET, "/").await;
@@ -62,7 +61,6 @@ async fn get_root_returns_200_html() {
 
 #[tokio::test]
 async fn get_unknown_returns_404() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
     let response = fetch(&nginx, Method::GET, "/this-path-does-not-exist").await;
@@ -78,7 +76,6 @@ async fn get_unknown_returns_404() {
 
 #[tokio::test]
 async fn head_root_returns_no_body() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
     let response = fetch(&nginx, Method::HEAD, "/").await;
@@ -93,7 +90,6 @@ async fn head_root_returns_no_body() {
 
 #[tokio::test]
 async fn includes_server_header() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
     let response = fetch(&nginx, Method::GET, "/").await;
@@ -107,7 +103,6 @@ async fn includes_server_header() {
 
 #[tokio::test]
 async fn http_version_is_1_1() {
-    helpers::ensure_docker();
     let nginx = helpers::spawn_nginx_default().await;
 
     let response = fetch(&nginx, Method::GET, "/").await;
