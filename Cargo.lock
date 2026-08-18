@@ -308,7 +308,7 @@ dependencies = [
  "rustls",
  "rustls-platform-verifier",
  "shiguredo_container",
- "shiguredo_http11 2026.7.0-canary.1",
+ "shiguredo_http11 2026.7.0-canary.2",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -322,7 +322,7 @@ dependencies = [
  "noargs",
  "rustls",
  "rustls-platform-verifier",
- "shiguredo_http11 2026.7.0-canary.1",
+ "shiguredo_http11 2026.7.0-canary.2",
  "tokio",
  "tokio-rustls",
  "tokio-util",
@@ -339,7 +339,7 @@ dependencies = [
  "noflate",
  "rcgen",
  "rustls",
- "shiguredo_http11 2026.7.0-canary.1",
+ "shiguredo_http11 2026.7.0-canary.2",
  "tempfile",
  "tokio",
  "tokio-rustls",
@@ -557,7 +557,7 @@ name = "pbt"
 version = "0.0.0"
 dependencies = [
  "noprop",
- "shiguredo_http11 2026.7.0-canary.1",
+ "shiguredo_http11 2026.7.0-canary.2",
 ]
 
 [[package]]
@@ -854,7 +854,7 @@ checksum = "521929c2893005420ccee04aada685000c967cbcae36cd46117b40bf5495e5ab"
 
 [[package]]
 name = "shiguredo_http11"
-version = "2026.7.0-canary.1"
+version = "2026.7.0-canary.2"
 
 [[package]]
 name = "shlex"
