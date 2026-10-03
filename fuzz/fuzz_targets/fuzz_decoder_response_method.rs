@@ -44,7 +44,6 @@ fn drain(decoder: &mut ResponseDecoder, body_kind: BodyKind) {
             }
         },
         BodyKind::None | BodyKind::Tunnel => {}
-        _ => {}
     }
 }
 

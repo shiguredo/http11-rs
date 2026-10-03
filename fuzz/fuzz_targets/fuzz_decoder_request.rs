@@ -32,7 +32,6 @@ fn drain(decoder: &mut RequestDecoder, body_kind: BodyKind) {
             }
         },
         BodyKind::None | BodyKind::Tunnel => {}
-        _ => {}
     }
 }
 
