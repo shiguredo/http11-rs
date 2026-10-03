@@ -26,11 +26,9 @@ fuzz_target!(|data: &[u8]| {
                 .expect("長さ 16 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)"),
         );
         let complete_length = if data.len() >= 24 {
-            Some(u64::from_le_bytes(
-                data[16..24]
-                    .try_into()
-                    .expect("長さ 24 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)"),
-            ))
+            Some(u64::from_le_bytes(data[16..24].try_into().expect(
+                "長さ 24 以上を確認済みのため 8 バイト変換は成功するはず (実装バグ)",
+            )))
         } else {
             None
         };

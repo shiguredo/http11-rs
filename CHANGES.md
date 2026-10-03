@@ -48,6 +48,10 @@
   - nginx.conf は起動時に読まれるため bind mount で投入する (macOS の with_copy_to は start 後に投入されるため)
   - 大容量レスポンスの途中切断を避けるため published port ではなくコンテナ IP 直結で接続する
   - @voluntas
+- [UPDATE] ツールチェーンを `rust-toolchain.toml` で MSRV の 1.93 に固定する
+  - examples の Cargo.toml を TOML 1.0 準拠に書き換え、Cargo 1.93 で解析できるようにする
+  - CI で `rustup show` により MSRV のツールチェーンを導入し、workspace 外の fuzz / io_uring example の fmt と fuzz の check を追加する
+  - @voluntas
 - [FIX] canary.py の `cargo update shiguredo_http11` が Cargo.lock 上の複数バージョンで曖昧になる問題を修正する
   - `cargo update -p shiguredo_http11@<更新前バージョン>` で workspace の path 版だけを更新する
   - @voluntas
