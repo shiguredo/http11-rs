@@ -24,12 +24,23 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - run: rustup update stable
+      # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
+      - run: rustup show
       - uses: shiguredo/github-actions/.github/actions/rust-cache@main
         with:
           os: ${{ matrix.os }}
-          toolchain: stable
+          toolchain: "1.93"
       - run: cargo fmt --all --check
+      # fuzz と io_uring example は workspace から exclude されており
+      # `cargo fmt --all` の対象外のため個別に確認する
+      - run: cargo fmt --check
+        working-directory: fuzz
+      - run: cargo fmt --check
+        working-directory: examples/http11_server_io_uring
+      # fuzz は libFuzzer をリンクするため Linux でのみ check する
+      - name: Check fuzz crate
+        if: matrix.os == 'ubuntu-24.04'
+        run: cargo check --manifest-path fuzz/Cargo.toml
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # examples の integration test は外部依存 (curl / Docker) を要求するため
       # 別 job (e2e-test) に分離し、ここでは除外する
@@ -43,11 +54,12 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - run: rustup update stable
+      # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
+      - run: rustup show
       - uses: shiguredo/github-actions/.github/actions/rust-cache@main
         with:
           os: ubuntu-24.04
-          toolchain: stable
+          toolchain: "1.93"
       - run: cargo test -p http11_client -p http11_server
 
   slack_notify:

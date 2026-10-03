@@ -96,7 +96,6 @@ fuzz_target!(|input: FuzzPipelined| {
                     drain_body_request(&mut request_decoder);
                 }
                 BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
-                _ => {}
             }
         }
     }
@@ -123,7 +122,6 @@ fuzz_target!(|input: FuzzPipelined| {
                     drain_body_response(&mut response_decoder);
                 }
                 BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
-                _ => {}
             }
         }
     }
@@ -187,7 +185,6 @@ fuzz_target!(|input: FuzzPipelined| {
                         }
                     }
                     BodyKind::None | BodyKind::Tunnel | BodyKind::CloseDelimited => {}
-                    _ => {}
                 }
             }
         }

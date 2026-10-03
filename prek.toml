@@ -26,7 +26,6 @@ hooks = [
   { id = "detect-private-key", priority = 0 },
   { id = "mixed-line-ending", priority = 0 },
   { id = "check-case-conflict", priority = 0 },
-  { id = "check-symlinks", priority = 0 },
   { id = "fix-byte-order-marker", priority = 0 },
   { id = "check-yaml", priority = 0 },
   { id = "check-toml", priority = 0 },

@@ -79,7 +79,6 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             },
             BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
-            _ => return Some(decoded_body),
         }
     }
 
@@ -114,7 +113,6 @@ fn decode_request(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
             }
         },
         BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
-        _ => Some(decoded_body),
     }
 }
 
@@ -161,7 +159,6 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
                 }
             },
             BodyKind::None | BodyKind::Tunnel => return Some(decoded_body),
-            _ => return Some(decoded_body),
         }
     }
 
@@ -196,11 +193,10 @@ fn decode_response(encoded: &[u8], split_size: usize) -> Option<Vec<u8>> {
             }
         },
         BodyKind::None | BodyKind::Tunnel => Some(decoded_body),
-        _ => Some(decoded_body),
     }
 }
 
-fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
+fn exercise_request(body: &[u8], _expected: &[u8], split_size: usize) {
     let mut request = Request::new("POST", "/")
         .expect("固定のメソッドとターゲットの構築は成功するはず (実装バグ)");
     request
@@ -215,7 +211,7 @@ fn exercise_request(body: &[u8], expected: &[u8], split_size: usize) {
     if let Some(_decoded_body) = decode_request(&encoded, split_size) {}
 }
 
-fn exercise_response(body: &[u8], expected: &[u8], split_size: usize) {
+fn exercise_response(body: &[u8], _expected: &[u8], split_size: usize) {
     let mut response = Response::with_status(StatusCode::OK);
     response
         .add_header("Transfer-Encoding", "chunked")

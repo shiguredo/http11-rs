@@ -92,6 +92,5 @@ fuzz_target!(|input: FuzzInput| {
             }
         }
         BodyKind::None | BodyKind::Tunnel => {}
-        _ => {}
     }
 });

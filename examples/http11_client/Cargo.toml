@@ -11,19 +11,6 @@ shiguredo_http11.workspace = true
 
 # コマンドライン引数のパース
 noargs = "0.4"
-# TLS 実装
-rustls = {
-  version = "0.23",
-  default-features = false,
-  features = [
-    # 暗号ライブラリバックエンド
-    "aws_lc_rs",
-    # std 環境での動作に必要
-    "std",
-    # TLS 1.2 を有効化
-    "tls12",
-  ]
-}
 # プラットフォーム標準の証明書ストアを利用する
 rustls-platform-verifier = "0.7"
 # ログ出力
@@ -38,18 +25,31 @@ noflate = "0.1"
 # Zstd 圧縮展開
 zstd = "0.13"
 
+# TLS 実装
+[dependencies.rustls]
+version = "0.23"
+default-features = false
+features = [
+  # 暗号ライブラリバックエンド
+  "aws_lc_rs",
+  # std 環境での動作に必要
+  "std",
+  # TLS 1.2 を有効化
+  "tls12",
+]
+
 [dev-dependencies]
 # コンテナ起動 (実 nginx 相手の integration test、Linux は Docker / macOS は Apple Container)
 shiguredo_container = "2026.1.0-canary.11"
+
 # 非同期ランタイム + spawn_blocking (同期 client API を async test 内で呼ぶ)
-tokio = {
-  version = "1.53",
-  features = [
-    # tokio::test マクロ
-    "macros",
-    # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
-    "rt-multi-thread",
-    # タイムアウト
-    "time",
-  ]
-}
+[dev-dependencies.tokio]
+version = "1.53"
+features = [
+  # tokio::test マクロ
+  "macros",
+  # マルチスレッドランタイム (testcontainers の非同期 API を駆動)
+  "rt-multi-thread",
+  # タイムアウト
+  "time",
+]

@@ -110,7 +110,6 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                     }
                 }
                 BodyKind::None | BodyKind::Tunnel => {}
-                _ => {}
             }
             let _ = decoded_body;
         }
@@ -152,7 +151,7 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
             response = response.body(response_body.clone());
         }
 
-        let expected_body = if has_body && !response_body.is_empty() {
+        let _expected_body = if has_body && !response_body.is_empty() {
             response_body
         } else {
             Vec::new()
@@ -185,7 +184,6 @@ fuzz_target!(|data: (FuzzRequest, FuzzResponse)| {
                         }
                     }
                     BodyKind::None | BodyKind::Tunnel => {}
-                    _ => {}
                 }
                 let _ = decoded_body;
             }
