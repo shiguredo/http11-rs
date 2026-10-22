@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`ResponseDecoder::determine_body_kind` (`src/decoder/response.rs:344-372`) は CONNECT メソッドへの 2xx レスポンスを受信したとき即 `BodyKind::Tunnel` を返し、フレーミング解釈上は RFC 9110 §9.3.6 の MUST ignore に準拠している。しかし `ResponseHead.headers` には `Transfer-Encoding` / `Content-Length` の元値がそのまま残置されるため、上位アプリ (reverse proxy 等) が `head.get_header(...)` / `head.content_length()` / `head.is_chunked()` 経由でその値を観測し下流に再生成すると、parser differential 経由で HTTP Request Smuggling の足場になる。
+`ResponseDecoder::determine_body_kind` (`src/decoder/response.rs:344-372`) は CONNECT メソッドへの 2xx レスポンスを受信したとき即 `BodyKind::Tunnel` を返し、フレーミング解釈上は RFC 9110 §9.3.6 の MUST ignore に準拠している。しかし `ResponseHead.headers` には `Transfer-Encoding` / `Content-Length` の元値がそのまま残置されるため、上位アプリ (reverse proxy 等) が
+`head.get_header(...)` / `head.content_length()` / `head.is_chunked()` 経由でその値を観測し下流に再生成すると、parser differential 経由で HTTP Request Smuggling の足場になる。
 
 本 issue は MUST ignore を「物理消去」で実装する: `BodyKind::Tunnel` 遷移直前に `ResponseHead` の `headers` から `Transfer-Encoding` / `Content-Length` を除去する (silent drop)。
 
@@ -14,7 +15,7 @@ Model: Opus 4.7
 
 ### RFC 9110 §9.3.6 引用
 
-```
+```text
 A server MUST NOT send any Transfer-Encoding or Content-Length header
 fields in a 2xx (Successful) response to CONNECT. A client MUST
 ignore any Content-Length or Transfer-Encoding header fields received
@@ -85,7 +86,7 @@ if self
 
 `## develop` に `[CHANGE]` として追加する (`ResponseHead.headers` 観測挙動の後方互換破壊):
 
-```
+```text
 - [CHANGE] `ResponseDecoder` が CONNECT 2xx レスポンス受信時に `ResponseHead.headers` から `Transfer-Encoding` / `Content-Length` を除去するように変更する
   - RFC 9110 §9.3.6 「A client MUST ignore any Content-Length or Transfer-Encoding header fields received in a successful response to CONNECT」を物理消去で実装する
   - 旧実装は `BodyKind::Tunnel` を返す一方で `ResponseHead.headers` には CL/TE の元値が残置されており、上位アプリ (reverse proxy 等) が `head.content_length()` 経由で値を観測して下流に再生成すると HTTP Response Smuggling の足場となる経路を持っていた

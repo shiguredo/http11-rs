@@ -15,6 +15,7 @@ Model: Opus 4.7
 ブランチ名は CLAUDE.md「git ブランチの命名規則」に従い `feature/change-response-fields-private-with-validation` を使用する。
 
 依存関係:
+
 - 本 issue は 0020 (StatusClass enum) より先に実施する。0020 は `self.status_code` に直接アクセスしているため、本 issue 完了後に getter `self.status_code()` 経由に追従する必要がある。
 - 0021 (ビルダー / mutator API 一貫化) は本 issue 完了後に着手する。0021 で `add_header` の戻り値を `Result<&mut Self, EncodeError>` にする予定。本 issue では 0021 のシグネチャ変更を先取りせず、`Result<(), EncodeError>` で導入する (チェイン化は 0021 の責務)。
 - pending/0018 (`omit_body` を encoder 側へ移譲) は本 issue で `omit_body` フィールドを存続させる。0018 が将来 accept された場合は、本 issue で追加する `is_body_omitted()` getter および `omit_body(bool)` ビルダーは 0018 の側で撤去する。
@@ -44,7 +45,8 @@ CRLF / NUL 注入は HTTP レスポンス分割攻撃 (HTTP Response Splitting) 
 
 ### 問題 3: ヘッダーの case-insensitive 重複が野放し
 
-HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_header("Content-Type", ...)` と `add_header("content-type", ...)` を両方追加できてしまう。get 側は `HttpHead` 経由で case-insensitive に検索されるのに、保存は raw のまま — 非対称で利用者の混乱を招く。本 issue では保存側の正規化は行わず (**別 issue で対応**)、「検索のみ case-insensitive」の現状を維持しつつ、**入力時の token / 値バリデーションを追加する範囲に留める**。
+HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_header("Content-Type", ...)` と `add_header("content-type", ...)` を両方追加できてしまう。get 側は `HttpHead` 経由で case-insensitive に検索されるのに、保存は raw のまま — 非対称で利用者の混乱を招く。本 issue では保存側の正規化は行わず (**別 issue で対応**)、「検索のみ case-insensitive」の現状を維持しつつ、**入力時の token
+/ 値バリデーションを追加する範囲に留める**。
 
 ### 問題 4: フィールド追加が破壊的変更になる
 
@@ -55,7 +57,7 @@ HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_he
 ### 影響範囲一覧
 
 | ファイル | 種別 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | `src/response.rs` | 主要変更 | フィールド非公開化、コンストラクタ `Result` 化、`pub(crate) from_raw_parts` 新設、アクセサ・setter 追加 |
 | `src/validate.rs` | 修正 | `is_valid_reason_phrase` に空文字列拒否を追加、decoder 側で空文字列を absent として扱うよう対応 |
 | `src/encoder.rs` | 修正 | 全フィールド直接アクセスをアクセサ経由に書き換え、`encode()` doc 更新、二重バリデーション維持、`validate_response_fields` の reason-phrase 検証で空文字列を absent としてスキップ、`capacity_tests` モジュール内の `Response::new()` 呼び出しに `.unwrap()` 追加、`validate_response_fields` 分岐のカバレッジ補填テスト（`from_raw_parts` 経由）を `#[cfg(test)]` に追加 |
@@ -212,7 +214,7 @@ pub fn with_version(version: &str, status_code: u16, reason_phrase: &str) -> Res
 バリデーション呼び出し:
 
 | コンストラクタ | 検証内容 | 使用関数 |
-|---|---|---|
+| --- | --- | --- |
 | `new` | status_code: 100..=599 | `is_valid_status_code` (`validate.rs:130`) |
 | `new` | reason_phrase: 空不可 + VCHAR/HTAB/SP/obs-text | `is_valid_reason_phrase` (`validate.rs:146`) |
 | `with_version` | version: token `/` DIGIT+ `.` DIGIT+ | `is_valid_protocol_version` (`validate.rs:85`) |
@@ -243,7 +245,8 @@ pub fn header(self, name: &str, value: &str) -> Result<Self, EncodeError>
 pub fn add_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError>
 ```
 
-バリデーション: 名前は `is_valid_header_name` (`validate.rs:17`)、値は `is_valid_field_value` (`validate.rs:60`) を使用する。`is_valid_field_value` は 0x09, 0x20-0x7E, 0x80-0xFF のみを許可し、CR (0x0D), LF (0x0A), NUL (0x00) を許可文字集合から除外することで CRLF/NUL 注入を拒否する。空文字列は RFC 9110 Section 5.5 の `field-value = *field-content` に従い合法であり、`is_valid_field_value` は空文字列を拒否しない (現状維持)。
+バリデーション: 名前は `is_valid_header_name` (`validate.rs:17`)、値は `is_valid_field_value` (`validate.rs:60`) を使用する。`is_valid_field_value` は 0x09, 0x20-0x7E, 0x80-0xFF のみを許可し、CR (0x0D), LF (0x0A), NUL (0x00) を許可文字集合から除外することで CRLF/NUL 注入を拒否する。空文字列は RFC 9110 Section 5.5 の `field-value = *field-content`
+に従い合法であり、`is_valid_field_value` は空文字列を拒否しない (現状維持)。
 
 注: `is_valid_field_value` はバイトレベルの文字集合検証のみで、RFC 9110 §5.5 の `field-content` 構造制約（VCHAR/obs-text で開始し終了する、先頭/末尾の空白禁止）の検証は未実装。CTL 全般を拒否するのは RFC の MAY retain より厳格だが、HTTP 応答分割攻撃のリスクを踏まえた堅牢性優先の判断である。先頭/末尾空白の構造制約は別 issue で対応する。
 
@@ -266,6 +269,7 @@ pub fn set_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError>
 既存の `add_header` だけではヘッダー値の修正手段がなく、間違った値を追加した場合に Response 再構築が必要になっていた。本 API でこのギャップを埋める。
 
 実装方針 (アトミック性確保):
+
 1. `is_valid_header_name(name) && is_valid_field_value(value)` を **先に** 検証し、失敗時は早期 `Err` で `self` を変更しない
 2. バリデーション通過後に `self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name))` で同名全削除
 3. `self.headers.push((name.to_string(), value.to_string()))` で末尾追加
@@ -286,6 +290,7 @@ pub fn is_body_omitted(&self) -> bool   // omit_body フィールドの getter (
 `version()` は `status_code()` / `reason_phrase()` / `body()` との非対称を避けるため、`HttpHead` トレイト経由の間接アクセスに加えて `Response` の固有メソッドとしても提供する。実装は `self.version.as_str()` を返す。`HttpHead::version(&self)` の実装はそのまま残す（トレイト実装の義務）。
 
 以下は既存の `HttpHead` トレイト実装経由で提供済みのため追加不要:
+
 - `version()` → `HttpHead::version` → `&str`
 - `headers()` → `HttpHead::headers` → `&[(String, String)]`
 - `get_header()` → `HttpHead::get_header` → `Option<&str>`
@@ -310,6 +315,7 @@ pub fn omit_body(mut self, omit: bool) -> Self   // 変更なし
 本 issue では builder `pub fn body(mut self, body: Vec<u8>) -> Self` と getter `pub fn body(&self) -> Option<&[u8]>` が **同名** で併存する。Rust の inherent impl は `&self` / `mut self` でシグネチャが異なるため同名併存は可能であり、`add_header` と `header` や `set_header` のような既存の命名規則との非対称が生じるが、両者は受容する。
 
 判断: 以下の理由から同名併存を本 issue では維持する:
+
 1. `body(data)` builder は既に確立した公開 API であり、改名すると本 issue の影響範囲がさらに拡大する
 2. `0021` では getter を `as_body` に改名する計画があるが、それは誤認に基づく（同名併存は Rust の言語仕様上合法）。`0021` 着手時に 0017 の同名併存判断を確認すること
 3. `add_header`（mutator）/ `header`（builder）のような命名分離パターンは将来的な整理候補だが、破壊的変更の回数を減らすため本 issue では先延ばしにする
@@ -380,6 +386,7 @@ if !response.reason_phrase.is_empty()
 ```
 
 これにより以下の経路が成立する:
+
 1. reverse proxy が upstream から `HTTP/1.1 200 \r\n` (reason-phrase absent) を受信
 2. decoder が `from_raw_parts(version, 200, "", headers, body)` で空 `reason_phrase` を持つ Response を構築
 3. proxy が `encode_response(&response)` で downstream へ転送
@@ -394,7 +401,7 @@ if !response.reason_phrase.is_empty()
 フィールド非公開化に伴い、`encoder.rs` 内の全 `Response` フィールド直接アクセスをアクセサメソッド経由に書き換える。主な変更箇所:
 
 | 種別 | 旧コード | 新コード | 注意 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | status_code | `response.status_code` | `response.status_code()` | — |
 | reason_phrase | `&response.reason_phrase` / `response.reason_phrase.as_bytes()` | `response.reason_phrase()` / `.as_bytes()` | `.clone()` は `.to_string()` に変更（`&str::clone()` は `&str` を返すため `String` が必要なエラー構築箇所では `.to_string()` が必須） |
 | version | `&response.version` / `response.version.as_bytes()` | `HttpHead::version(response)` / `.as_bytes()` | 同上 |
@@ -410,14 +417,16 @@ if !response.reason_phrase.is_empty()
 構築時バリデーション追加後も、`validate_response_fields` (`encoder.rs:363`) による encode 時バリデーションは**撤去せず維持する**。理由:
 
 1. **防御の多重化**: デコーダー以外の経路 (将来の `serde` デシリアライズ等) でバリデーションを迂回した Response 構築が追加される可能性に備える
-2. **異なる検証基準**: 構築時の `is_valid_protocol_version` は `token "/" DIGIT+ "." DIGIT+` (RTSP 拡張含む) を検証するが、encode 時は `is_valid_version_for_encode` (VCHAR のみ) で送信安全なバイトのみを保証する。両者は検証の目的が異なる (構文検証 vs 送信安全検証)。注: `is_valid_version_for_encode` は VCHAR 検査のみで RFC 9112 §2.3 の `HTTP-name = %s"HTTP"` (case-sensitive) を強制しておらず、`"http/1.1"` (小文字) も素通しになる。HTTP-name の case-sensitive 検証は本 issue のスコープ外とし、別 issue で対応する
+2. **異なる検証基準**: 構築時の `is_valid_protocol_version` は `token "/" DIGIT+ "." DIGIT+` (RTSP 拡張含む) を検証するが、encode 時は `is_valid_version_for_encode` (VCHAR のみ) で送信安全なバイトのみを保証する。両者は検証の目的が異なる (構文検証 vs 送信安全検証)。注: `is_valid_version_for_encode` は VCHAR 検査のみで RFC 9112 §2.3 の `HTTP-name = %s"HTTP"`
+   (case-sensitive) を強制しておらず、`"http/1.1"` (小文字) も素通しになる。HTTP-name の case-sensitive 検証は本 issue のスコープ外とし、別 issue で対応する
 3. **コストは微少**: `validate_response_fields` は O(n) (n = ヘッダー数) で、encode 全体のコストに対して無視できる
 
 RFC 9112 / 9110 由来の意味的検証 (`Content-Length` と body の整合性、`Transfer-Encoding` と `Content-Length` の排他等) は当然維持する。
 
 #### CONNECT 2xx の制約
 
-RFC 9110 §6.4.1（CONNECT 2xx 応答は tunnel mode に切り替わり content を持たない）/ RFC 9112 §6.3（メッセージ長判定規則: client MUST ignore Content-Length or Transfer-Encoding）/ RFC 9110 §9.3.6 / RFC 9110 §8.6 により、CONNECT リクエストへの 2xx レスポンスには Transfer-Encoding / Content-Length を含めてはならない (MUST NOT)。本 issue でも encoder は **request method を知らない** ため、この制約は引き続き「呼び出し側の責務」として `encoder.rs:723-731` / `1005-1013` の現状コメントを維持する。コンストラクタ API レベルの強制は本 issue のスコープ外とし、必要なら別 issue で `for_connect_response()` ファクトリ等を検討する。
+RFC 9110 §6.4.1（CONNECT 2xx 応答は tunnel mode に切り替わり content を持たない）/ RFC 9112 §6.3（メッセージ長判定規則: client MUST ignore Content-Length or Transfer-Encoding）/ RFC 9110 §9.3.6 / RFC 9110 §8.6 により、CONNECT リクエストへの 2xx レスポンスには Transfer-Encoding / Content-Length を含めてはならない (MUST NOT)。本 issue でも encoder は
+**request method を知らない** ため、この制約は引き続き「呼び出し側の責務」として `encoder.rs:723-731` / `1005-1013` の現状コメントを維持する。コンストラクタ API レベルの強制は本 issue のスコープ外とし、必要なら別 issue で `for_connect_response()` ファクトリ等を検討する。
 
 #### `validate_response_fields` のテスト到達性
 
@@ -453,7 +462,7 @@ let response = Response::new(200, "OK").unwrap()
 #### 書き換え概要
 
 | 旧 API | 新 API |
-|---|---|
+| --- | --- |
 | `Response::new(200, "OK")` | `Response::new(200, "OK").unwrap()` |
 | `Response::with_version(v, s, r)` | `Response::with_version(v, s, r).unwrap()` |
 | `Response { version, status_code, ... }` | `Response::with_version(v, s, r).unwrap()` + setter (外部)、`from_raw_parts` (crate 内) |
@@ -590,6 +599,7 @@ assert_eq!(r.get_header("Content-Type"), Some("text/html"));
 `fuzz/fuzz_targets/fuzz_encode_response.rs`:
 
 変更前:
+
 ```rust
 let mut response = Response::with_version(&version, status_code, &reason_phrase);
 for (name, value) in &headers {
@@ -600,6 +610,7 @@ response.omit_body = omit_body;
 ```
 
 変更後:
+
 ```rust
 let Ok(mut response) = Response::with_version(&version, status_code, &reason_phrase)
 else { return; };
@@ -618,10 +629,12 @@ let response = response.omit_body(omit_body);
 注: `body = None` のケースを残すため、条件分岐で `body_present: false` のときは `body()` を呼び出さない。これにより fuzz は `body = None` / `body = Some(...)` の両パスをカバーし続ける。
 
 `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`:
+
 - `response.body = Some(...)` → `response = response.body(...)` に書き換え
 - ただし `has_body && !body.is_empty()` の条件に合わせ、body 設定は条件付きで行う
 
 `fuzz/fuzz_targets/fuzz_request_response_helpers.rs`:
+
 - `response.body = Some(body)` → `response = response.body(body)` に書き換え
 
 ### examples の改修方針
@@ -640,7 +653,7 @@ CLAUDE.md「サンプルは **お手本** なので性能と堅牢性を両立�
 
 `## develop` セクションに以下を追加する:
 
-```
+```text
 - [CHANGE] `Response` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Response::new` / `Response::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
@@ -655,7 +668,7 @@ CLAUDE.md「サンプルは **お手本** なので性能と堅牢性を両立�
 
 注: `is_valid_reason_phrase` の空文字列拒否追加は `pub(crate)` の内部変更であり、呼び出し側が空文字列をスキップするため外部 API の観測可能な挙動に変化はない。CHANGES.md では `### misc` の `[UPDATE]` として扱う。
 
-```
+```text
 ### misc
 
 - [UPDATE] (crate 内部) `is_valid_reason_phrase` を RFC 9112 §4 ABNF `1*(HTAB / SP / VCHAR / obs-text)` に厳密準拠させ、空文字列を非合法と判定する。decoder / encoder の呼び出し側で reason-phrase absent (空文字列) はスキップする方式に統一する

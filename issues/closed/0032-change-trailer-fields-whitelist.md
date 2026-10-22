@@ -26,7 +26,8 @@ RFC 9110 Section 6.5.1 は:
 ### RFC
 
 - RFC 9110 Section 6.5.1: 「A sender MUST NOT generate a trailer field unless the sender knows the corresponding header field name's definition permits the field to be sent in trailers.」
-- RFC 9112 Section 7.1.2: 「When a chunked message containing a non-empty trailer section is received, ... the user agent SHOULD ... discard any received trailer fields, or ... store the received trailer fields as if they were received as header fields.」「the recipient SHOULD ... ignore (discard) the trailers」
+- RFC 9112 Section 7.1.2: 「When a chunked message containing a non-empty trailer section is received, ... the user agent SHOULD ... discard any received trailer fields, or ... store the received trailer fields as if they were received as header fields.」「the recipient SHOULD ... ignore (discard) the
+  trailers」
 
 ### 攻撃シナリオ
 

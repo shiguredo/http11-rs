@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`ResponseDecoder` および `RequestDecoder` に、内部バッファ末尾の書き込み枠を `&mut [u8]` で取得する `mut_buf(len)` と、実書き込みバイト数を確定する `advance_buf(len)`、書き込み可能な残り容量を問い合わせる `available_buf()` を追加する。これにより OS の `recv()` がデコーダーの内部バッファに直接書き込めるようになり、`feed(&[u8])` 経由で発生していたスタックバッファ → `Vec<u8>` のコピーを排除できる。`available_buf()` は残容量に応じてチャンクサイズを適応させる用途で使う (`bytes::BufMut::remaining_mut()` に対応するヘルパー)。
+`ResponseDecoder` および `RequestDecoder` に、内部バッファ末尾の書き込み枠を `&mut [u8]` で取得する `mut_buf(len)` と、実書き込みバイト数を確定する `advance_buf(len)`、書き込み可能な残り容量を問い合わせる `available_buf()` を追加する。これにより OS の `recv()` がデコーダーの内部バッファに直接書き込めるようになり、`feed(&[u8])` 経由で発生していたスタックバッファ → `Vec<u8>` のコピーを排除できる。`available_buf()`
+は残容量に応じてチャンクサイズを適応させる用途で使う (`bytes::BufMut::remaining_mut()` に対応するヘルパー)。
 
 既存の `feed` / `feed_unchecked` は **既にメモリ上にあるバイト列を投入する** という別役割の API として残す。新 API はバイト列が外部に存在せず「これから書き込む先」を必要とするケース向けで、両者は入力経路が異なる別の最適解である。本変更は純粋追加 (`[ADD]`) となる。
 
@@ -103,7 +104,8 @@ loop {
 5. **`advance_buf(len > pending)`**: `debug_assert!` で開発時検出、release は `len.min(pending)` で飽和。
 6. **`feed()` の扱い**: 残す。`feed(&[u8])` は「既にメモリ上にあるバイト列を投入する」用途で、`extend_from_slice` 1 回 (1 memcpy / ゼロ初期化なし) が最適解となる。一方 `mut_buf` / `advance_buf` は「OS の recv 等が直接書き込む先を確保する」用途。`feed` を消して `mut_buf` 経由に統一すると、すでに `&[u8]` を持っているケースで resize による不要なゼロ初期化 + memcpy の二段になり非効率。両者は冗長ではなく入力経路の違う別の最適解として共存させる。
 7. **既存メソッドの誤用検出**: `feed` / `feed_unchecked` / `decode_headers` / `peek_body` / `consume_body` / `progress` / `decode` / `take_remaining` / `mark_eof` の先頭に `debug_assert!(self.pending == 0)` を入れる。
-8. **`available_buf()` の追加**: `bytes::BufMut::remaining_mut()` に倣う容量問い合わせヘルパー。外側から `limits().max_buffer_size - remaining().len()` を毎回計算させるのは decoder の内部不変条件を呼び出し側に漏らしており設計的に望ましくない。本質的価値は「無限ループ回避」ではなく「`max_buffer_size` ぎりぎりの状態でチャンクサイズを残容量に適応させ、graceful に小さく読める」点。`pending` が残った状態で呼ばれた場合は `max_buffer_size - buf.len()` (= 未確定領域を引いた残り) を返す。利用側は通常 `advance_buf` 後に `available_buf` を呼ぶため `pending == 0` の状態で評価される。
+8. **`available_buf()` の追加**: `bytes::BufMut::remaining_mut()` に倣う容量問い合わせヘルパー。外側から `limits().max_buffer_size - remaining().len()` を毎回計算させるのは decoder の内部不変条件を呼び出し側に漏らしており設計的に望ましくない。本質的価値は「無限ループ回避」ではなく「`max_buffer_size` ぎりぎりの状態でチャンクサイズを残容量に適応させ、graceful に小さく読める」点。`pending` が残った状態で呼ばれた場合は
+   `max_buffer_size - buf.len()` (= 未確定領域を引いた残り) を返す。利用側は通常 `advance_buf` 後に `available_buf` を呼ぶため `pending == 0` の状態で評価される。
 
 ## 内部実装の擬似コード
 

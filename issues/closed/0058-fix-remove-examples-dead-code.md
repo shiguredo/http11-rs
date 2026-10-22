@@ -21,7 +21,7 @@ AGENTS.md に「サンプルは **お手本** なので性能と堅牢性を両�
 
 ### AGENTS.md 引用
 
-```
+```text
 ## サンプルについて
 
 - サンプルは **お手本** なので性能と堅牢性を両立させること
@@ -31,7 +31,7 @@ AGENTS.md に「サンプルは **お手本** なので性能と堅牢性を両�
 
 `examples/http11_server/src/main.rs` の `compressor::` import (L41) は自由関数 `compress_body` / `encoding_header` / `select_encoding` のみ:
 
-```
+```text
 41:use compressor::{compress_body, encoding_header, select_encoding};
 561:    let encoding = accept_encoding.and_then(select_encoding);
 672:        match compress_body(body, enc) {
@@ -84,7 +84,7 @@ AGENTS.md に「サンプルは **お手本** なので性能と堅牢性を両�
 
 `## develop` の `### misc` サブセクションに以下を追加する:
 
-```
+```text
 - [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の死にコードを削除する
   - `compressor.rs` の `GzipCompressor` / `BrotliCompressor` / `ZstdCompressor` 構造体・`impl Default` / `impl Compressor` トレイト実装 (各約 200 行) を両 example から削除する。両 main.rs は自由関数 `compress_body` / `select_encoding` / `encoding_header` のみを使用しており、struct 群は呼び出し皆無の `#[allow(dead_code)]` 隠蔽コードだった
   - 特に `BrotliCompressor::compress` は単にバッファに溜めるだけで `finish()` で一括圧縮する偽ストリーミング実装で、お手本として残すのは積極的に有害だった

@@ -8,7 +8,8 @@
 
 ## 目的
 
-`escape_quotes()` (`src/validate.rs:385-398`) が CTL 文字 (CR/LF/NUL/0x01-08/0x0B-0C/0x0E-1F/0x7F) の検出に `debug_assert!` を使用しており、release ビルドでは完全にバイパスされる。全呼び出し元 (auth / accept / content_type / expect / content_disposition の Display 実装またはその呼び出し連鎖内、計 9 箇所) は入力値検証を `escape_quotes` に依存しているため、release ビルドでは CTL 文字がそのまま出力され HTTP Response Splitting (CWE-113) の攻撃経路になる。
+`escape_quotes()` (`src/validate.rs:385-398`) が CTL 文字 (CR/LF/NUL/0x01-08/0x0B-0C/0x0E-1F/0x7F) の検出に `debug_assert!` を使用しており、release ビルドでは完全にバイパスされる。全呼び出し元 (auth / accept / content_type / expect / content_disposition の Display 実装またはその呼び出し連鎖内、計 9 箇所) は入力値検証を `escape_quotes` に依存しているため、release ビルドでは
+CTL 文字がそのまま出力され HTTP Response Splitting (CWE-113) の攻撃経路になる。
 
 ## 優先度根拠
 
@@ -20,6 +21,7 @@
 ## 現状
 
 `src/validate.rs:385-398`:
+
 ```rust
 pub(crate) fn escape_quotes(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
@@ -40,6 +42,7 @@ pub(crate) fn escape_quotes(s: &str) -> String {
 `debug_assert!` は `#[cfg(debug_assertions)]` でのみ有効であり、release ビルドでは CTL 文字が `"` や `\` のエスケープ処理だけを経てそのまま出力される。
 
 呼び出し元（全 9 箇所）:
+
 - `src/auth.rs:332` `WwwAuthenticate::fmt` - Basic realm
 - `src/auth.rs:334` `WwwAuthenticate::fmt` - charset
 - `src/auth.rs:918` `format_auth_params` - Digest/Bearer 全パラメータ（`DigestAuth` / `DigestChallenge` / `BearerChallenge` の `to_header_value()` から呼ばれる）

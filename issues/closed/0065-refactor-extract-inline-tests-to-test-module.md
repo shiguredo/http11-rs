@@ -1,4 +1,4 @@
-# 0065 refactor 内部テストを tests/test_<module>.rs に外部化する
+# 0065 refactor 内部テストを `tests/test_<module>.rs` に外部化する
 
 Created: 2026-05-14
 Completed: 2026-05-14
@@ -10,7 +10,7 @@ Branch: feature/fix-extract-inline-tests
 以下の公開モジュールの単体テストが `src/<module>.rs` 内の `#[cfg(test)] mod tests` ブロックに存在するが、CLAUDE.md:93「単体テストのファイル名は `tests/test_<module>.rs` とし、`src/<module>.rs` に対応させること」に違反している:
 
 | モジュール | テスト場所 | テスト内容 |
-|---|---|---|
+| --- | --- | --- |
 | `src/compression.rs` | `#[cfg(test)] mod tests` (line 297-545) | 14 テスト、うち 5 テストは `#[non_exhaustive]` enum の variant を直接構築 |
 | `src/content_language.rs` | `#[cfg(test)] mod tests` (line 118-170) | 6 テスト、すべて公開 API 経由 |
 | `src/etag.rs` | `#[cfg(test)] mod tests` (line 291-448) | 17 テスト、すべて公開 API 経由 |
@@ -44,6 +44,7 @@ let status = c.compress(b"hello", &mut [0u8; 8]).unwrap();
 ### 書き換えパターン
 
 内部テスト (`src/<module>.rs`):
+
 ```rust
 #[cfg(test)]
 mod tests {
@@ -53,6 +54,7 @@ mod tests {
 ```
 
 外部テスト (`tests/test_<module>.rs`):
+
 ```rust
 use shiguredo_http11::<module>::*;
 // または use shiguredo_http11::<module>::Foo;
@@ -84,7 +86,7 @@ cargo test --workspace  # 全テスト pass 確認
 
 `## develop` の `### misc` に以下を追記する:
 
-```
+```text
 - [UPDATE] src/<module>.rs 内のインラインテストを tests/test_<module>.rs に外部化する (CLAUDE.md:93 準拠)
   - 対象: compression / content_language / etag / trailer / upgrade / vary
   - @voluntas

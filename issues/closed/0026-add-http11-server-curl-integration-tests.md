@@ -102,7 +102,7 @@ CLAUDE.md ルール:
 
 ### tests ディレクトリ構造
 
-```
+```text
 examples/http11_server/tests/
 ├── helpers/
 │   └── mod.rs              共通ヘルパー (curl 検出、サーバー起動、cert 生成)
@@ -165,7 +165,7 @@ curl 不在時は `ensure_curl()` が panic する。CLAUDE.md「`#[ignore]` を
 ### 影響範囲一覧
 
 | パス | 種別 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | `examples/http11_server/src/main.rs` | 修正 | tracing を stderr に固定 / bind 後の実ポートを stdout に出力 |
 | `examples/http11_server/Cargo.toml` | 修正 | `[dev-dependencies]` セクション新設 (rcgen / tempfile / tokio) |
 | `examples/http11_server/tests/helpers/mod.rs` | 新設 | テストハーネス共通モジュール |
@@ -179,7 +179,7 @@ curl 不在時は `ensure_curl()` が panic する。CLAUDE.md「`#[ignore]` を
 
 `## develop` セクションに以下を追加する (UPDATE → ADD → CHANGE → FIX の順):
 
-```
+```text
 - [ADD] examples/http11_server に `--port 0` 対応と `LISTENING_PORT=<port>` の stdout 出力を追加する
   - tracing の出力先を stdout から stderr に変更する (破壊的変更)
   - integration test 追加のためのテストハーネス前提

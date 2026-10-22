@@ -8,7 +8,8 @@ Model: Opus 4.7
 
 `src/encoder.rs` に存在する `RequestEncoder<C: Compressor = NoCompression>` / `ResponseEncoder<C: Compressor = NoCompression>` (公開ストリーミングエンコーダ) の `compress_body` / `finish` / `reset` 経路が、現在の `fuzz/fuzz_targets/` (34 target) のいずれからも到達されていない。
 
-バッチ API である `encode_request` / `encode_response` / `encode_chunk` / `encode_chunks` / `encode_request_headers` / `encode_response_headers` は、`fuzz_encode_request` / `fuzz_encode_response` / `fuzz_decoder_chunked` で網羅されているが、ストリーミング API は呼び出し順序・出力バッファサイズ・`reset` を挟む再利用パターン等の状態空間を持つにもかかわらず fuzz target が無い。
+バッチ API である `encode_request` / `encode_response` / `encode_chunk` / `encode_chunks` / `encode_request_headers` / `encode_response_headers` は、`fuzz_encode_request` / `fuzz_encode_response` / `fuzz_decoder_chunked` で網羅されているが、ストリーミング API は呼び出し順序・出力バッファサイズ・`reset` を挟む再利用パターン等の状態空間を持つにもかかわらず fuzz target
+が無い。
 
 `NoCompression` 経由でこれらの API を任意操作列で叩く fuzz target `fuzz_streaming_encoder` を追加し、攻撃者が制御し得る入力サイズ・出力バッファサイズ・操作順序に対して panic / abort / 不変条件破れが発生しないことを担保する。
 
@@ -106,7 +107,7 @@ struct FuzzInput {
 
 `## develop` の `### misc` サブセクションに `[ADD]` として追加する:
 
-```
+```text
 - [ADD] `RequestEncoder` / `ResponseEncoder` (ストリーミング API) の panic 安全性を検証する `fuzz_streaming_encoder` fuzz target を追加する
   - 既存の `fuzz_encode_request` / `fuzz_encode_response` はバッチ API (`encode_request` / `encode_response`) のみを叩く target であり、`compress_body` / `finish` / `reset` のストリーミング経路は未到達だった
   - `NoCompression` を Compressor として任意操作列を流し込み、`consumed <= input.len()` / `produced <= output.len()` の不変条件と `AlreadyFinished` / `reset` 後再利用の状態遷移を検証する

@@ -23,7 +23,7 @@ AGENTS.md (`CLAUDE.md`) は以下を規約として明記している:
 
 ### AGENTS.md 引用
 
-```
+```text
 - エントリは種別の順番を守って記載すること（UPDATE → ADD → CHANGE → FIX の順）
 - 各エントリは `- [種別] 変更内容を〜するという形で書く` というフォーマットにすること
 ```
@@ -60,8 +60,10 @@ AGENTS.md (`CLAUDE.md`) は以下を規約として明記している:
 
 - UPDATE (2): `Request` impl Into, `Response` impl Into
 - ADD (5): `Request::set_body`, `Response::set_body`, `Response::set_omit_body`, `StatusCode`, `http11_server --port 0`
-- CHANGE (15): 公開 enum non_exhaustive, auth-param cap, CONNECT 2xx TE/CL drop, `HttpHead::content_length`, `encode` Result 化, `Request::add_header`, response TE+CL error, trailer whitelist, RequestHead/ResponseHead 非公開化, RequestDecoder tunnel API, examples feature 撤廃, `Response::add_header`, `Request` 非公開化, `Response` 非公開化, `set_expect_no_body` 撤去, `is_informational` 撤去 / StatusClass
-- FIX (19): TE/Trailer trim_ows, reverse_proxy close-delimited, CONNECT 405, --upstream, io_uring kTLS, io_uring pipelined, TE HTTP/1.1, MultipartParser inner_delimiter, MultipartParser Initial, `decode_headers` request_method, Base64 strict, `is_keep_alive` HTTP/1.1, DigestAuth username*, quoted-string strict, Cache-Control partial quote, MultipartParser find_bytes, MultipartParser off-by-one, `peek_body_decompressed`, Content-Length trim_ows
+- CHANGE (15): 公開 enum non_exhaustive, auth-param cap, CONNECT 2xx TE/CL drop, `HttpHead::content_length`, `encode` Result 化, `Request::add_header`, response TE+CL error, trailer whitelist, RequestHead/ResponseHead 非公開化, RequestDecoder tunnel API, examples feature 撤廃, `Response::add_header`,
+  `Request` 非公開化, `Response` 非公開化, `set_expect_no_body` 撤去, `is_informational` 撤去 / StatusClass
+- FIX (19): TE/Trailer trim_ows, reverse_proxy close-delimited, CONNECT 405, --upstream, io_uring kTLS, io_uring pipelined, TE HTTP/1.1, MultipartParser inner_delimiter, MultipartParser Initial, `decode_headers` request_method, Base64 strict, `is_keep_alive` HTTP/1.1, DigestAuth username*,
+  quoted-string strict, Cache-Control partial quote, MultipartParser find_bytes, MultipartParser off-by-one, `peek_body_decompressed`, Content-Length trim_ows
 
 `### misc` サブセクション (現状 8 件):
 

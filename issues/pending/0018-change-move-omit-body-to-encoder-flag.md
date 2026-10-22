@@ -82,7 +82,7 @@ pub fn encode_response_head_only(response: &Response) -> Result<Vec<u8>, EncodeE
 
 `## develop` に以下を追加する (本 issue が pending 解除されたら反映):
 
-```
+```text
 - [CHANGE] `Response::omit_body` を撤去し、HEAD レスポンスの送信制御は encoder 側 API に移譲する
   - `Response` は値オブジェクトとして「表現」のみを担い、「送信時の挙動制御」は encoder の責務に純化する
   - `.omit_body(true)` を呼んでいた箇所は新 encoder API に書き換える

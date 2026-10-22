@@ -189,11 +189,13 @@ for (name, value) in headers {
 
 #### obs-text を含む URI は `with_version()` で失敗する
 
-`RequestHead::from_validated_parts` は受信側互換性のため obs-text (0x80-0xFF) を含む URI を許容するが、`Request::with_version` は送信側ポリシーとして obs-text を拒否する (`src/request.rs:123`)。このため、obs-text を含む URI を `into_parts()` で取り出して `with_version()` に渡すと `EncodeError::InvalidRequestTarget` が返る。これは現行の `Request::new(req_head.uri())` でも同様に発生する制限であり、本 issue のスコープ外とする。PBT では obs-text を含まない strategy を使用する。
+`RequestHead::from_validated_parts` は受信側互換性のため obs-text (0x80-0xFF) を含む URI を許容するが、`Request::with_version` は送信側ポリシーとして obs-text を拒否する (`src/request.rs:123`)。このため、obs-text を含む URI を `into_parts()` で取り出して `with_version()` に渡すと `EncodeError::InvalidRequestTarget` が返る。これは現行の
+`Request::new(req_head.uri())` でも同様に発生する制限であり、本 issue のスコープ外とする。PBT では obs-text を含まない strategy を使用する。
 
 #### 空 reason-phrase は `Response::with_version()` で失敗する
 
-`ResponseHead` は受信側として reason-phrase の absent（空文字列）を許容する（RFC 9112 Section 4）が、`Response::with_version` は送信側として空 reason-phrase を拒否する（`src/response.rs:157`）。このため、空 reason-phrase の `ResponseHead` から `into_parts()` で取り出した値を `Response::with_version` に渡すと `EncodeError::InvalidReasonPhrase` が返る。これは現行の `Response::new(head.status_code(), head.reason_phrase())` でも同様に発生する制限であり、本 issue のスコープ外とする。PBT では空 reason-phrase を除外する strategy を使用する。
+`ResponseHead` は受信側として reason-phrase の absent（空文字列）を許容する（RFC 9112 Section 4）が、`Response::with_version` は送信側として空 reason-phrase を拒否する（`src/response.rs:157`）。このため、空 reason-phrase の `ResponseHead` から `into_parts()` で取り出した値を `Response::with_version` に渡すと `EncodeError::InvalidReasonPhrase` が返る。これは現行の
+`Response::new(head.status_code(), head.reason_phrase())` でも同様に発生する制限であり、本 issue のスコープ外とする。PBT では空 reason-phrase を除外する strategy を使用する。
 
 #### `with_version()` / `add_header()` は再検証を行う
 
@@ -201,7 +203,8 @@ for (name, value) in headers {
 
 ### `into_parts()` と `#[non_exhaustive]` の関係
 
-`RequestHead` / `ResponseHead` には `#[non_exhaustive]` が付与されており、将来のフィールド追加時に構造体リテラルでの外部構築や網羅的パターンマッチが破壊されるのを防いでいる。`into_parts()` は戻り型がタプルであるため、将来フィールドが追加された場合にタプルの要素数が変わり、呼び出し側がコンパイルエラーになる。これは許容する。プロジェクト規約上、破壊的変更は許容されており、将来のフィールド追加時には `into_parts()` の戻り型変更を破壊的変更として扱う。個別の `into_xxx()` は新フィールド追加時にも影響を受けないため、安定した API が必要な場合は個別メソッドを使う。
+`RequestHead` / `ResponseHead` には `#[non_exhaustive]` が付与されており、将来のフィールド追加時に構造体リテラルでの外部構築や網羅的パターンマッチが破壊されるのを防いでいる。`into_parts()` は戻り型がタプルであるため、将来フィールドが追加された場合にタプルの要素数が変わり、呼び出し側がコンパイルエラーになる。これは許容する。プロジェクト規約上、破壊的変更は許容されており、将来のフィールド追加時には `into_parts()` の戻り型変更を破壊的変更として扱う。個別の `into_xxx()`
+は新フィールド追加時にも影響を受けないため、安定した API が必要な場合は個別メソッドを使う。
 
 ### 検討したが不採用の方針
 
@@ -243,7 +246,8 @@ for (name, value) in headers {
 
 - `examples/http11_reverse_proxy/src/main.rs` を `into_parts()` を使う形に更新する（`RequestHead` / `ResponseHead` の両方）
 - `CHANGES.md` の `## develop` に `[ADD]` エントリを追加する
-  ```
+
+  ```text
   - [ADD] RequestHead / ResponseHead に所有権を消費してフィールドを取り出す into_xxx() メソッドと into_parts() メソッドを追加する
     - @voluntas
   ```

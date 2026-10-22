@@ -10,8 +10,6 @@
 
 `examples/http11_server/src/compressor.rs:17` と `examples/http11_server_io_uring/src/compressor.rs:17` の `unwrap_or(1.0)` を `unwrap_or(0.0)` に変更し、RFC 9110 Section 12.4.2 の「無効な quality 値のデフォルトは 0」に準拠させた。
 
-## 完了条件
-
 ## 目的
 
 `examples/http11_server/src/compressor.rs:17` と `examples/http11_server_io_uring/src/compressor.rs:17` で `Accept-Encoding` の quality 値の parse 失敗時に `unwrap_or(1.0)` で重み 1.0 にフォールバックしている。RFC 9110 Section 12.4.2 は無効な quality 値のデフォルトを 0 と規定している。
@@ -25,6 +23,7 @@
 ## 現状
 
 `examples/http11_server/src/compressor.rs:17`:
+
 ```rust
 let q: f32 = part[pos + 3..].trim().parse().unwrap_or(1.0);
 ```

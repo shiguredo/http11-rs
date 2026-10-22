@@ -53,12 +53,14 @@ use crate::validate::{
 ### 単体テスト
 
 `tests/test_request.rs` または `tests/test_head.rs`:
+
 - `is_keep_alive` に `Connection: \u{00A0}keep-alive` (NBSP 前置) を渡し `false` を確認
 - `is_chunked` に `Transfer-Encoding: \u{00A0}chunked` を渡し `false` を確認
 - `is_keep_alive` に `Connection: \tkeep-alive` (HTAB)、`Connection:  keep-alive` (SP) を渡し `true` を確認 (リグレッション防止)
 - `is_chunked` に `Transfer-Encoding: \tchunked`、`Transfer-Encoding:  chunked` を渡し `true` を確認
 
 `tests/test_encoder.rs`:
+
 - 205 レスポンス + `Content-Length: \u{00A0}0` が `encode_response` / `encode_response_headers` の両経路で `ForbiddenContentLength` になることを確認
 - 205 レスポンス + `Content-Length: \t0` / `Content-Length:  0` が正当に受理されることを確認
 
@@ -75,7 +77,7 @@ use crate::validate::{
 
 `## develop` に以下を追記する:
 
-```
+```text
 - [FIX] `Connection` / `Transfer-Encoding` のトークン OWS 除去で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
   - 旧実装は `src/decoder/head.rs::is_keep_alive` / `is_chunked` で `str::trim()` を使用しており、NBSP (U+00A0) 等の Unicode 空白を除去していた
   - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた

@@ -16,6 +16,7 @@
 ## 現状
 
 `src/decoder/head.rs:273-317` (RequestHead):
+
 ```rust
 #[cfg(debug_assertions)]
 pub(crate) fn from_validated_parts(...) -> Self {

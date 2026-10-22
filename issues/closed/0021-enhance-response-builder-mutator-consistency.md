@@ -15,7 +15,8 @@ Model: Opus 4.7 / DeepSeek V4 Pro
 
 ブランチ名: `feature/change-response-builder-mutator-consistency`。破壊的変更 (`add_header` / `set_header` の戻り値型変更) を含むため `feature/change-` を使用する。
 
-依存関係: `0017` (フィールド非公開化とバリデーション付き構築) は完了済み。`0017` で `Response` のフィールドが非公開化され、`new` / `with_version` / `header` / `add_header` / `set_header` が `Result` を返すようになっている。`body_bytes()` getter が新設され、builder `body(data)` との同名衝突は `body_bytes` 命名で解決済み。本 issue はその上に、戻り値型の変更 (`&mut Self` 返却) と引数型の変更 (`impl Into`) を重ねる。また getter `body_bytes()` は維持し、改名しない (0017 の設計判断を踏襲)。
+依存関係: `0017` (フィールド非公開化とバリデーション付き構築) は完了済み。`0017` で `Response` のフィールドが非公開化され、`new` / `with_version` / `header` / `add_header` / `set_header` が `Result` を返すようになっている。`body_bytes()` getter が新設され、builder `body(data)` との同名衝突は `body_bytes` 命名で解決済み。本 issue はその上に、戻り値型の変更 (`&mut Self` 返却) と引数型の変更
+(`impl Into`) を重ねる。また getter `body_bytes()` は維持し、改名しない (0017 の設計判断を踏襲)。
 
 `0024` (StatusCode 型導入) は完了済み。`Response::with_status` が利用可能である。
 
@@ -24,7 +25,7 @@ Model: Opus 4.7 / DeepSeek V4 Pro
 ### 問題 1: ビルダーと mutator の提供範囲が非対称
 
 | 操作 | ビルダー (Self → Self) | mutator (&mut Self) |
-|---|---|---|
+| --- | --- | --- |
 | ヘッダー追加 | `header(self, name, value)` | `add_header(&mut self, name, value)` |
 | ボディ設定 | `body(self, body)` | (なし) |
 | ボディ削除 | (なし) | (なし) |
@@ -65,6 +66,7 @@ pub fn add_header(&mut self, name: &str, value: &str) -> Result<(), EncodeError>
 `&str` を受けてバリデーション成功後に `to_string()` するため、呼び出し側が既に `String` を持っていてもムーブできず必ずクローンする。`impl Into<String>` で受ければ `String` ・ `&str` 両方に対応でき、`String` の場合は `.into()` によるムーブで済む（無効値でも `.into()` は実行されるが、これは所有値受付のトレードオフ）。
 
 対象メソッド:
+
 - `Response::new` (status_code: u16 は変更なし、reason_phrase のみ `impl Into<String>` 化)
 - `Response::with_version` (version, reason_phrase)
 - `Response::header` (name, value)
@@ -78,7 +80,7 @@ HTTP ヘッダー名・値は高々数十バイトの文字列であるため、
 ### 問題 4: `header` と `add_header` の命名が非対称
 
 | 方向 | メソッド名 |
-|---|---|
+| --- | --- |
 | ビルダー (`self`) | `header` |
 | mutator (`&mut self`) | `add_header` |
 
@@ -95,7 +97,7 @@ HTTP ヘッダー名・値は高々数十バイトの文字列であるため、
 本 issue で変更する API 要素の根拠となる RFC 要件:
 
 | API 要素 | 引用 RFC | 要件 |
-|---|---|---|
+| --- | --- | --- |
 | ヘッダー名形式 | RFC 9110 §5.1 / §5.6.2 | `field-name = token` (§5.1)。`token = 1*tchar` (§5.6.2)。Field names are case-insensitive (§5.1) |
 | ヘッダー値形式 | RFC 9110 §5.5 / §2.2 | `field-value = *field-content` であり空値は合法。CR, LF, NUL は RFC 9110 §5.5 で "invalid and dangerous" とされ、recipient は MUST reject or replace。sender 側では ABNF `field-vchar = VCHAR / obs-text` により VCHAR (%x21-7E) が構造的に CR/LF/NUL (%x00-1F) を除外しており、RFC 9110 §2.2 の「MUST NOT generate protocol elements that do not match the grammar」に依拠する |
 | フィールド値の構造制約 | RFC 9110 §5.5 | `field-content` は `field-vchar [ 1*( SP / HTAB / field-vchar ) field-vchar ]` で、field-vchar (VCHAR または obs-text) で開始・終了しなければならない。注: 本プロジェクトの validate.rs は先頭/末尾空白の構造制約を検証しておらず、本 issue も変更しない (L110) |
@@ -107,7 +109,7 @@ HTTP ヘッダー名・値は高々数十バイトの文字列であるため、
 | body なしレスポンス | RFC 9110 §6.4.1 / RFC 9110 §9.3.2 / RFC 9112 §6.3 / RFC 9112 §6.1 | 204 / 304 レスポンスは content を含まない (RFC 9110 §6.4.1)。1xx も同様に content 不可 (RFC 9112 §6.3 item 1)。HEAD レスポンスも content を含まない (RFC 9110 §9.3.2)。CONNECT 2xx は content を含まず tunnel mode に切り替わる (RFC 9110 §6.4.1, RFC 9112 §6.3 item 2)。加えて CONNECT 2xx では Transfer-Encoding 禁止 (RFC 9112 §6.1) |
 | body 長決定 | RFC 9112 §6.3 | item 1: HEAD / 1xx / 204 / 304 は空行で終端し、message body も trailer section も存在しない。item 2: CONNECT 2xx は空行で終端し、client MUST ignore Content-Length or Transfer-Encoding |
 | Content-Length 禁止 | RFC 9110 §8.6 | 1xx / 204 / CONNECT 2xx レスポンスでは Content-Length を送信してはならない (MUST NOT)。304 は Content-Length を MAY で送信できるが、その値が「同一リクエストへの 200 応答で送信されたであろうオクテット数」と等しい場合に限る (MUST NOT otherwise) |
-| Content-Length in HEAD | RFC 9110 §8.6 / RFC 9110 §9.3.2 / RFC 9112 §6.3 | HEAD レスポンスで Content-Length を送信してよい (MAY) が、GET の場合に送信されたであろう値と等しい場合に限る (MUST NOT otherwise)。item 1 の決定規則により HEAD レスポンスは空行で終端する
+| Content-Length in HEAD | RFC 9110 §8.6 / RFC 9110 §9.3.2 / RFC 9112 §6.3 | HEAD レスポンスで Content-Length を送信してよい (MAY) が、GET の場合に送信されたであろう値と等しい場合に限る (MUST NOT otherwise)。item 1 の決定規則により HEAD レスポンスは空行で終端する |
 
 注: ヘッダー名・値のバリデーションは `0017` で `is_valid_header_name` / `is_valid_field_value` を用いて実装済み。本 issue はバリデーション内容を変更しない。
 
@@ -116,7 +118,7 @@ HTTP ヘッダー名・値は高々数十バイトの文字列であるため、
 ### 影響範囲一覧
 
 | ファイル | 種別 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | `src/encoder.rs` | **変更不要** | `body_bytes()` 参照箇所は改名不要のため変更なし。`add_header` 戻り値変更の影響なし (encoder は Response を消費しない)。`encode_response` / `encode_response_headers` / `should_auto_emit_content_length_for_response` / `validate_response_fields` / `estimate_response_capacity` はすべて `Response` アクセサ経由でアクセスしており、`impl Into` 化の影響なし |
 | `src/response.rs` | 主要変更 | `add_header` 戻り値変更、body/omit_body mutator 追加、`impl Into` 化、`without_body` 追加、`set_header` の戻り値型/引数型変更 |
 | `pbt/tests/prop_response.rs` | 修正 | 新規 mutator PBT 追加 (`set_body`, `clear_body`, `without_body`, `set_omit_body`, チェインテスト) |
@@ -210,6 +212,7 @@ pub fn set_omit_body(&mut self, omit: bool) -> &mut Self {
 ```
 
 `body = None` (ボディなし、Content-Length 自動付与なし) と `body = Some(vec![])` (明示的空ボディ、Content-Length: 0 自動付与) の区別:
+
 - `set_body(Vec::new())` → `body = Some(vec![])` (空ボディ)
 - `clear_body()` / `without_body()` → `body = None` (ボディ意図なし)
 
@@ -260,9 +263,11 @@ pub fn set_body(&mut self, body: impl Into<Vec<u8>>) -> &mut Self
 
 注: `body` / `set_body` / `clear_body` / `without_body` / `omit_body` / `set_omit_body` はバリデーションを必要としないため `Result` を返さず、`Self` または `&mut Self` を直接返す。body mutation に関する RFC 上の制約 (1xx/204/304 は body 不可 等) は encoder 側で検証済みであり、mutator 側での再検証は行わない (`0017` の「encoder による二重バリデーション維持」方針と一致)。
 
-注: `set_omit_body(true)` と `set_body(data)` (data は非空) のチェインで「ボディはあるが送信しない」という意味論的矛盾が生じうる。mutator 側では infallible (Result を返さない) 設計のため、この矛盾は実行時にも検出されない。encoder 側の `should_auto_emit_content_length_for_response` で `omit_body=true` かつ body 非空の場合の Content-Length 不一致は検出されるが、明確なエラーメッセージにはならない。将来的に `set_omit_body` / `set_body` の組み合わせで矛盾を検出し panic または `Result` を返す設計を検討する余地があるが、本 issue では body mutation の infallible 設計を維持する。
+注: `set_omit_body(true)` と `set_body(data)` (data は非空) のチェインで「ボディはあるが送信しない」という意味論的矛盾が生じうる。mutator 側では infallible (Result を返さない) 設計のため、この矛盾は実行時にも検出されない。encoder 側の `should_auto_emit_content_length_for_response` で `omit_body=true` かつ body 非空の場合の Content-Length 不一致は検出されるが、明確なエラーメッセージにはならない。将来的に
+`set_omit_body` / `set_body` の組み合わせで矛盾を検出し panic または `Result` を返す設計を検討する余地があるが、本 issue では body mutation の infallible 設計を維持する。
 
 注: `header` ビルダーは内部で `add_header` を呼び出す委譲パターンである。両者を `impl Into<String>` 化した場合の実装:
+
 ```rust
 pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Result<Self, EncodeError> {
     // add_header は Result<&mut Self, EncodeError> を返す。? 演算子の脱糖は
@@ -272,11 +277,13 @@ pub fn header(mut self, name: impl Into<String>, value: impl Into<String>) -> Re
     Ok(self)
 }
 ```
+
 `impl Into<String>` パラメータは `add_header` に move で渡されるため、追加の `.into()` 呼び出しは発生しない（`impl Into<String>` は reflexive）。
 
 注: `new` / `with_version` の `impl Into<String>` 化では、バリデーション前に `.into()` を実行する（所有値のムーブを受け付けるため）。無効な status_code でも reason_phrase のアロケーションが発生するというトレードオフがあるが、`add_header` と一貫した方針とする。
 
-注: `impl Into<Vec<u8>>` は `Vec<u8>` (ムーブ) と `&[u8]` (clone) の両方で動作する。`&[u8]` → `Vec<u8>` の変換は標準ライブラリの `From<&[T]> for Vec<T>` 経由でクローンが発生するため、`&[u8]` 呼び出し側でのクローン回避効果はない。`Vec<u8>` を所有する呼び出し側が `body(existing_vec)` のようにムーブで渡せるようになることが本変更の主目的。既存の呼び出し側はすべて `.body(b"hello".to_vec())` または `.body(vec![...])` の形式であり、`impl Into<Vec<u8>>` 化後もコンパイル可能。この非対称性 (所有値はムーブ、参照はクローン) は Rust の標準的な `impl Into` パターンであり、API ドキュメントで明示する必要はない。
+注: `impl Into<Vec<u8>>` は `Vec<u8>` (ムーブ) と `&[u8]` (clone) の両方で動作する。`&[u8]` → `Vec<u8>` の変換は標準ライブラリの `From<&[T]> for Vec<T>` 経由でクローンが発生するため、`&[u8]` 呼び出し側でのクローン回避効果はない。`Vec<u8>` を所有する呼び出し側が `body(existing_vec)` のようにムーブで渡せるようになることが本変更の主目的。既存の呼び出し側はすべて `.body(b"hello".to_vec())` または
+`.body(vec![...])` の形式であり、`impl Into<Vec<u8>>` 化後もコンパイル可能。この非対称性 (所有値はムーブ、参照はクローン) は Rust の標準的な `impl Into` パターンであり、API ドキュメントで明示する必要はない。
 
 #### 5. `set_header` の `impl Into<String>` 化と `&mut Self` 返却
 
@@ -308,7 +315,8 @@ pub fn set_header(
 }
 ```
 
-注: `set_header` は本 issue で `&mut Self` を返すように変更する (`0017` では `Result<(), EncodeError>` で定義された)。ヘッダー操作系の mutator はすべて `Result<&mut Self, EncodeError>` を返すことでチェイン可能にする。`impl Into<String>` 化に伴い、バリデーション前に `.into()` が実行されるため無効な入力でもアロケーションが発生する。これは所有値のムーブを受け付けるためのトレードオフである。self の状態変更不可というアトミック性は依然として保たれており (`retain` / `push` はバリデーション成功後にのみ実行される)、逸脱するのは「バリデーション失敗時にアロケーションを回避する最適化」である。
+注: `set_header` は本 issue で `&mut Self` を返すように変更する (`0017` では `Result<(), EncodeError>` で定義された)。ヘッダー操作系の mutator はすべて `Result<&mut Self, EncodeError>` を返すことでチェイン可能にする。`impl Into<String>` 化に伴い、バリデーション前に `.into()` が実行されるため無効な入力でもアロケーションが発生する。これは所有値のムーブを受け付けるためのトレードオフである。self
+の状態変更不可というアトミック性は依然として保たれており (`retain` / `push` はバリデーション成功後にのみ実行される)、逸脱するのは「バリデーション失敗時にアロケーションを回避する最適化」である。
 
 #### 6. `#[must_use]` と既存コードの対応
 
@@ -317,7 +325,7 @@ pub fn set_header(
 0017 完了後の現行コードでは、全 `add_header` 呼び出しが既に `.is_err()` / `?` / `.unwrap()` で Result を消費済みであるため、`unused_must_use` 警告は発生しない。以下の確認で十分:
 
 | 影響ファイル | 現行の Result 処理 | 本 issue での対応 |
-|---|---|---|
+| --- | --- | --- |
 | `fuzz/fuzz_targets/fuzz_encode_response.rs` | `.is_err() { return; }` | 変更不要 (`.is_err()` が Result を消費、`&mut Self` は drop され次の borrow が可能) |
 | `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` | `.is_err() { return; }` | 同上 |
 | `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs` | `.is_err() { return; }` | 同上 |
@@ -335,10 +343,12 @@ pub fn set_header(
 - `0018` が **依然として pending の場合**: `set_omit_body` を含める。`0018` が reject も accept もされていない限り、`omit_body` フィールドは存続しているため、対応する mutator を提供するのが一貫性の原則に沿う
 
 `0017` は完了済みで getter 名は以下に確定している:
+
 - body getter: `body_bytes()` (builder `body(data)` との同名衝突回避のため)
 - omit_body getter: `is_body_omitted()`
 
 本 issue の mutator 命名はこの命名を前提とする:
+
 - `set_body()` / `clear_body()` → getter `body_bytes()` とのペア (非対称だが許容)
 - `set_omit_body()` → getter `is_body_omitted()` との setter/getter ペア
 
@@ -349,6 +359,7 @@ pub fn set_header(
 `0017` により全テストが Result 処理の追加を必要としている (完了済み)。本 issue では新規 API の PBT を追加する:
 
 既存テストの修正方針:
+
 - `Response::new(code, "OK")` → `Response::new(code, "OK").unwrap()` (0017 で対応済み)
 - `.header("Content-Type", "text/html")` → `.header("Content-Type", "text/html").unwrap()` (0017 で対応済み)
 - フィールド直接アクセス (`response.headers.len()`) → getter 経由 (`HttpHead::headers(&response).len()` — 0017 で対応済み)
@@ -356,6 +367,7 @@ pub fn set_header(
 - `body_bytes()` → 改名不要 (維持)
 
 新規追加 PBT:
+
 - `set_body` → `body_bytes()` (getter) のラウンドトリップ (strategy で任意の `Vec<u8>` を生成し、設定後に getter が一致することを検証)
 - `set_body` → `clear_body` → `body_bytes()` が `None` になること
 - `without_body` ビルダー → `body_bytes()` が `None` になること
@@ -480,6 +492,7 @@ assert!(r.is_body_omitted());
 `fuzz/fuzz_targets/fuzz_encode_response.rs`:
 
 現行コード (L47-51):
+
 ```rust
 let response = if body_present {
     response.body(body)
@@ -489,6 +502,7 @@ let response = if body_present {
 ```
 
 `body_present: false` のパスで `body = None` を明示するため、`clear_body()` を呼ぶ形に変更する:
+
 ```rust
 let mut response = if body_present {
     response.body(body)    // body() は self を消費し Self を返す
@@ -497,6 +511,7 @@ let mut response = if body_present {
     response               // 借用終了後なので response の move は可能
 };
 ```
+
 注: `clear_body()` の戻り値 `&mut Self` は文末の `;` で一時値が破棄され、`response` への可変借用が解放されるため、後続行の `response` の move が可能。
 
 `fuzz/fuzz_targets/fuzz_request_response_helpers.rs`:
@@ -506,6 +521,7 @@ let mut response = if body_present {
 `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`:
 
 現行コード (L134-137) は `has_body && !response_body.is_empty()` のときのみ `response.body(response_body.clone())` を呼び、それ以外は `Response::new` の初期状態 `body = None` のままである。`body = None` パスは既にカバー済みのため、本 issue での変更は不要。
+
 ```rust
 // 現行コード (変更不要)
 let response_body = fuzz_resp.body.clone();
@@ -515,26 +531,34 @@ let response = if has_body && !response_body.is_empty() {
     response
 };
 ```
+
 注: `has_body` フラグは 1xx/204/304 の body 不可ステータスを表す。これらのステータスで `body = None` を維持するため `clear_body()` は不要 (`Response::new` の初期状態が `body = None`)。
 
 `fuzz/fuzz_targets/fuzz_decoder_chunked.rs`:
 
 現行コード (L215):
+
 ```rust
 response.add_header("Transfer-Encoding", "chunked").unwrap();
 ```
+
 戻り値型変更後も `.unwrap()` で正常動作する。変更不要。
 
 `fuzz_encode_response.rs` の `omit_body` に関する改修:
 `0017` 完了後の現行コード (L52):
+
 ```rust
 let response = response.omit_body(omit_body);
 ```
+
 本 issue で追加する `set_omit_body` に移行する:
+
 ```rust
 response.set_omit_body(omit_body);
 ```
-注: `let response = response.omit_body(omit_body)` は builder パターンで self を消費し `Self` を返す。`response.set_omit_body(omit_body)` は `&mut self` を受け取り `&mut Self` を返す。この変更に伴い、`response` は事前に `let mut response = ...` で可変束縛されている必要がある (現行コード L47 の `let response = if body_present { ... } else { ... }` を `let mut response = ...` に変更するため条件を満たす)。戻り値 `&mut Self` は `;` で破棄され、後続の `encode_response(&response)` (不変参照) が可能になる。builder の `omit_body(self, bool)` は本 issue でも削除せず、mutator `set_omit_body` を追加する形で両者を共存させる。fuzz 側では既に `response` が可変束縛されているため、スタイル一貫性から mutator を使用する。
+
+注: `let response = response.omit_body(omit_body)` は builder パターンで self を消費し `Self` を返す。`response.set_omit_body(omit_body)` は `&mut self` を受け取り `&mut Self` を返す。この変更に伴い、`response` は事前に `let mut response = ...` で可変束縛されている必要がある (現行コード L47 の `let response = if body_present { ... } else { ... }` を
+`let mut response = ...` に変更するため条件を満たす)。戻り値 `&mut Self` は `;` で破棄され、後続の `encode_response(&response)` (不変参照) が可能になる。builder の `omit_body(self, bool)` は本 issue でも削除せず、mutator `set_omit_body` を追加する形で両者を共存させる。fuzz 側では既に `response` が可変束縛されているため、スタイル一貫性から mutator を使用する。
 
 #### Examples
 
@@ -550,7 +574,7 @@ response.set_omit_body(omit_body);
 
 `## develop` に以下を追加する。CHANGES.md は着手時に確定した内容のみを記載し、条件分岐を含めないこと。
 
-```
+```text
 - [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
   - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる
@@ -641,7 +665,7 @@ cargo llvm-cov report
 - `Response::set_omit_body(bool)` (mutator) を追加 — `omit_body` フラグを設定する
   (`pending/0018` の状況に応じて将来削除する可能性あり)
 - 文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更
-  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body`, `set_body` (impl Into<Vec<u8>>)
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (`impl Into<String>`), `body`, `set_body` (`impl Into<Vec<u8>>`)
   - バリデーション失敗時もアロケーションが発生するトレードオフを doc コメントに明記
 
 ### テスト

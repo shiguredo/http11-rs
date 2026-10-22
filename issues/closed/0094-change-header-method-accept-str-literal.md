@@ -41,7 +41,7 @@ Medium。利用者が最頻で触る builder の記述量を減らし、README �
 builder / examples / README / SKILL / `lib.rs` doc では次に **統一** する。
 
 | 項目 | 正規表記 | 備考 |
-|---|---|---|
+| --- | --- | --- |
 | HTTP メソッド | `"GET"` 等の `'static str` リテラル | case-sensitive（`"get"` ≠ `"GET"`）。doc で明記 |
 | カスタム / RTSP メソッド | `"DESCRIBE"` 等 | 同上 |
 | ヘッダー名 | `"Host"` 等 | case-insensitive だが送信表記を保持 |
@@ -57,7 +57,7 @@ builder / examples / README / SKILL / `lib.rs` doc では次に **統一** す�
 検査ロジックは 0091 / 0093 と同一。変わるのは **builder リテラル経路が panic ではなく `Result` になる** 点のみ。
 
 | 入力 | 経路 | 不正 token 時 |
-|---|---|---|
+| --- | --- | --- |
 | 動的 `&str` / バイト列 | `HeaderName::new()` / `Method::new()` | `Err(HeaderNameError)` / `Err(MethodError)` |
 | `'static` リテラル + builder | `TryFrom<&'static str>` → `try_into()?` | `Err(EncodeError::InvalidHeaderName { .. })` / `InvalidMethod { .. }` |
 | `'static` リテラル + `const` 定義 | `from_static(b"...")` | **コンパイル時 panic**（0092 compile-fail） |
@@ -127,6 +127,7 @@ let name = name.try_into().map_err(|e: HeaderNameError| EncodeError::InvalidHead
 `HeaderNameError` / `MethodError` に `core::error::Error` を実装する（`TryFrom` の `Error` 型として公開 API に露出するため、エラーチェーン互換性を確保する）。
 
 `Display` 実装は `input` フィールドを含める:
+
 - `Empty { input }` → `"empty header name: \"\""`
 - `InvalidByte { byte, position, input }` → `"invalid byte 0x20 at position 4 in header name: \"host name\""`
 
@@ -187,7 +188,7 @@ impl TryFrom<HeaderName> for HeaderName {
 対象（`try_into()` は **field-value 検査より前** に実行）:
 
 | 型 | メソッド | `name` パラメータ | `value` パラメータ | 備考 |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `Request` | `new`, `with_version` | `impl TryInto<Method>` | — | |
 | `Request` | `header`, `add_header`, `set_header` | `impl TryInto<HeaderName>` | `impl Into<String>`（既存維持） | |
 | `Response` | `header`, `add_header`, `set_header` | `impl TryInto<HeaderName>` | `impl Into<String>`（既存維持） | |
@@ -225,7 +226,8 @@ pub fn add_header(
 
 `Method` 側は `MethodError` → `EncodeError::InvalidMethod` に map（`e.into_input()` を使用）。`Request::new` / `with_version` / `RequestHead::new` / `with_version` も同形式。
 
-**`byte` / `position` の意図的欠落**: `EncodeError::InvalidHeaderName { name }` / `InvalidMethod { method }` には `byte` / `position` フィールドを含めない。理由: builder のエラーはユーザー向けの簡易表示が目的であり、入力文字列があれば原因特定に十分である。詳細なバイト位置情報が必要な場合は `HeaderName::new()` / `Method::new()` を直接呼んで `HeaderNameError` / `MethodError` を取得する経路を使う。`EncodeError` は `#[non_exhaustive]` のため、将来必要になった場合はフィールド追加で対応可能。
+**`byte` / `position` の意図的欠落**: `EncodeError::InvalidHeaderName { name }` / `InvalidMethod { method }` には `byte` / `position` フィールドを含めない。理由: builder のエラーはユーザー向けの簡易表示が目的であり、入力文字列があれば原因特定に十分である。詳細なバイト位置情報が必要な場合は `HeaderName::new()` / `Method::new()` を直接呼んで `HeaderNameError` / `MethodError`
+を取得する経路を使う。`EncodeError` は `#[non_exhaustive]` のため、将来必要になった場合はフィールド追加で対応可能。
 
 ### 4. 後方互換
 
@@ -233,7 +235,7 @@ pub fn add_header(
 - `HeaderNameError` / `MethodError` のフィールド変更は未リリースのため互換性問題なし
 - `CHANGES.md` は `[UPDATE]`。AGENTS.md「変更履歴は派生元ブランチとの最終的な差分のみを記載すること」に従い、既存の 0091 `[CHANGE]` エントリ（CHANGES.md line 32-34「`impl Into<String>` から `HeaderName/Method` に変更する」）を本 issue の最終形で上書きする。`HttpHead::headers()` 戻り型変更のエントリ（line 22-24）は本 issue の対象外であり触れない。上書き後の文言例:
 
-```
+```text
 - [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl TryInto<HeaderName> / impl TryInto<Method> に変更する
   - builder で `"Host"` / `"GET"` 等の `'static str` リテラルを直接渡せるようになる
   - 既存の HeaderName / Method / Method::GET 渡しは引き続きコンパイル可能（identity TryFrom impl）
@@ -244,7 +246,7 @@ pub fn add_header(
 ## 変更ファイル
 
 | ファイル | 変更内容 |
-|---|---|
+| --- | --- |
 | `src/header_name.rs` | `HeaderNameError` に `input` 追加、`core::error::Error` impl、`input()` / `into_input()` アクセサ、`TryFrom` impl × 3、型 doc |
 | `src/method.rs` | 同上 |
 | `src/request.rs` | `impl TryInto<_>` シグネチャ変更 |
@@ -261,7 +263,7 @@ pub fn add_header(
 ## テスト方針
 
 | 種別 | 方針 |
-|---|---|
+| --- | --- |
 | PBT | `prop_header_name.rs` / `prop_method.rs` に「`TryFrom<&'static str>` と `new()` の受理集合が一致する」プロパティを追加する。任意 ASCII 文字列に対して両者の Ok/Err が一致し、Ok の場合は `as_bytes()` が一致すること。既存 `input` フィールド追加に伴うパターンマッチ修正も行う |
 | 単体 | 不正入力（`""`, `"host name"`, `"GET\r"`）で `Err` になり `input` / `into_input()` が元の文字列を返すこと。`TryFrom<&'static [u8]>` の非 UTF-8 入力で `input()` が lossy 変換された文字列を返すこと |
 | builder | `Request::header("host name", "x")` が `Err(EncodeError::InvalidHeaderName { .. })` を返すこと（panic しないこと）。`RequestHead::header("host name", "x")` も同様 |
@@ -302,7 +304,8 @@ pub fn add_header(
 
 `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` を `HeaderName` / `Method` に実装し、builder API のシグネチャを `impl TryInto<HeaderName>` / `impl TryInto<Method>` に拡張した。これにより `"GET"` / `"Host"` 等のリテラルを builder に直接渡せるようになった。
 
-identity `TryFrom<T> for T` は `core` のブランケット impl (`TryFrom<U> for T where U: Into<T>`) と競合するため実装せず、代わりに builder 側で `N: TryInto<HeaderName>, N::Error: Into<EncodeError>` 制約を使う方針に変更した。`HeaderName` / `Method` 値は blanket impl 経由で `Error = Infallible` として `TryInto` を実装する。`From<Infallible> for EncodeError` を追加し、エラー型を統一した。
+identity `TryFrom<T> for T` は `core` のブランケット impl (`TryFrom<U> for T where U: Into<T>`) と競合するため実装せず、代わりに builder 側で `N: TryInto<HeaderName>, N::Error: Into<EncodeError>` 制約を使う方針に変更した。`HeaderName` / `Method` 値は blanket impl 経由で `Error = Infallible` として `TryInto`
+を実装する。`From<Infallible> for EncodeError` を追加し、エラー型を統一した。
 
 ### 変更ファイル
 

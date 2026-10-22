@@ -70,6 +70,7 @@ pub fn with_boundary(boundary: &str) -> Result<Self, MultipartError> {
 ### Fuzz への影響
 
 以下の fuzz ターゲットが `new` に任意 boundary を渡しているため改修が必要:
+
 - `fuzz/fuzz_targets/fuzz_multipart_boundary.rs`: `new` → `new` + `Err` 時 early return
 - `fuzz/fuzz_targets/fuzz_multipart_roundtrip.rs`: 同様
 - `fuzz/fuzz_targets/fuzz_multipart.rs`: ハードコード boundary のため影響なし (`.unwrap()` 追加のみ)
@@ -81,6 +82,7 @@ fuzz ターゲットは `new` が `Err` を返す場合に early return し、�
 ### 単体テスト
 
 `tests/test_multipart.rs` に以下を追加:
+
 - 空 boundary → `Err(MultipartError::InvalidBoundary)`
 - 71 文字以上 → `Err(MultipartError::InvalidBoundary)`
 - 禁止文字含む → `Err(MultipartError::InvalidBoundary)`

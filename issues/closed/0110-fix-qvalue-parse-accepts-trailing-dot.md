@@ -10,7 +10,8 @@
 `QValue::parse` が RFC 9110 Section 12.4.2 の ABNF に違反して、`"0."` と `"1."` を不正に受理しているバグを修正する。
 
 ABNF:
-```
+
+```text
 qvalue = ( "0" [ "." 1*3DIGIT ] ) / ( "1" [ "." 1*3"0" ] )
 ```
 
@@ -28,6 +29,7 @@ qvalue = ( "0" [ "." 1*3DIGIT ] ) / ( "1" [ "." 1*3"0" ] )
 - **"0." の経路** (L108-117): `rest` が空の場合、`rest.len() > 3` が `false`、`!rest.chars().all(|c| c.is_ascii_digit())` が空真理で `false` となり、チェックをすり抜けて `QValue(0)` を返す
 
 テスト `tests/test_accept.rs:75` は誤って `"1."` の受理を期待している:
+
 ```rust
 assert_eq!(QValue::parse("1.").unwrap().value(), 1000);
 ```

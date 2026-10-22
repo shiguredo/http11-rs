@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`examples/http11_server_io_uring/src/main.rs` の TLS ハンドシェイク完了検出経路 (L603-636 と L713-746 の 2 箇所) で、`tls_conn.is_handshaking() == false` を確認した直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` → kTLS 有効化 → `tls_conn.take()` で drop している。TLS 1.3 で `process_new_packets` 時点で rustls が内部復号済みバッファに保持していた Application Data の **先頭バイト** が `tls_conn` の drop と共に失われ、復元不能になる。
+`examples/http11_server_io_uring/src/main.rs` の TLS ハンドシェイク完了検出経路 (L603-636 と L713-746 の 2 箇所) で、`tls_conn.is_handshaking() == false` を確認した直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` → kTLS 有効化 → `tls_conn.take()` で drop している。TLS 1.3 で `process_new_packets` 時点で rustls
+が内部復号済みバッファに保持していた Application Data の **先頭バイト** が `tls_conn` の drop と共に失われ、復元不能になる。
 
 `tls_conn.reader().read(...)` の呼び出しは grep 結果 **0 件** で、handshake 完了後の leftover 吸い出し経路が完全に欠落している。
 
@@ -15,7 +16,7 @@ Model: Opus 4.7
 ### 発火経路と頻度差
 
 | 経路 | 発火タイミング | leftover 発生頻度 |
-|---|---|---|
+| --- | --- | --- |
 | L603-636 (`ConnectionState::HandshakeReading` の読み込み完了時) | クライアント Finished + Application Data を含む TCP read 直後 | **高** (curl / openssl s_client / 多くの HTTP/1.1 クライアントが TLS 1.3 で Finished と HTTP リクエストを同一 flight で送るため) |
 | L713-746 (`ConnectionState::HandshakeWriting` の書き込み完了時) | サーバ自身の Server Finished 送信完了直後 | **低** (この時点では Client Finished + Application Data はまだ届いていないため `received_plaintext` は通常空) |
 
@@ -115,7 +116,7 @@ curl -v --http1.1 --tlsv1.3 https://localhost:8443/info
 
 サンプルのデータ破損バグ修正は機能に直接影響するため、`### misc` ではなく本体 `[FIX]` 配下に配置する (0048 と方針統一):
 
-```
+```text
 - [FIX] `examples/http11_server_io_uring` で kTLS 移行時に rustls の復号済み平文を取りこぼし HTTP リクエストの先頭バイトが消失する問題を修正する
   - 旧実装は `tls_conn.is_handshaking() == false` 確認直後に `tls_conn.reader().read(...)` を呼ばずに `dangerous_extract_secrets()` を呼んで `tls_conn` を drop していた
   - TLS 1.3 で Client Finished と Application Data が同一 TCP read で来た場合 (curl / openssl s_client の典型的挙動)、`received_plaintext` に保持された HTTP リクエスト先頭バイトが復元不能で消失していた (TCP 再送経路もないため決定的に発生)
@@ -151,7 +152,8 @@ curl -v --http1.1 --tlsv1.3 https://localhost:8443/info
 
 ## 解決方法
 
-- `examples/http11_server_io_uring/src/main.rs` に `drain_and_feed_leftover(tls_conn, conn, peer_addr)` ヘルパー関数を追加した。`tls_conn.reader().read_to_end(&mut leftover)` で `received_plaintext` を排出し、`WouldBlock` は正常扱い、その他の I/O エラーは伝播する。leftover を `conn.decoder.feed(...)` で取り込み、`decode()` ループで全 Request を build_response → `conn.pending_writes` に push する (Keep-Alive false が出たら break)
+- `examples/http11_server_io_uring/src/main.rs` に `drain_and_feed_leftover(tls_conn, conn, peer_addr)` ヘルパー関数を追加した。`tls_conn.reader().read_to_end(&mut leftover)` で `received_plaintext` を排出し、`WouldBlock` は正常扱い、その他の I/O エラーは伝播する。leftover を `conn.decoder.feed(...)` で取り込み、`decode()` ループで全 Request を
+  build_response → `conn.pending_writes` に push する (Keep-Alive false が出たら break)
 - `handle_read` の `ConnectionState::HandshakeReading` 経路と `handle_write` の `ConnectionState::HandshakeWriting` 経路の両方で `dangerous_extract_secrets()` 直前に `drain_and_feed_leftover` を呼ぶよう変更した
 - leftover drain 失敗時は当該接続のみ `close_connection` で閉じ、サーバプロセスは継続させる
 - `handle_setsockopt_complete` を改修し、kTLS 有効化完了時に `conn.pending_writes` が非空なら `submit_write` を発行する (空なら従来通り `submit_read`)。`submit_write` 失敗時は `pending_writes.push_front` で先頭復元してから error を伝播する

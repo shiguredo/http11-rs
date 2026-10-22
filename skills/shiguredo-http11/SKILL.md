@@ -33,7 +33,7 @@ Sans I/O 設計に基づく HTTP/1.1 パーサー/シリアライザーライブ
 ### 構築型 (コンパイル時検査)
 
 | 型 | 説明 | 主要 API |
-|----|------|---------|
+| ---- | ------ | --------- |
 | `HeaderName` | HTTP ヘッダー名 (RFC 9110 Section 5.1, field-name = token)。Eq/Hash は case-insensitive | `from_static(b"Name")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()`, `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` (builder 用) |
 | `HeaderNameError` | `HeaderName` の構築エラー | `Empty { input }`, `InvalidByte { byte, position, input }`, `input()`, `into_input()` |
 | `Method` | HTTP メソッド (RFC 9110 Section 9.1, method = token)。Eq/Hash は case-sensitive | `from_static(b"METHOD")` (const, コンパイル時検査), `new(impl AsRef<[u8]>)` (Result, ランタイム検査), `as_str()`, `as_bytes()`, `TryFrom<&'static str>` / `TryFrom<&'static [u8]>` (builder 用) |
@@ -52,7 +52,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ### エンコード用 (送信側)
 
 | 型 | 説明 | 主要メソッド |
-|----|------|-------------|
+| ---- | ------ | ------------- |
 | `Request` | HTTP リクエスト | `new(Method, uri)` (Result), `with_version(Method, uri, version)` (Result), `header(HeaderName, value)` (Result, builder), `add_header(HeaderName, value)` (Result, mutator, チェイン可), `set_header(HeaderName, value)` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `method()`, `uri()`, `version()`, `encode()` (Result), `encode_headers()` (Result), `is_keep_alive()`, `is_chunked()` |
 | `Response` | HTTP レスポンス | `new(status_code, reason_phrase)` (Result), `with_version(version, status_code, reason_phrase)` (Result), `with_status(StatusCode)` (infallible), `header(HeaderName, value)` (Result, builder), `add_header(HeaderName, value)` (Result, mutator, チェイン可), `set_header(HeaderName, value)` (Result, mutator, チェイン可), `body()` (builder), `set_body()` (mutator), `clear_body()` (mutator), `without_body()` (builder), `body_bytes()` (getter), `omit_body()` (builder), `set_omit_body()` (mutator), `is_body_omitted()`, `status_code()`, `reason_phrase()`, `encode()` (Result), `encode_headers()` (Result), `status_class()`, `is_keep_alive()` |
 | `StatusCode` | IANA 登録済み HTTP ステータスコード (const 値) | `OK`, `CREATED`, `NO_CONTENT`, `NOT_MODIFIED`, `BAD_REQUEST`, `NOT_FOUND`, `INTERNAL_SERVER_ERROR` 等の const 定数, `code()`, `canonical_reason()`, `class()`, `from_code(u16)` (未登録コードは `None`) |
@@ -62,12 +62,13 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 
 `encode()` / `encode_headers()` は意味論違反 (Host 欠落、Content-Length 不一致、Transfer-Encoding と Content-Length の競合、1xx/204/205 へのボディ等) を `Result<Vec<u8>, EncodeError>` で返す。構築時バリデーションを通過した値でも encode 時に検出されるため、呼び出し側は `?` 等で伝播する。
 
-`Request` / `Response` のヘッダー名引数は `"Host"` 等の `'static str` リテラル、`HeaderName` 型、のいずれかを渡せる (`impl TryInto<HeaderName>`)。メソッド引数は `"GET"` 等のリテラル、`Method` 定数 (`Method::GET`) のいずれかを渡せる (`impl TryInto<Method>`)。値引数 (`value` / `uri` / `version` / `reason_phrase` / `body`) は `impl Into<String>` / `impl Into<Vec<u8>>` を受け、`String` や `Vec<u8>` をムーブで渡せる。`&str` / `&[u8]` も従来どおり利用可能。
+`Request` / `Response` のヘッダー名引数は `"Host"` 等の `'static str` リテラル、`HeaderName` 型、のいずれかを渡せる (`impl TryInto<HeaderName>`)。メソッド引数は `"GET"` 等のリテラル、`Method` 定数 (`Method::GET`) のいずれかを渡せる (`impl TryInto<Method>`)。値引数 (`value` / `uri` / `version` / `reason_phrase` / `body`) は `impl Into<String>` /
+`impl Into<Vec<u8>>` を受け、`String` や `Vec<u8>` をムーブで渡せる。`&str` / `&[u8]` も従来どおり利用可能。
 
 ### デコード用 (受信側)
 
 | 型 | 説明 | 主要メソッド |
-|----|------|-------------|
+| ---- | ------ | ------------- |
 | `RequestDecoder<D>` | リクエストデコーダー | `new()`, `with_limits()`, `with_decompressor()`, `with_decompressor_and_limits()`, `feed()`, `feed_unchecked()`, `mut_buf()`, `advance_buf()`, `available_buf()`, `decode()`, `decode_headers()`, `peek_body()`, `peek_body_decompressed()`, `consume_body()`, `progress()`, `remaining()`, `limits()`, `reset()`, `is_tunnel()`, `take_remaining()` (CONNECT 用) |
 | `ResponseDecoder<D>` | レスポンスデコーダー | 同上 + `mark_eof()`, `is_close_delimited()`, `set_request_method()` (HEAD/CONNECT 判定用のリクエストメソッドを設定) |
 | `RequestHead` | デコード済みリクエストヘッダー | `new(Method, uri)` (Result), `with_version(Method, uri, version)` (Result), `header(HeaderName, value)` (Result, builder), `add_header(HeaderName, value)` (Result, mutator), `method()` / `uri()` / `version()` / `headers()` (参照 getter), `into_method()` / `into_uri()` / `into_version()` / `into_headers()` / `into_parts()` (消費メソッド) |
@@ -80,7 +81,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 `Request` / `Response` / `RequestHead` / `ResponseHead` が実装する共通トレイト。エンコーダー側とデコーダー側でヘッダー操作の一貫性を保証する。
 
 | メソッド | 説明 |
-|----------|------|
+| ---------- | ------ |
 | `version()` | HTTP バージョンを取得 |
 | `headers()` | ヘッダーリストを取得 (`&[(HeaderName, String)]`) |
 | `get_header(name)` | ヘッダーを取得 (大文字小文字を区別しない) |
@@ -94,7 +95,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ### ボディ処理
 
 | 型 | 説明 |
-|----|------|
+| ---- | ------ |
 | `BodyKind::ContentLength(u64)` | Content-Length による固定長 |
 | `BodyKind::Chunked` | Transfer-Encoding: chunked |
 | `BodyKind::CloseDelimited` | 接続終了まで (レスポンスのみ) |
@@ -107,7 +108,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ### エンコーダー関数
 
 | 関数 | 戻り値 | 説明 |
-|------|--------|------|
+| ------ | -------- | ------ |
 | `encode_request(&Request)` | `Result<Vec<u8>, EncodeError>` | リクエスト全体をエンコード |
 | `encode_response(&Response)` | `Result<Vec<u8>, EncodeError>` | レスポンス全体をエンコード |
 | `encode_request_headers(&Request)` | `Result<Vec<u8>, EncodeError>` | ヘッダーのみエンコード |
@@ -118,7 +119,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ## 圧縮トレイト
 
 | 型/トレイト | 説明 |
-|------------|------|
+| ------------ | ------ |
 | `Compressor` | 圧縮トレイト: `compress()`, `finish()`, `reset()` |
 | `Decompressor` | 展開トレイト: `decompress()`, `reset()` |
 | `NoCompression` | デフォルト実装 (圧縮なし) |
@@ -134,7 +135,7 @@ builder 用途では `"GET"` / `"Host"` 等の `'static str` リテラルを直�
 ## ヘッダーパースモジュール
 
 | モジュール | 主要型 | RFC |
-|-----------|--------|-----|
+| ----------- | -------- | ----- |
 | `accept` | `Accept`, `AcceptCharset`, `AcceptEncoding`, `AcceptLanguage`, `QValue` | RFC 9110 |
 | `accept_query` | `AcceptQuery`, `MediaRangeItem`, `AcceptQueryError` | RFC 10008, RFC 9651 |
 | `auth` | `BasicAuth`, `DigestAuth`, `DigestChallenge`, `BearerToken`, `BearerChallenge`, `WwwAuthenticate`, `Authorization`, `AuthChallenge`, `ProxyAuthorization`, `ProxyAuthenticate`, `AuthError` | RFC 7617, 7616, 6750 |
@@ -456,7 +457,7 @@ let decoder = RequestDecoder::with_decompressor_and_limits(
 ## DecoderLimits
 
 | フィールド | デフォルト値 | 説明 |
-|-----------|-------------|------|
+| ----------- | ------------- | ------ |
 | `max_buffer_size` | 64KB | 最大バッファサイズ |
 | `max_headers_count` | 100 | 最大ヘッダー数 |
 | `max_header_line_size` | 8KB | 最大ヘッダー行長 |
@@ -482,7 +483,7 @@ let decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
 ### `Error` (デコード/ランタイムエラー)
 
 | バリアント | 説明 |
-|-----------|------|
+| ----------- | ------ |
 | `Error::InvalidData(String)` | 不正なデータ |
 | `Error::BufferOverflow { size, limit }` | バッファサイズ超過 |
 | `Error::TooManyHeaders { count, limit }` | ヘッダー数超過 |
@@ -496,7 +497,7 @@ let decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
 主なバリアント:
 
 | バリアント | 説明 |
-|-----------|------|
+| ----------- | ------ |
 | `MissingHostHeader` | HTTP/1.1 リクエストに Host ヘッダーがない (RFC 9112 §3.2) |
 | `ConflictingTransferEncodingAndContentLength` | Transfer-Encoding と Content-Length 同時指定 (RFC 9112 §6.2) |
 | `ForbiddenTransferEncoding { status_code }` | 1xx/204/205 で Transfer-Encoding 指定 (RFC 9112 §6.1, RFC 9110 §15.3.6) |
@@ -531,7 +532,7 @@ let decoder = RequestDecoder::with_limits(DecoderLimits::unlimited());
 ## RFC 準拠
 
 | RFC | 名称 | 対応機能 |
-|-----|------|---------|
+| ----- | ------ | --------- |
 | RFC 3986 | URI: Generic Syntax | URI パース、パーセントエンコーディング、resolve, normalize |
 | RFC 6265 | HTTP State Management | Cookie, Set-Cookie |
 | RFC 6266 | Content-Disposition | ファイル添付 |

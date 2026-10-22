@@ -339,7 +339,8 @@ Token/String のみを許可し、それ以外は全て「サポート対象外�
     (`AcceptQuery` / `MediaRangeItem` / `AcceptQueryError` / RFC 10008 / RFC 9651)
   - RFC 準拠テーブル (行 532-545) に RFC 9651 / RFC 10008 行を追加する
 - `CHANGES.md` の `## develop` に以下の ADD エントリを記載する:
-  ```
+
+  ```text
   - [ADD] QUERY メソッド (RFC 10008) と Accept-Query ヘッダー (RFC 10008 Section 3 / RFC 9651 Structured Fields) のサポートを追加する
     - `Method::QUERY` 定数を追加する (safe, idempotent)
     - `accept_query::AcceptQuery` / `accept_query::MediaRangeItem` / `accept_query::AcceptQueryError` を追加する

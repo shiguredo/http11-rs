@@ -71,7 +71,8 @@ if let Some(len) = content_length {
 }
 ```
 
-`usize::try_from(len).unwrap_or(usize::MAX)` とすることで、`len` が `usize` の範囲内なら実サイズを報告し、`usize` を超える場合のみ `usize::MAX` にフォールバックする。これにより通常ケース（例: limit 10MB に対する Content-Length 10MB+1）では実サイズを失わない。`Error::BodyTooLarge` の `size` フィールドを `u64` に変更する案もあるが、他の `usize` ベースのサイズ制限（`max_buffer_size` 等）との整合性を考慮し、本 issue では `usize` のままとする。
+`usize::try_from(len).unwrap_or(usize::MAX)` とすることで、`len` が `usize` の範囲内なら実サイズを報告し、`usize` を超える場合のみ `usize::MAX` にフォールバックする。これにより通常ケース（例: limit 10MB に対する Content-Length 10MB+1）では実サイズを失わない。`Error::BodyTooLarge` の `size` フィールドを `u64` に変更する案もあるが、他の `usize` ベースのサイズ制限（`max_buffer_size` 等）との整合性を考慮し、本
+issue では `usize` のままとする。
 
 ### 4. バッファ長との比較
 

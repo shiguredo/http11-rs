@@ -16,7 +16,7 @@ HTTP/1.1 のヘッダー名・メソッド・URI スキームは、RFC 9110 上�
 
 RFC 9110 Section 5.6.2 の定義:
 
-```
+```text
 token = 1*tchar
 tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
         / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
@@ -28,7 +28,7 @@ tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
 各型の文字種ポリシーは RFC の ABNF 文法に基づき、以下のとおりとする:
 
 | 型 | ABNF | 受理する文字 | 内部正規化 | Eq/Hash |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `HeaderName` | `field-name = token` | 全 tchar（大文字含む） | 小文字化 | case-insensitive |
 | `Method` | `method = token` | 全 tchar（小文字含む） | なし（case-sensitive） | case-sensitive |
 | `Scheme` | `scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )` | 全 scheme 文字（大文字含む） | 小文字化 | case-insensitive |
@@ -40,6 +40,7 @@ tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
 ## 優先度根拠
 
 Medium。
+
 - High ではない理由: 既存のランタイム検査で安全性は確保されている。本 issue は「リテラル定数ミスのコンパイル時検出」の上乗せ。
 - Low ではない理由: 後発で導入するほど破壊的変更コストが膨らむ。また「リテラル定数で書かれるヘッダー名・メソッドの RFC 違反をコンパイル時に検出できる」点は差別化要素となる。
 
@@ -259,20 +260,15 @@ decoder はパース時に `String` として保持しているヘッダー名�
 
 PBT による整合性検証（`from_static` と `new` の結果一致、decoder と `new` の受理集合一致）は別 issue（0093）で対応する。
 
-## 関連
-
-- 本 issue 完了後に 0092（trybuild コンパイル時エラーテスト）と 0093（PBT 整合性検証）を着手する
-- `RequestTarget` 型の導入は本 issue のスコープ外（`uri` は `impl Into<String>` のまま維持する）
-
-## 解決方法
-
 ### 変更ファイル
 
 #### 新規ファイル
+
 - `src/header_name.rs`: `HeaderName` 型 (Cow<'static, [u8]>, case-insensitive Eq/Hash, const fn from_static)
 - `src/method.rs`: `Method` 型 (Cow<'static, [u8]>, case-sensitive, const fn from_static, 標準定数 GET/POST/...)
 
 #### コアライブラリ (src/)
+
 - `src/lib.rs`: `header_name`, `method` モジュール追加、`HeaderName/HeaderNameError/Method/MethodError/Scheme/SchemeError` を re-export
 - `src/uri.rs`: `Scheme` 型追加 (Cow<'static, [u8]>, case-insensitive Eq/Hash, const fn from_static, 標準定数 HTTP/HTTPS/WS/WSS/RTSP)
 - `src/decoder/head.rs`: `HttpHead::headers()` 戻り型を `&[(HeaderName, String)]` に変更、`RequestHead`/`ResponseHead` の内部フィールドを `Method`/`HeaderName` に変更
@@ -284,6 +280,7 @@ PBT による整合性検証（`from_static` と `new` の結果一致、decoder
 - `src/decoder/body.rs`: `parse_content_length` 等のシグネチャ変更、trailer/trailers を `HeaderName` に変更
 
 #### テスト・PBT・Fuzz (全ファイル)
+
 - 全テスト (~500 call site) を新 API に追従
 - `Request::new("GET", ...)` → `Request::new(Method::GET, ...)`
 - `.header("Name", ...)` → `.header(HeaderName::from_static(b"Name"), ...)`
@@ -291,6 +288,7 @@ PBT による整合性検証（`from_static` と `new` の結果一致、decoder
 - PBT の strategy を `Method` / `HeaderName` 型に変更
 
 #### Examples
+
 - `examples/http11_server/src/main.rs`: 新 API 追従
 - `examples/http11_reverse_proxy/src/main.rs`: 新 API 追従、`is_hop_by_hop_header` シグネチャ変更
 - `examples/http11_client/src/main.rs`, `transport.rs`: 新 API 追従
@@ -303,3 +301,8 @@ PBT による整合性検証（`from_static` と `new` の結果一致、decoder
 - Clippy (-D warnings) 通過確認
 - cargo fmt 通過確認
 - http11_server E2E テスト (26 件) 通過確認
+
+## 関連
+
+- 本 issue 完了後に 0092（trybuild コンパイル時エラーテスト）と 0093（PBT 整合性検証）を着手する
+- `RequestTarget` 型の導入は本 issue のスコープ外（`uri` は `impl Into<String>` のまま維持する）

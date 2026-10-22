@@ -18,7 +18,7 @@ RFC 9110 Section 5.6.4 の quoted-string / quoted-pair の文字集合検証が�
 
 ### RFC 9110 Section 5.6.4 ABNF
 
-```
+```text
 quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE
 qdtext        = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
 quoted-pair   = "\" ( HTAB / SP / VCHAR / obs-text )

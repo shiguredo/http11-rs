@@ -28,6 +28,7 @@
 ## 現状
 
 `src/range.rs:382-387`:
+
 ```rust
 pub fn length(&self) -> Option<u64> {
     match (self.start, self.end) {
@@ -38,6 +39,7 @@ pub fn length(&self) -> Option<u64> {
 ```
 
 `src/range.rs:342-349`:
+
 ```rust
 pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
     ContentRange {
@@ -50,6 +52,7 @@ pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
 ```
 
 `src/range.rs:322-331` (`parse()` 側の検証、`new_bytes()` には未実装):
+
 ```rust
 if start > end {
     return Err(RangeError::InvalidBounds);
@@ -110,21 +113,25 @@ pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
 対象テストと修正内容:
 
 **`prop_content_range_length`** (line 260-271):
+
 - `start` / `end` を `0u64..=u64::MAX` に変更する
 - swap パターンで `start <= end` を保証する（既存の `let (start, end) = if ...` を維持）
 - `Some(end + 100)` (line 265) → `end.checked_add(100)` に変更。`checked_add` が `None` のときは `complete_length = None` で `new_bytes()` を呼ぶ
 - 既存の `prop_assert!(length.is_some())` (line 268) を削除し、以下に置き換える:
+
   ```rust
   let expected = end.checked_sub(start).and_then(|d| d.checked_add(1));
   prop_assert_eq!(cr.length(), expected);
   ```
 
 **`prop_content_range_roundtrip`** (line 173-191):
+
 - `start` / `end` を `0u64..=u64::MAX` に変更する。`total` の strategy は `1u64..=20000` のまま維持
 - swap パターンで `start <= end` を保証する
 - `total.max(end + 1)` (line 181) → `end.checked_add(1).and_then(|min| Some(total.max(min)))` に変更。`end = u64::MAX` のとき式が `None` になるため `complete_length = None` で `new_bytes()` を呼ぶ
 
 **`prop_content_range_unknown_length`** (line 316-328):
+
 - `start` / `end` を `0u64..=u64::MAX` に変更する
 - このテストは `parse()` 経路のみで `new_bytes()` を呼ばないため、assert の影響は受けない。swap パターンで `start <= end` を保証する
 
@@ -145,6 +152,7 @@ pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
 `tests/test_range.rs` に以下を追加する:
 
 `length()` の境界値テスト:
+
 - `(s=0, e=u64::MAX)` → `None`（唯一の overflow ケース）
 - `(s=1, e=u64::MAX)` → `Some(u64::MAX)`（`s >= 1` では overflow しないことの確認）
 - `(s=0, e=u64::MAX-1)` → `Some(u64::MAX)`（結果が u64 に収まる最大ケース）
@@ -153,18 +161,22 @@ pub fn new_bytes(start: u64, end: u64, complete_length: Option<u64>) -> Self {
 - `(s=u64::MAX-1, e=u64::MAX)` → `Some(2)`（通常範囲の確認）
 
 `new_bytes()` のバリデーションテスト:
+
 - `#[should_panic(expected = "start must be <= end")]` — `new_bytes(10, 5, None)`
 - `#[should_panic(expected = "complete_length must be > last-pos")]` — `new_bytes(0, 100, Some(50))`
 - `#[should_panic(expected = "complete_length must be > last-pos")]` — `new_bytes(u64::MAX, u64::MAX, Some(u64::MAX))`
 - `#[should_panic(expected = "complete_length must be > last-pos")]` — `new_bytes(0, u64::MAX, Some(0))`
 
 `new_bytes()` の正常系テスト:
+
 - `new_bytes(0, u64::MAX, None)` が正常終了し、`length()` が `None`、`Display` が `"bytes 0-18446744073709551615/*"` を返すこと
 
 `parse()` 側の既存テスト修正:
+
 - `test_content_range_parse_errors` に `complete_length <= end` のケース（`"bytes 0-100/50"`、`"bytes 0-0/0"`）を追加する。`"bytes 500-100/1000"` は `start > end` の既存ケース
 
 `InvalidBounds` Display 変更:
+
 - `src/range.rs:56` の Display を `"invalid range bounds (start > end)"` から `"invalid range bounds"` に変更する。`InvalidBounds` は `ContentRange::parse()` の `start > end` / `complete_length <= end` 両方と、`parse_range_spec()` の `start > end` で使われているため、簡略化により全経路のメッセージが統一される
 - 併せて `tests/test_range.rs` の `test_range_error_display` の期待値 `"invalid range bounds (start > end)"` も `"invalid range bounds"` に更新する
 

@@ -82,7 +82,7 @@ CLAUDE.md ルール:
 
 ### tests ディレクトリ構造
 
-```
+```text
 examples/http11_client/tests/
 ├── helpers/
 │   └── mod.rs              共通ヘルパー (Docker 検出、nginx 起動、カスタム conf)
@@ -155,7 +155,7 @@ pub async fn spawn_nginx_with_conf(conf: &str) -> NginxHandle;
 
 `## develop` の `### misc` セクション (既存) に以下を追加する:
 
-```
+```text
 - [ADD] examples/http11_client に testcontainers ベースの integration test を追加する
   - tests/nginx_basic.rs (GET 200 / 404 / HEAD / Server ヘッダーの 5 ケース) を追加する
   - tests/nginx_streaming.rs (chunked / 1 MiB ボディ / Connection: close の 3 ケース) を追加する

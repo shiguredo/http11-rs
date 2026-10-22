@@ -194,7 +194,7 @@ pub const fn from_static(bytes: &'static [u8]) -> Self {
   - 不正入力の `compile_fail` doctest
 
   | 型 | compile-fail ケース | compile-pass ケース |
-  |---|---|---|
+  | --- | --- | --- |
   | `HeaderName` | 空 / CRLF 注入 / NUL / コロン含有 / 空白 | 小文字 / 大文字 |
   | `Method` | 空 / CR / LF | 大文字 / 小文字（任意） |
   | `Scheme` | 空 / 数字開始 / コロン含有 | 小文字 / 大文字 |
@@ -214,14 +214,6 @@ pub const fn from_static(bytes: &'static [u8]) -> Self {
 3. `cargo test --doc` で全テスト通過を確認
 4. `CHANGES.md` に追記
 
-## 関連
-
-- 0091（HeaderName / Method / Scheme 導入）に依存
-- 0091 完了後に着手する
-- shiguredo/http2-rs の `stream_id.rs` が先行実装
-
-## 解決方法
-
 ### 変更内容
 
 以下の `from_static` メソッドの doc comment に compile-pass / compile-fail doctest を追加した:
@@ -233,3 +225,9 @@ pub const fn from_static(bytes: &'static [u8]) -> Self {
 ### テスト
 
 `cargo test --doc` で全 11 件の `compile_fail` doctest が期待通りコンパイル失敗 (= テスト成功) することを確認した。正常系 doctest (55 件) も全通過。
+
+## 関連
+
+- 0091（HeaderName / Method / Scheme 導入）に依存
+- 0091 完了後に着手する
+- shiguredo/http2-rs の `stream_id.rs` が先行実装

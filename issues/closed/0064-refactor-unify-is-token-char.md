@@ -56,7 +56,7 @@ cargo test --workspace
 
 `## develop` の `### misc` に以下を追記する:
 
-```
+```text
 - [UPDATE] `is_token_char` / `is_valid_token` の 12 重複定義を `validate.rs` に一元化する
   - accept / auth / content_disposition / content_encoding / content_type / cookie / digest_fields / expect / range / trailer / upgrade / vary の重複を削除し `validate::{is_token_char, is_valid_token}` に置換する
   - @voluntas

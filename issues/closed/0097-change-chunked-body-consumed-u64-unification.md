@@ -8,7 +8,8 @@
 
 ## 目的
 
-`BodyChunkedData { remaining: usize }` と `body_consumed: usize` が `BodyContentLength { remaining: u64 }` と型不整合を起こしている。32-bit 環境では `usize::from_str_radix` が `u32::MAX` を超えるチャンクサイズで `Err` を返し、RFC 9112 Section 7.1 の MUST 要件 ("recipients MUST anticipate potentially large hexadecimal numerals and prevent parsing errors due to integer conversion overflows or precision loss") に抵触する。
+`BodyChunkedData { remaining: usize }` と `body_consumed: usize` が `BodyContentLength { remaining: u64 }` と型不整合を起こしている。32-bit 環境では `usize::from_str_radix` が `u32::MAX` を超えるチャンクサイズで `Err` を返し、RFC 9112 Section 7.1 の MUST 要件 ("recipients MUST anticipate potentially large hexadecimal numerals and
+prevent parsing errors due to integer conversion overflows or precision loss") に抵触する。
 
 また `max_body_size: usize` (`DecoderLimits`) も `usize` であり、Content-Length 側の `u64` と型レベルで不整合がある。
 
@@ -19,7 +20,7 @@
 ## 現状
 
 | フィールド | 型 | ファイル:行 |
-|-----------|-----|-----------|
+| ----------- | ----- | ----------- |
 | `BodyContentLength { remaining }` | `u64` | `src/decoder/phase.rs:11` |
 | `BodyChunkedData { remaining }` | `usize` | `src/decoder/phase.rs:15` |
 | `body_consumed` | `usize` | `src/decoder/body.rs:75` |
@@ -59,6 +60,7 @@ Content-Length パス (body.rs:129, 186) が既にこのパターン (`len as u6
 ### 影響パス一覧
 
 本変更は以下の全パスに影響する:
+
 - **Content-Length**: `peek_body` (body.rs:129) / `consume_body` (body.rs:186-192) — 既存の u64 パスだが `BodyTooLarge` のフィールド型が変わる
 - **Chunked**: `peek_body` (body.rs:142) / `consume_body` (body.rs:246-251) / `process_chunked_size` (body.rs:437-467) — `remaining` と `chunk_size` の u64 化
 - **CloseDelimited**: `consume_body` (body.rs:328-344) — `body_consumed` の u64 化に伴い `checked_add` の型が変わる
@@ -79,6 +81,7 @@ Content-Length パス (body.rs:129, 186) が既にこのパターン (`len as u6
 ### 単体テスト
 
 `tests/test_decoder/` に以下を追加:
+
 - u32::MAX を超えるチャンクサイズ (`FFFFFFFF1` 等) が正しくパースされること (32-bit 環境でのリグレッション確認)
 - `max_body_size` を `u64` で設定した場合に `BodyTooLarge` エラーのフィールドが `u64` であること
 - `DecoderLimits::unlimited()` で大きなチャンクサイズが通過すること

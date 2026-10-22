@@ -27,7 +27,7 @@ AGENTS.md「資料由来の機能を実装する場合は、根拠資料名、�
 **src/response.rs の doc 不在箇所**:
 
 | 対象 | 行 | 状態 |
-|---|---|---|
+| --- | --- | --- |
 | `omit_body` フィールド (`omit_body: bool`) | L32 | フィールド自体の doc コメントがなく、構造体冒頭 doc (L18-20) にも RFC 節番号なし |
 | `is_keep_alive` メソッド | L348-355 | "RFC 9110" への言及はあるが節番号なし |
 | `is_chunked` メソッド | L362-368 | "RFC 9112" への言及はあるが節番号なし |
@@ -39,18 +39,20 @@ AGENTS.md「資料由来の機能を実装する場合は、根拠資料名、�
 
 **src/request.rs の doc 不在箇所**: `response.rs` と同一の委譲メソッド群 (`connection`, `is_keep_alive`, `content_length`, `is_chunked`。L93-118) が同一の問題を抱えている。本 issue で同時に補強する。
 
-**補足: `get_header` / `get_headers` / `has_header` について**: `response.rs` と `request.rs` には `get_header` / `get_headers` / `has_header` の 3 メソッドも `HttpHead` への委譲メソッドとして存在するが、これらは HTTP 意味論に特有の判定ロジックを持たず単なる検索・集約の薄いラッパーであり、AGENTS.md が要求する「資料由来の機能」には該当しないため本 issue の対象外とする。ただし現状これらのメソッドには doc コメント自体がないため、RFC 節番号とは別に基本的な説明 doc を追加することは別 issue で検討する。
+**補足: `get_header` / `get_headers` / `has_header` について**: `response.rs` と `request.rs` には `get_header` / `get_headers` / `has_header` の 3 メソッドも `HttpHead` への委譲メソッドとして存在するが、これらは HTTP 意味論に特有の判定ロジックを持たず単なる検索・集約の薄いラッパーであり、AGENTS.md が要求する「資料由来の機能」には該当しないため本 issue の対象外とする。ただし現状これらのメソッドには doc
+コメント自体がないため、RFC 節番号とは別に基本的な説明 doc を追加することは別 issue で検討する。
 
 **src/decoder/head.rs (HttpHead トレイト) の doc 不在箇所**:
 
 | 対象 | 行 | 状態 |
-|---|---|---|
+| --- | --- | --- |
 | `connection` メソッド | L39-42 | doc が「`Connection` ヘッダーの値を取得」のみで RFC 節番号なし |
 | `content_length` メソッド | L74-78 | doc が「`Content-Length` ヘッダーの値を取得」のみで RFC 節番号なし |
 | `is_keep_alive` メソッド | L44-47 | doc に `RFC 9110 Section 9.1` とあるが、Section 9.1 は "Overview of Methods" であり誤った節番号（後述） |
 | `is_chunked` メソッド | L80-105 | 既に `RFC 9112 Section 6.3` が記載されている。内容は十分だが整合性のために再確認する |
 
-**head.rs `is_keep_alive` の誤った RFC 節番号**: 既存 doc (L44-47) は `/// RFC 9110 Section 9.1: 複数の Connection ヘッダーはリストとして結合して処理する。` とあるが、RFC 9110 Section 9.1 は "Overview of Methods" (method token の定義、メソッド一覧表の導入部) であり、Connection ヘッダー処理とは無関係である。正しい参照先は RFC 9110 Section 5.3 (複数ヘッダー行の結合規則) および RFC 9110 Section 7.6.1 (Connection ヘッダー定義) である。本 issue で修正する。これは doc 上のバグに相当する。
+**head.rs `is_keep_alive` の誤った RFC 節番号**: 既存 doc (L44-47) は `/// RFC 9110 Section 9.1: 複数の Connection ヘッダーはリストとして結合して処理する。` とあるが、RFC 9110 Section 9.1 は "Overview of Methods" (method token の定義、メソッド一覧表の導入部) であり、Connection ヘッダー処理とは無関係である。正しい参照先は RFC 9110 Section 5.3 (複数ヘッダー行の結合規則) および RFC 9110 Section
+7.6.1 (Connection ヘッダー定義) である。本 issue で修正する。これは doc 上のバグに相当する。
 
 ### 問題 2: 戻り値の意味論が doc 不在
 
@@ -67,6 +69,7 @@ AGENTS.md「資料由来の機能を実装する場合は、根拠資料名、�
 ```
 
 実際の `HttpHead::is_keep_alive` 実装 (`src/decoder/head.rs:48-72`) は:
+
 - `close` トークンが最優先: いずれかの `Connection` ヘッダーに `close` があれば即座に `false`。`keep-alive` が同時に存在しても `close` が優先される
 - `close` がない場合、`keep-alive` トークンがあれば `true`
 - どちらもない場合、`version.ends_with("/1.1")` で判定
@@ -88,6 +91,7 @@ doc はこの判定ロジックの全体像を反映していない。特に HTT
 フィールドは非公開 (`omit_body: bool`) で `cargo doc` に表示されないため、内部開発者向けの `//` コメントとして RFC 根拠を明記する。構造体冒頭 doc (L18-20) の `omit_body` に関する記述にも `RFC 9110 Section 6.4.1` を追記し、公開ドキュメント側からも RFC 根拠がわかるようにする。
 
 フィールドの `//` コメント:
+
 ```rust
 // ボディ送信を抑止するフラグ (HEAD レスポンス用)
 //
@@ -102,6 +106,7 @@ omit_body: bool,
 ```
 
 構造体冒頭 doc (L18-20) の修正:
+
 ```rust
 /// `omit_body` は body の有無とは直交する。HEAD レスポンスのように
 /// メッセージボディを送らない場合に使う
@@ -314,6 +319,7 @@ fn is_keep_alive(&self) -> bool {
 ### doctest について
 
 追加しない。理由:
+
 - `is_keep_alive` 等の挙動は委譲先 `HttpHead` のデフォルト実装に依存しており、トレイトの PBT で検証済み
 - `0017` 完了後の API (`Response::new` が `Result` を返す) で doctest を書く必要があるが、API シグネチャは今後も変更される可能性がある
 - Doc の正確性はコードレビューと `cargo doc` の警告チェックで担保する
@@ -326,7 +332,7 @@ doc のみの変更のため、PBT / 単体 / Fuzzing の追加は不要。既�
 
 `## develop` セクションの `### misc` サブセクションに以下を追加する:
 
-```
+```text
 - [FIX] `HttpHead::is_keep_alive` の doc 内の誤った RFC 節番号 (Section 9.1 → Section 9.3 / Section 7.6.1) を修正する
   - @voluntas
 - [UPDATE] `Response`、`Request`、`HttpHead` の委譲メソッドの doc に RFC 節番号を明記する

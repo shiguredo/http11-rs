@@ -6,25 +6,27 @@ Model: Opus 4.7
 
 ## 概要
 
-`Authorization` / `Content-Disposition` の quoted-string パーサーが入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push しているため、UTF-8 マルチバイトシーケンスを構成するバイトが独立した `U+0080..=U+00FF` の char にマップされ、`String` 内部の UTF-8 表現が原入力と乖離する Latin-1 mojibake が発生する。`parse -> to_string -> parse` のラウンドトリップで値が変化し、`fuzz_content_disposition` のラウンドトリップ assertion が失敗する。
+`Authorization` / `Content-Disposition` の quoted-string パーサーが入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push しているため、UTF-8 マルチバイトシーケンスを構成するバイトが独立した `U+0080..=U+00FF` の char にマップされ、`String` 内部の UTF-8 表現が原入力と乖離する Latin-1 mojibake が発生する。`parse -> to_string -> parse`
+のラウンドトリップで値が変化し、`fuzz_content_disposition` のラウンドトリップ assertion が失敗する。
 
 本 issue は `parse_quoted_string` 系を char 単位走査ベースに書き換えて入力 `&str` の UTF-8 不変条件を保ち、obs-text を opaque な char として保持する。
 
 ## 方針反転と先行コミットの撤回
 
-本 issue は先行 commit `e956716` で表明した「quoted-string パーサーで obs-text (0x80-FF) を reject する」方針を撤回し、RFC 9110 Section 5.5 の「A recipient SHOULD treat ... obs-text ... as opaque data」に従って opaque 保持に戻すものである。AGENTS.md の `### RFC について` 節も working tree で同方針に更新済み (本 issue と同一 PR で取り込む)。AGENTS.md の現状記述は obs-text の保持範囲を明示していないため、本 issue の修正に合わせて AGENTS.md にも「char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する」を追記する。
+本 issue は先行 commit `e956716` で表明した「quoted-string パーサーで obs-text (0x80-FF) を reject する」方針を撤回し、RFC 9110 Section 5.5 の「A recipient SHOULD treat ... obs-text ... as opaque data」に従って opaque 保持に戻すものである。AGENTS.md の `### RFC について` 節も working tree で同方針に更新済み (本 issue と同一 PR で取り込む)。AGENTS.md の現状記述は obs-text
+の保持範囲を明示していないため、本 issue の修正に合わせて AGENTS.md にも「char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する」を追記する。
 
 ## 再現手順
 
 本 issue の crash 入力 (hex 64 バイト) を将来の regression seed として `fuzz/corpus/fuzz_content_disposition/regression-0059` にコミットする。再現は以下:
 
-```
+```bash
 cargo +nightly fuzz run fuzz_content_disposition fuzz/corpus/fuzz_content_disposition/regression-0059
 ```
 
 入力バイト列 (hex):
 
-```
+```text
 69 6e 6c 6e 69 65 3b 66 69 6c 65 6e 61 6d 65 3d
 22 61 44 44 44 44 44 44 64 74 74 61 63 68 5d 6d
 65 6e 74 3b 7d 5c 2f 5c 5c 5c 5c 3b 5c 5c 5c eb
@@ -40,7 +42,8 @@ right: Some("aDDDDDDdttach]ment;}/\\\\;\\Ã«Â£Â£Ã©Â£Â£;")
 
 ## 根本原因
 
-`String` の UTF-8 不変条件と `u8 as char` (Latin-1 直列化) の混同。入力 `&str` (UTF-8) に含まれる obs-text バイト `\xeb` を `b as char` で扱うと `U+00EB` (`ë`) に解釈され、`String` 内部では `\xc3\xab` の 2 バイトに展開される。`Display` 出力でこの 2 バイトがそのまま吐かれ、再 parse で `\xc3 as char` -> `U+00C3` (`Ã`)、`\xab as char` -> `U+00AB` (`«`) と再度誤解釈されて mojibake が確定する。
+`String` の UTF-8 不変条件と `u8 as char` (Latin-1 直列化) の混同。入力 `&str` (UTF-8) に含まれる obs-text バイト `\xeb` を `b as char` で扱うと `U+00EB` (`ë`) に解釈され、`String` 内部では `\xc3\xab` の 2 バイトに展開される。`Display` 出力でこの 2 バイトがそのまま吐かれ、再 parse で `\xc3 as char` -> `U+00C3` (`Ã`)、`\xab as char` -> `U+00AB` (`«`) と再度誤解釈されて
+mojibake が確定する。
 
 char 単位で valid UTF-8 を走査し、その char をそのまま `String` に push すれば `String` のバイト表現は入力と一致する (入力 `\xeb\xa3\xa3` の char は `U+B8E3` 1 個、UTF-8 で 3 バイト、原入力と同一)。
 
@@ -189,7 +192,8 @@ reject 方針撤回に伴い「validate.rs 側の obs-text 許容撤去は別 is
 
 ### 6. fuzz_auth.rs に Digest 系のラウンドトリップ assertion を追加
 
-`fuzz/fuzz_targets/fuzz_auth.rs` の `DigestChallenge::parse` / `DigestAuth::parse` 経路は現状 Display reparse の戻り値を `let _` で破棄しているため、`parse_auth_params` 内の Latin-1 mojibake を fuzz が検知できない。修正後の挙動を fuzz でも保護するため、以下のラウンドトリップ assertion を追加する。`DigestChallenge` / `DigestAuth` は構造上 `params: Vec<(String, String)>` の 1 フィールドのみを持ち、専用 getter は限られているため、専用 getter と `param("name")` 汎用アクセサを併用する:
+`fuzz/fuzz_targets/fuzz_auth.rs` の `DigestChallenge::parse` / `DigestAuth::parse` 経路は現状 Display reparse の戻り値を `let _` で破棄しているため、`parse_auth_params` 内の Latin-1 mojibake を fuzz が検知できない。修正後の挙動を fuzz でも保護するため、以下のラウンドトリップ assertion を追加する。`DigestChallenge` / `DigestAuth` は構造上
+`params: Vec<(String, String)>` の 1 フィールドのみを持ち、専用 getter は限られているため、専用 getter と `param("name")` 汎用アクセサを併用する:
 
 - `DigestChallenge`: 専用 getter `realm()` / `nonce()`、および `param("opaque")` / `param("domain")` / `param("qop")` / `param("algorithm")` / `param("userhash")` / `param("stale")` を Display reparse 前後で equal 比較する
 - `DigestAuth`: 専用 getter `username()` / `username_decoded()` / `realm()` / `nonce()` / `uri()` / `response()`、および `param("opaque")` / `param("cnonce")` / `param("nc")` / `param("qop")` / `param("algorithm")` を Display reparse 前後で equal 比較する
@@ -211,7 +215,7 @@ reject 方針撤回に伴い「validate.rs 側の obs-text 許容撤去は別 is
 
 未リリースの `## develop` に `[FIX]` 種別を新設し、`### misc` の上に挿入する (規約: UPDATE -> ADD -> CHANGE -> FIX -> misc の順):
 
-```
+```text
 - [FIX] `Authorization` / `Content-Disposition` の quoted-string パースで obs-text を含む UTF-8 値の Latin-1 mojibake を修正する
   - 旧実装は入力 `&str` を `as_bytes()` で 1 バイトずつ走査し `b as char` で `String` に push していたため、UTF-8 マルチバイトシーケンスが `U+0080..=U+00FF` にマップされ Display 出力で別バイトに展開、ラウンドトリップで mojibake していた
   - char 単位走査に書き換え、入力 `&str` の UTF-8 不変条件を保つ
@@ -284,7 +288,8 @@ fn qdtext_char() -> impl Strategy<Value = char> {
 
 - obs-text を含む UTF-8 char 値の `Authorization` / `Content-Disposition` ヘッダーが parse 可能になる (寛容化、API 互換破壊なし)
 - リバースプロキシ等で受信した obs-text 入りヘッダーを下流に `Display` 経由で fallthrough できるようになる (mojibake せず原入力のバイト列を保つ)
-- 送信側 (Display 出力) の挙動: parse 結果として保持された `U+0080` 以上の char はそのまま生 UTF-8 として Display に出力される。RFC 9110 Section 5.5 は「Specifications for newly defined fields SHOULD limit their values to visible US-ASCII octets (VCHAR), SP, and HTAB」と仕様定義者向けに US-ASCII を SHOULD で要請するが、本 issue は受信側 (Postel 原則「受信は寛容」) のスコープであり、送信側で US-ASCII を保証する責務は呼出側にある。具体的には:
+- 送信側 (Display 出力) の挙動: parse 結果として保持された `U+0080` 以上の char はそのまま生 UTF-8 として Display に出力される。RFC 9110 Section 5.5 は「Specifications for newly defined fields SHOULD limit their values to visible US-ASCII octets (VCHAR), SP, and HTAB」と仕様定義者向けに US-ASCII を SHOULD で要請するが、本 issue は受信側 (Postel 原則「受信は寛容」)
+  のスコープであり、送信側で US-ASCII を保証する責務は呼出側にある。具体的には:
   - `ContentDisposition::with_filename` (`src/content_disposition.rs:292-295`) は infallible で String を受け取りバリデーション無し。obs-text 入り値を渡すと Display で生 UTF-8 を出力する。送信側で US-ASCII を保証するには `with_filename_ext` (RFC 8187 ext-value、UTF-8 percent-encoded) を使うか、呼出側で ASCII に正規化する必要がある。
 - 旧来 mojibake していた Display 出力に依存する外部利用者は乖離するが、これは元バグの是正。
 
@@ -312,7 +317,8 @@ fn qdtext_char() -> impl Strategy<Value = char> {
 5. `fuzz/fuzz_targets/fuzz_auth.rs` に `DigestChallenge` / `DigestAuth` の Display reparse 前後の equal 比較を追加した。
 6. `fuzz/corpus/fuzz_content_disposition/regression-0059` を新設 (issue 記載の 56 バイト hex 列)。
 7. PBT: `pbt/tests/prop_content_disposition.rs::qdtext_char` を Unicode scalar 拡張に置換、`pbt/tests/prop_auth.rs` に `qdtext_char` / `qdtext_realm` strategy と `WwwAuthenticate` / `DigestChallenge` の obs-text ラウンドトリップを追加した。
-8. 単体テスト: `tests/test_content_disposition.rs` と `tests/test_auth.rs` に BMP 内 2 バイト / 3 バイト UTF-8 / `U+D7FF` / `U+E000` / `U+10FFFF` を含む値のラウンドトリップと、CR / LF / NUL の reject (qdtext / quoted-pair 両方) を追加した。`test_content_disposition_regression_0059` で issue 記載の hex 列が `aDDDDDDdttach]ment;}/\\;\<U+B8E3><U+98E3>;` として正しくパースされラウンドトリップで mojibake しないことを検証した (issue 文中の `U+9D63` は誤記、実際は `\xe9\xa3\xa3` = `U+98E3`)。
+8. 単体テスト: `tests/test_content_disposition.rs` と `tests/test_auth.rs` に BMP 内 2 バイト / 3 バイト UTF-8 / `U+D7FF` / `U+E000` / `U+10FFFF` を含む値のラウンドトリップと、CR / LF / NUL の reject (qdtext / quoted-pair 両方) を追加した。`test_content_disposition_regression_0059` で issue 記載の hex 列が
+   `aDDDDDDdttach]ment;}/\\;\<U+B8E3><U+98E3>;` として正しくパースされラウンドトリップで mojibake しないことを検証した (issue 文中の `U+9D63` は誤記、実際は `\xe9\xa3\xa3` = `U+98E3`)。
 9. `AGENTS.md` の `### RFC について` 節に「char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する」を追記した。
 10. `CHANGES.md` `## develop` の `### misc` の上に `[FIX]` エントリを追加した。
 

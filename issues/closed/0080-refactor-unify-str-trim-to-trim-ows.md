@@ -11,8 +11,6 @@
 - src/host.rs, src/cookie.rs, src/accept.rs, src/trailer.rs, src/upgrade.rs, src/vary.rs の全 `.trim()` 呼び出しを `trim_ows()` (ASCII SP/HTAB のみ除去) に置換した
 - 各ファイルに `use crate::validate::trim_ows;` を追加した
 
-## 完了条件
-
 ## 目的
 
 encoder/decoder 側で HTTP Request Smuggling (CWE-444) 対策として `trim_ows()` (ASCII SP/HTAB のみ除去) に統一しているが、ヘッダーパース系モジュールでは Rust 標準の `str::trim()` (Unicode 空白も除去) を使用している。前段プロキシとの解釈不一致で smuggling の足場になり得る。

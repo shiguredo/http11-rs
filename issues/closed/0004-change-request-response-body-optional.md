@@ -1,4 +1,4 @@
-# 0004: Request/Response の body を Option<Vec<u8>> に変更
+# 0004: Request/Response の body を `Option<Vec<u8>>` に変更
 
 Created: 2026-04-28
 Completed: 2026-04-28

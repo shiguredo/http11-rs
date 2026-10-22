@@ -15,6 +15,7 @@ Model: Opus 4.7
 ブランチ名は CLAUDE.md「git ブランチの命名規則」に従い `feature/change-request-fields-private-with-validation` を使用する。
 
 依存関係:
+
 - 本 issue は `0017` (Response フィールド非公開化) の完了後に着手する
 - `0017` で確立した「フィールド非公開化 + バリデーション + `from_raw_parts` + `#[non_exhaustive]`」のパターンを Request にそのまま適用する
 - `0020` (StatusClass enum) と `0024` (StatusCode 型導入) は Request 側で直接使用しないため依存しない。ただし実装時に `0017` / `0020` / `0024` / `0025` のマージ順序により `git merge` のコンフリクトが発生する可能性があるため、`0017` 〜 `0024` がすべて完了した develop ブランチからブランチを切ることを推奨する
@@ -27,7 +28,7 @@ Model: Opus 4.7
 本 issue の対応を正しく行うため、以下の既存実装を把握する必要がある:
 
 | 項目 | ファイル | 状態 |
-|---|---|---|
+| --- | --- | --- |
 | `is_valid_method` | `src/validate.rs:70-72` | **既存** — `!method.is_empty() && method.bytes().all(is_token_char)` |
 | `is_valid_request_target` | `src/validate.rs:179-225` | **既存** — 制御文字拒否・RFC 3986 除外文字拒否・パーセントエンコーディング検証・%00 拒否。obs-text (0x80-0xFF) は受信側互換性のため許容。**本 issue ではこの既存実装を流用し、簡易版への置き換えは行わない** |
 | `is_valid_protocol_version` | `src/validate.rs:85-125` | **既存** — `token "/" DIGIT+ "." DIGIT+` 形式。RTSP 互換のため DIGIT+ (RFC 9112 §2.3 の `DIGIT "." DIGIT` より広い) と token (RFC 9112 §2.3 の `%s"HTTP"` case-sensitive を強制しない) を許容 |
@@ -38,7 +39,8 @@ Model: Opus 4.7
 
 本 issue の主な作業は、上記の既存実装を **構築時にも適用する** こと、および **フィールド非公開化に伴う全アクセス箇所の修正** である。新規のバリデーション関数やエラーバリアントの追加は不要。
 
-注: `is_valid_request_target` は「受信側互換性のため obs-text (0x80-0xFF) を許容」するが、これは **RFC 上の根拠がない実装判断** である。request-target の構文定義 (RFC 9112 §3.2) には obs-text は登場せず、`field-vchar` や `reason-phrase` の定義で obs-text が現れるのみである (RFC 9110 §5.5, RFC 9112 §4)。本 issue では **送信側 (構築時) に加え decoder 側でも obs-text を拒否** する (構築された Request は送信されることを前提とするため)。これにより「受信側互換性のため obs-text 許容」は実質的に無効化される。両者の一貫性を取るための obs-text 許容撤去 (validate.rs の `is_valid_request_target` 修正) はスコープ外とし、別 issue で対応する。構築時と decoder の obs-text 拒否チェックはそれまでの暫定措置である。
+注: `is_valid_request_target` は「受信側互換性のため obs-text (0x80-0xFF) を許容」するが、これは **RFC 上の根拠がない実装判断** である。request-target の構文定義 (RFC 9112 §3.2) には obs-text は登場せず、`field-vchar` や `reason-phrase` の定義で obs-text が現れるのみである (RFC 9110 §5.5, RFC 9112 §4)。本 issue では **送信側 (構築時) に加え decoder 側でも obs-text を拒否** する
+(構築された Request は送信されることを前提とするため)。これにより「受信側互換性のため obs-text 許容」は実質的に無効化される。両者の一貫性を取るための obs-text 許容撤去 (validate.rs の `is_valid_request_target` 修正) はスコープ外とし、別 issue で対応する。構築時と decoder の obs-text 拒否チェックはそれまでの暫定措置である。
 
 ## 根拠
 
@@ -54,7 +56,8 @@ Model: Opus 4.7
 - `request.version = "garbage".to_string()` (不正バージョン)
 - `request.body = Some(vec![b'x'])` (body を勝手に差し替えられる)
 
-CRLF / NUL 注入は **HTTP Request Smuggling (CWE-444)** の温床で、特に reverse proxy 経路では致命的な脆弱性を生む。RFC 9112 Section 3（Request Line）も lenient parsing が security vulnerabilities を引き起こすと警告している (Section 11.2 参照)。さらに RFC 9112 Section 3.2 は不正な request-line の自動修正を明確に禁止している (SHOULD NOT attempt to autocorrect — セキュリティフィルタのバイパスを防ぐため)。RFC 9112 Section 2.2 も「不正な行の拒否または除去が request smuggling 防御に必要」と述べている。
+CRLF / NUL 注入は **HTTP Request Smuggling (CWE-444)** の温床で、特に reverse proxy 経路では致命的な脆弱性を生む。RFC 9112 Section 3（Request Line）も lenient parsing が security vulnerabilities を引き起こすと警告している (Section 11.2 参照)。さらに RFC 9112 Section 3.2 は不正な request-line の自動修正を明確に禁止している (SHOULD NOT attempt to autocorrect —
+セキュリティフィルタのバイパスを防ぐため)。RFC 9112 Section 2.2 も「不正な行の拒否または除去が request smuggling 防御に必要」と述べている。
 
 さらに RFC 9110 Section 5.4 でも、ヘッダー制限の文脈で request smuggling 攻撃 (RFC 9112 Section 11.2) への脆弱性増大を警告している。
 
@@ -83,7 +86,8 @@ HTTP ヘッダー名は case-insensitive (RFC 9110 Section 5.1) だが、`add_he
 
 ### 問題 5: Host ヘッダーが HTTP/1.1 で MUST であることの検証不在
 
-RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必須 (MUST) であり、欠落した場合は 400 Bad Request を返すべき (SHOULD) と規定している (§3.2: "A client MUST send a Host header field in all HTTP/1.1 request messages")。しかし `Request::new` (HTTP/1.1 固定) は Host ヘッダーの存在を全く検証しない。本 issue のスコープは構文レベルのバリデーション (method/URI/version/headers の文字集合) に限定し、Host ヘッダーの存在検証は encoder 時の `validate_host_header` に委ねる (現状維持)。ただし、この RFC MUST 要件への言及は根拠として明記しておく。
+RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必須 (MUST) であり、欠落した場合は 400 Bad Request を返すべき (SHOULD) と規定している (§3.2: "A client MUST send a Host header field in all HTTP/1.1 request messages")。しかし `Request::new` (HTTP/1.1 固定) は Host ヘッダーの存在を全く検証しない。本 issue のスコープは構文レベルのバリデーション
+(method/URI/version/headers の文字集合) に限定し、Host ヘッダーの存在検証は encoder 時の `validate_host_header` に委ねる (現状維持)。ただし、この RFC MUST 要件への言及は根拠として明記しておく。
 
 ## 対応方針
 
@@ -92,7 +96,7 @@ RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必�
 本 issue は Response 側 (`0017`) で確立したパターンを **そのまま Request に適用** する:
 
 | Response (0017) | Request (本 issue) |
-|---|---|
+| --- | --- |
 | `Response::new(code, reason)?` | `Request::new(method, uri)?` |
 | `Response::with_version(v, c, r)?` | `Request::with_version(method, uri, version)?` |
 | `Response::with_status(StatusCode::OK)` (infallible) | 本 issue のスコープ外 (将来 `Method` 型追加 issue で対応) |
@@ -106,7 +110,7 @@ RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必�
 ### 影響範囲一覧
 
 | ファイル | 種別 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | `src/request.rs` | 主要変更 | フィールド非公開化、コンストラクタ `Result` 化、`pub(crate) from_raw_parts` 新設 (`debug_assert!` 付き)、アクセサ・setter 追加 |
 | `src/validate.rs` | **変更不要** | `is_valid_method`, `is_valid_request_target`, `is_valid_header_name`, `is_valid_field_value`, `is_valid_protocol_version` は全て既存。**新規追加不要**。ただし構築時バリデーション経由で未カバー分岐が発生する可能性があるため、カバレッジ取得対象に含める |
 | `src/encoder.rs` | 修正 | Request 関連の全フィールド直接アクセスをアクセサ経由に書き換え (後述の全関数リスト参照)。`validate_request_fields` の二重バリデーション維持。`impl Request` の `encode()` / `try_encode()` の doc comment と expect メッセージを構築時バリデーション導入後の panic 条件に合わせて更新 (0017 の `Response::encode()` doc 更新と同水準)。内部 `#[cfg(test)] mod capacity_tests` の `Request::new()` / `.header()` に `.unwrap()` 追加 |
@@ -127,7 +131,7 @@ RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必�
 | `fuzz/fuzz_targets/fuzz_encode_request.rs` | 修正 | フィールド代入 → setter API に書き換え。`Request::with_version` が `Result` 化されるため、fuzz の任意入力を扱う箇所では `let Ok(mut request) = Request::with_version(...) else { return; };` パターンを使用する。`add_header` も `Result` 化されるため `is_err()` 時に `return;` する。`body = None` 復帰は条件分岐で制御 |
 | `fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs` | 修正 | `Request::new` / `Request::with_version` が `Result` 化されるため、`let Ok(mut request) = Request::new(...) else { return; };` パターンを使用する。`add_header` も `Response` 側と同様に `is_err()` 時にループを継続 (`continue`) または `return` する。加えて line 102 の `request.body.unwrap_or_default()` → `request.body_bytes().map(\|b\| b.to_vec()).unwrap_or_default()` に書き換え (所有値が必要なため `unwrap_or(&[])` では不足)。`has_body` 変数は Request 側に存在しないため、既存の `!fuzz_req.body.is_empty()` 条件で `body()` 呼び出しを行う |
 | `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` | 修正 | `add_header` の戻り値チェック追加、`body = Some(body)` → `body(body)` に書き換え |
-| `fuzz/fuzz_targets/fuzz_decoder_chunked.rs` | 修正 | `Request::new("POST", "/")` → `Request::new("POST", "/").unwrap()`、`request.add_header(...)` → `request.add_header(...).unwrap()` に書き換え。fuzz の任意入力がバリデーションを通過しなくなった場合は早期 return（`if request.add_header(...).is_err() { return; }` パターン）|
+| `fuzz/fuzz_targets/fuzz_decoder_chunked.rs` | 修正 | `Request::new("POST", "/")` → `Request::new("POST", "/").unwrap()`、`request.add_header(...)` → `request.add_header(...).unwrap()` に書き換え。fuzz の任意入力がバリデーションを通過しなくなった場合は早期 return（`if request.add_header(...).is_err() { return; }` パターン） |
 | `src/lib.rs` | 修正 | doctest の `Request::new()` / `.header()` に `.unwrap()` 追加 |
 | `skills/shiguredo-http11/SKILL.md` | 修正 | Request の主要メソッド一覧を新 API に追従させ、サンプルコードに `.unwrap()` を追加 |
 
@@ -136,7 +140,7 @@ RFC 9112 Section 3.2 は HTTP/1.1 リクエストには Host ヘッダーが必�
 以下の関数内で `request.method`, `request.uri`, `request.version`, `request.headers`, `request.body` に直接アクセスしている。全箇所をアクセサ経由に書き換える:
 
 | 関数 | 行番号 (付近) | 直接アクセス内容 |
-|---|---|---|
+| --- | --- | --- |
 | `should_auto_emit_content_length_for_request` | 79 | `request.body.is_some()`, `request.has_header(...)` |
 | `estimate_request_capacity` | 108-130 | `request.method.len()`, `request.uri.len()`, `request.version.len()`, `&request.headers` loop, `request.body.as_deref()` |
 | `validate_request_fields` | 173-210 | `&request.method`, `request.method.clone()`, `&request.uri`, `request.uri.clone()`, `request.uri.bytes()`, `&request.version`, `request.version.clone()`, `&request.headers` |
@@ -294,7 +298,7 @@ pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError>
 バリデーション呼び出し:
 
 | コンストラクタ | 検証内容 | 使用関数 |
-|---|---|---|
+| --- | --- | --- |
 | `new` | method: token | `is_valid_method` (validate.rs:70 — **既存**) |
 | `new` | uri: CRLF/NUL/制御文字/RFC3986 除外文字 non-existence + obs-text 非含有 | `is_valid_request_target` (validate.rs:179 — **既存**) + 追加で `uri.bytes().any(\|b\| b >= 0x80)` を拒否。obs-text 拒否時は `InvalidRequestTarget { uri }` を返す (新規エラーバリアント追加不要、method と同様に最初に失敗したバリデーションのエラーを返す) |
 | `with_version` | method: 同上 | 同上 |
@@ -302,20 +306,23 @@ pub fn new(method: &str, uri: &str) -> Result<Self, EncodeError>
 | `with_version` | version: token `/` DIGIT+ `.` DIGIT+ | `is_valid_protocol_version` (validate.rs:85 — **既存**) |
 
 バリデーション順序:
+
 - `new`: first `is_valid_method` → then `is_valid_request_target` → then `uri.bytes().any(|b| b >= 0x80)` チェック。最初に失敗した検証のエラーを返す
 - `with_version`: first `is_valid_method` → `is_valid_request_target` → obs-text チェック → then `is_valid_protocol_version`
 
-注: 構築時には `is_valid_protocol_version` (token "/" DIGIT+ "." DIGIT+ 形式) を使用する。これは `is_valid_version_for_encode` (encoder.rs:18 の内部関数、`!version.is_empty() && version.bytes().all(\|b\| matches!(b, 0x21..=0x7E))` で VCHAR のみを検証) よりも**厳しい**検証であり (tchar ⊂ VCHAR のため、`is_valid_protocol_version` を通過する値は必ず `is_valid_version_for_encode` も通過する)、二重チェックの実益は `from_raw_parts` の release ビルドスキップ後の防御線として機能する。
+注: 構築時には `is_valid_protocol_version` (token "/" DIGIT+ "." DIGIT+ 形式) を使用する。これは `is_valid_version_for_encode` (encoder.rs:18 の内部関数、`!version.is_empty() && version.bytes().all(\|b\| matches!(b, 0x21..=0x7E))` で VCHAR のみを検証) よりも**厳しい**検証であり (tchar ⊂ VCHAR のため、`is_valid_protocol_version` を通過する値は必ず
+`is_valid_version_for_encode` も通過する)、二重チェックの実益は `from_raw_parts` の release ビルドスキップ後の防御線として機能する。
 
 ### URI バリデーションのスコープ
 
 本 issue では URI のバリデーションに **既存の `is_valid_request_target` (validate.rs:179-225)** をそのまま流用する。既存実装は以下を検証済み:
 
 - 制御文字 (0x00-0x20, 0x7F) の拒否 → CRLF 注入の防御 (RFC 9112 §3.2: whitespace 禁止)、NUL 注入の防御 (RFC 9110 §5.5: CR/LF/NUL are invalid and dangerous)
-- RFC 3986 除外文字 (`"#<>\\^`{|}`) の拒否 → `#` はフラグメント区切りのため RFC 9112 §3.2 で request-target に含められない
+- RFC 3986 除外文字 (`"#<>\\^`{|}`) の拒否 →`#` はフラグメント区切りのため RFC 9112 §3.2 で request-target に含められない
 - 不正なパーセントエンコーディング (不完全・非 hex 文字) の拒否
 - `%00` (パーセントエンコーディングされた NUL) の拒否
-- obs-text (0x80-0xFF) は受信側互換性のため許容 (送信側では encoder 側で別途拒否)。注: この obs-text 許容は RFC 上の根拠がない実装判断である。RFC 9110 §5.5 および RFC 9112 §4 で obs-text が現れるのは `field-vchar` および `reason-phrase` のみで、request-target の構文 (RFC 9112 §3.2) には obs-text は含まれない。本 issue では構築時と decoder の両方で obs-text 拒否チェックを追加するため、この挙動は実質的に無効化される。validate.rs 側の obs-text 許容撤去は別 issue で対応する
+- obs-text (0x80-0xFF) は受信側互換性のため許容 (送信側では encoder 側で別途拒否)。注: この obs-text 許容は RFC 上の根拠がない実装判断である。RFC 9110 §5.5 および RFC 9112 §4 で obs-text が現れるのは `field-vchar` および `reason-phrase` のみで、request-target の構文 (RFC 9112 §3.2) には obs-text は含まれない。本 issue では構築時と decoder の両方で obs-text
+  拒否チェックを追加するため、この挙動は実質的に無効化される。validate.rs 側の obs-text 許容撤去は別 issue で対応する
 
 構築時には本関数の全チェックに加え、**obs-text 非含有の追加チェック**を行う (encoder.rs の既存の obs-text 拒否チェックと同等の水準を構築時にも適用)。
 
@@ -335,6 +342,7 @@ pub fn body(mut self, body: Vec<u8>) -> Self  // builder (infallible)
 バリデーションは既存の `is_valid_header_name` / `is_valid_field_value` を使用する (`0017` と同一)。
 
 `set_header` の実装は 0017 の Response 側 (`src/response.rs:279-287`) と同じアトミック性保証パターンを使用する:
+
 1. `is_valid_header_name(name) && is_valid_field_value(value)` を **先に** 検証し、失敗時は早期 `Err` で `self` を変更しない
 2. バリデーション通過後に `self.headers.retain(|(n, _)| !n.eq_ignore_ascii_case(name))` で同名全削除
 3. `self.headers.push((name.to_string(), value.to_string()))` で末尾追加
@@ -347,7 +355,8 @@ pub fn body(mut self, body: Vec<u8>) -> Self  // builder (infallible)
 - 保存は raw (case-preserving)、検索は case-insensitive (現状維持)
 - 正規化 (lowercase 強制等) は別 issue で対応
 
-注: `set_header` の「同名全削除→末尾追加」実装により、Host ヘッダーを `set_header` 経由で上書きした場合、Host の位置が末尾に移動する。RFC 9110 §5.3 は「Host on requests を先頭に送るのが good practice」としているが (§5.3: "it is good practice to send header fields that contain additional control data first, such as Host on requests")、MUST 要件ではない。Host の先頭維持は本 issue のスコープ外とし、後続 issue で対応する。
+注: `set_header` の「同名全削除→末尾追加」実装により、Host ヘッダーを `set_header` 経由で上書きした場合、Host の位置が末尾に移動する。RFC 9110 §5.3 は「Host on requests を先頭に送るのが good practice」としているが (§5.3: "it is good practice to send header fields that contain additional control data first, such as Host on requests")、MUST 要件ではない。Host の先頭維持は本
+issue のスコープ外とし、後続 issue で対応する。
 
 ### 読み取り専用アクセサ
 
@@ -363,6 +372,7 @@ pub fn body_bytes(&self) -> Option<&[u8]>
 `body_bytes()` は `0017` 完了後の Response 側 (`src/response.rs:309`) と命名を揃える。0017 の実装で builder `body(self, Vec<u8>) -> Self` と getter `body(&self) -> Option<&[u8]>` の同名併存が Rust の inherent impl 制約で不可能であることが判明し、getter は `body_bytes()` に改名された (0017 SOLUTION L745-746)。本 issue もこの命名を踏襲する。
 
 以下は既存の `HttpHead` トレイト実装経由で提供済みのため追加不要:
+
 - `headers()` → `HttpHead::headers` → `&[(String, String)]`
 - `get_header()` → `HttpHead::get_header` → `Option<&str>`
 - `get_headers()` → `HttpHead::get_headers` → `Vec<&str>`
@@ -384,7 +394,7 @@ pub fn body_bytes(&self) -> Option<&[u8]>
 ### 書き換え対応一覧
 
 | 旧 API | 新 API |
-|---|---|
+| --- | --- |
 | `Request::new("GET", "/")` | `Request::new("GET", "/").unwrap()` (テストのみ) / `Request::new("GET", "/")?` (examples) |
 | `Request::with_version(m, u, v)` | `Request::with_version(m, u, v).unwrap()` / `?` |
 | `Request { method, uri, ... }` | `Request::new(...).unwrap()` + setter (外部) / `from_raw_parts` (crate 内) |
@@ -432,6 +442,7 @@ let request = if body_present {
 #### examples の改修パターン
 
 `examples/http11_reverse_proxy/src/main.rs`:
+
 ```rust
 // 変更前
 upstream_request.body = if matches!(req_body_kind, BodyKind::None) {
@@ -449,6 +460,7 @@ let upstream_request = if matches!(req_body_kind, BodyKind::None) {
 ```
 
 `examples/http11_server/src/main.rs` (line 280-286):
+
 ```rust
 // 変更前
 let request = Request {
@@ -485,7 +497,7 @@ CLAUDE.md「サンプルは **お手本**」原則に従い、examples は **`.u
 
 `## develop` セクションに以下を追加する (AGENTS.md に従い UPDATE → ADD → CHANGE → FIX の順):
 
-```
+```text
 - [CHANGE] `Request` の全フィールドを非公開化し、構築時バリデーションを追加する
   - 構築は `Request::new` / `Request::with_version` が `Result<Self, EncodeError>` を返す形に変更する
   - `add_header` / `header` でヘッダー名 (RFC 9110 Section 5.1 token) と値 (RFC 9110 Section 5.5 field-value, CR/LF/NUL 不可) をバリデートし `Result` を返す
@@ -512,7 +524,8 @@ CLAUDE.md「サンプルは **お手本**」原則に従い、examples は **`.u
 - CRLF を含むヘッダー値で `Err(InvalidHeaderValue)` が返る
 - NUL を含むヘッダー値で `Err(InvalidHeaderValue)` が返る
 - 空ヘッダー値が合法であること (RFC 9110 Section 5.5: `field-value = *field-content`) — `is_valid_field_value` は空文字列で `true` を返す (空イテレータで `.all()` が常に `true`)
-- 先頭/末尾に SP/HTAB を含むヘッダー値は合法であること (trim は行わない。RFC 9110 §5.5 は「A field parsing implementation MUST exclude such whitespace prior to evaluating the field value」と MUST で先行/末尾空白の除外を要求しているが、本 issue の目的は smuggling 防御であり、先行/末尾空白の trim を本 issue に含めるとスコープが拡大しすぎる。trim は後続 issue で対応する。本テストは RFC 逸脱の暫定テストであり、後続 issue で修正される動作であることを注記すること)
+- 先頭/末尾に SP/HTAB を含むヘッダー値は合法であること (trim は行わない。RFC 9110 §5.5 は「A field parsing implementation MUST exclude such whitespace prior to evaluating the field value」と MUST で先行/末尾空白の除外を要求しているが、本 issue の目的は smuggling 防御であり、先行/末尾空白の trim を本 issue に含めるとスコープが拡大しすぎる。trim は後続 issue で対応する。本テストは RFC 逸脱の暫定テストであり、後続
+  issue で修正される動作であることを注記すること)
 - token/DIGIT.DIGIT 形式に違反する version で `Err(InvalidVersion)` が返る
 - `set_header` が case-insensitive に上書きできる
 - `set_header` のバリデーション失敗時に既存ヘッダーが消えない (アトミック性)

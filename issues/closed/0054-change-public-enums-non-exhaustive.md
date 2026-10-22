@@ -120,7 +120,7 @@ pub enum EncodeError { ... }
 
 `## develop` に `[CHANGE]` として追加する:
 
-```
+```text
 - [CHANGE] 公開 enum (全 Error enum 24 個 + StatusClass / BodyKind / BodyProgress / CompressionStatus / Authorization / AuthChallenge) に `#[non_exhaustive]` を付与する
   - 本リリースだけでも EncodeError / AuthError / ContentDispositionError に複数バリアントを追加しており、未付与のままだとバリアント追加ごとに後方互換のない変更を出し続ける構造になっていた
   - BodyKind は本リリースで `Tunnel` バリアントを追加、StatusClass は新規導入のため、IANA レジストリ / API 拡張に備える
@@ -146,7 +146,8 @@ pub enum EncodeError { ... }
 
 ## 解決方法
 
-- 全 Error enum (24 個) に `#[non_exhaustive]` を付与した: `Error`, `EncodeError`, `AcceptError`, `AuthError`, `CacheError`, `ConditionalError`, `ContentDispositionError`, `ContentEncodingError`, `ContentLanguageError`, `ContentLocationError`, `ContentTypeError`, `CookieError`, `DateError`, `DigestFieldsError`, `ETagError`, `ExpectError`, `HostError`, `MultipartError`, `RangeError`, `TrailerError`, `UpgradeError`, `UriError`, `VaryError`, `CompressionError`
+- 全 Error enum (24 個) に `#[non_exhaustive]` を付与した: `Error`, `EncodeError`, `AcceptError`, `AuthError`, `CacheError`, `ConditionalError`, `ContentDispositionError`, `ContentEncodingError`, `ContentLanguageError`, `ContentLocationError`, `ContentTypeError`, `CookieError`, `DateError`,
+  `DigestFieldsError`, `ETagError`, `ExpectError`, `HostError`, `MultipartError`, `RangeError`, `TrailerError`, `UpgradeError`, `UriError`, `VaryError`, `CompressionError`
 - 状態 / 拡張余地のあるドメイン enum (5 個) に `#[non_exhaustive]` を付与した: `StatusClass`, `BodyKind`, `CompressionStatus`, `Authorization`, `AuthChallenge`
 - 当初スコープに含めていた `BodyProgress` は 3 variant (`Complete` / `Advanced` / `NeedData`) で API として安定しており、利用側テストへの影響が大きい一方で将来バリアント追加の蓋然性が低いため対象外とした
 - `pbt/tests/prop_status_code.rs` の `prop_status_class_partition` で `StatusClass::from_status_code` を match している箇所に未知バリアント検出用の `Some(_) => prop_assert!(false, ...)` arm を追加した

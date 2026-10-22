@@ -106,7 +106,7 @@ if seen_params.len() >= MAX_PARAMS {
 
 `## develop` に `[CHANGE]` として追加する (`AuthError` / `ContentDispositionError` への variant 追加は後方互換のない変更):
 
-```
+```text
 - [CHANGE] `parse_auth_params` と `ContentDisposition::parse` にパラメータ数 hard cap (`MAX_AUTH_PARAMS = 32` / `MAX_PARAMS = 32`) を導入する
   - 旧実装はパラメータ数の上限がなく、`max_header_line_size = 8KB` 内で 2000 個程度のパラメータが詰め込み可能で、線形重複検出による CPU 消費の上限がなかった
   - 実用パラメータ数 (RFC 7616 Digest = 12 / RFC 6266 Content-Disposition = 7) に十分な余裕として 32 を上限とする

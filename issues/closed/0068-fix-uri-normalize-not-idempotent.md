@@ -56,12 +56,13 @@ High。
 
 ### バグの流れ
 
-1. `resolve(base, reference="#")` は RFC 3986 Section 5.2.2 の path-empty 経路 (`if (R.path == "")` 分岐、`refs/rfc3986.txt:1754-1760`、実装は `src/uri.rs:798-808`) に入り、`build_uri(base.scheme()=None, base.authority()=None, base.path()="/..//YYYYYYYY/", base.query()=None, reference.fragment()=Some(""))` を返す。結果は `"/..//YYYYYYYY/#"`。この経路では `remove_dot_segments` は呼ばれない。
+1. `resolve(base, reference="#")` は RFC 3986 Section 5.2.2 の path-empty 経路 (`if (R.path == "")` 分岐、`refs/rfc3986.txt:1754-1760`、実装は `src/uri.rs:798-808`) に入り、`build_uri(base.scheme()=None, base.authority()=None, base.path()="/..//YYYYYYYY/", base.query()=None, reference.fragment()=Some(""))`
+   を返す。結果は `"/..//YYYYYYYY/#"`。この経路では `remove_dot_segments` は呼ばれない。
 2. `normalize` は `remove_dot_segments(uri.path())` を呼ぶ。`uri.path()` は `"/..//YYYYYYYY/"`。
 3. `remove_dot_segments` の RFC 3986 Section 5.2.4 アルゴリズム適用:
 
    | STEP | output | input | 適用規則 |
-   |---|---|---|---|
+   | --- | --- | --- | --- |
    | 1 | (空) | `/..//YYYYYYYY/` | - |
    | 2 | (空) | `//YYYYYYYY/` | 2C (`/../` → `/`、output pop は "if any" 分岐で no-op) |
    | 3 | `/` | `/YYYYYYYY/` | 2E (leading `/` を消費し次の `/` 直前 = 空 segment を移動) |
@@ -81,7 +82,8 @@ RFC 3986 Section 3.3 はこの形を明示的に禁じている (`refs/rfc3986.t
 
 > If a URI does not contain an authority component, then the path cannot begin with two slash characters ("//").
 
-ABNF (`refs/rfc3986.txt:1220` および `:1226`) でも `path-absolute = "/" [ segment-nz *( "/" segment ) ]` と定義され、ABNF コメント `; begins with "/" but not "//"` で `//` 始まりが構文的に許されないことが明示されている。`relative-ref` の場合 (Section 4.2, `refs/rfc3986.txt:1428-1443`)、`//` 始まりは唯一 `"//" authority path-abempty` (network-path reference) として解釈される。
+ABNF (`refs/rfc3986.txt:1220` および `:1226`) でも `path-absolute = "/" [ segment-nz *( "/" segment ) ]` と定義され、ABNF コメント `; begins with "/" but not "//"` で `//` 始まりが構文的に許されないことが明示されている。`relative-ref` の場合 (Section 4.2, `refs/rfc3986.txt:1428-1443`)、`//` 始まりは唯一 `"//" authority path-abempty` (network-path
+reference) として解釈される。
 
 Section 5.3 の recomposition 擬似コード (`refs/rfc3986.txt:1916-1928`) は `append path to result;` と書くだけで、path が path-absolute 形であることの保証を呼び出し側に委ねている。よって recomposition 側 (`build_uri`) で構文不変条件を回復する必要がある。
 
@@ -91,8 +93,10 @@ Section 5.3 の recomposition 擬似コード (`refs/rfc3986.txt:1916-1928`) は
 
 これにより以下が成立する。
 
-- 再 parse しても path-absolute (RFC 3986 Section 3.3 ABNF `path-absolute = "/" [ segment-nz *( "/" segment ) ]`) として解釈される。`"/." + "//YYYYYYYY/"` = `"/.//YYYYYYYY/"` は `"/"` で始まり 2 文字目が `"."` なので `"//"` 始まりではない。`Uri::parse("/.//YYYYYYYY/")` 内で `src/uri.rs:387` の AND 条件 `bytes[pos] == b'/' && bytes[pos + 1] == b'/'` (pos=0) は右辺 `bytes[1] == b'/'` が `bytes[1]==b'.'` で偽になり authority 抽出に入らない。
-- 修正後の `n1` の path-string は `"/.//YYYYYYYY/"`。次回 `normalize` 時には `remove_dot_segments("/.//YYYYYYYY/")` の規則 2B (`"/./"` → `"/"`、`refs/rfc3986.txt:1825-1827`、実装は `src/uri.rs:862-865`) で先頭の `/.` が消えて `"//YYYYYYYY/"` を返す。これを `build_uri` が再度受け取り再び `"/."` を prepend するため `"/.//YYYYYYYY/"` に戻る。1 回目と 2 回目で `as_str()` および `authority()` が完全一致するので冪等性が成立する。
+- 再 parse しても path-absolute (RFC 3986 Section 3.3 ABNF `path-absolute = "/" [ segment-nz *( "/" segment ) ]`) として解釈される。`"/." + "//YYYYYYYY/"` = `"/.//YYYYYYYY/"` は `"/"` で始まり 2 文字目が `"."` なので `"//"` 始まりではない。`Uri::parse("/.//YYYYYYYY/")` 内で `src/uri.rs:387` の AND 条件
+  `bytes[pos] == b'/' && bytes[pos + 1] == b'/'` (pos=0) は右辺 `bytes[1] == b'/'` が `bytes[1]==b'.'` で偽になり authority 抽出に入らない。
+- 修正後の `n1` の path-string は `"/.//YYYYYYYY/"`。次回 `normalize` 時には `remove_dot_segments("/.//YYYYYYYY/")` の規則 2B (`"/./"` → `"/"`、`refs/rfc3986.txt:1825-1827`、実装は `src/uri.rs:862-865`) で先頭の `/.` が消えて `"//YYYYYYYY/"` を返す。これを `build_uri` が再度受け取り再び `"/."` を prepend するため `"/.//YYYYYYYY/"` に戻る。1 回目と 2 回目で
+  `as_str()` および `authority()` が完全一致するので冪等性が成立する。
 
 ### 影響範囲
 
@@ -101,7 +105,8 @@ Section 5.3 の recomposition 擬似コード (`refs/rfc3986.txt:1916-1928`) は
 ### 設計上の根拠
 
 - 同等の処理は WHATWG URL Standard `https://url.spec.whatwg.org/#url-serializing` (URL serializing アルゴリズム、host が null で path size > 1 かつ path[0] が空のとき `/.` を prepend) でも採用されている。WHATWG URL Standard は Living Standard のため将来変更の可能性あり。
-- 代替案 (a) `remove_dot_segments` 内部改変は RFC 3986 Section 5.2.4 の出力契約 (`refs/rfc3986.txt:1812-1814` で「many ways」と実装自由度を認めつつも、output buffer の最終内容として定まる文字列) と異なる結果を返すことになる。(b) `Uri::parse` で `//` 始まり path-only を reject すると `relative-ref` の network-path reference (Section 4.2) として妥当な構文を拒否することになり受信互換性が壊れる。(c) `resolve` / `normalize` の各経路で個別吸収すると 5 経路で重複コードと漏れの温床になる。よって `build_uri` 1 箇所での吸収を採用する。
+- 代替案 (a) `remove_dot_segments` 内部改変は RFC 3986 Section 5.2.4 の出力契約 (`refs/rfc3986.txt:1812-1814` で「many ways」と実装自由度を認めつつも、output buffer の最終内容として定まる文字列) と異なる結果を返すことになる。(b) `Uri::parse` で `//` 始まり path-only を reject すると `relative-ref` の network-path reference (Section 4.2)
+  として妥当な構文を拒否することになり受信互換性が壊れる。(c) `resolve` / `normalize` の各経路で個別吸収すると 5 経路で重複コードと漏れの温床になる。よって `build_uri` 1 箇所での吸収を採用する。
 - RFC 3986 自身は `/.` prepend を明文化していないが、Section 3.3 の構文不変条件を満たしつつ Section 5.2.4 規則 2B で除去できるため、RFC と矛盾せず冪等性も担保できる。将来 RFC 3986bis 等で明文化される可能性あり。
 
 ## 完了条件
@@ -114,7 +119,8 @@ Section 5.3 の recomposition 擬似コード (`refs/rfc3986.txt:1916-1928`) は
   - [ ] `prop_uri_normalize_idempotent`: 任意の `path_inducing_double_slash` 入力で `normalize(normalize(x)).as_str() == normalize(x).as_str()`
   - [ ] `prop_uri_normalize_no_authority_injection`: `Uri::parse(p)` の authority が None のとき `normalize(uri).authority().is_none()` (片方向検証。本バグの本質である「authority なし → 化ける」を直接検証する)
   - [ ] `prop_uri_normalize_path_no_double_slash_without_authority`: `normalize(x).authority().is_none()` のとき `normalize(x).path()` が `"//"` で始まらない (RFC 3986 Section 3.3 の構文不変条件)
-- [ ] PBT strategy `path_inducing_double_slash` を新設する。本バグの再現には「`..` segment + 空 segment + 通常 segment」の構造が必要 (例: `/x/..//Y/`、`/..//Y/`)。`prefix segments + ".." + 空 segment + suffix segments` の形を強制的に組み立てる strategy にする (実装案を参照)。既存 `path()` strategy (`pbt/tests/prop_uri.rs:49-62` 付近) は `.` / `..` / 空 segment を除外しており本バグを誘発できないため別途追加する (既存は変更しない)
+- [ ] PBT strategy `path_inducing_double_slash` を新設する。本バグの再現には「`..` segment + 空 segment + 通常 segment」の構造が必要 (例: `/x/..//Y/`、`/..//Y/`)。`prefix segments + ".." + 空 segment + suffix segments` の形を強制的に組み立てる strategy にする (実装案を参照)。既存 `path()` strategy (`pbt/tests/prop_uri.rs:49-62` 付近) は `.` / `..` / 空
+  segment を除外しており本バグを誘発できないため別途追加する (既存は変更しない)
 - [ ] `cargo fuzz run fuzz_uri_resolve -- -max_total_time=30` を実行し新規 crash が出ないこと。`fuzz/fuzz_targets/fuzz_uri_resolve.rs:48-52` の冪等性 assert は本修正で通る想定で、fuzz target 自体は変更しない
 - [ ] `make fmt && make clippy && make check && make test` が pass する
 - [ ] `CHANGES.md` の `## develop` に `[FIX]` エントリを既存 `[FIX]` 群の末尾 (`### misc` の直前) に追加する
@@ -249,7 +255,7 @@ proptest! {
 
 `## develop` の既存 `[FIX]` 群の末尾 (`### misc` の直前) に以下を追記する:
 
-```
+```text
 - [FIX] URI の `normalize` で path-only URI が network-path reference に化けて冪等性が破れる不具合を修正する
   - 旧実装は `build_uri` が「authority なし、path が `//` 始まり」の文字列を構成しており、再 parse で authority に化け、再度 normalize すると host が小文字化されて結果が変わっていた (RFC 3986 Section 3.3 違反)。`build_uri` で `authority.is_none() && path.starts_with("//")` のとき path 先頭に `/.` を挿入するように修正する
   - @voluntas

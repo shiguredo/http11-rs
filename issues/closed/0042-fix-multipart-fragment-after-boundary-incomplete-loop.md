@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`MultipartParser::next_part` の `InPart` ブランチで、パート本体を切り出した直後に `inner_delimiter` (`\r\n--<boundary>`) の **末尾 2 バイト** を見て close-delimiter (`--`) か新パート区切り (`\r\n`) かを判定するが、`after_next + 2 > buffer.len()` の場合は判定をスキップして `pos` だけ進め、`state = InPart` のまま Part を返す。次回 `next_part()` 呼び出し時に `InPart` ブランチは `\r\n\r\n` (ヘッダー区切り) を探そうとするが、追加 feed が `--\r\n` (close-delimiter 末尾) や `\r\n` (次パート区切り) だけの場合は `\r\n\r\n` が永久に出現せず `Err(MultipartError::Incomplete)` を返し続ける。
+`MultipartParser::next_part` の `InPart` ブランチで、パート本体を切り出した直後に `inner_delimiter` (`\r\n--<boundary>`) の **末尾 2 バイト** を見て close-delimiter (`--`) か新パート区切り (`\r\n`) かを判定するが、`after_next + 2 > buffer.len()` の場合は判定をスキップして `pos` だけ進め、`state = InPart` のまま Part を返す。次回 `next_part()` 呼び出し時に `InPart` ブランチは
+`\r\n\r\n` (ヘッダー区切り) を探そうとするが、追加 feed が `--\r\n` (close-delimiter 末尾) や `\r\n` (次パート区切り) だけの場合は `\r\n\r\n` が永久に出現せず `Err(MultipartError::Incomplete)` を返し続ける。
 
 `src/multipart.rs:452-465` (実コード):
 
@@ -51,7 +52,7 @@ assert!(parser.is_finished());
 state 遷移:
 
 | ステップ | state | pos | buffer.len | is_finished |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | chunk1 feed 後 next_part #1 (Part 返却直後) | InPart | 73 | 73 | false |
 | chunk2 feed 後 next_part #2 (`\r\n\r\n` を探すが無い) | InPart | 73 | 77 | false |
 | 以降 | InPart | 73 | 77 | false (永久) |
@@ -124,7 +125,7 @@ L452-465 の修正方針:
 
 `## develop` に `[FIX]` として追加する:
 
-```
+```text
 - [FIX] `MultipartParser::next_part` の `InPart` ブランチで inner_delimiter 直後 2 バイトが揃わないケースに `AfterInnerDelimiter` 状態を新設し、再入時の永久 Incomplete を防ぐ
   - 旧実装は Part 返却後も `state = InPart` のまま `pos` を進めるだけで、後続 feed で close-delimiter (`--\r\n`) や次パート区切り (`\r\n`) しか来ない場合に `\r\n\r\n` を永久に探し続けるバグ経路を持っていた
   - chunk 境界で発生する DoS 経路 (TCP セグメント結合・TLS レコード境界・chunked transfer の chunk 境界、攻撃者の細切れ feed) を遮断する

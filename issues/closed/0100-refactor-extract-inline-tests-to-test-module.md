@@ -1,4 +1,4 @@
-# src/ 内のインラインテストを tests/test_<module>.rs に外部化する (第 2 弾)
+# src/ 内のインラインテストを `tests/test_<module>.rs` に外部化する (第 2 弾)
 
 - Priority: Medium
 - Created: 2026-05-25
@@ -21,7 +21,7 @@ CLAUDE.md テスト規約違反が 21 ファイルに及ぶ。テストの重複
 `src/` 内に `#[cfg(test)]` が残存するファイル (21 件):
 
 | ファイル | 外部テスト存在 | PBT 存在 | 備考 |
-|---------|-------------|---------|------|
+| --------- | ------------- | --------- | ------ |
 | `accept.rs` | tests/test_accept.rs | prop_accept.rs | |
 | `auth.rs` | tests/test_auth.rs | prop_auth.rs | |
 | `base64.rs` | なし | なし | 非公開モジュール。外部化不可 |
@@ -71,6 +71,7 @@ CLAUDE.md テスト規約違反が 21 ファイルに及ぶ。テストの重複
 ## 実装順序
 
 依存が少なく影響範囲が小さいモジュールから着手する:
+
 1. `header_name.rs`, `method.rs` (外部テスト新設のみ)
 2. `content_encoding.rs`, `content_language.rs`, `content_location.rs`, `conditional.rs` (小規模)
 3. `cache.rs`, `expect.rs` (PBT 重複削除あり)

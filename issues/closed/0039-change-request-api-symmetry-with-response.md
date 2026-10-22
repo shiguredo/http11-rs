@@ -87,6 +87,6 @@ Model: Opus 4.7
   - `test_request_add_header_chainable`: チェイン可動作
   - `test_request_set_header_chainable`: 同上
   - `test_request_new_accepts_string_and_str`: String / &str / 混在受理
-  - `test_request_body_accepts_vec_and_slice`: Vec<u8> / &[u8] 受理
+  - `test_request_body_accepts_vec_and_slice`: `Vec<u8>` / `&[u8]` 受理
   - `test_request_body_mutators`: without_body / set_body / clear_body 動作
 - `CHANGES.md` の `## develop` に `[UPDATE]` / `[ADD]` / `[CHANGE]` の 3 エントリを追加した

@@ -30,6 +30,7 @@ Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 ### `src/request.rs`
 
 1. `impl HttpHead for Request` を追加:
+
    ```rust
    impl HttpHead for Request {
        fn version(&self) -> &str {
@@ -43,6 +44,7 @@ Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
    ```
 
 2. 既存の inherent method を trait メソッドに委譲する薄いラッパーに変更:
+
    ```rust
    pub fn get_header(&self, name: &str) -> Option<&str> {
        HttpHead::get_header(self, name)
@@ -62,6 +64,7 @@ Model: Kimi 2.6 / GPT 5.5 / Composer 2 Fast
 `HttpHead` トレイトをクレート外で直接使うには公開が必要だが、現状 `lib.rs` で `decoder` モジュール経由に re-export 済みなので、この issue 用の追加変更は不要。
 
 現状の `lib.rs`:
+
 ```rust
 pub use decoder::{ BodyKind, BodyProgress, HttpHead, ... };
 ```
@@ -77,6 +80,7 @@ pub use decoder::{ BodyKind, BodyProgress, HttpHead, ... };
 - `Request`/`Response` の `get_header`、`is_keep_alive`、`content_length`、`is_chunked` の単体テストがそのまま緑であることを確認する。
 - `HttpHead` トレイトのデフォルト実装を使うことで挙動が変わらないことを確認する。
 - 以下の呼び出しが等価であることを確認する:
+
   ```rust
   let req = Request::new("GET", "/");
   assert_eq!(req.get_header("Host"), HttpHead::get_header(&req, "Host"));

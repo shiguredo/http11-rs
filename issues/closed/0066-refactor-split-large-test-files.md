@@ -24,7 +24,7 @@ Branch: feature/fix-split-large-test-files
 
 ### tests/test_decoder.rs → tests/test_decoder/ ディレクトリ
 
-```
+```text
 tests/test_decoder/
   main.rs              # エントリポイント、各サブモジュールの mod 宣言 + use 文を集約
   head.rs              # ステータス行・リクエスト行パース、Host ヘッダー検証、HTTP バージョン検証
@@ -35,12 +35,14 @@ tests/test_decoder/
 ```
 
 `test_decode_body.rs` の統合:
+
 - `tests/test_decode_body.rs` は命名規則違反 (対応する `src/decode_body.rs` が存在しない)。
 - 内容がリクエストターゲット検証 / TE トークン検証 / chunk-ext / HTTP バージョン別 TE 拒否にわたるため、`decode_body.rs` として独立サブモジュールに配置する。
 - `test_decoder.rs` との重複テスト (`http10_with_transfer_encoding_should_fail` 等) は統合時に一方を削除する。
 - 統合後に `tests/test_decode_body.rs` は削除する。
 
 `mod` 宣言の構成 (main.rs):
+
 ```rust
 mod head;
 mod body;
@@ -51,7 +53,7 @@ mod decode_body;
 
 ### pbt/tests/prop_decoder/response.rs → prop_decoder/response/ ディレクトリ
 
-```
+```text
 pbt/tests/prop_decoder/
   main.rs              # 変更なし (mod response;) を維持
   response.rs           # mod status_line; mod body_decoding; mod limits; mod streaming; を宣言
@@ -86,7 +88,7 @@ cargo test --workspace                                  # 全テスト pass 確�
 
 `## develop` の `### misc` に以下を追記する:
 
-```
+```text
 - [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (CLAUDE.md:97 準拠)
   - `tests/test_decoder.rs` → `tests/test_decoder/` (main / head / body / streaming / direct_buffer / decode_body)
   - `pbt/tests/prop_decoder/response.rs` → `prop_decoder/response/` (status_line / body_decoding / limits / streaming)

@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`examples/http11_server_io_uring/src/main.rs:638-683` の `ConnectionState::Reading` ブランチで、`while let Some(request) = conn.decoder.decode()?` で複数 Request を順次取り出して関数ローカルの `VecDeque<Response>` に push しているが、`responses.pop_front()` で 1 件のみ取り出して `conn.write_buf` (単一 `Vec<u8>`) に代入し、残り N-1 件は `responses` 変数のスコープ終了で **drop** される。
+`examples/http11_server_io_uring/src/main.rs:638-683` の `ConnectionState::Reading` ブランチで、`while let Some(request) = conn.decoder.decode()?` で複数 Request を順次取り出して関数ローカルの `VecDeque<Response>` に push しているが、`responses.pop_front()` で 1 件のみ取り出して `conn.write_buf` (単一 `Vec<u8>`) に代入し、残り N-1 件は `responses`
+変数のスコープ終了で **drop** される。
 
 ```rust
 // examples/http11_server_io_uring/src/main.rs:638-683
@@ -51,7 +52,7 @@ ConnectionState::Reading => {
 
 ### RFC 9112 §9.3.2 (Pipelining) MUST 違反
 
-```
+```text
 A client that supports persistent connections MAY "pipeline" its
 requests (i.e., send multiple requests without waiting for each
 response). A server MAY process a sequence of pipelined requests in
@@ -135,9 +136,9 @@ printf 'GET /a HTTP/1.1\r\nHost: localhost\r\n\r\nGET /b HTTP/1.1\r\nHost: local
 
 ### CHANGES.md
 
-サンプルの挙動修正だが、AGENTS.md「サンプルは **お手本** なので性能と堅牢性を両立」要件に従い `examples/` のバグも本体 `[FIX]` 同等の重要度として扱う。`### misc` ではなく本体 `[FIX]` 配下に記載する (前例: `[FIX] examples ... ` のエントリが本体に並んでいる場合に倣う、現状の CHANGES.md `## develop` に同型エントリがあるか実装時に確認):
+サンプルの挙動修正だが、AGENTS.md「サンプルは **お手本** なので性能と堅牢性を両立」要件に従い `examples/` のバグも本体 `[FIX]` 同等の重要度として扱う。`### misc` ではなく本体 `[FIX]` 配下に記載する (前例: `[FIX] examples ...` のエントリが本体に並んでいる場合に倣う、現状の CHANGES.md `## develop` に同型エントリがあるか実装時に確認):
 
-```
+```text
 - [FIX] `examples/http11_server_io_uring` でパイプラインリクエストの 2 件目以降のレスポンスがドロップされる問題を修正する
   - 旧実装は `while let Some(request) = conn.decoder.decode()?` で複数 Request を decode して関数ローカル `VecDeque` に push していたが、`pop_front()` で 1 件目を取り出した後、残り N-1 件はスコープ終了で drop されていた
   - `Connection` 構造体に `pending_writes: VecDeque<(Vec<u8>, bool)>` と `current_write_should_keep_alive: bool` を追加し、`handle_write` 完了時に次エントリを書き出すよう変更する

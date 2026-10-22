@@ -15,6 +15,7 @@
 ## 設計方針
 
 `tests/test_encoder/main.rs` にリネームし、以下のサブモジュールに分割する:
+
 - `headers.rs` — Host ヘッダー/Content-Length 整合性/重複 Content-Length/TE+CL 競合
 - `chunk.rs` — encode_chunk/chunks/hex-decimal 境界値
 - `connect.rs` — CONNECT リクエストのヘッダー・ボディ許容テスト

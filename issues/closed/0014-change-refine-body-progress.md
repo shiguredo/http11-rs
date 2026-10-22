@@ -159,7 +159,7 @@ enum で返すほうが Rust 的なため不採用。
   - `BodyDecoder::consume_body()` の戻り値判定を新 enum に合わせて分岐
   - 判定ルール (フェーズ × 条件 → 戻り値) は以下の表に従う
 
-```
+```text
 フェーズ (処理後)           | 条件                                           | 戻り値
 -------------------------- | ---------------------------------------------- | ---------------------
 Complete                   | (任意)                                         | Complete { trailers }
@@ -344,6 +344,7 @@ release ビルドでは除去されるため実行時コストはゼロ。
 
 `BodyContentLength { remaining: 0 }` で `progress()` (内部 `consume_body(0)`)
 が呼ばれた場合:
+
 - `len == 0` → drain なし、remaining 変化なし
 - `*remaining == 0` → phase を `Complete` に遷移、`Complete { trailers }` を返す
 
@@ -549,6 +550,7 @@ match decoder.progress()? {
     を返すこと
 
   変更前:
+
   ```rust
   BodyProgress::Continue => {
       if decoder.remaining().len() == remaining_before {
@@ -556,7 +558,9 @@ match decoder.progress()? {
       }
   }
   ```
+
   変更後:
+
   ```rust
   BodyProgress::Advanced => continue,
   BodyProgress::NeedData => break,
@@ -613,6 +617,7 @@ fuzz ターゲットでは `Continue` を break 条件として使っている�
 **fuzz_decoder_chunked.rs** — peek_body + consume_body:
 
 変更前:
+
 ```rust
 if let Some(body_data) = decoder.peek_body() {
     decoded_body.extend_from_slice(body_data);
@@ -626,6 +631,7 @@ if let Some(body_data) = decoder.peek_body() {
 ```
 
 変更後:
+
 ```rust
 if let Some(body_data) = decoder.peek_body() {
     decoded_body.extend_from_slice(body_data);
@@ -641,6 +647,7 @@ if let Some(body_data) = decoder.peek_body() {
 **fuzz_decoder_chunked.rs** — progress:
 
 変更前:
+
 ```rust
 match decoder.progress() {
     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
@@ -650,6 +657,7 @@ match decoder.progress() {
 ```
 
 変更後:
+
 ```rust
 match decoder.progress() {
     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
@@ -662,6 +670,7 @@ match decoder.progress() {
 **fuzz_decoder_chunked.rs** — 最終チェックの progress:
 
 変更前:
+
 ```rust
 match decoder.progress() {
     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
@@ -671,6 +680,7 @@ match decoder.progress() {
 ```
 
 変更後:
+
 ```rust
 match decoder.progress() {
     Ok(BodyProgress::Complete { .. }) => return Some(decoded_body),
@@ -686,6 +696,7 @@ match decoder.progress() {
 の一括消費ループのみ。`consume_body` の match アームを変更する:
 
 変更前:
+
 ```rust
 while let Some(body_data) = decoder.peek_body() {
     let len = body_data.len();
@@ -698,6 +709,7 @@ while let Some(body_data) = decoder.peek_body() {
 ```
 
 変更後:
+
 ```rust
 while let Some(body_data) = decoder.peek_body() {
     let len = body_data.len();

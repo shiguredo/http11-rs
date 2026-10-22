@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`examples/http11_reverse_proxy/src/main.rs` の `parse_upstream_url` (L731-752) は host のみ返し、scheme と port を完全に捨てている。`create_connection` (L148-150) は `TcpStream::connect((host, 443))` で常に 443 へ TLS 接続するハードコード。`--upstream http://internal:8080/api` のような実用的な指定は完全に機能しない (help は `Upstream URL (default: https://example.com)` と書いているのに URL の体裁を受け付けない)。
+`examples/http11_reverse_proxy/src/main.rs` の `parse_upstream_url` (L731-752) は host のみ返し、scheme と port を完全に捨てている。`create_connection` (L148-150) は `TcpStream::connect((host, 443))` で常に 443 へ TLS 接続するハードコード。`--upstream http://internal:8080/api` のような実用的な指定は完全に機能しない (help は
+`Upstream URL (default: https://example.com)` と書いているのに URL の体裁を受け付けない)。
 
 ```rust
 // examples/http11_reverse_proxy/src/main.rs:731-752
@@ -177,7 +178,7 @@ fn format_host_header(scheme: Scheme, host: &str, port: u16) -> String {
 
 ### help text の更新
 
-```
+```text
 --upstream <URL>  Upstream URL with scheme (http or https) and optional port
                   Default: https://example.com
                   Examples: http://internal:8080, https://[::1]:8443
@@ -187,7 +188,7 @@ fn format_host_header(scheme: Scheme, host: &str, port: u16) -> String {
 
 サンプルの機能不全修正は機能に直接影響するため `### misc` ではなく本体 `[FIX]` 配下 (0048 / 0049 と方針統一):
 
-```
+```text
 - [FIX] `examples/http11_reverse_proxy` で `--upstream` の scheme と port を尊重するよう修正する
   - 旧実装は `parse_upstream_url` が host のみ抽出し、`TcpStream::connect((host, 443))` で常に 443 への TLS 接続にハードコードしていた
   - `Scheme` enum (`Http` / `Https`) と `UpstreamStream` enum (`Plain` / `Tls`) を導入し、`create_connection` を scheme で分岐する

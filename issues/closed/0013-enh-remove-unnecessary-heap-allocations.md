@@ -21,7 +21,7 @@ Model: Opus 4.7
 ## 着手項目（優先度順）
 
 | 優先度 | 項目 | 対象ファイル | 概要 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 高 | 2 | `multipart.rs` | `MultipartParser` バッファコピーを O(N²) → amortized O(N) |
 | 高 | 3 | `multipart.rs` | `MultipartParser` デリミタを `new()` で事前計算 |
 | 中 | 1 | `encoder.rs` | `encode_chunk` / `encode_chunks` の hex 生成をスタックバッファ化 |
@@ -71,7 +71,8 @@ fn write_hex_usize(buf: &mut Vec<u8>, n: usize) {
 - `encode_chunk` 空: `5`（終端チャンク `b"0\r\n\r\n"`）
 - `encode_chunks`: `chunks.iter().map(|c| c.len() + 20).sum::<usize>() + 5`（末尾の `+5` は終端チャンク `b"0\r\n\r\n"`）
 
-**整数オーバーフロー対策**: 上記式の `+ 20` / `.sum()` / `+ 5` はいずれも `usize` 加算でオーバーフロー可能（攻撃者制御の `data` / `chunks` で `usize::MAX` 近傍を狙われると wraparound して過小確保になる）。実装では `checked_add` ベースで計算し、オーバーフロー時は `Vec::new()` にフォールバックするか、`saturating_add` で `usize::MAX` まで詰める。後者なら `Vec::with_capacity(usize::MAX)` の OOM panic に頼る形になるため、**前者（checked_add + フォールバック）を推奨**。
+**整数オーバーフロー対策**: 上記式の `+ 20` / `.sum()` / `+ 5` はいずれも `usize` 加算でオーバーフロー可能（攻撃者制御の `data` / `chunks` で `usize::MAX` 近傍を狙われると wraparound して過小確保になる）。実装では `checked_add` ベースで計算し、オーバーフロー時は `Vec::new()` にフォールバックするか、`saturating_add` で `usize::MAX` まで詰める。後者なら `Vec::with_capacity(usize::MAX)` の OOM panic
+に頼る形になるため、**前者（checked_add + フォールバック）を推奨**。
 
 **テスト方針**: `write_hex_usize` は `encoder.rs` のプライベート関数として配置するため、別クレートである `pbt` から直接呼べない。ヘルパー単体ではなく **`encode_chunk` / `encode_chunks` の公開 API 出力に対する PBT** を `pbt/tests/prop_encoder.rs` に追加し、間接的に等価性を担保する:
 
@@ -109,7 +110,8 @@ self.buffer = self.buffer[after_delim + 2..].to_vec();
 
 - 既存の `pbt/tests/prop_multipart.rs` および単体テストが全通過することを確認（公開 API 不変）。
 - 単体テスト追加: `feed(部分データ) → next_part() = Incomplete → feed(残データ) → next_part() = Some(Part)` のシーケンス。境界をまたいだ feed で `pos` と `buffer` の整合性が保たれることを保証する。
-- drain 発動の検証: 同一 boundary のパートを 10 個以上含むボディを feed し、`next_part()` を順に呼んで全パート取得。途中で drain が発動した結果として `buffer` のサイズが累積入力サイズより十分小さくなっていること、得られる全パートが期待値と一致することを検証する。`pos` は非公開フィールドで `tests/test_multipart.rs`（統合テスト）からは観察できない（`#[cfg(test)]` ゲートのアクセサは統合テストのコンパイル時には剥がれるため不可）。**`buffer.len()` の減少を観察する間接検証**を採用する。`pos` の値そのものを直接検証したい場合は例外的に `src/multipart.rs` 内の `#[cfg(test)] mod tests` に当該テストだけを置く運用を許容する（AGENTS.md の `tests/test_<module>.rs` 規約からの限定的逸脱）。
+- drain 発動の検証: 同一 boundary のパートを 10 個以上含むボディを feed し、`next_part()` を順に呼んで全パート取得。途中で drain が発動した結果として `buffer` のサイズが累積入力サイズより十分小さくなっていること、得られる全パートが期待値と一致することを検証する。`pos` は非公開フィールドで `tests/test_multipart.rs`（統合テスト）からは観察できない（`#[cfg(test)]` ゲートのアクセサは統合テストのコンパイル時には剥がれるため不可）。**`buffer.len()`
+  の減少を観察する間接検証**を採用する。`pos` の値そのものを直接検証したい場合は例外的に `src/multipart.rs` 内の `#[cfg(test)] mod tests` に当該テストだけを置く運用を許容する（AGENTS.md の `tests/test_<module>.rs` 規約からの限定的逸脱）。
 
 ### 3. `MultipartParser::next_part()` — デリミタ文字列を毎回 `alloc::format!` で生成
 
@@ -208,7 +210,8 @@ Content-Length 桁数の厳密計算はしない（二度走査回避と過剰�
 
 **整数オーバーフロー対策（必須）**: 容量計算は攻撃者制御の入力（巨大ヘッダー / 巨大ボディ）を含む `usize` 加算の連続。素朴な `+` で書くと wraparound で過小確保となり、再確保連発で最適化の意味を失う。実装では **`checked_add` で全加算を検証**し、いずれかでオーバーフローが起きた場合は **`Vec::new()` にフォールバック**する（既存挙動と同等で安全側に倒す）。`saturating_add` で `usize::MAX` まで詰めるアプローチは次項の OOM panic に直結するため避ける。
 
-**OOM サニティチェック（必須）**: `Vec::with_capacity(huge)` は内部の `alloc` が fallible でないため、巨大値で abort または panic する。攻撃者制御のヘッダー値（例: reflected-input）で見積もりが膨らむと、**プロセス全体が abort する DoS** を引き起こす。容量が一定上限（例: `64 MB` 程度を `const ENCODE_CAPACITY_LIMIT: usize` で定義）を超える場合は `Vec::new()` にフォールバックすること。上限値は実装時にベンチで確認し、現実的な HTTP メッセージサイズを十分カバーする値にする。
+**OOM サニティチェック（必須）**: `Vec::with_capacity(huge)` は内部の `alloc` が fallible でないため、巨大値で abort または panic する。攻撃者制御のヘッダー値（例: reflected-input）で見積もりが膨らむと、**プロセス全体が abort する DoS** を引き起こす。容量が一定上限（例: `64 MB` 程度を `const ENCODE_CAPACITY_LIMIT: usize` で定義）を超える場合は `Vec::new()` にフォールバックすること。上限値は実装時にベンチで確認し、現実的な
+HTTP メッセージサイズを十分カバーする値にする。
 
   なお、本来は `encode_*` の入力サイズは呼び出し側（サーバー実装の上限制御）でガードされる前提だが、**ライブラリ側で防御線を張る方が堅牢**（CLAUDE.md「性能より堅牢性を優先」と整合）。
 
@@ -346,7 +349,7 @@ PR [#10](https://github.com/shiguredo/http11-rs/pull/10) (commit `7859597`) で�
 custom counting allocator で計測 (release ビルド、warmup 100 回、5 万〜10 万回ループ):
 
 | ベンチ | develop | 本 PR | 削減 |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `encode_request` (small ~270B) | 11.0 alloc / 716B | 5.0 / 482B | -55% / -33% |
 | `encode_request` (large ~10.5KB) | 13.0 / 11.9KB | 5.0 / 10.9KB | -62% / -8% |
 | `encode_response` (small ~270B) | 8.0 / 601B | 1.0 / 364B | -88% / -39% |

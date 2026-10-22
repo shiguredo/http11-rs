@@ -20,6 +20,7 @@
 ## 現状
 
 パターン 1:
+
 ```rust
 // パターン 1: `new` 経路 (RFC 2046 Section 5.1.1 検証あり)
 if let Ok(mut parser) = MultipartParser::new(&boundary) {
@@ -29,6 +30,7 @@ if let Ok(mut parser) = MultipartParser::new(&boundary) {
 ```
 
 パターン 2:
+
 ```rust
 // パターン 2: 任意 boundary の経路 (検証に引っかかる境界は早期リターン)
 if let Ok(mut parser) = MultipartParser::new(&boundary) {

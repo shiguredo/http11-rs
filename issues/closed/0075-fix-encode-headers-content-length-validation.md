@@ -20,7 +20,6 @@
 - encode_response_headers の Content-Length 非数値拒否テストを追加した
 - encode_response_headers の Content-Length / body 長不一致拒否テストを追加した
 
-## 完了条件
 ## 目的
 
 `encode_request_headers()` と `encode_response_headers()` は `encode_request()` / `encode_response()` と異なり、Content-Length の値が `1*DIGIT` (RFC 9110 Section 8.6) であることの ABNF 検証と、body 長との整合性検証を行っていない。特に `encode_response_headers()` ではこれらの検証が `debug_assert!` ブロック内にあり release ビルドで完全にバイパスされる。

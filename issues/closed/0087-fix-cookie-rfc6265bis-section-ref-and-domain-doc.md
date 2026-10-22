@@ -13,11 +13,13 @@
 ## 現状
 
 `src/cookie.rs:286-291`:
-```
+
+```rust
 /// RFC 6265bis Section 6.3 (IDNA Dependency):
 ```
 
 `src/cookie.rs:523-526`:
+
 ```rust
 fn is_valid_domain_value(value: &str) -> bool {
     // LDH (letter/digit/hyphen) + dot 判定のみ

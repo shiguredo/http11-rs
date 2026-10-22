@@ -38,7 +38,8 @@ reverse proxy は固定 upstream への中継が責務 (forward proxy と区別�
 
 ### RFC 引用
 
-- RFC 9110 §9.3.6 (CONNECT): 「The CONNECT method requests that the recipient establish a tunnel to the destination origin server identified by the request-target」「Any 2xx (Successful) response indicates that the sender (and all inbound proxies) will switch to tunnel mode immediately after the response header section」
+- RFC 9110 §9.3.6 (CONNECT): 「The CONNECT method requests that the recipient establish a tunnel to the destination origin server identified by the request-target」「Any 2xx (Successful) response indicates that the sender (and all inbound proxies) will switch to tunnel mode immediately after the
+  response header section」
 - RFC 9110 §15.5.6 (405 Method Not Allowed): 「The method received in the request-line is known by the origin server but not supported by the target resource」。reverse proxy が CONNECT をサポートしない旨を 405 で返すのは仕様準拠
 - RFC 9110 §10.2.1 (Allow): 405 レスポンスでは `Allow` ヘッダーで許可メソッド一覧を返す MUST
 
@@ -110,7 +111,7 @@ kill $PROXY_PID
 
 サンプルの機能不全修正は機能に直接影響するため `### misc` ではなく本体 `[FIX]` 配下 (0048 / 0049 / 0050 と方針統一):
 
-```
+```text
 - [FIX] `examples/http11_reverse_proxy` で CONNECT メソッドを 405 Method Not Allowed で拒否するように変更する
   - 旧実装は CONNECT を通常の reverse 経路に流して `--upstream` 指定先に転送し、upstream が 2xx を返した後 `BodyKind::Tunnel` 状態で `peek_body()` が永久に None を返すループでハンドラタスクがハングしていた
   - reverse proxy は固定 upstream への中継が責務であり、任意宛先へのトンネル化 (forward proxy 機能) はサンプルのスコープ外
@@ -158,4 +159,5 @@ kill $PROXY_PID
 - 既存判定は `decode_headers` 完了直後にあり、upstream 接続を確立せずに即座に 405 を返してハンドラが終了する (ハング経路はもともと閉じていた)
 - `CHANGES.md` の `## develop` に `[FIX]` エントリを追加した
 
-備考: 既存実装は既に CONNECT を `BodyKind::Tunnel` 経路で識別して即座に reject する構造を持っていたため、本 issue で追加する処理は「ステータスコードを 501 → 405 へ、Allow ヘッダーを追加」のみとなった。issue 本文の「BodyKind::Tunnel のループに入って永久ブロック」は将来 CONNECT を別経路でハンドリングする際に再発しないよう警戒すべき経路として記載しておく。integration test 基盤の新設は本 issue のスコープから外し、既存の手動テスト手順を README に追加する範囲は将来の forward proxy example に委ねる。
+備考: 既存実装は既に CONNECT を `BodyKind::Tunnel` 経路で識別して即座に reject する構造を持っていたため、本 issue で追加する処理は「ステータスコードを 501 → 405 へ、Allow ヘッダーを追加」のみとなった。issue 本文の「BodyKind::Tunnel のループに入って永久ブロック」は将来 CONNECT を別経路でハンドリングする際に再発しないよう警戒すべき経路として記載しておく。integration test 基盤の新設は本 issue のスコープから外し、既存の手動テスト手順を README に追加する範囲は将来の
+forward proxy example に委ねる。

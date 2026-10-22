@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`RequestDecoder` で CONNECT リクエストを受信した場合、現状は `BodyKind::None` を返して `DecodePhase::Complete` に直行する。プロキシ用途では CONNECT 受信後に 200 を返してから、クライアントから到来する後続バイトをトンネルデータとして transparent に転送する必要があるが、現状の API では実現できない。`decode_headers` の `Complete` 自動再遷移 (request.rs:488-495) によって、ヘッダー終端後にクライアントが送ってきた最初のトンネルバイトが「次の HTTP リクエスト」として parse され始めるため、HTTP Request Smuggling 様の挙動を引き起こす危険がある。
+`RequestDecoder` で CONNECT リクエストを受信した場合、現状は `BodyKind::None` を返して `DecodePhase::Complete` に直行する。プロキシ用途では CONNECT 受信後に 200 を返してから、クライアントから到来する後続バイトをトンネルデータとして transparent に転送する必要があるが、現状の API では実現できない。`decode_headers` の `Complete` 自動再遷移 (request.rs:488-495) によって、ヘッダー終端後にクライアントが送ってきた最初のトンネルバイトが「次の
+HTTP リクエスト」として parse され始めるため、HTTP Request Smuggling 様の挙動を引き起こす危険がある。
 
 `ResponseDecoder` 側には既に `DecodePhase::Tunnel` / `BodyKind::Tunnel` / `is_tunnel()` / `take_remaining()` が実装されている (CONNECT 2xx レスポンス受信時に切り替わる)。本 issue は同等の機能を `RequestDecoder` に持たせて、proxy のサーバ側でも安全に CONNECT を扱えるようにする。
 

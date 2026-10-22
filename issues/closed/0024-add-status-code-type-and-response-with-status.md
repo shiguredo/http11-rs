@@ -9,6 +9,7 @@ Model: Opus 4.7
 IANA HTTP Status Code Registry に登録された status code を const 値として持つ `StatusCode` 型を新設し、`Response::with_status(StatusCode) -> Self` を追加する。`with_status` は引数が完全に const 値で構成されるため infallible (`Result` を返さない)。
 
 **現状**: `src/status_code.rs` は既に実装済み（const 定義、`new_const`、`code()` / `canonical_reason()` アクセサ）。未完了の作業は以下の通り:
+
 1. `src/lib.rs` に `mod status_code;` と `pub use` を追加する
 2. `src/response.rs` に `import` を追加し `with_status` メソッドを実装する
 3. tests / examples / PBT / fuzz / SKILL.md の `.unwrap()` 呼び出しを書き換える
@@ -18,6 +19,7 @@ IANA HTTP Status Code Registry に登録された status code を const 値と�
 ブランチ名は AGENTS.md「git ブランチの命名規則」に従い `feature/add-status-code-type` を使用する。
 
 依存関係:
+
 - `0017` (Response フィールド非公開化) は完了済み。`Response::new` が `Result<Self, EncodeError>` を返すため、examples / tests / PBT / fuzz では `Response::new(200, "OK").unwrap()` の `.unwrap()` が大量発生している。本 issue でこれらを `Response::with_status(StatusCode::OK)` に書き換え、構築時の `.unwrap()` を一掃する。
 - `0020` (StatusClass enum) との関係: `StatusClass` は status_code の **範囲分類** (1xx/2xx/3xx/4xx/5xx)、`StatusCode` は **個別 status code とその canonical reason の値** という別概念。両者は独立しており、`StatusCode::OK.code()` を `StatusClass::from_status_code(...)` に渡す形で連携する。
   - 注意: 0020 も `src/response.rs` を編集する（`is_informational` 等 5 メソッドの撤去）。本 issue が先にマージされた場合、0020 の差分適用時に競合が発生する。競合はマージの際に手動解決する前提で、本 issue では 0020 未完了のコードを前提に編集する。
@@ -57,7 +59,7 @@ Rust HTTP エコシステムの事実上の標準である `http` crate は `Sta
 ### 影響範囲一覧
 
 | ファイル | 種別 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | `src/status_code.rs` | **確認** | 既存ファイル。`from_code(u16) -> Option<Self>` を追加する。const 定義の参照 RFC 番号を最新化する (102: RFC 2518→RFC 4918、308: RFC 7538→RFC 9110、422: WebDAV→RFC 9110 core)。doc comment を整備する。 |
 | `src/lib.rs` | 修正 | `mod status_code;` を追加し `pub use` ブロックに `StatusCode` を追加。`pub mod status_code;` として公開する。 |
 | `src/response.rs` | 修正 | `use crate::StatusCode;` を追加し `pub fn with_status(status: StatusCode) -> Self` を追加 |
@@ -226,6 +228,7 @@ impl Response {
 ### IANA registry のスコープ判断
 
 本 issue で含める status code の選択基準:
+
 - **含める**: IANA HTTP Status Code Registry に永続登録され、RFC 9110 Section 15 またはそれを改訂した最新 RFC で定義されている status code
   - RFC 9110 Section 15 で定義されたコアコード (100-101、200-206、300-305、307-308、400-417、421-422、426、500-505)
   - RFC 9110 に取り込まれた外部仕様由来のコード (422、425、428-429、431、451 等)
@@ -267,7 +270,7 @@ impl Response {
 本 issue 完了後、`0025` (Request 非公開化) を経て、`Method` 型 + `Request::with_method` の追加 issue を別途切る。両者は同じパターンで:
 
 | Response | Request |
-|---|---|
+| --- | --- |
 | `StatusCode` 型 (本 issue) | `Method` 型 (将来 issue) |
 | `Response::with_status(StatusCode::OK)` | `Request::with_method(Method::GET, uri)?` |
 | infallible (全 const 値) | fallible (uri がフリー文字列のため) |
@@ -276,7 +279,7 @@ impl Response {
 
 `## develop` セクションに以下を追加する:
 
-```
+```text
 - [ADD] `StatusCode` 型を導入し IANA HTTP Status Code Registry の status code を const 値として提供する
   - `Response::with_status(StatusCode::OK)` 等で infallible に Response を構築できる
   - `StatusCode::code()` / `StatusCode::canonical_reason()` / `StatusCode::from_code()` でアクセス

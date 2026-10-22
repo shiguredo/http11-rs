@@ -34,6 +34,7 @@ if request.uri.bytes().any(|b| b > 0x7E) {
    - 関数の doc comment に「受信側の寛容な検証。obs-text (0x80-0xFF) を許容する」と明記する。
 
 2. `is_valid_request_target_for_encode()` を新設する。
+
    ```rust
    /// エンコード用 request-target 検証
    ///
@@ -56,6 +57,7 @@ if request.uri.bytes().any(|b| b > 0x7E) {
 1. `use` 文で `is_valid_request_target` を `is_valid_request_target_for_encode` に変更する。
 
 2. `validate_request_fields()` から個別の obs-text チェック（L31-L35）を削除する:
+
    ```rust
    // リクエストターゲットの検証（エンコード用）
    if !is_valid_request_target_for_encode(&request.uri) {

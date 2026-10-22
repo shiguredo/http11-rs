@@ -10,8 +10,6 @@
 
 `examples/http11_client/src/main.rs:104` の `&text[..1000]` を `&text[..text.floor_char_boundary(1000)]` に変更し、マルチバイト UTF-8 文字境界を越えた truncate で panic しないようにした。
 
-## 完了条件
-
 ## 目的
 
 `examples/http11_client/src/main.rs:104` で `&text[..1000]` によりボディテキストを truncated しているが、マルチバイト UTF-8 文字がバイトインデックス 1000 を跨ぐ場合に panic し、アプリ全体がクラッシュする。サンプルは「お手本」であるため許容できない。
@@ -24,6 +22,7 @@
 ## 現状
 
 `examples/http11_client/src/main.rs:101-104`:
+
 ```rust
 if let Ok(text) = std::str::from_utf8(body) {
     if text.len() > 1000 {

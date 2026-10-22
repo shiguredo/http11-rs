@@ -15,7 +15,8 @@ Branch: feature/fix-escape-functions-reject-ctl
 - `src/accept.rs:658-660` (`escape_quotes`)
 - `src/expect.rs:250-252` (`escape_quotes`)
 
-RFC 9110 Section 5.5 は field value に CR / LF / NUL を含むことを invalid とし、受信側に reject または SP 置換を MUST で義務付けている。また RFC 9112 Section 3.2 は sender が protocol elements 内で bare CR を生成することを MUST NOT で禁止している。これらの escape 関数を経由して CR / LF / NUL を含む文字列を quoted-string や field-value として生成すると、HTTP Response Splitting (CWE-113) の経路となる。
+RFC 9110 Section 5.5 は field value に CR / LF / NUL を含むことを invalid とし、受信側に reject または SP 置換を MUST で義務付けている。また RFC 9112 Section 3.2 は sender が protocol elements 内で bare CR を生成することを MUST NOT で禁止している。これらの escape 関数を経由して CR / LF / NUL を含む文字列を quoted-string や field-value として生成すると、HTTP Response Splitting
+(CWE-113) の経路となる。
 
 0061 完了後の世界では、受信側（parse 側）で CR / LF / NUL は reject されるため escape 側に CR / LF / NUL が到達する経路は閉ざされる。本 issue はそれでも防御層として escape 側にも検出を追加する。
 
@@ -24,7 +25,7 @@ RFC 9110 Section 5.5 は field value に CR / LF / NUL を含むことを invali
 escape 関数は以下のコンテキストから呼ばれ、戻り値に制約がある:
 
 | 関数 | 呼び出し元 | 戻り値制約 |
-|---|---|---|
+| --- | --- | --- |
 | `content_disposition.rs::escape_quoted_string` | `Display::fmt` | `fmt::Result` (エラーペイロードなし) |
 | `auth.rs::escape_quotes` | `to_header_value() -> String` | 公開 API、`String` |
 | `content_type.rs::escape_quotes` | `Display::fmt` | `fmt::Result` |
@@ -34,6 +35,7 @@ escape 関数は以下のコンテキストから呼ばれ、戻り値に制約�
 呼び出し元のシグネチャを変更する大規模な破壊的変更は本 issue のスコープを超える。issue 0036 で確立された「parse 側で reject されるので escape 側に到達しない不変条件を保ち `debug_assert!` を入れる」方針を踏襲する。具体的には `debug_assert!` で開発時に検出し、release ビルドでは通過させる（到達不能経路のため）。
 
 `debug_assert!` 方式を選択する理由:
+
 - 0061 完了後は parse 側で CR/LF/NUL を reject 済みのため escape 側には到達しない
 - `to_header_value() -> String` の破壊的変更を回避できる
 - Display impl のエラーハンドリング問題を回避できる
@@ -104,6 +106,7 @@ pub(crate) fn escape_quotes(s: &str) -> String {
 ### 単体テスト
 
 `tests/test_validate.rs` (新設または既存):
+
 - `test_escape_quotes_simple` — `"`, `\` のエスケープ
 - `test_escape_quotes_normal` — 通常文字がそのまま通る
 
@@ -129,7 +132,7 @@ fn test_escape_quotes_crlf_nul_debug_assert() {
 
 `## develop` の `### misc` に以下を追記する:
 
-```
+```text
 - [UPDATE] `escape_quotes` の重複実装を `validate.rs` に統合し CR/LF/NUL の debug_assert! 検出を追加する
   - accept / content_type / expect / auth の 4 重複を `validate::escape_quotes` に集約する
   - content_disposition の `escape_quoted_string` も同様の debug_assert! を追加する
@@ -144,7 +147,7 @@ fn test_escape_quotes_crlf_nul_debug_assert() {
 ## 0061 との関係
 
 | 観点 | 0061 (本 issue の補完) | 0063 (本 issue) |
-|---|---|---|
+| --- | --- | --- |
 | 方向 | 受信 (parse) | 送信 (encode) |
 | 対象 | accept / content_type / expect の parse_quoted_string | 5 モジュールの escape 関数 |
 | 目的 | CR/LF/NUL を含む入力を reject | CR/LF/NUL の出力を debug_assert! で検出 |

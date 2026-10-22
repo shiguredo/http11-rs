@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`HttpHead::content_length` (`src/decoder/head.rs:117-120`) は `Content-Length` ヘッダーの **最初の値だけ** に `.parse::<u64>()` を直接適用しており、decoder/body 側の厳格パース (`src/decoder/body.rs:1354 parse_content_length` / `:1377 parse_content_length_value`) と挙動が乖離している。複数行・OWS・カンマリストでの解釈差が HTTP Request Smuggling (CWE-444) の温床となる。本 issue は `HttpHead::content_length` の戻り型を `Result<Option<u64>, Error>` に変更し、smuggling 検知を trait 越しに伝播できるようにする (公開 API への破壊的変更)。
+`HttpHead::content_length` (`src/decoder/head.rs:117-120`) は `Content-Length` ヘッダーの **最初の値だけ** に `.parse::<u64>()` を直接適用しており、decoder/body 側の厳格パース (`src/decoder/body.rs:1354 parse_content_length` / `:1377 parse_content_length_value`) と挙動が乖離している。複数行・OWS・カンマリストでの解釈差が HTTP Request Smuggling (CWE-444)
+の温床となる。本 issue は `HttpHead::content_length` の戻り型を `Result<Option<u64>, Error>` に変更し、smuggling 検知を trait 越しに伝播できるようにする (公開 API への破壊的変更)。
 
 ```rust
 // src/decoder/head.rs:117-120 (現状)
@@ -23,7 +24,7 @@ decoder/body 側 (`parse_content_length`) は `Trailer` ヘッダーや複数行
 ### 差分検証表 (実コードで再検証済み)
 
 | 入力 (`Content-Length` の値) | 現 `head.content_length()` | `parse_content_length_value` |
-|---|---|---|
+| --- | --- | --- |
 | `"100"` | `Some(100)` | `Ok(100)` |
 | `"+100"` | `None` (`u64::from_str` は `+` 受理しない) | `Err` (`+` は ascii_digit でない) |
 | `"0100"` | `Some(100)` | `Ok(100)` |
@@ -95,7 +96,7 @@ fn content_length(&self) -> Result<Option<u64>, Error> {
 ### 呼び出し側の書き換え
 
 | 場所 | 書き換え方針 |
-|---|---|
+| --- | --- |
 | `examples/http11_reverse_proxy/src/main.rs:561` | `Result` を `?` 伝播 (smuggling 検知時は 502 応答) |
 | `tests/test_decoder.rs` / `tests/test_request.rs` / `tests/test_response.rs` の利用箇所 | `unwrap()` または `match` でテスト内対応 |
 | `pbt/tests/prop_decoder/*.rs` / `prop_request.rs` / `prop_response.rs` | `prop_assert!(result.is_ok())` 等で性質化 |
@@ -113,7 +114,7 @@ fn content_length(&self) -> Result<Option<u64>, Error> {
 
 `## develop` に `[CHANGE]` として追加する:
 
-```
+```text
 - [CHANGE] `HttpHead::content_length` / `Request::content_length` / `Response::content_length` の戻り型を `Result<Option<u64>, Error>` に変更する
   - 旧実装は `.parse::<u64>().ok()` で `Content-Length: 100, 101` のような mismatched 値を黙って `None` 化、複数行 mismatched 値の場合は最初の値を黙って返していた。decoder 本体の `parse_content_length` (smuggling 検知で `Err` 返却) と挙動が乖離しており、trait 越しに smuggling 検知がバイパスされる経路を持っていた
   - decoder の `parse_content_length` (`pub(crate)`) を trait 実装内で再利用し、OWS / カンマリスト / 複数行 / mismatched 値の解釈を decoder と統一する

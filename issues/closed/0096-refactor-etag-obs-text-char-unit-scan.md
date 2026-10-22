@@ -15,6 +15,7 @@ CLAUDE.md の obs-text 規約「受信時は `char_indices()` ベースで走査
 ### 機能差について
 
 入力は `&str` (有効な UTF-8) であるため、バイト単位検証と char 単位検証の結果は全ての有効入力に対して同一である:
+
 - ASCII 文字 (U+0000..=U+007F): バイト値 == Unicode scalar 値であり判定結果は同一
 - 非 ASCII 文字 (U+0080..=U+10FFFF): UTF-8 の全バイトが >= 0x80 であり、バイト単位でも char 単位でも obs-text として受理される
 - CR/LF/NUL: バイト単位でも既に拒否されている
@@ -30,7 +31,7 @@ CLAUDE.md の obs-text 規約「受信時は `char_indices()` ベースで走査
 変更対象箇所:
 
 | 箇所 | 行 | 内容 |
-|------|-----|------|
+| ------ | ----- | ------ |
 | `is_etagc` 定義 | 190-192 | `fn is_etagc(b: u8) -> bool` — `u8` ベースの文字種判定 |
 | `EntityTag::parse` | 104 | `for b in tag.bytes()` + `is_etagc(b)` |
 | `EntityTag::strong` | 124 | `for b in tag.bytes()` + `is_etagc(b)` |
@@ -76,6 +77,7 @@ for c in tag.chars() {
 ### 単体テスト
 
 `tests/test_etag.rs` に以下を追加:
+
 - obs-text (U+0080 以上) を含む ETag のパース → 成功 (例: `"v\u{00A9}"` → `EntityTag { weak: false, tag: "v\u{00A9}" }`)
 - obs-text を含む ETag の `Display` → 再パースのラウンドトリップ成功
 - マルチバイト文字 (U+3042 "あ" 等) を含む ETag のパース → 成功

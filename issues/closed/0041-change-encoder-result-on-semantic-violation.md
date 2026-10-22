@@ -6,7 +6,8 @@ Model: Opus 4.7
 
 ## 概要
 
-`Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` (`src/encoder.rs:858-862, 878-882, 1095-1099, 1112-1116`) は、内部の `Result<Vec<u8>, EncodeError>` を `.expect(...)` で握り潰しており、構築時に検出されない違反が release ビルドで panic に化ける経路を持つ。これらを `Result<Vec<u8>, EncodeError>` 直返しに統一して fail-fast にする。
+`Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` (`src/encoder.rs:858-862, 878-882, 1095-1099, 1112-1116`) は、内部の `Result<Vec<u8>, EncodeError>` を `.expect(...)` で握り潰しており、構築時に検出されない違反が release ビルドで panic に化ける経路を持つ。これらを `Result<Vec<u8>, EncodeError>`
+直返しに統一して fail-fast にする。
 
 並行して提供されている `Request::try_encode` / `Response::try_encode` / `Request::try_encode_headers` / `Response::try_encode_headers` は本変更で同義となるため撤去する。
 
@@ -14,11 +15,14 @@ Model: Opus 4.7
 
 ### release panic 経路
 
-`Request::new` / `Response::new` / `with_version` / `with_status` / `header` / `add_header` / `set_header` / `body` / `set_body` / `clear_body` / `without_body` の構築 API は構文レベル (token / VCHAR / status code / version 文字列) しか検査しない。`EncodeError` (`src/error.rs:58-116`) のうち以下 15 バリアントは構築時に検出されず encode 時のみ検出される。`encode()` を呼ぶといずれも `.expect()` で release panic に化ける:
+`Request::new` / `Response::new` / `with_version` / `with_status` / `header` / `add_header` / `set_header` / `body` / `set_body` / `clear_body` / `without_body` の構築 API は構文レベル (token / VCHAR / status code / version 文字列) しか検査しない。`EncodeError` (`src/error.rs:58-116`) のうち以下 15 バリアントは構築時に検出されず encode
+時のみ検出される。`encode()` を呼ぶといずれも `.expect()` で release panic に化ける:
 
-`MissingHostHeader`, `DuplicateHostHeader`, `InvalidHostHeader`, `HostAuthorityMismatch`, `NonEmptyHostWithoutAuthority`, `UserinfoInHttpUri`, `EmptyHostInHttpUri`, `ConflictingTransferEncodingAndContentLength`, `ForbiddenTransferEncoding`, `ForbiddenContentLength`, `ForbiddenBodyFor205`, `ContentLengthMismatch`, `InvalidRequestTargetForm`, `InvalidContentLengthValue`, `DuplicateContentLength`
+`MissingHostHeader`, `DuplicateHostHeader`, `InvalidHostHeader`, `HostAuthorityMismatch`, `NonEmptyHostWithoutAuthority`, `UserinfoInHttpUri`, `EmptyHostInHttpUri`, `ConflictingTransferEncodingAndContentLength`, `ForbiddenTransferEncoding`, `ForbiddenContentLength`, `ForbiddenBodyFor205`,
+`ContentLengthMismatch`, `InvalidRequestTargetForm`, `InvalidContentLengthValue`, `DuplicateContentLength`
 
-加えて `pub(crate) fn from_raw_parts` (decoder 経由の構築) は debug ビルドでのみ契約検査 (`debug_assert!`) を行うため、release ビルドでは構文バリアント (`InvalidMethod`, `InvalidRequestTarget`, `InvalidVersion`, `InvalidHeaderName`, `InvalidHeaderValue`, `InvalidStatusCode`, `InvalidReasonPhrase`) の検出もすべて encoder 側の `validate_request_fields` / `validate_response_fields` まで遅延される。reverse proxy などで decoder 由来の Head を再エンコードする経路では、これら構文系も release panic に化ける。
+加えて `pub(crate) fn from_raw_parts` (decoder 経由の構築) は debug ビルドでのみ契約検査 (`debug_assert!`) を行うため、release ビルドでは構文バリアント (`InvalidMethod`, `InvalidRequestTarget`, `InvalidVersion`, `InvalidHeaderName`, `InvalidHeaderValue`, `InvalidStatusCode`, `InvalidReasonPhrase`) の検出もすべて encoder 側の
+`validate_request_fields` / `validate_response_fields` まで遅延される。reverse proxy などで decoder 由来の Head を再エンコードする経路では、これら構文系も release panic に化ける。
 
 ### 再現 PoC (公開ビルダー API のみ、`?` を受ける関数内で評価)
 
@@ -61,7 +65,7 @@ let _ = res.encode();
 ### 呼び出し側の書き換え
 
 | 場所 | 現状 | 書き換え方針 |
-|---|---|---|
+| --- | --- | --- |
 | `src/lib.rs` doc 例 | `let bytes = request.encode();` を `Vec<u8>` 想定 | `?` を返す `fn main() -> Result<...>` 形にして `?` 伝播 |
 | `README.md` | `.encode()` 5 箇所 | 同上 |
 | `skills/shiguredo-http11/SKILL.md` | `.encode()` 5 箇所 | 同上 |
@@ -85,7 +89,7 @@ let _ = res.encode();
 
 `## develop` に `[CHANGE]` として追加する:
 
-```
+```text
 - [CHANGE] `Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` の戻り型を `Result<Vec<u8>, EncodeError>` に変更する
   - 旧 `try_encode` / `try_encode_headers` を撤去し名前を `encode` / `encode_headers` に統一する
   - 構築時バリデーションを通っても意味論違反 (Host 欠落、TE+CL 同時、205 ボディ等) で encode が `Err` を返すため、呼出側は `?` 等で伝播する必要がある
@@ -118,5 +122,6 @@ let _ = res.encode();
 
 - `src/encoder.rs` の `Request::encode` / `Response::encode` / `Request::encode_headers` / `Response::encode_headers` を `Result<Vec<u8>, EncodeError>` 直返しに変更し、`.expect(...)` 経路と panic 条件を述べる doc を削除した
 - 同一機能だった `Request::try_encode` / `Response::try_encode` / `Request::try_encode_headers` / `Response::try_encode_headers` を撤去した
-- 呼び出し側 (`src/lib.rs` doc 例、`README.md`、`skills/shiguredo-http11/SKILL.md`、`examples/http11_client` / `http11_server` / `http11_server_io_uring` / `http11_reverse_proxy`、`tests/test_response.rs`、`pbt/tests/prop_request.rs` / `prop_response.rs` / `prop_encoder.rs` / `prop_decoder/*.rs`、`fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`) を `?` または `.unwrap()` 経由で Result を扱う形に書き換えた
+- 呼び出し側 (`src/lib.rs` doc 例、`README.md`、`skills/shiguredo-http11/SKILL.md`、`examples/http11_client` / `http11_server` / `http11_server_io_uring` / `http11_reverse_proxy`、`tests/test_response.rs`、`pbt/tests/prop_request.rs` / `prop_response.rs` / `prop_encoder.rs` /
+  `prop_decoder/*.rs`、`fuzz/fuzz_targets/fuzz_decoder_roundtrip.rs`) を `?` または `.unwrap()` 経由で Result を扱う形に書き換えた
 - `CHANGES.md` の `## develop` に `[CHANGE]` エントリを追加し、issue 0017 由来「`Response::encode()` のパニック条件 ... doc を更新する」表記を削除した

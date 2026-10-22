@@ -37,7 +37,7 @@ if version == "HTTP/1.0"
 
 ### RFC 引用
 
-```
+```text
 RFC 9112 §6.1
 A client MUST NOT send a request containing Transfer-Encoding unless
 it knows the server will handle HTTP/1.1 requests (or later minor
@@ -46,7 +46,7 @@ Encoding unless the corresponding request indicates HTTP/1.1 (or
 later minor revisions).
 ```
 
-```
+```text
 RFC 2326 §3.6 (Connections)
 Note that RTSP does not (at present) support the HTTP/1.1 "chunked"
 transfer coding ...
@@ -121,7 +121,7 @@ if version != "HTTP/1.1"
 
 両ファイルの該当箇所コメントを「HTTP/1.0 では未定義」から以下に書き換える:
 
-```
+```rust
 // RFC 9112 Section 6.1 (HTTP/1.1 のみで定義) および RFC 2326 Section 5
 // (RTSP では Transfer-Encoding は未定義) に従い、HTTP/1.1 完全一致以外で
 // Transfer-Encoding が出現した場合は error 化する。HTTP/1.2 が将来定義された
@@ -146,7 +146,7 @@ AGENTS.md「資料を由来の機能を実装する場合は、根拠資料名�
 
 `## develop` に `[FIX]` として追加する:
 
-```
+```text
 - [FIX] HTTP/1.1 以外の version で `Transfer-Encoding` ヘッダーを受理しないように厳格化する
   - 旧挙動では `version == "HTTP/1.0"` の完全一致のみ拒否しており、`HTTP/0.9` / `HTTP/2.0` / `HTTP/3.0` / `RTSP/1.0` / `FOO/1.0` 等で `Transfer-Encoding: chunked` を chunked フレーミングとして読み始めていた
   - RFC 9112 §6.1 (TE は HTTP/1.1 のみで定義) および RFC 2326 §5 (RTSP では Transfer-Encoding 未定義) に従い、HTTP/1.1 完全一致以外で TE が出現した場合は `Error::InvalidData` を返す

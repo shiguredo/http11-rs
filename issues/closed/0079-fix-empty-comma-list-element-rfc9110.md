@@ -14,7 +14,8 @@
 
 ## 目的
 
-RFC 9110 Section 5.6.1.2: "A recipient MUST parse a received field-value as a list of values by applying OWS stripping and then splitting on commas. An empty list element MUST be ignored." に反し、`parse_content_length_value` (`src/decoder/body.rs:1399`) と `parse_dictionary` (`src/digest_fields.rs:297`) が空要素をエラーとしている。
+RFC 9110 Section 5.6.1.2: "A recipient MUST parse a received field-value as a list of values by applying OWS stripping and then splitting on commas. An empty list element MUST be ignored." に反し、`parse_content_length_value` (`src/decoder/body.rs:1399`) と `parse_dictionary`
+(`src/digest_fields.rs:297`) が空要素をエラーとしている。
 
 ## 優先度根拠
 
@@ -24,6 +25,7 @@ RFC 9110 Section 5.6.1.2: "A recipient MUST parse a received field-value as a li
 ## 現状
 
 `src/decoder/body.rs:1399-1404`:
+
 ```rust
 if part.is_empty() {
     return Err(Error::InvalidData(
@@ -33,6 +35,7 @@ if part.is_empty() {
 ```
 
 `src/digest_fields.rs:297-298`:
+
 ```rust
 if part.is_empty() {
     return Err(DigestFieldsError::InvalidFormat);
@@ -45,8 +48,8 @@ if part.is_empty() {
 
 ## 完了条件
 
-- `Content-Length: 100, ` (末尾カンマ) が受理され 100 と解釈されること
-- `Content-Length: , ` (空要素のみ) はエラーになること
+- `Content-Length: 100,` (末尾カンマ) が受理され 100 と解釈されること
+- `Content-Length: ,` (空要素のみ) はエラーになること
 - `Digest` 系ヘッダーでも同様の挙動になること
 - テストが `tests/test_decoder/` および `tests/test_digest_fields.rs` に追加されていること
 - CHANGES.md の `## develop` に `[FIX]` エントリが追加されていること

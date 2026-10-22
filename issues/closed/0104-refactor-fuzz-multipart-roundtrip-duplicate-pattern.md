@@ -20,6 +20,7 @@
 ## 現状
 
 パターン 1:
+
 ```rust
 // パターン 1: `with_boundary` を通った valid path
 if let Ok(builder) = MultipartBuilder::with_boundary(&boundary) {
@@ -31,6 +32,7 @@ if let Ok(builder) = MultipartBuilder::with_boundary(&boundary) {
 ```
 
 パターン 2:
+
 ```rust
 // パターン 2: attacker controlled boundary 経路。build 側 / parse 側どちらでも
 // パニックしないことを確認する。

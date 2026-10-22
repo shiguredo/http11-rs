@@ -5,6 +5,7 @@
 - Completed: 2026-05-15
 - Model: deepseek v4-pro
 - Branch: feature/fix-multipart-transport-padding
+
 ## 目的
 
 RFC 2046 Section 5.1.1 はすべての boundary delimiter (dash-boundary / delimiter / close-delimiter) に transport-padding (= *LWSP-char, SP/HTAB) を許容している。`MultipartParser` の `Initial` 状態では transport-padding が正しく処理されているが、`InPart` 状態と `AfterInnerDelimiter` 状態では未対応のままである。

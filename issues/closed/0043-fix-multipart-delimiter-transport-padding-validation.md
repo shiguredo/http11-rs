@@ -62,7 +62,7 @@ assert!(next.is_none() && parser.is_finished());
 
 RFC 2046 §5.1.1 の関連 ABNF (本 issue で必要な箇所のみ):
 
-```
+```text
 dash-boundary := "--" boundary
 delimiter := CRLF dash-boundary
 close-delimiter := delimiter "--"
@@ -122,7 +122,7 @@ L370-371 の死コード (`starts_with(b"\r\n")` スキップ) は削除する�
 
 `## develop` に `[FIX]` として追加する:
 
-```
+```text
 - [FIX] `MultipartParser` の `Initial` ブランチで `--<boundary>` 直後の transport-padding CRLF / close-delimiter 検証欠落を修正する
   - 旧実装は `--<boundary>X` (X が CRLF / `--` でない任意バイト) をそのまま `InPart` 状態に遷移して有効パートとして parse していた (RFC 2046 §5.1.1 違反)
   - WAF / フロントプロキシが preamble の一部と判定する一方、本実装は有効パートとして読む parser differential を生み、Content-Disposition フィルタ迂回の足場となっていた

@@ -91,7 +91,7 @@ impl HttpVersion {
 
 `## develop` に以下を追加する:
 
-```
+```text
 - [CHANGE] `Request::version` / `Response::version` を `HttpVersion` enum に変更する
   - `HttpVersion::V0_9` / `V1_0` / `V1_1` の 3 バリアントをサポートする
   - `with_version` は enum を引数に取るシグネチャに変更する

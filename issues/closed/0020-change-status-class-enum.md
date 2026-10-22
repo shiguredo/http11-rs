@@ -15,6 +15,7 @@ Model: Opus 4.7
 `StatusClass` は新規ファイルではなく既存の `src/status_code.rs` に同居させる (issue 0024 で導入済みの `StatusCode` 型と密接に関連するため)。
 
 依存関係:
+
 - `0017` (Response フィールド非公開化) は **完了済み**。0020 実装時は `self.status_code` (フィールドアクセス) ではなく `self.status_code()` (getter) を使うこと。完遂された 0017 の完了状態 (フィールド非公開化、getter あり) を前提にコードを記述する。
 - `0024` (StatusCode 型導入) は **完了済み**。`StatusCode` 型と `StatusCode::code()` / `StatusCode::from_code()` が利用可能。
 - `0021` (ビルダー / mutator API 一貫化) は未着手。0020 で追加する `status_class()` メソッドは単純なアクセサであり 0021 と競合しないが、0020 完了時に 0021 の影響範囲表に `status_class()` が未記載であることを認識しておくこと。
@@ -37,7 +38,7 @@ rg -n "is_success|is_redirect|is_client_error|is_server_error|is_informational" 
 ### 修正対象ファイル
 
 | ファイル | 変更内容 |
-|----------|----------|
+| ---------- | ---------- |
 | `src/status_code.rs` | `StatusClass` enum を追加、`StatusClass::from_status_code(u16) -> Option<StatusClass>` を追加、`StatusCode::class(&self) -> StatusClass` を追加 |
 | `src/lib.rs` | `pub use` に `StatusClass` を追加 (`status_code::StatusClass`) |
 | `src/response.rs` | `is_*` 5 メソッドを撤去し `status_class()` を追加。`use crate::status_code::StatusClass;` を追加 |
@@ -78,7 +79,8 @@ rg -n "is_success|is_redirect|is_client_error|is_server_error|is_informational" 
 
 ### 問題 6: 既存 PBT で `is_informational` の否定チェックが欠落している
 
-`prop_response_head_is_redirect` (line 803–814) / `is_client_error` (line 818–829) / `is_server_error` (line 833–844) では `is_success` / `is_redirect` / `is_client_error` / `is_server_error` の相互否定チェックがあるが、`is_informational` だけチェックされていない。3xx で `is_informational()` が誤って true を返しても検出できない。enum 化で自然に解決する。また、PBT の `status` 範囲が `400u16..=451` / `500u16..=511` と IANA 登録済み code に限定されており、未登録の 4xx/5xx (例: 460, 599) を踏んでいない。enum 化に合わせて全範囲 (`400u16..=499` / `500u16..=599`) に拡張する。
+`prop_response_head_is_redirect` (line 803–814) / `is_client_error` (line 818–829) / `is_server_error` (line 833–844) では `is_success` / `is_redirect` / `is_client_error` / `is_server_error` の相互否定チェックがあるが、`is_informational` だけチェックされていない。3xx で `is_informational()` が誤って true を返しても検出できない。enum
+化で自然に解決する。また、PBT の `status` 範囲が `400u16..=451` / `500u16..=511` と IANA 登録済み code に限定されており、未登録の 4xx/5xx (例: 460, 599) を踏んでいない。enum 化に合わせて全範囲 (`400u16..=499` / `500u16..=599`) に拡張する。
 
 ### 不採用となった根拠
 
@@ -234,7 +236,7 @@ impl ResponseHead {
 RFC 9110 の節タイトルに完全準拠する:
 
 | バリアント | 根拠 |
-|-----------|------|
+| ----------- | ------ |
 | `Informational` | §15.2 "Informational 1xx" |
 | `Successful` | §15.3 "Successful 2xx" |
 | `Redirection` | §15.4 "Redirection 3xx" |
@@ -246,7 +248,7 @@ RFC 9110 の節タイトルに完全準拠する:
 ### 設計判断
 
 | 判断項目 | 決定 | 理由 |
-|----------|------|------|
+| ---------- | ------ | ------ |
 | `StatusClass` の配置 | `src/status_code.rs` に同居 | `StatusCode` と密接に関連し、別ファイルに分けると `status.rs` / `status_code.rs` の命名が紛らわしい |
 | `Unrecognized` バリアント | 採用しない | 構築時バリデーションで 100..=599 に閉じ込められており、到達不能。 5 バリアントのみとする |
 | `from_status_code` の戻り値 | `Option<StatusClass>` | 範囲外 (`0..=99` / `600..=65535`) は `None`。Response/ResponseHead 側の `status_class()` は `expect()` で剥がす |
@@ -295,7 +297,7 @@ prop_assert_eq!(head.status_class(), StatusClass::Redirection);
 #### 影響を受ける既存ファイル
 
 | ファイル | 修正内容 |
-|----------|----------|
+| ---------- | ---------- |
 | `pbt/tests/prop_decoder/head.rs` | import に `StatusClass` 追加。`prop_response_head_is_redirect` → `prop_response_head_status_class_redirection` にリネームし `prop_assert_eq!` で 1 行化。同様に `prop_response_head_is_client_error` → `prop_response_head_status_class_client_error`、`prop_response_head_is_server_error` → `prop_response_head_status_class_server_error` にリネーム。`400u16..=451` → `400u16..=499`、`500u16..=511` → `500u16..=599` に範囲拡張 |
 | `pbt/tests/prop_decoder/response.rs` | L146 `head.is_informational()` / L163 `head.is_success()` → `matches!` に書き換え。L161 周辺の `if code != 204` ガードは維持 |
 | `fuzz/fuzz_targets/fuzz_request_response_helpers.rs` | ファイル先頭 doc comment (L6-8: `is_success, is_redirect, is_client_error, is_server_error, is_informational` の列挙) を `status_class()` ベースの説明に書き換え。`use shiguredo_http11::StatusClass;` を import に追加。`assert_eq!(response.is_success(), (200..300).contains(&status_code))` → `assert_eq!(response.status_class() == StatusClass::Successful, (200..300).contains(&status_code))` 等に書き換え。注: fuzz の `FuzzResponse` は任意の `u16` だが、`Response::with_version` バリデーション通過後は `100..=599` に限定されるため `StatusClass::from_status_code` が `None` になるケースは到達しない |
@@ -307,7 +309,7 @@ prop_assert_eq!(head.status_class(), StatusClass::Redirection);
 `StatusClass::from_status_code` の境界値:
 
 | status_code | 期待値 |
-|-------------|--------|
+| ------------- | -------- |
 | 0 | `None` |
 | 99 | `None` |
 | 100 | `Some(Informational)` |
@@ -371,7 +373,7 @@ proptest! {
 #### 新規 PBT (Response / ResponseHead 側)
 
 | ファイル | テスト名 | 検証内容 |
-|----------|----------|----------|
+| --- | --- | --- |
 | `pbt/tests/prop_response.rs` | `prop_response_status_class` | 任意の `status_code` (100..=599) で構築した `Response` の `status_class()` が `StatusClass::from_status_code(status_code).unwrap()` と一致する。このテスト用に既存の `status_code()` strategy (IANA 登録範囲限定) とは別に `100u16..=599` の全範囲を生成する新規 strategy を定義する。import に `StatusClass` を追加する。 |
 | `pbt/tests/prop_decoder/head.rs` | `prop_response_head_status_class_consistency` | 任意の `status_code` (100..=599) を含むレスポンスをデコードし、`ResponseHead::status_class()` が `StatusClass::from_status_code(status_code).unwrap()` と一致する |
 
@@ -393,7 +395,7 @@ proptest! {
 
 `## develop` セクションの既存 `[CHANGE]` エントリ群の末尾に以下を追加する (AGENTS.md の UPDATE → ADD → CHANGE → FIX 順に従い、既存 CHANGE エントリの後に配置):
 
-```
+```text
 - [CHANGE] `Response` と `ResponseHead` の `is_informational` / `is_success` / `is_redirect` / `is_client_error` / `is_server_error` を撤去し、`StatusClass` enum と `status_class()` メソッドに統合する
     - 5 個の bool メソッドが網羅性を型で保証できなかった問題を解消する
     - バリアント名は RFC 9110 Section 15 の節タイトルに準拠する: `Informational`, `Successful`, `Redirection`, `ClientError`, `ServerError`

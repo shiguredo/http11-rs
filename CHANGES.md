@@ -69,7 +69,6 @@
 - [FIX] リリースミスを修正
   - @voluntas
 
-
 ## 2026.6.0
 
 **リリース日**: 2026-05-26
@@ -84,7 +83,7 @@
 - [CHANGE] HttpHead::headers() の戻り型を &[(String, String)] から &[(HeaderName, String)] に変更する
   - 破壊的変更。HttpHead を実装する全型 (Request/Response/RequestHead/ResponseHead) に波及する
   - @voluntas
-- [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を impl TryInto<HeaderName> / impl TryInto<Method> に変更する
+- [CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名・メソッド引数を `impl TryInto<HeaderName>` / `impl TryInto<Method>` に変更する
   - builder で `"Host"` / `"GET"` 等の `'static str` リテラルを直接渡せるようになる
   - 既存の HeaderName / Method / Method::GET 渡しは引き続きコンパイル可能（identity TryFrom impl による）
   - 不正リテラルは Err(EncodeError) で返す（panic しない）
@@ -297,11 +296,11 @@
 **リリース日**: 2026-05-13
 
 - [UPDATE] `Request` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
-  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (`impl Into<String>`), `body` (`impl Into<Vec<u8>>`)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる (Response 側と対称)
   - @voluntas
 - [UPDATE] `Response` の文字列・バイト列受け取り API を `impl Into<String>` / `impl Into<Vec<u8>>` に変更する
-  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (impl Into<String>), `body` (impl Into<Vec<u8>>)
+  - 対象: `new`, `with_version`, `header`, `add_header`, `set_header` (`impl Into<String>`), `body` (`impl Into<Vec<u8>>`)
   - 呼び出し側が `String` や `Vec<u8>` を所有している場合、ムーブで渡せるようになる
   - @voluntas
 - [ADD] `Request::set_body` / `Request::clear_body` / `Request::without_body` を追加する
@@ -359,7 +358,8 @@
   - @voluntas
 - [CHANGE] レスポンス受信側で Transfer-Encoding と Content-Length が両方含まれる場合をエラー化する
   - 旧挙動 (`resolve_body_headers_for_response`) は silent に Transfer-Encoding を優先して Content-Length を無視していたが、これにより HTTP Request Smuggling (CWE-444) / Response Splitting (CWE-113) の兆候を上位層が検知できなかった
-  - RFC 9112 Section 6.3 (3) 「Such a message might indicate an attempt to perform request smuggling (Section 11.2) or response splitting (Section 11.1) and ought to be handled as an error.」と RFC 9112 Section 6.1 「the server MUST close the connection after responding to such a request to avoid the potential attacks.」に従い、リクエスト経路と対称に `Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返す
+  - RFC 9112 Section 6.3 (3) 「Such a message might indicate an attempt to perform request smuggling (Section 11.2) or response splitting (Section 11.1) and ought to be handled as an error.」と RFC 9112 Section 6.1 「the server MUST close the connection after responding to such a request to avoid the
+    potential attacks.」に従い、リクエスト経路と対称に `Error::InvalidData("invalid message: both Transfer-Encoding and Content-Length")` を返す
   - 呼出側は接続をクローズすべき (proxy 等の上位層が判断する)
   - @voluntas
 - [CHANGE] trailer フィールドの受理判定を RFC 9110 Section 6.5.1 のホワイトリスト方式に変更する

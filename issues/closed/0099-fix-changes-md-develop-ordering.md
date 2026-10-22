@@ -21,6 +21,7 @@
 `## develop` の `### misc` セクション (行 14-47) 内に、公開 API の破壊的変更や追加が配置されている:
 
 移動対象 (misc から最上位へ):
+
 - 行 18-21: `[ADD] HeaderName / Method / Scheme 型を導入...` — 公開 API の追加
 - 行 22-24: `[CHANGE] HttpHead::headers() の戻り型を...変更する` — 破壊的変更
 - 行 32-36: `[CHANGE] Request/Response/RequestHead/ResponseHead のヘッダー名...変更する` — 破壊的変更
@@ -28,6 +29,7 @@
 - 行 41-44: `[ADD] TryFrom<&'static str> / TryFrom<&'static [u8]> を...実装する` — 公開 API の追加
 
 misc に残す (テスト追加・サンプル変更):
+
 - 行 16-17: `[UPDATE] examples に graceful shutdown を実装する` — サンプル変更
 - 行 25: `[ADD] compile_fail doctest を追加する` — テスト追加
 - 行 26-31: `[ADD] PBT 整合性検証を追加する` — テスト追加

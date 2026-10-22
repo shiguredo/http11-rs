@@ -19,7 +19,7 @@ Priority: High
 
 ### RFC 9110 Section 5.6.6 (Parameters)
 
-```
+```text
 parameter-value = ( token / quoted-string )
 ```
 
@@ -27,7 +27,7 @@ Accept / Content-Type / Expect のパラメータ値は上記定義に従い `qu
 
 ### RFC 9110 Section 5.6.4 (Quoted Strings)
 
-```
+```text
 quoted-string  = DQUOTE *( qdtext / quoted-pair ) DQUOTE
 qdtext         = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text
 quoted-pair    = "\" ( HTAB / SP / VCHAR / obs-text )
@@ -66,6 +66,7 @@ quoted-pair    = "\" ( HTAB / SP / VCHAR / obs-text )
 - `src/expect.rs` の `parse_quoted_string` 関数 — 呼び出し元: `parse_value`
 
 修正対象外:
+
 - `src/accept.rs` と `src/expect.rs` の `split_with_quotes` — 分割が責務であり、文字種検証は `parse_quoted_string` に委譲するため変更不要
 
 ## 推奨対応
@@ -87,7 +88,7 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 各モジュールは `From<QuotedStringError>` を実装してエラー型へマップする:
 
 | モジュール | 文字種不正 | 終端引用符なし |
-|---|---|---|
+| --- | --- | --- |
 | `accept.rs` | `AcceptError::InvalidParameter` | `AcceptError::UnterminatedQuote` (新規バリアント) |
 | `content_type.rs` | `ContentTypeError::InvalidParameter` | `ContentTypeError::UnterminatedQuote` (既存) |
 | `expect.rs` | `ExpectError::InvalidValue` | `ExpectError::UnterminatedQuote` (新規バリアント) |
@@ -101,14 +102,17 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 各テストで CR / LF / NUL および他の CTL (0x01-0x08, 0x0B-0x0C, 0x0E-0x1F, 0x7F DEL) を含む quoted-string が reject されることと、有効な VCHAR / HTAB / SP / obs-text が引き続き受理されることを確認する。CTL reject は各モジュールのテスト関数に全 CTL 文字を列挙する形でまとめる。
 
 `tests/test_accept.rs`:
+
 - `test_accept_quoted_string_rejects_ctl` — qdtext / quoted-pair 経路で CR / LF / NUL / 他の CTL が `InvalidParameter` で reject
 - `test_accept_quoted_string_accepts_obs_text` — obs-text (U+0080 以上) を含む quoted-string が受理
 
 `tests/test_content_type.rs`:
+
 - `test_content_type_quoted_string_rejects_ctl` — qdtext / quoted-pair 経路で CTL が reject。終端引用符なし + CTL 混在 (`"\r\n`) で `InvalidParameter` (UnterminatedQuote より優先) を確認
 - `test_content_type_quoted_string_accepts_obs_text` — obs-text 受理
 
 `tests/test_expect.rs`:
+
 - `test_expect_quoted_string_rejects_ctl` — qdtext / quoted-pair 経路で CTL が `InvalidValue` で reject
 - `test_expect_quoted_string_accepts_obs_text` — obs-text 受理
 - `test_expect_empty_quoted_string` — 空 quoted-string `""` が引き続き受理される (既存リグレッション防止)。accept / content_type も空 quoted-string のリグレッション防止テストを追加する
@@ -129,7 +133,7 @@ pub(crate) fn parse_quoted_string(input: &str) -> Result<(String, &str), QuotedS
 ## エッジケース
 
 | ケース | 修正後挙動 | 備考 |
-|---|---|---|
+| --- | --- | --- |
 | 空 quoted-string `""` | 即座に `("", rest)` を返す。Display 出力も `name=""` (引用符付き) で再パース可能 | `needs_quoting("")` を `true` に修正済 |
 | obs-text (U+0080..=U+10FFFF) | `is_qdtext_char` / `is_quoted_pair_char` が受理 | opaque 保持、変更なし |
 | `\` で終わる quoted-string (escape 未完了) | accept / content_type / expect すべて `UnterminatedQuote` | issue 0061 で 3 モジュール統一 |

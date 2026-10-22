@@ -24,6 +24,7 @@ RFC 9112 Section 9.5 は「close を意図する client または server は接�
 - `examples/http11_reverse_proxy` (tokio ベース)
 
 以下の example は対象外とする:
+
 - `examples/http11_client`: ワンショットの CLI ツールであり、`tokio::spawn` によるタスク分散がなく graceful shutdown の恩恵がないため
 - `examples/http11_server_io_uring`: 非 tokio の io_uring イベントループモデルであり、本 issue で扱う `JoinSet` + tokio シグナルハンドリングの方式が適用不可能なため（別 issue で対応）
 - `examples/repro_cookie`: 単一目的の再現ツールのため
@@ -105,7 +106,8 @@ RFC 9112 Section 9.8 は TLS closure alert の交換を MUST としている。
 > Servers MUST attempt to initiate an exchange of closure alerts with the
 > client before closing the connection.
 
-`http11_server` の `handle_client` は `stream.into_split()` で reader/writer を分離している。half-close 実装には `writer.into_inner().shutdown()` を呼ぶ必要があるが、`into_split()` で取得した `OwnedWriteHalf` からは `into_inner()` が使えない。この制約を踏まえ、本 issue では half-close は実装せず、`Connection: close` の付与のみを行う。TCP reset リスクのコードコメントを付記し、制約を明示する（お手本としての透明性を優先する）。TLS closure alert は tokio_rustls の Drop 実装に委ね、明示的な呼び出しは行わない。
+`http11_server` の `handle_client` は `stream.into_split()` で reader/writer を分離している。half-close 実装には `writer.into_inner().shutdown()` を呼ぶ必要があるが、`into_split()` で取得した `OwnedWriteHalf` からは `into_inner()` が使えない。この制約を踏まえ、本 issue では half-close は実装せず、`Connection: close` の付与のみを行う。TCP reset
+リスクのコードコメントを付記し、制約を明示する（お手本としての透明性を優先する）。TLS closure alert は tokio_rustls の Drop 実装に委ね、明示的な呼び出しは行わない。
 
 ## Cargo.toml の変更
 

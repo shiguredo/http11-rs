@@ -82,7 +82,7 @@ impl Response {
 
 `## develop` に以下を追加する:
 
-```
+```text
 - [CHANGE] `Response::get_headers` / `Request::get_headers` の戻り値を `Vec<&str>` から `impl Iterator<Item = &str>` に変更する
   - 戻り値のヒープ確保を排除する
   - 既存呼び出し側で `Vec<&str>` を期待している箇所は `.collect::<Vec<_>>()` に書き換える

@@ -30,7 +30,7 @@ crash artifact 2 件を regression seed として `fuzz/corpus/fuzz_cookie/` に
 
 再現は以下:
 
-```
+```bash
 cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067
 cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067-non-ldh
 ```
@@ -41,14 +41,14 @@ cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067-non-
 
 入力:
 
-```
+```text
 3=; Domain=..
 ```
 
 `SetCookie::parse(..., 2026)` の結果と Display 再 parse 結果:
 
 | | name | value | domain |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Original | `"3"` | `""` | `Some(".")` |
 | Display | `"3=; Domain=."` | | |
 | Reparsed | `"3"` | `""` | `None` |
@@ -57,19 +57,19 @@ cargo +nightly fuzz run fuzz_cookie fuzz/corpus/fuzz_cookie/regression-0067-non-
 
 入力 (実バイトは `domain=. \x00\x00...`):
 
-```
+```text
 2n=; domain=. foo
 ```
 
 | | name | value | domain |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Original | `"2n"` | `""` | `Some(" foo")` (leading space) |
 | Display | `"2n=; Domain= foo"` | | |
 | Reparsed | `"2n"` | `""` | `Some("foo")` (space trimmed) |
 
 両者とも fuzz target の line 68 `assert_eq!(set_cookie.domain(), reparsed.domain())` で失敗する:
 
-```
+```text
 thread '<unnamed>' panicked at fuzz_targets/fuzz_cookie.rs:68:17:
 assertion `left == right` failed
 ```
@@ -92,7 +92,8 @@ assertion `left == right` failed
 RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3 の strip 規則は「先頭の %x2E を 1 つだけ削除する」しか規定していないため、上記実装は spec を素直に追従している。しかし、
 
 1. **leading dot 複数**: `Domain=..` → strip → `"."` → 空でないので `Some(".")` で保存。`Display` で `Domain=.` を出力。再 parse: strip → `""` → empty なので無視 → `None`。
-2. **non-LDH**: `attr_value` は `parse` 内で `.trim()` 済みだが、これは ASCII whitespace のみを edge で削るので、内部の空白や NUL、または leading dot 直後の空白には何の処理もしない。`Domain=. foo` の attr_value は `". foo"` (`.trim()` は edge のみ)、strip で `" foo"` (leading space)、`Some(" foo")` で保存。`Display` 出力 `Domain= foo` の再 parse では attr_value 抽出時に `.trim()` で leading space が削られ `Some("foo")` に縮退。
+2. **non-LDH**: `attr_value` は `parse` 内で `.trim()` 済みだが、これは ASCII whitespace のみを edge で削るので、内部の空白や NUL、または leading dot 直後の空白には何の処理もしない。`Domain=. foo` の attr_value は `". foo"` (`.trim()` は edge のみ)、strip で `" foo"` (leading space)、`Some(" foo")` で保存。`Display` 出力 `Domain= foo` の再 parse では attr_value
+   抽出時に `.trim()` で leading space が削られ `Some("foo")` に縮退。
 
 どちらも「strip 後の値が `Display` -> 再 parse の往復で変化する」点が共通する。
 
@@ -100,7 +101,7 @@ RFC 6265 Section 5.2.3 / RFC 6265bis Section 5.6.3 の strip 規則は「先頭�
 
 RFC 6265 Section 4.1.1 の ABNF:
 
-```
+```text
 domain-av    = "Domain=" domain-value
 domain-value = <subdomain>
                 ; defined in [RFC1034], Section 3.5, as

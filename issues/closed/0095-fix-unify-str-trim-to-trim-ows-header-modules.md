@@ -32,7 +32,7 @@ RFC 9110 Section 5.5 / Section 5.6.3 の MUST 要件違反。認証ヘッダー 
 以下のモジュールで `str::trim()` / `str::trim_start()` / `str::trim_end()` が OWS 除去の用途で使用されている (箇所数は `.trim()` 等の呼び出し数。1 行に複数呼び出しがある場合は個別にカウント):
 
 | ファイル | 箇所数 | 置換種別 | 主な使用箇所 |
-|---------|--------|---------|------------|
+| --------- | -------- | --------- | ------------ |
 | `src/auth.rs` | 10 | trim_ows: 8, trim_ows_start: 2 | `BasicAuth::parse`, `DigestAuth::parse`, `BearerToken::parse`, `WwwAuthenticate::parse`, `strip_scheme` (行 762, 778 が trim_start) |
 | `src/content_type.rs` | 12 | trim_ows: 12 | `ContentType::parse`, `split_media_type` (行 223 は 1 行に 2 呼び出し), `parse_parameters` (行 260, 283 は `trim_start_matches(';')` との複合) |
 | `src/range.rs` | 13 | trim_ows: 13 | `Range::parse`, `parse_range_spec`, `ContentRange::parse`, `AcceptRanges::parse` |
@@ -80,6 +80,7 @@ pub(crate) fn trim_ows_start(s: &str) -> &str {
 ```
 
 使用箇所:
+
 - `src/auth.rs:762` `input.trim_start()` → `trim_ows_start(input)`
 - `src/auth.rs:778` `rest.trim_start()` → `trim_ows_start(rest)`
 - `src/date.rs:212` `input[comma_pos + 1..].trim_start()` → `trim_ows_start(&input[comma_pos + 1..])`
@@ -90,6 +91,7 @@ pub(crate) fn trim_ows_start(s: &str) -> &str {
 #### date.rs の HTAB 許容についての注記
 
 RFC 9110 Section 5.6.7 の IMF-fixdate / rfc850-date ABNF ではカンマ直後は `SP` (単一スペース) のみが規定されている。`trim_ows_start` は HTAB も許容するため RFC の ABNF よりも寛容になるが、以下の理由で `trim_ows_start` を使用する:
+
 - 受信側の堅牢性 (Postel's Law): 実世界では HTAB を含む不正な日付ヘッダーが存在する
 - 既存の `str::trim_start()` は既に HTAB 以外の Unicode 空白も許容しており、`trim_ows_start` は制限を強化する方向の変更である
 - Date ヘッダーの OWS 厳格化 (SP のみ許容) は本 issue のスコープ外とし、必要であれば別 issue で対応する
@@ -97,6 +99,7 @@ RFC 9110 Section 5.6.7 の IMF-fixdate / rfc850-date ABNF ではカンマ直後�
 ### 後方互換
 
 本変更は公開 API のシグネチャを変更しない。動作の変化:
+
 - Unicode 空白 (NBSP 等) を先頭・末尾に含むヘッダー値が、従来は OWS として除去されて正常パースされていたが、修正後は OWS として除去されず field-value の一部として保持される
 - その結果、パース結果が変わる可能性がある (例: `Content-Type: \u{00A0}text/html` は従来 `text/html` とパースされていたが、修正後は NBSP が残り `InvalidMediaType` エラーになる可能性がある)
 - これは RFC 準拠動作への修正であり、バグ修正として `[FIX]` に分類する
@@ -110,6 +113,7 @@ RFC 9110 Section 5.6.7 の IMF-fixdate / rfc850-date ABNF ではカンマ直後�
 ### 単体テスト
 
 以下のエッジケースを `tests/test_<module>.rs` に追加する:
+
 - NBSP (`\u{00A0}`) を先頭・末尾に含むヘッダー値が OWS として除去されないこと
 - SP / HTAB のみが正しく OWS として除去されること
 - NBSP が field-value の一部として保持され、各パーサーの文字種検証で適切に reject または opaque 保持されること
@@ -126,9 +130,11 @@ date.rs は `trim_ows_start` の新規関数を使用する箇所であり、HTA
 
 - `src/` 内の全 `.rs` ファイルで `str::trim()` / `str::trim_start()` / `str::trim_end()` が OWS 除去の用途で使用されていないこと
 - 以下のコマンドで OWS 除去用途の残存がないことを確認する:
-  ```
+
+  ```bash
   grep -rn '\.trim()\|\.trim_start()\|\.trim_end()' src/ | grep -v 'decoder/body.rs:765' | grep -v 'trim_ows'
   ```
+
   ここで検出される箇所は全て「OWS 除去用途ではない」ことを目視確認する。注意: `grep -v 'trim_ows'` は行全体を対象とするため、同一行に `trim_ows` と `.trim()` が共存するケースは検出できない。最終確認では `rg '\.trim\(\)|\.trim_start\(\)|\.trim_end\(\)' src/ --no-heading` の結果を全件目視すること
 - `validate.rs` に `trim_ows_start` が追加されていること
 - 既存テスト (PBT / 単体テスト / fuzz) が全て通ること

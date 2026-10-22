@@ -17,14 +17,14 @@ Model: Opus 4.7
 
 ### RFC 7616 §3.4
 
-```
+```text
    If the username contains characters not allowed inside the ABNF
    quoted-string production, the user's name MUST be sent using the
    "username*" parameter ... using the value encoding defined in
    Section 3.2.1 of [RFC5987].
 ```
 
-```
+```text
    If the "userhash" parameter value is "true" ... then ... the digest's
    "username" parameter is used to convey the hash.
 

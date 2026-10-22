@@ -107,7 +107,7 @@ if is_close_delimited {
 
 ### 既存コメント L595-597 の差し替え
 
-```
+```rust
 // close-delimited body の場合の処理:
 // 1. ヘッダー終端の直後に decoder 内部バッファに残ったボディ先頭バイトを take_remaining() で取り出して下流に流す
 //    (TCP セグメント結合や TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するため、これを怠ると先頭バイトが消失する)
@@ -138,7 +138,7 @@ HTTP/1.0 200 OK\r\nServer: mock\r\n\r\nHello, World!
 
 機能不全修正は機能に直接影響するため `### misc` ではなく本体 `[FIX]` 配下 (0048 / 0049 / 0050 / 0051 と方針統一):
 
-```
+```text
 - [FIX] `examples/http11_reverse_proxy` の close-delimited 経路で decoder 内部バッファのボディ先頭バイトを取りこぼす問題を修正する
   - 旧実装は `is_close_delimited` 分岐で `decoder.peek_body()` / `consume_body()` / `take_remaining()` を呼ばずに生 `upstream.read` に切り替えていた
   - `decode_headers` はヘッダー終端 `\r\n\r\n` までしか drain しないため、TCP セグメント結合や TLS レコード境界で 1 read にヘッダー + ボディ先頭が同居するケース (短いレスポンスではほぼ毎回発生) でボディ先頭バイトが下流に届かなかった

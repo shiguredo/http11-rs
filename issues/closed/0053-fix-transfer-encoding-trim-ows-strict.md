@@ -6,9 +6,11 @@ Model: Opus 4.7
 
 ## 概要
 
-`src/decoder/body.rs` の `parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` が Rust 標準の `str::trim()` を使ってトークン前後の OWS を除去している。`str::trim()` は `char::is_whitespace` 基準で NBSP (U+00A0) / U+2028 / U+2000-200A 等の Unicode 空白も除去してしまうため、`is_valid_field_value` (`src/validate.rs:60`) が obs-text (0x80-0xFF) を許容してヘッダー値中に Unicode 空白の UTF-8 表現が混入できる状況下で、**TE フレーミング判定が前段プロキシと食い違う HTTP Request Smuggling (CWE-444) 経路** を残している。
+`src/decoder/body.rs` の `parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` が Rust 標準の `str::trim()` を使ってトークン前後の OWS を除去している。`str::trim()` は `char::is_whitespace` 基準で NBSP (U+00A0) / U+2028 / U+2000-200A 等の Unicode
+空白も除去してしまうため、`is_valid_field_value` (`src/validate.rs:60`) が obs-text (0x80-0xFF) を許容してヘッダー値中に Unicode 空白の UTF-8 表現が混入できる状況下で、**TE フレーミング判定が前段プロキシと食い違う HTTP Request Smuggling (CWE-444) 経路** を残している。
 
-CHANGES.md `## develop` (L226-230) では Content-Length 経路について「`trim_ows` を `validate` モジュールに集約し、encoder の `validate_content_length_headers` と decoder の `parse_content_length_value` で共通利用する」「両者の解釈不一致を原因とする HTTP Request Smuggling (CWE-444) 経路を塞ぐ」と宣言済み (issue 0029 で実装) だが、TE 側と Trailer 側は適用漏れになっている。CL だけ塞いで TE / Trailer を放置した非対称設計を解消する。
+CHANGES.md `## develop` (L226-230) では Content-Length 経路について「`trim_ows` を `validate` モジュールに集約し、encoder の `validate_content_length_headers` と decoder の `parse_content_length_value` で共通利用する」「両者の解釈不一致を原因とする HTTP Request Smuggling (CWE-444) 経路を塞ぐ」と宣言済み (issue 0029 で実装) だが、TE 側と Trailer 側は適用漏れになっている。CL
+だけ塞いで TE / Trailer を放置した非対称設計を解消する。
 
 ```rust
 // src/decoder/body.rs:558-573 (Trailer)
@@ -43,7 +45,7 @@ for token in value.split(',') {
 
 ### RFC 引用
 
-```
+```text
 RFC 9110 §5.6.3 (Whitespace)
 OWS = *( SP / HTAB )
      ; optional whitespace
@@ -51,13 +53,13 @@ OWS = *( SP / HTAB )
 
 OWS は **SP / HTAB に限定** されており、Unicode 空白を含まない。decoder の OWS 解釈もこれに従う必要がある。
 
-```
+```text
 RFC 9112 §6.1 (Transfer-Encoding)
 Transfer-Encoding = #transfer-coding
 transfer-coding = "chunked" / "compress" / "deflate" / "gzip" / transfer-extension
 ```
 
-```
+```text
 RFC 9110 §5.6.1.2 (Lists (#rule ABNF Extension))
 #element => [ element ] *( OWS "," OWS [ element ] )
 ```
@@ -144,7 +146,7 @@ AGENTS.md「資料を由来の機能を実装する場合は、根拠資料名�
 
 `## develop` に `[FIX]` として追加する:
 
-```
+```text
 - [FIX] Transfer-Encoding / Trailer の OWS 解釈で `str::trim()` を `trim_ows` に統一し Unicode 空白による HTTP Request Smuggling 経路を塞ぐ
   - 旧実装は `src/decoder/body.rs::parse_transfer_encoding_for_request` / `parse_transfer_encoding_for_response` / `collect_declared_trailers` で `str::trim()` を使用しており、NBSP (U+00A0) / U+2028 等の Unicode 空白を除去していた
   - `is_valid_field_value` は obs-text (0x80-0xFF) を許容するため、`Transfer-Encoding: \u{00A0}chunked` のような値が decoder を通過し、前段プロキシ (ASCII OWS のみ trim) との解釈不一致で HTTP Request Smuggling (CWE-444) の足場となっていた

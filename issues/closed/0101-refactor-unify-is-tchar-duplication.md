@@ -19,7 +19,7 @@ issue 0064 で `is_valid_token` / `is_token_char` の 12 重複定義を `valida
 ### is_tchar の 3 重定義
 
 | ファイル | 関数名 | 修飾 | 行 |
-|---------|--------|------|-----|
+| --------- | -------- | ------ | ----- |
 | `src/validate.rs` | `is_token_char` | `pub(crate) fn` (非 const) | 11 |
 | `src/header_name.rs` | `is_tchar` | `const fn` (モジュールローカル) | 95 |
 | `src/method.rs` | `is_tchar` | `const fn` (モジュールローカル) | 93 |
@@ -29,7 +29,7 @@ issue 0064 で `is_valid_token` / `is_token_char` の 12 重複定義を `valida
 ### host.rs の重複
 
 | ファイル | 関数名 | validate.rs 対応 | 行 |
-|---------|--------|-----------------|-----|
+| --------- | -------- | ----------------- | ----- |
 | `src/host.rs` | `is_unreserved` | `is_unreserved_byte` | 245 |
 | `src/host.rs` | `is_sub_delim` | `is_sub_delim_byte` | 249 |
 | `src/host.rs` | `is_hexdig` | (なし、`u8::is_ascii_hexdigit`) | 256 |
@@ -37,7 +37,7 @@ issue 0064 で `is_valid_token` / `is_token_char` の 12 重複定義を `valida
 ### validate.rs 内の冗長関数
 
 | 関数名 | 同一実装の関数 | 行 |
-|--------|-------------|-----|
+| --- | --- | --- |
 | `is_valid_method` | `is_valid_token` | 73 |
 
 ## 設計方針

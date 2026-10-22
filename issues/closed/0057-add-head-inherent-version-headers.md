@@ -91,7 +91,7 @@ inherent method と trait method は本質的に同じロジック (`&self.versi
 
 `## develop` の `### misc` サブセクションに `[ADD]` として追加する:
 
-```
+```text
 - [ADD] `RequestHead` / `ResponseHead` に inherent な `version()` / `headers()` アクセサを追加する
   - 0031 で記載していた「読み取り専用アクセサ: `method()` / `uri()` / `version()` / `headers()` / ...」のうち `version()` / `headers()` が実装漏れで `HttpHead` トレイト経由でしか呼べない状態だった
   - inherent method 追加により `use shiguredo_http11::HttpHead;` の import なしで `head.version()` / `head.headers()` が呼べるようになる (Request / Response 側と対称)

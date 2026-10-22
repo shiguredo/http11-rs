@@ -226,7 +226,7 @@ RFC 9112 Section 6.3 の明示的な優先順位 ("in order of precedence"):
 
 `## develop` セクションに以下のエントリを追加する:
 
-```
+```text
 - [CHANGE] `ResponseDecoder::set_expect_no_body` を撤去し、HEAD レスポンスの指定を `set_request_method("HEAD")` に統一する
   - `expect_no_body` フィールドと `request_method` フィールドの二重化を解消し、`request_method` 一本に集約する
   - `determine_body_kind` の判定順序を RFC 9112 Section 6.3 の優先順位に合わせる (CONNECT + 204 の挙動が Tunnel → None に変わる)
