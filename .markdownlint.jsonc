@@ -2,9 +2,11 @@
   "MD004": {
     "style": "dash",
   },
+  // 表は API 一覧や RFC 要件対応表のように本質的に横に長くなるため行長検査の対象外にする
   "MD013": {
     "line_length": 300,
     "code_blocks": false,
+    "tables": false,
   },
   "MD024": {
     "siblings_only": true,

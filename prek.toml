@@ -39,31 +39,33 @@ hooks = [
   { id = "check-useless-excludes", priority = 5, files = "prek\\.toml$" },
 ]
 
+# tombi: TOML のフォーマッタ・リンタ
+# フックは PyPI の wheel から導入されるため、tombi 本体を別途インストールする必要はない
+# rev は prek auto-update で更新する
+[[repos]]
+repo = "https://github.com/tombi-toml/tombi-pre-commit"
+rev = "v1.8.10"
+hooks = [
+  # Cargo.lock は cargo が独自に再生成する自動生成ファイルなので対象外にする
+  # ファイルを書き換えるのではなく、整形済みかどうかだけを検査する
+  # (pre-commit stage は静的チェックのみという方針に合わせる)
+  { id = "tombi-format", args = ["--check"], exclude = { glob = "**/Cargo.lock" }, priority = 5 },
+  { id = "tombi-lint", exclude = { glob = "**/Cargo.lock" }, priority = 6 },
+]
+
+# markdownlint-cli2: Markdown のリンタ
+# 設定はリポジトリルートの .markdownlint.jsonc を自動で読み込むため、ここでは指定しない
+# rev は prek auto-update で更新する
+[[repos]]
+repo = "https://github.com/DavidAnson/markdownlint-cli2"
+rev = "v0.24.0"
+hooks = [
+  { id = "markdownlint-cli2", priority = 7 },
+]
+
 [[repos]]
 repo = "local"
 hooks = [
-  {
-    id = "tombi-fmt",
-    name = "tombi fmt",
-    entry = "tombi format --check",
-    language = "system",
-    # Cargo.toml のみ (Cargo.lock は cargo が独自に再生成するため対象外)
-    files = "Cargo\\.toml$",
-    pass_filenames = true,
-    require_serial = true,
-    priority = 5,
-  },
-  {
-    id = "tombi-lint",
-    name = "tombi lint",
-    entry = "tombi lint",
-    language = "system",
-    # Cargo.toml のみ (Cargo.lock は cargo が独自に再生成するため対象外)
-    files = "Cargo\\.toml$",
-    pass_filenames = true,
-    require_serial = true,
-    priority = 6,
-  },
   {
     id = "cargo-fmt",
     name = "cargo fmt",
