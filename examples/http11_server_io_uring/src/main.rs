@@ -1021,7 +1021,8 @@ fn build_response(
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method().eq_ignore_ascii_case("HEAD");
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
+    let is_head = request.method() == "HEAD";
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)

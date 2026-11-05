@@ -7,6 +7,11 @@ pub struct DecoderLimits {
     pub max_headers_count: usize,
     /// 最大ヘッダー行長 (デフォルト: 8KB)
     pub max_header_line_size: usize,
+    /// 最大 start-line 長 (デフォルト: 8KB)
+    ///
+    /// request-line / status-line はヘッダー行ではないため、ヘッダー行長とは
+    /// 別の上限として扱う。バッファ上限だけでは長大な start-line を許してしまう。
+    pub max_start_line_size: usize,
     /// 最大ボディサイズ (デフォルト: 10MB)
     pub max_body_size: u64,
     /// 最大チャンクサイズ行長 (デフォルト: 64バイト)
@@ -23,6 +28,7 @@ impl Default for DecoderLimits {
             max_buffer_size: 64 * 1024, // 64KB
             max_headers_count: 100,
             max_header_line_size: 8 * 1024,  // 8KB
+            max_start_line_size: 8 * 1024,   // 8KB
             max_body_size: 10 * 1024 * 1024, // 10MB
             max_chunk_line_size: 64,         // 64 bytes
         }
@@ -42,6 +48,7 @@ impl DecoderLimits {
             max_buffer_size: usize::MAX,
             max_headers_count: usize::MAX,
             max_header_line_size: usize::MAX,
+            max_start_line_size: usize::MAX,
             max_body_size: u64::MAX,
             max_chunk_line_size: usize::MAX,
         }

@@ -66,8 +66,9 @@ impl Response {
     ///
     /// `status_code` は RFC 9110 Section 15 (100..=599) を要求する
     /// (将来 RFC が範囲を改訂する可能性あり)。
-    /// `reason_phrase` は RFC 9112 Section 4 の `1*( HTAB / SP / VCHAR / obs-text )` を要求する
-    /// (空不可、本 API は送信側専用ポリシー)。
+    /// `reason_phrase` は RFC 9112 Section 4 の `1*( HTAB / SP / VCHAR / obs-text )` を要求する。
+    /// ただし、reason-phrase absent (`HTTP/1.1 200 \r\n`) を再送信できるよう、
+    /// 空文字列も許容する。
     ///
     /// version は `"HTTP/1.1"` 固定のため、`is_valid_protocol_version` は呼び出さない
     /// (固定値が常に検証を通過するため)。
@@ -86,7 +87,7 @@ impl Response {
         if !is_valid_status_code(status_code) {
             return Err(EncodeError::InvalidStatusCode { code: status_code });
         }
-        if !is_valid_reason_phrase(&reason_phrase) {
+        if !reason_phrase.is_empty() && !is_valid_reason_phrase(&reason_phrase) {
             return Err(EncodeError::InvalidReasonPhrase {
                 phrase: reason_phrase,
             });
@@ -152,7 +153,7 @@ impl Response {
         if !is_valid_status_code(status_code) {
             return Err(EncodeError::InvalidStatusCode { code: status_code });
         }
-        if !is_valid_reason_phrase(&reason_phrase) {
+        if !reason_phrase.is_empty() && !is_valid_reason_phrase(&reason_phrase) {
             return Err(EncodeError::InvalidReasonPhrase {
                 phrase: reason_phrase,
             });
@@ -504,6 +505,11 @@ impl Response {
     /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.2:
     /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
     /// は本メソッドの責務外であり、呼び出し側で判定する。
+    ///
+    /// 注: Transfer-Encoding が存在する場合、メッセージ長の決定には
+    /// Content-Length ではなく Transfer-Encoding を優先する
+    /// (RFC 9112 Section 6.3)。フレーミングには `is_chunked()` や
+    /// デコーダーの `BodyKind` を使うこと。
     ///
     /// 詳細は委譲先 `HttpHead::content_length` を参照。
     pub fn content_length(&self) -> Result<Option<u64>, crate::Error> {

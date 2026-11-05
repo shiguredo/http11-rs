@@ -28,7 +28,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::validate::{
-    QuotedStringError, escape_quotes, is_token_char, is_valid_token, parse_quoted_string, trim_ows,
+    QuotedStringError, escape_quotes, is_token_char, is_valid_field_value, is_valid_token,
+    parse_quoted_string, trim_ows,
 };
 
 /// Content-Type パースエラー
@@ -121,19 +122,28 @@ impl ContentType {
     }
 
     /// 新しい ContentType を作成
-    pub fn new(media_type: &str, subtype: &str) -> Self {
-        ContentType {
+    pub fn new(media_type: &str, subtype: &str) -> Result<Self, ContentTypeError> {
+        if !is_valid_token(media_type) || !is_valid_token(subtype) {
+            return Err(ContentTypeError::InvalidMediaType);
+        }
+        Ok(ContentType {
             media_type: media_type.to_ascii_lowercase(),
             subtype: subtype.to_ascii_lowercase(),
             parameters: Vec::new(),
-        }
+        })
     }
 
     /// パラメータを追加
-    pub fn with_parameter(mut self, name: &str, value: &str) -> Self {
+    ///
+    /// パラメータ名は token、値は field-value として検証する。
+    /// 値に特殊文字が含まれる場合は `Display` が quoted-string として出力する。
+    pub fn with_parameter(mut self, name: &str, value: &str) -> Result<Self, ContentTypeError> {
+        if !is_valid_token(name) || !is_valid_field_value(value) {
+            return Err(ContentTypeError::InvalidParameter);
+        }
         self.parameters
             .push((name.to_ascii_lowercase(), value.to_string()));
-        self
+        Ok(self)
     }
 
     /// メディアタイプを取得 (例: "text")

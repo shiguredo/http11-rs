@@ -40,11 +40,10 @@ fn test_host_parse_errors() {
         Err(HostError::InvalidFormat)
     ));
 
-    // ポートが空
-    assert!(matches!(
-        Host::parse("example.com:"),
-        Err(HostError::InvalidPort)
-    ));
+    // ポートが空: RFC 3986 Section 3.2.2 の port = *DIGIT に従い有効
+    let host = Host::parse("example.com:").expect("空ポートは有効なはず (実装バグ)");
+    assert_eq!(host.host(), "example.com");
+    assert_eq!(host.port(), None);
 
     // ポートが数字でない
     assert!(matches!(
@@ -170,7 +169,6 @@ fn parse_ipv6() {
 #[test]
 fn parse_invalid() {
     assert!(Host::parse("").is_err());
-    assert!(Host::parse("example.com:").is_err());
     assert!(Host::parse("example.com:abc").is_err());
     assert!(Host::parse("exa mple.com").is_err());
 }
@@ -179,4 +177,17 @@ fn parse_invalid() {
 fn display() {
     let host = Host::parse("example.com:8080").expect("Host のパースは成功するはず (実装バグ)");
     assert_eq!(host.to_string(), "example.com:8080");
+}
+
+/// RFC 6874 の IPv6 zone ID を受理する
+#[test]
+fn test_host_ipv6_zone_id() {
+    let host = Host::parse("[fe80::1%25eth0]").expect("IPv6 zone ID は有効なはず (実装バグ)");
+    assert_eq!(host.host(), "[fe80::1%25eth0]");
+    assert_eq!(host.port(), None);
+
+    let host =
+        Host::parse("[fe80::1%25eth0]:8080").expect("IPv6 zone ID + port は有効なはず (実装バグ)");
+    assert_eq!(host.host(), "[fe80::1%25eth0]");
+    assert_eq!(host.port(), Some(8080));
 }

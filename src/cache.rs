@@ -141,24 +141,33 @@ impl CacheControl {
                 };
 
                 match name.as_str() {
-                    "max-age" => {
+                    // RFC 9111 Section 4.2.1: 同じ directive が複数ある場合は
+                    // 最初の出現を使うか、応答を stale として扱う。本実装は
+                    // 最初の出現を採用する (後続の値は無視する)。
+                    "max-age" if cc.max_age.is_none() => {
                         cc.max_age = Some(parse_seconds(value)?);
                     }
-                    "s-maxage" => {
+                    "max-age" => {}
+                    "s-maxage" if cc.s_maxage.is_none() => {
                         cc.s_maxage = Some(parse_seconds(value)?);
                     }
-                    "max-stale" => {
+                    "s-maxage" => {}
+                    "max-stale" if cc.max_stale.is_none() => {
                         cc.max_stale = Some(parse_seconds(value)?);
                     }
-                    "min-fresh" => {
+                    "max-stale" => {}
+                    "min-fresh" if cc.min_fresh.is_none() => {
                         cc.min_fresh = Some(parse_seconds(value)?);
                     }
-                    "stale-while-revalidate" => {
+                    "min-fresh" => {}
+                    "stale-while-revalidate" if cc.stale_while_revalidate.is_none() => {
                         cc.stale_while_revalidate = Some(parse_seconds(value)?);
                     }
-                    "stale-if-error" => {
+                    "stale-while-revalidate" => {}
+                    "stale-if-error" if cc.stale_if_error.is_none() => {
                         cc.stale_if_error = Some(parse_seconds(value)?);
                     }
+                    "stale-if-error" => {}
                     // RFC 9111 Section 5.2.2.4: no-cache の修飾形式
                     // no-cache="field-name" は特定のフィールドのみキャッシュを防ぐ
                     // 注: 修飾形式の特別な処理は広く実装されていないため、
@@ -182,8 +191,12 @@ impl CacheControl {
                     "public" => cc.public = true,
                     "private" => cc.private = true,
                     "immutable" => cc.immutable = true,
-                    "max-stale" => cc.max_stale = Some(u64::MAX), // 値なしは無制限
-                    _ => {}                                       // 未知のディレクティブは無視
+                    "max-stale" if cc.max_stale.is_none() => {
+                        // 値なしは無制限。最初の出現のみ採用する。
+                        cc.max_stale = Some(u64::MAX);
+                    }
+                    "max-stale" => {}
+                    _ => {} // 未知のディレクティブは無視
                 }
             }
         }

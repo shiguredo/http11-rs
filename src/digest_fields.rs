@@ -309,7 +309,14 @@ fn parse_dictionary<T>(
             return Err(DigestFieldsError::InvalidAlgorithm);
         }
         let value = value_parser(value)?;
-        entries.push((algorithm.to_ascii_lowercase(), value));
+        let algorithm = algorithm.to_ascii_lowercase();
+        // RFC 9651 Section 4.2.2: Dictionary の重複キーは最後のインスタンスのみ
+        // 有効で、それ以前のインスタンスは無視する。Vec 内の古いエントリを
+        // 除去して最後の値だけを保持する。
+        if let Some(pos) = entries.iter().position(|(key, _)| key == &algorithm) {
+            entries.remove(pos);
+        }
+        entries.push((algorithm, value));
     }
 
     if entries.is_empty() {

@@ -51,6 +51,8 @@ features = [
   "rt-multi-thread",
   # シグナルハンドリング (ctrl_c / SIGTERM)
   "signal",
+  # 同期プリミティブ (接続数制限の Semaphore)
+  "sync",
   # タイマー
   "time",
 ]

@@ -378,13 +378,19 @@ fn test_parse_empty_subtype() {
 
 #[test]
 fn test_display() {
-    let ct = ContentType::new("text", "html").with_parameter("charset", "utf-8");
+    let ct = ContentType::new("text", "html")
+        .expect("Content-Type の構築は成功するはず (実装バグ)")
+        .with_parameter("charset", "utf-8")
+        .expect("パラメータの構築は成功するはず (実装バグ)");
     assert_eq!(ct.to_string(), "text/html; charset=utf-8");
 }
 
 #[test]
 fn test_display_quoted() {
-    let ct = ContentType::new("text", "plain").with_parameter("name", "hello world");
+    let ct = ContentType::new("text", "plain")
+        .expect("Content-Type の構築は成功するはず (実装バグ)")
+        .with_parameter("name", "hello world")
+        .expect("パラメータの構築は成功するはず (実装バグ)");
     assert_eq!(ct.to_string(), "text/plain; name=\"hello world\"");
 }
 
@@ -462,4 +468,27 @@ fn test_quoted_special_chars() {
 #[test]
 fn test_empty_token_parameter_value() {
     assert!(ContentType::parse("text/plain; charset=").is_err());
+}
+
+/// ContentType::new / with_parameter は構築時に検証する
+#[test]
+fn test_content_type_builder_validation() {
+    assert!(matches!(
+        ContentType::new("bad type", "html"),
+        Err(ContentTypeError::InvalidMediaType)
+    ));
+    assert!(matches!(
+        ContentType::new("text", "bad/subtype"),
+        Err(ContentTypeError::InvalidMediaType)
+    ));
+
+    let result = ContentType::new("text", "plain")
+        .expect("Content-Type の構築は成功するはず (実装バグ)")
+        .with_parameter("bad name", "value");
+    assert!(matches!(result, Err(ContentTypeError::InvalidParameter)));
+
+    let result = ContentType::new("text", "plain")
+        .expect("Content-Type の構築は成功するはず (実装バグ)")
+        .with_parameter("name", "bad\rvalue");
+    assert!(matches!(result, Err(ContentTypeError::InvalidParameter)));
 }

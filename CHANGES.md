@@ -11,7 +11,15 @@
 
 ## develop
 
-- [CHANGE] 最小対応 Rust バージョン (MSRV) を 1.88 から 1.93 に引き上げる
+- [CHANGE] 最小対応 Rust バージョン (MSRV) を 1.88 から 1.95 に引き上げる
+  - @voluntas
+- [CHANGE] `ContentType::new` / `ContentType::with_parameter`、`Part::file`、`MultipartBuilder::file_field`、`SetCookie::with_domain` / `SetCookie::with_path` の戻り値を `Result` に変更する
+  - 構築時の入力検証を強化し、不正な media-type / パラメータ / Domain / Path を拒否する
+  - @voluntas
+- [CHANGE] `DecoderLimits` に `max_start_line_size` を追加し、`Error::StartLineTooLong` を追加する
+  - start-line の長さ上限をヘッダー行とは独立に設定できるようにする
+  - @voluntas
+- [CHANGE] 未使用だった `UriError::InvalidCharacter` を削除する
   - @voluntas
 - [ADD] QUERY メソッド (RFC 10008) と Accept-Query ヘッダー (RFC 10008 Section 3 / RFC 9651 Structured Fields) のサポートを追加する
   - `Method::QUERY` 定数を追加する (safe, idempotent)
@@ -19,6 +27,35 @@
   - Accept-Query は RFC 9651 Structured Fields の List としてパースする (Token / String のみ、Inner List 不可)
   - @voluntas
 - [ADD] RequestHead / ResponseHead に所有権を消費してフィールドを取り出す into_xxx() メソッドと into_parts() メソッドを追加する
+  - @voluntas
+- [UPDATE] examples の 1xx / 100-continue / タイムアウト / 展開後サイズ上限 / URL パース / trailer / Via / 接続数上限 / Accept-Encoding の扱いを改善する
+  - @voluntas
+- [UPDATE] `skills/shiguredo-http11/SKILL.md` のバージョンと MSRV を更新する
+  - @voluntas
+- [UPDATE] GitHub Actions の外部 action と prek の外部 hook をコミットハッシュで固定し、fuzz / io_uring example の clippy と cargo audit を CI に追加する
+  - @voluntas
+- [FIX] `ResponseDecoder` が 1xx の後に `request_method` をクリアし、HEAD / CONNECT の最終応答を誤判定する問題を修正する
+  - 1xx の直後はメソッドを保持し、最終応答の完了時のみクリアする
+  - @voluntas
+- [FIX] `encode_request` / `encode_response` が `Transfer-Encoding: chunked` を指定しても body を生のまま連結していた問題を修正する
+  - body の有無に関わらず chunked フレーミングと終端チャンクを生成する
+  - リクエストでは chunked 以外の Transfer-Encoding を拒否する
+  - @voluntas
+- [FIX] `Response::new` / `Response::with_version` が空の reason-phrase を拒否していた問題を修正する
+  - reason-phrase absent を再送信できるよう空文字列を許容する
+  - @voluntas
+- [FIX] Host ヘッダーの重複・不正値検証を HTTP/1.0 にも適用し、空ポートと IPv6 zone ID を受理する
+  - @voluntas
+- [FIX] `Uri::parse` の空ポート処理と、absolute-form の authority 検証を修正する
+  - `http://example.com:/` の host に余分な `:` を含めない
+  - 不正な port、複数コロン、入れ子の IPv6 ブラケットを拒否する
+  - @voluntas
+- [FIX] Cache-Control の重複 directive を最初の出現で採用し、Content-Digest の重複キーを最後のインスタンスで上書きする
+  - RFC 9111 Section 4.2.1 / RFC 9651 Section 4.2.2 に準拠する
+  - @voluntas
+- [FIX] `HttpDate` の `Eq` / `Ord` の比較対象を統一し、2 桁年解決の underflow を修正する
+  - @voluntas
+- [FIX] chunked / header の行探索を前回位置から再開し、断片入力時の O(N²) 走査を解消する
   - @voluntas
 
 ### misc
@@ -48,8 +85,8 @@
   - nginx.conf は起動時に読まれるため bind mount で投入する (macOS の with_copy_to は start 後に投入されるため)
   - 大容量レスポンスの途中切断を避けるため published port ではなくコンテナ IP 直結で接続する
   - @voluntas
-- [UPDATE] ツールチェーンを `rust-toolchain.toml` で MSRV の 1.93 に固定する
-  - examples の Cargo.toml を TOML 1.0 準拠に書き換え、Cargo 1.93 で解析できるようにする
+- [UPDATE] ツールチェーンを `rust-toolchain.toml` で MSRV の 1.95 に固定する
+  - examples の Cargo.toml を TOML 1.0 準拠に書き換え、Cargo 1.95 で解析できるようにする
   - CI で `rustup show` により MSRV のツールチェーンを導入し、workspace 外の fuzz / io_uring example の fmt と fuzz の check を追加する
   - @voluntas
 - [FIX] canary.py の `cargo update shiguredo_http11` が Cargo.lock 上の複数バージョンで曖昧になる問題を修正する
@@ -213,13 +250,13 @@
 - [FIX] `examples/http11_server` / `examples/http11_server_io_uring` の Accept-Encoding qvalue デフォルト値を RFC 9110 Section 12.4.2 に準拠させる
   - `unwrap_or(1.0)` を `unwrap_or(0.0)` に修正する
   - @voluntas
-- [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (CLAUDE.md:97 準拠)
+- [UPDATE] 長大テストファイルをディレクトリモジュールに分割する (AGENTS.md 準拠)
   - `tests/test_decoder.rs` (1907 行) → `tests/test_decoder/` (main / head / body / streaming / direct_buffer / decode_body)
   - `pbt/tests/prop_decoder/response.rs` (1317 行) → `pbt/tests/prop_decoder/response/` (status_line / body_decoding / limits / streaming)
   - `tests/test_decode_body.rs` を `tests/test_decoder/decode_body.rs` として統合し元ファイルを削除する
   - HTTP/1.0 + Transfer-Encoding の重複テスト 1 件を統合・除去する
   - @voluntas
-- [UPDATE] `src/<module>.rs` 内のインラインテストを `tests/test_<module>.rs` に外部化する (CLAUDE.md:93 準拠)
+- [UPDATE] `src/<module>.rs` 内のインラインテストを `tests/test_<module>.rs` に外部化する (AGENTS.md 準拠)
   - 対象: compression / content_language / etag / trailer / upgrade / vary
   - compression は `CompressionStatus` の variant 構築テストを `NoCompression::compress` / `finish` 経由のヘルパー関数 (`make_continue` / `make_output_full` / `make_complete`) に書き換えて完全に外部化する
   - `test_compression_error_display` は `BufferTooSmall` を含む 5 variant 全ての Display を検証する
@@ -513,7 +550,7 @@
   - `find_bytes` を「first-byte skip + needle 全体比較」に書き換え、定数倍を削減する (最悪計算量 O(N·M) は不変だが、boundary が `\r` で始まるケースで実用的に O(N) に近づく)
   - `MultipartParser` に `boundary_scan_offset: usize` フィールドを追加し、Initial / InPart の境界検索が `Incomplete` を返した位置から次回再開できるようにする。haystack 末尾の `needle.len() - 1` overlap のみを再走査範囲とすることで、Sans I/O 断片入力時の再走査コストを O(buffer_size) に抑える
   - `max_buffer_size` 範囲内で攻撃者が 1 バイトずつ feed して CPU を浪費させる経路 (DoS リスク) を緩和する
-  - `memchr` クレートは導入しない (CLAUDE.md「依存は最小限」)
+  - `memchr` クレートは導入しない (AGENTS.md「依存は最小限」)
   - @voluntas
 - [FIX] `MultipartParser` の Initial 状態で終端境界 `--<boundary>--` がバッファ末尾ピッタリで止まったケースを正しく検出するよう off-by-one を修正する
   - `self.buffer.len() > after_delim + 2` を `>=` に変更し、`self.buffer[after_delim..after_delim + 2]` を安全に参照できる等値ケース (`after_delim + 2 == buffer.len()`) も拾うようにする

@@ -24,6 +24,12 @@ use core::fmt;
 
 use crate::validate::{is_token_char, is_valid_token};
 
+/// Accept-Query の 1 アイテムあたりのパラメータ数上限
+///
+/// ヘッダー行長の上限だけでは、短いパラメータを大量に並べた場合の
+/// メモリ消費を抑えられないため、明示的な上限を設ける。
+const MAX_PARAMETERS: usize = 32;
+
 /// Accept-Query パースエラー
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AcceptQueryError {
@@ -410,6 +416,9 @@ fn parse_parameters(
         if let Some(existing) = parameters.iter_mut().find(|(k, _)| k == &param_key) {
             existing.1 = value;
         } else {
+            if parameters.len() >= MAX_PARAMETERS {
+                return Err(AcceptQueryError::InvalidParameter);
+            }
             parameters.push((param_key, value));
         }
     }

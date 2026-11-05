@@ -399,9 +399,14 @@ impl Request {
     /// RFC 9110 Section 17.5 (Attacks via Protocol Element Length) は
     /// 算術オーバーフロー・DoS の一般的脅威を論じている。
     ///
-    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.1:
+    /// Transfer-Encoding と Content-Length の排他関係 (RFC 9112 Section 6.2:
     /// MUST NOT send Content-Length in any message that contains Transfer-Encoding)
     /// は本メソッドの責務外であり、呼び出し側で判定する。
+    ///
+    /// 注: Transfer-Encoding が存在する場合、メッセージ長の決定には
+    /// Content-Length ではなく Transfer-Encoding を優先する
+    /// (RFC 9112 Section 6.3)。フレーミングには `is_chunked()` や
+    /// デコーダーの `BodyKind` を使うこと。
     ///
     /// 詳細は委譲先 `HttpHead::content_length` を参照。
     pub fn content_length(&self) -> Result<Option<u64>, crate::Error> {

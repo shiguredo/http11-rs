@@ -302,13 +302,18 @@ impl SetCookie {
                             set_cookie.domain = Some(d.to_ascii_lowercase());
                         }
                     }
-                    "path" if !attr_value.is_empty() && attr_value.starts_with('/') => {
+                    "path" if is_valid_path_value(attr_value) => {
                         // RFC 6265 Section 5.2.4: 空の attribute-value や
-                        // / 始まりでない値は default-path を使うべき (None を維持する)
+                        // / 始まりでない値は default-path を使うべき (None を維持する)。
+                        // path-value の文字集合も検証し、Display で再出力しても
+                        // 不正な制御文字が混入しないようにする。
                         set_cookie.path = Some(attr_value.to_string());
                     }
                     "samesite" => {
-                        set_cookie.same_site = Some(SameSite::from_str(attr_value)?);
+                        // RFC 6265bis Section 5.6.7: None / Strict / Lax に一致しない
+                        // 値は enforcement を Default のままにする。SetCookie 全体を
+                        // エラーにせず、属性を無視する。
+                        set_cookie.same_site = SameSite::from_str(attr_value).ok();
                     }
                     _ => {
                         // 未知の属性は無視 (RFC 6265 の推奨)
@@ -403,21 +408,38 @@ impl SetCookie {
     }
 
     /// Max-Age を設定
+    ///
+    /// RFC 6265 Section 5.2.2: 負の Max-Age は 0 として扱う。
     pub fn with_max_age(mut self, max_age: i64) -> Self {
-        self.max_age = Some(max_age);
+        self.max_age = Some(if max_age < 0 { 0 } else { max_age });
         self
     }
 
     /// Domain を設定
-    pub fn with_domain(mut self, domain: &str) -> Self {
-        self.domain = Some(domain.to_string());
-        self
+    ///
+    /// RFC 6265 Section 5.2.3 に合わせて先頭の "." を 1 つだけ除去し、
+    /// 小文字化した LDH 形式で保存する。空文字列や不正な文字は
+    /// `CookieError::InvalidAttribute` を返す。
+    pub fn with_domain(mut self, domain: &str) -> Result<Self, CookieError> {
+        let d = domain.strip_prefix('.').unwrap_or(domain);
+        if d.is_empty() || d.starts_with('.') || !is_valid_domain_value(d) {
+            return Err(CookieError::InvalidAttribute);
+        }
+        self.domain = Some(d.to_ascii_lowercase());
+        Ok(self)
     }
 
     /// Path を設定
-    pub fn with_path(mut self, path: &str) -> Self {
+    ///
+    /// RFC 6265 Section 5.2.4 の path-value を要求する。
+    /// 空文字列、"/" 始まりでない値、制御文字を含む値は
+    /// `CookieError::InvalidAttribute` を返す。
+    pub fn with_path(mut self, path: &str) -> Result<Self, CookieError> {
+        if !is_valid_path_value(path) {
+            return Err(CookieError::InvalidAttribute);
+        }
         self.path = Some(path.to_string());
-        self
+        Ok(self)
     }
 
     /// Secure を設定
@@ -515,6 +537,18 @@ fn is_valid_cookie_name(s: &str) -> bool {
 /// RFC 6265 Section 4.1.1
 fn is_valid_cookie_value(s: &str) -> bool {
     s.bytes().all(is_cookie_octet)
+}
+
+/// RFC 6265 Section 5.2.4 の path-value かどうか
+///
+/// path-value = *av-octet
+/// av-octet = %x20-3A / %x3C-7E
+/// つまり、表示可能な US-ASCII のうち ";" を除く文字で構成される。
+fn is_valid_path_value(s: &str) -> bool {
+    !s.is_empty()
+        && s.starts_with('/')
+        && s.bytes()
+            .all(|b| (0x20..=0x3A).contains(&b) || (0x3C..=0x7E).contains(&b))
 }
 
 /// 有効な domain-value かどうか

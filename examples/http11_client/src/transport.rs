@@ -13,9 +13,9 @@
 //! 側 (`tests/nginx_streaming.rs::peek_body_decompressed_streams_gzip`) で示す。
 
 use std::io::{Read, Write};
-use std::net::TcpStream;
+use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, ClientConnection, StreamOwned};
@@ -33,6 +33,26 @@ const READ_CHUNK: usize = 8192;
 /// 8 KiB に固定して大きな body も小さな出力バッファでストリーミング展開できることを
 /// サンプルとして示す。これより大きい展開結果は OutputFull で複数回に分けて受ける。
 const DECOMPRESS_OUTPUT_CAP: usize = 8192;
+/// 接続・読み書きのタイムアウト
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
+/// 展開後のボディサイズ上限
+///
+/// `ResponseDecoder` の `max_body_size` は圧縮後のバイト数に適用されるため、
+/// 展開後のサイズは別途制限する。圧縮爆弾によるメモリ枯渇を防ぐ。
+const MAX_DECOMPRESSED_BODY: usize = 64 * 1024 * 1024;
+
+/// TCP 接続を作成し、読み書きタイムアウトを設定する。
+fn connect_tcp(
+    host: &str,
+    port: u16,
+) -> Result<TcpStream, Box<dyn std::error::Error + Send + Sync>> {
+    let mut addrs = (host, port).to_socket_addrs()?;
+    let addr = addrs.next().ok_or("no address resolved for host")?;
+    let stream = TcpStream::connect_timeout(&addr, IO_TIMEOUT)?;
+    stream.set_read_timeout(Some(IO_TIMEOUT))?;
+    stream.set_write_timeout(Some(IO_TIMEOUT))?;
+    Ok(stream)
+}
 
 /// 平文 HTTP で 1 リクエスト送信して 1 レスポンスを受信する (Keep-Alive 不使用)
 ///
@@ -46,7 +66,7 @@ pub fn http_request(
     request_bytes: &[u8],
 ) -> Result<Response, Box<dyn std::error::Error + Send + Sync>> {
     let connect_at = Instant::now();
-    let mut stream = TcpStream::connect((host, port))?;
+    let mut stream = connect_tcp(host, port)?;
     stream.write_all(request_bytes)?;
     let request_sent_at = Instant::now();
 
@@ -108,7 +128,7 @@ pub fn https_request(
     let config = ClientConfig::with_platform_verifier()?;
     let server_name = ServerName::try_from(host.to_string())?;
     let conn = ClientConnection::new(Arc::new(config), server_name)?;
-    let sock = TcpStream::connect((host, port))?;
+    let sock = connect_tcp(host, port)?;
     let mut tls = StreamOwned::new(conn, sock);
 
     tls.write_all(request_bytes)?;
@@ -133,9 +153,12 @@ pub fn https_request(
                 session.decoder.advance_buf(n);
                 n
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 session.decoder.advance_buf(0);
-                continue;
+                return Err("TLS read timed out".into());
             }
             Err(e) => {
                 session.decoder.advance_buf(0);
@@ -205,31 +228,47 @@ impl ResponseSession {
         if self.head.is_some() {
             return Ok(true);
         }
-        let Some((head, body_kind)) = self.decoder.decode_headers()? else {
-            return Ok(false);
-        };
+        loop {
+            let Some((head, body_kind)) = self.decoder.decode_headers()? else {
+                return Ok(false);
+            };
 
-        // RFC 9110 Section 8.4 では Content-Encoding に複数値 (chained encoding,
-        // 例: `gzip, br`) や複数ヘッダーが許される。本サンプルでは
-        // 1) 最初の Content-Encoding ヘッダーのみを参照する
-        // 2) chained encoding の値 (カンマ区切り) は AnyDecompressor::for_encoding
-        //    で「未知のエンコーディング」として弾く
-        // という単純化を行っている。実用上ほぼ単一 encoding なので問題は少ないが、
-        // chained encoding に対応する場合は値をカンマで分割し各 encoding を順に
-        // 適用するパイプラインを組む必要がある (本サンプルのスコープ外)。
-        let encoding = head
-            .headers()
-            .iter()
-            .find(|(name, _)| name == "Content-Encoding")
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("");
-        self.decompressor = AnyDecompressor::for_encoding(encoding)?;
-        self.encoding_label = encoding.to_string();
+            // 1xx は最終応答ではない。100 Continue はリクエスト送信済みなので
+            // 無視し、103 Early Hints も最終応答まで読み飛ばす。
+            // 101 Switching Protocols は HTTP の最終応答として扱う
+            // (本サンプルは Upgrade 後のトンネルデータを読まない)。
+            if (100..200).contains(&head.status_code()) {
+                if head.status_code() == 101 {
+                    self.headers_at = Some(Instant::now());
+                    self.head = Some(head);
+                    self.body_kind = Some(body_kind);
+                    return Ok(true);
+                }
+                continue;
+            }
 
-        self.headers_at = Some(Instant::now());
-        self.head = Some(head);
-        self.body_kind = Some(body_kind);
-        Ok(true)
+            // RFC 9110 Section 8.4 では Content-Encoding に複数値 (chained encoding,
+            // 例: `gzip, br`) や複数ヘッダーが許される。本サンプルでは
+            // 1) 最初の Content-Encoding ヘッダーのみを参照する
+            // 2) chained encoding の値 (カンマ区切り) は AnyDecompressor::for_encoding
+            //    で「未知のエンコーディング」として弾く
+            // という単純化を行っている。実用上ほぼ単一 encoding なので問題は少ないが、
+            // chained encoding に対応する場合は値をカンマで分割し各 encoding を順に
+            // 適用するパイプラインを組む必要がある (本サンプルのスコープ外)。
+            let encoding = head
+                .headers()
+                .iter()
+                .find(|(name, _)| name == "Content-Encoding")
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("");
+            self.decompressor = AnyDecompressor::for_encoding(encoding)?;
+            self.encoding_label = encoding.to_string();
+
+            self.headers_at = Some(Instant::now());
+            self.head = Some(head);
+            self.body_kind = Some(body_kind);
+            return Ok(true);
+        }
     }
 
     /// `BodyKind::None` / `BodyKind::Tunnel` 等でボディ受信不要のケースを判定
@@ -327,6 +366,26 @@ impl ResponseSession {
     }
 }
 
+/// 展開後のボディを上限付きで追加する。
+fn append_decompressed(
+    body: &mut Vec<u8>,
+    data: &[u8],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let new_len = body
+        .len()
+        .checked_add(data.len())
+        .ok_or("decompressed body size overflow")?;
+    if new_len > MAX_DECOMPRESSED_BODY {
+        return Err(format!(
+            "decompressed body too large: {} > {}",
+            new_len, MAX_DECOMPRESSED_BODY
+        )
+        .into());
+    }
+    body.extend_from_slice(data);
+    Ok(())
+}
+
 /// 1 回 peek_body() で得た raw bytes を展開して `body` に書き込み、
 /// 消費したバイト数 (raw 側) を返す
 ///
@@ -349,7 +408,7 @@ fn decompress_chunk(
         let produced = status.produced();
         let consumed = status.consumed();
         if produced > 0 {
-            body.extend_from_slice(&output_buf[..produced]);
+            append_decompressed(body, &output_buf[..produced])?;
         }
         remaining = &remaining[consumed..];
         total_consumed += consumed;
@@ -386,7 +445,7 @@ fn drain_decompressor(
         let status = decompressor.decompress(&[], output_buf)?;
         let produced = status.produced();
         if produced > 0 {
-            body.extend_from_slice(&output_buf[..produced]);
+            append_decompressed(body, &output_buf[..produced])?;
         }
 
         if matches!(status, CompressionStatus::Complete { .. }) {

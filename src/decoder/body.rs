@@ -8,6 +8,7 @@
 
 use crate::error::Error;
 use crate::header_name::HeaderName;
+use crate::host::Host;
 use crate::limits::DecoderLimits;
 use crate::request_target::{RequestTargetForm, detect_scheme};
 use crate::trailer::is_prohibited_trailer_field;
@@ -74,6 +75,11 @@ pub(crate) struct BodyDecoder {
     body_consumed: u64,
     /// トレーラー数
     trailer_count: usize,
+    /// 行探索の再開位置 (絶対オフセット)
+    ///
+    /// 断片 feed ごとにバッファ先頭から CRLF を再走査すると O(N²) になる。
+    /// 前回走査した末尾位置を保持し、次回はその位置から再開する。
+    line_scan_offset: usize,
     /// `Trailer:` ヘッダーで sender が事前申告した trailer フィールド名 (ASCII 小文字化済み)
     ///
     /// RFC 9110 Section 6.5.1 のホワイトリスト方式で利用する。本リストに含まれない
@@ -95,6 +101,7 @@ impl BodyDecoder {
             trailers: Vec::new(),
             body_consumed: 0,
             trailer_count: 0,
+            line_scan_offset: 0,
             declared_trailers: Vec::new(),
         }
     }
@@ -104,6 +111,7 @@ impl BodyDecoder {
         self.trailers.clear();
         self.body_consumed = 0;
         self.trailer_count = 0;
+        self.line_scan_offset = 0;
         self.declared_trailers.clear();
     }
 
@@ -369,7 +377,7 @@ impl BodyDecoder {
             return Ok(());
         }
 
-        if let Some(pos) = find_line(buf) {
+        if let Some(pos) = find_line_from(buf, &mut self.line_scan_offset) {
             // チャンクサイズ行の長さ制限チェック
             if pos > limits.max_chunk_line_size {
                 return Err(Error::ChunkLineTooLong {
@@ -443,6 +451,7 @@ impl BodyDecoder {
             }
 
             buf.drain(..pos + 2);
+            self.line_scan_offset = 0;
 
             if chunk_size == 0 {
                 *phase = DecodePhase::ChunkedTrailer;
@@ -482,9 +491,10 @@ impl BodyDecoder {
     ) -> Result<bool, Error> {
         let mut advanced = false;
         while matches!(phase, DecodePhase::ChunkedTrailer) {
-            if let Some(pos) = find_line(buf) {
+            if let Some(pos) = find_line_from(buf, &mut self.line_scan_offset) {
                 if pos == 0 {
                     buf.drain(..2);
+                    self.line_scan_offset = 0;
                     *phase = DecodePhase::Complete;
                     return Ok(true);
                 } else {
@@ -507,6 +517,7 @@ impl BodyDecoder {
                     let line = String::from_utf8(buf[..pos].to_vec())
                         .map_err(|e| Error::InvalidData(alloc::format!("invalid UTF-8: {e}")))?;
                     buf.drain(..pos + 2);
+                    self.line_scan_offset = 0;
 
                     // 不正なトレーラー行はエラーにする
                     let (name, value) = parse_header_line(&line)?;
@@ -729,8 +740,28 @@ fn is_qdtext(b: u8) -> bool {
 }
 
 /// CRLF で終わる行を探す
-pub(crate) fn find_line(buf: &[u8]) -> Option<usize> {
-    buf.windows(2).position(|w| w == b"\r\n")
+/// CRLF を前回の走査位置から探す。
+///
+/// `offset` は次回の走査開始位置 (絶対オフセット) を保持する。
+/// 見つかった場合は `offset` を 0 に戻す (呼び出し側が先頭行を drain するため)。
+/// 見つからなかった場合は、次回の部分一致に備えてバッファ末尾の 1 バイトを
+/// 含む位置まで進める。
+pub(crate) fn find_line_from(buf: &[u8], offset: &mut usize) -> Option<usize> {
+    let start = (*offset).min(buf.len());
+    if start >= buf.len() {
+        *offset = buf.len().saturating_sub(1);
+        return None;
+    }
+    let found = buf[start..]
+        .windows(2)
+        .position(|w| w == b"\r\n")
+        .map(|p| start + p);
+    if found.is_some() {
+        *offset = 0;
+    } else {
+        *offset = buf.len().saturating_sub(1);
+    }
+    found
 }
 
 /// ヘッダー行をパース
@@ -892,6 +923,13 @@ fn validate_absolute_form(target: &str) -> Result<RequestTargetForm, Error> {
                 "empty host identifier in http/https URI (RFC 9110 Section 4.2)".to_string(),
             ));
         }
+
+        // RFC 3986 Section 3.2.2 の authority 構文を検証する。
+        // 文字種検証だけでは port の数字性、複数コロン、入れ子の角括弧を
+        // 検出できないため、Host::parse で host:port を厳格に検証する。
+        // userinfo は上で拒否済みなので、authority は host:port のみ。
+        Host::parse(authority)
+            .map_err(|_| Error::InvalidData("invalid authority in http/https URI".to_string()))?;
     }
 
     Ok(RequestTargetForm::Absolute)

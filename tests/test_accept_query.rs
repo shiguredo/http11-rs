@@ -574,3 +574,13 @@ fn test_error_leading_htab() {
         Err(AcceptQueryError::InvalidFormat),
     );
 }
+
+/// パラメータ数上限を超えるとエラー
+#[test]
+fn test_accept_query_parameter_limit() {
+    let mut input = String::from("application/sql");
+    for i in 0..=32 {
+        input.push_str(&format!(";p{i}=v"));
+    }
+    assert!(AcceptQuery::parse(&input).is_err());
+}

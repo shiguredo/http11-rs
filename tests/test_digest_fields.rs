@@ -238,3 +238,19 @@ fn display() {
         .expect("Digest フィールドのパースは成功するはず (実装バグ)");
     assert_eq!(digest.to_string(), "sha-256=:YWJj:");
 }
+
+/// RFC 9651 Section 4.2.2: Dictionary の重複キーは最後のインスタンスが勝つ
+#[test]
+fn test_content_digest_duplicate_key_last_wins() {
+    let digest = ContentDigest::parse("sha-256=:YWJj:, sha-256=:Zm9v:")
+        .expect("Digest フィールドのパースは成功するはず (実装バグ)");
+    assert_eq!(digest.items().len(), 1);
+    assert_eq!(
+        digest
+            .get("sha-256")
+            .expect("最後の値が取得できるはず (実装バグ)")
+            .bytes(),
+        b"foo"
+    );
+    assert_eq!(digest.to_string(), "sha-256=:Zm9v:");
+}

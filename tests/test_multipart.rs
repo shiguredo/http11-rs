@@ -1,6 +1,6 @@
 //! multipart のユニットテスト
 
-use shiguredo_http11::multipart::{MultipartBuilder, MultipartError, MultipartParser};
+use shiguredo_http11::multipart::{MultipartBuilder, MultipartError, MultipartParser, Part};
 
 // ========================================
 // MultipartError のテスト
@@ -795,4 +795,18 @@ fn test_multipart_builder_with_boundary_invalid_rejected() {
 #[test]
 fn test_multipart_builder_with_boundary_valid_accepted() {
     assert!(MultipartBuilder::with_boundary("valid-boundary").is_ok());
+}
+
+/// 不正な Content-Type は Part::file / file_field で拒否する
+#[test]
+fn test_part_file_invalid_content_type() {
+    assert!(matches!(
+        Part::file("upload", "file.txt", "not-a-media-type"),
+        Err(MultipartError::InvalidContentType)
+    ));
+
+    let result = MultipartBuilder::with_boundary("boundary")
+        .expect("boundary の検証は成功するはず (実装バグ)")
+        .file_field("upload", "file.txt", "not-a-media-type", b"data");
+    assert!(matches!(result, Err(MultipartError::InvalidContentType)));
 }

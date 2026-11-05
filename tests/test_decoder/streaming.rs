@@ -758,3 +758,89 @@ fn test_connect_request_reset_clears_tunnel_mode() {
     assert_eq!(head.method(), "GET");
     assert_eq!(body_kind, BodyKind::None);
 }
+
+/// 1xx の後も request_method を保持し、HEAD の最終応答をボディなしと判定する
+#[test]
+fn test_response_decoder_preserves_request_method_after_1xx_head() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("HEAD");
+    decoder
+        .feed(
+            b"HTTP/1.1 100 Continue\r\n\r\n\
+              HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+        )
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.status_code(), 100);
+    assert_eq!(body_kind, BodyKind::None);
+
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.status_code(), 200);
+    assert_eq!(
+        body_kind,
+        BodyKind::None,
+        "1xx の後も HEAD 判定が維持されるはず"
+    );
+}
+
+/// 1xx の後も request_method を保持し、CONNECT の最終応答をトンネルと判定する
+#[test]
+fn test_response_decoder_preserves_request_method_after_1xx_connect() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("CONNECT");
+    decoder
+        .feed(b"HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\n\r\ntunnel")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.status_code(), 100);
+    assert_eq!(body_kind, BodyKind::None);
+
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.status_code(), 200);
+    assert_eq!(body_kind, BodyKind::Tunnel);
+    assert!(decoder.is_tunnel());
+}
+
+/// decode() 一括 API でも 1xx の後に request_method を保持する
+#[test]
+fn test_response_decode_preserves_request_method_after_1xx() {
+    let mut decoder = ResponseDecoder::new();
+    decoder.set_request_method("HEAD");
+    decoder
+        .feed(
+            b"HTTP/1.1 100 Continue\r\n\r\n\
+              HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello",
+        )
+        .expect("ストリーミングのデコードは成功するはず (実装バグ)");
+
+    let interim = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(interim.status_code(), 100);
+
+    let final_response = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(final_response.status_code(), 200);
+    assert_eq!(
+        final_response.body_bytes(),
+        None,
+        "HEAD の最終応答はボディなしとして扱うはず"
+    );
+}

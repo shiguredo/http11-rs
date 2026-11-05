@@ -3,8 +3,9 @@
 //! PBT でカバーできないエラーパス・境界値・エッジケースのみ記載する。
 
 use shiguredo_http11::{
-    EncodeError, HeaderName, Method, Request, Response, StatusCode, encode_chunk, encode_chunks,
-    encode_request, encode_request_headers, encode_response, encode_response_headers,
+    EncodeError, HeaderName, Method, Request, RequestDecoder, Response, ResponseDecoder,
+    StatusCode, encode_chunk, encode_chunks, encode_request, encode_request_headers,
+    encode_response, encode_response_headers,
 };
 
 // ========================================
@@ -1398,4 +1399,250 @@ fn test_encode_response_headers_status_code_decimal_boundaries() {
             "code={code}: encoded does not start with {expected_status_line:?}",
         );
     }
+}
+
+// ========================================
+// Transfer-Encoding のフレーミング
+// ========================================
+
+/// TE: chunked + body ありのリクエストが chunked 形式でエンコードされ、
+/// デコーダーでラウンドトリップできる
+#[test]
+fn test_encode_request_transfer_encoding_chunked_with_body() {
+    let req = Request::new(Method::POST, "/")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "example.com")
+        .expect("Host の設定は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)")
+        .body(b"hello".to_vec());
+
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.ends_with(b"5\r\nhello\r\n0\r\n\r\n"),
+        "chunked の終端チャンクまで含むはず: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(&encoded)
+        .expect("デコードは成功するはず (実装バグ)");
+    let decoded = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(decoded.body_bytes(), Some(&b"hello"[..]));
+}
+
+/// TE: chunked + body なしのリクエストでも終端チャンクを送る
+#[test]
+fn test_encode_request_transfer_encoding_chunked_without_body() {
+    let req = Request::new(Method::POST, "/")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "example.com")
+        .expect("Host の設定は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)");
+
+    let encoded = encode_request(&req).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.ends_with(b"0\r\n\r\n"),
+        "body なしでも終端チャンクが必要: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(&encoded)
+        .expect("デコードは成功するはず (実装バグ)");
+    let decoded = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(decoded.body_bytes(), Some(&b""[..]));
+}
+
+/// TE: chunked のレスポンスが chunked 形式でエンコードされ、
+/// デコーダーでラウンドトリップできる
+#[test]
+fn test_encode_response_transfer_encoding_chunked_with_body() {
+    let res = Response::new(200, "OK")
+        .expect("レスポンスの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)")
+        .body(b"hello".to_vec());
+
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.ends_with(b"5\r\nhello\r\n0\r\n\r\n"),
+        "chunked の終端チャンクまで含むはず: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(&encoded)
+        .expect("デコードは成功するはず (実装バグ)");
+    let decoded = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(decoded.body_bytes(), Some(&b"hello"[..]));
+}
+
+/// TE: chunked + body なしのレスポンスでも終端チャンクを送る
+#[test]
+fn test_encode_response_transfer_encoding_chunked_without_body() {
+    let res = Response::new(200, "OK")
+        .expect("レスポンスの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "chunked")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)");
+
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.ends_with(b"0\r\n\r\n"),
+        "body なしでも終端チャンクが必要: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(&encoded)
+        .expect("デコードは成功するはず (実装バグ)");
+    let decoded = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(decoded.body_bytes(), Some(&b""[..]));
+}
+
+/// リクエストで chunked 以外の Transfer-Encoding は拒否する
+#[test]
+fn test_encode_request_transfer_encoding_non_chunked_rejected() {
+    let req = Request::new(Method::POST, "/")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "example.com")
+        .expect("Host の設定は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "gzip")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)");
+
+    let result = encode_request(&req);
+    assert!(
+        matches!(result, Err(EncodeError::InvalidHeaderValue { .. })),
+        "chunked 以外の TE は拒否するはず: {result:?}"
+    );
+}
+
+/// 空の reason-phrase は status-line の SP を維持してエンコードされる
+#[test]
+fn test_encode_response_empty_reason_phrase() {
+    let res = Response::new(200, "").expect("空 reason-phrase は許容されるはず (実装バグ)");
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.starts_with(b"HTTP/1.1 200 \r\n"),
+        "reason-phrase absent でも status-code の後の SP が必要: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+}
+
+// ========================================
+// Host ヘッダーのバージョン非依存検証
+// ========================================
+
+/// HTTP/1.0 でも重複 Host はエンコード時に拒否する
+#[test]
+fn test_encode_http10_duplicate_host_error() {
+    let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "a.example")
+        .expect("Host の設定は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "b.example")
+        .expect("Host の設定は成功するはず (実装バグ)");
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::DuplicateHostHeader)
+    ));
+}
+
+/// HTTP/1.0 でも不正な Host はエンコード時に拒否する
+#[test]
+fn test_encode_http10_invalid_host_error() {
+    let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "a:b:c")
+        .expect("Host の設定は成功するはず (実装バグ)");
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::InvalidHostHeader { .. })
+    ));
+}
+
+/// HTTP/1.0 では Host 欠落を許可する
+#[test]
+fn test_encode_http10_missing_host_ok() {
+    let req = Request::with_version(Method::GET, "/", "HTTP/1.0")
+        .expect("リクエストの構築は成功するはず (実装バグ)");
+    assert!(encode_request(&req).is_ok());
+}
+
+/// chunked 以外の TE は close-delimited として生の body を送る
+#[test]
+fn test_encode_response_transfer_encoding_non_chunked_raw_body() {
+    let res = Response::new(200, "OK")
+        .expect("レスポンスの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Transfer-Encoding"), "gzip")
+        .expect("Transfer-Encoding の設定は成功するはず (実装バグ)")
+        .body(b"hello".to_vec());
+
+    let encoded = encode_response(&res).expect("エンコードは成功するはず (実装バグ)");
+    assert!(
+        encoded.ends_with(b"\r\n\r\nhello"),
+        "chunked 以外は生の body を連結するはず: {:?}",
+        core::str::from_utf8(&encoded)
+    );
+
+    let mut decoder = ResponseDecoder::new();
+    decoder
+        .feed(&encoded)
+        .expect("デコードは成功するはず (実装バグ)");
+    // close-delimited は EOF 通知後に完了する
+    assert!(
+        decoder
+            .decode()
+            .expect("デコードは成功するはず (実装バグ)")
+            .is_none()
+    );
+    decoder.mark_eof();
+    let decoded = decoder
+        .decode()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("デコードは成功するはず (実装バグ)");
+    assert_eq!(decoded.body_bytes(), Some(&b"hello"[..]));
+}
+
+/// absolute-form の path / query に不正な文字があるとエンコード時に拒否する
+#[test]
+fn test_encode_request_absolute_form_invalid_path_bracket() {
+    let req = Request::new(Method::GET, "http://example.com/[x]")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "example.com")
+        .expect("Host の設定は成功するはず (実装バグ)");
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::InvalidRequestTarget { .. })
+    ));
+}
+
+/// absolute-form の authority に不正な port があるとエンコード時に拒否する
+#[test]
+fn test_encode_request_absolute_form_invalid_port() {
+    let req = Request::new(Method::GET, "http://example.com:abc/")
+        .expect("リクエストの構築は成功するはず (実装バグ)")
+        .header(HeaderName::from_static(b"Host"), "example.com")
+        .expect("Host の設定は成功するはず (実装バグ)");
+    assert!(matches!(
+        encode_request(&req),
+        Err(EncodeError::InvalidRequestTarget { .. })
+    ));
 }

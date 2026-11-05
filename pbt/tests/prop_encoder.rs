@@ -620,6 +620,11 @@ fn prop_encode_chunks_equals_format_reference() -> noprop::TestResult {
 
         let mut expected: Vec<u8> = Vec::new();
         for chunk in &chunks {
+            // 空チャンクは zero-length chunk (last-chunk) と同じ意味なので、
+            // encode_chunks は出力しない。
+            if chunk.is_empty() {
+                continue;
+            }
             expected.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
             expected.extend_from_slice(chunk);
             expected.extend_from_slice(b"\r\n");

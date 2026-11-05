@@ -17,7 +17,8 @@ use rustls::pki_types::ServerName;
 use rustls_platform_verifier::ConfigVerifierExt;
 use shiguredo_http11::{
     BodyKind, BodyProgress, DecoderLimits, HeaderName, HttpHead, Request, RequestDecoder, Response,
-    ResponseDecoder, StatusCode, encode_chunk, encode_response_headers,
+    ResponseDecoder, ResponseHead, StatusCode, encode_chunk, encode_request_headers,
+    encode_response_headers,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufWriter, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -72,58 +73,31 @@ type UpstreamKey = (Scheme, String, u16);
 ///
 /// path / query 部は無視する (本サンプルではクライアントの URL をそのまま転送する)。
 fn parse_upstream_url(url: &str) -> Result<UpstreamUrl, Box<dyn std::error::Error>> {
-    let (scheme, rest) = if let Some(rest) = url.strip_prefix("https://") {
-        (Scheme::Https, rest)
-    } else if let Some(rest) = url.strip_prefix("http://") {
-        (Scheme::Http, rest)
-    } else {
-        return Err(format!("upstream URL must start with http:// or https://: {}", url).into());
-    };
-
-    // authority 部 (host[:port]) を path / query 区切りより前で取り出す
-    let authority_end = rest.find(['/', '?']).unwrap_or(rest.len());
-    let authority = &rest[..authority_end];
-    if authority.is_empty() {
-        return Err(format!("upstream URL has empty host: {}", url).into());
-    }
-
-    // IPv6 リテラルの判定
-    let (host, port_opt) = if let Some(rest) = authority.strip_prefix('[') {
-        // IPv6 リテラル: ']' まで host、その後 ':port' があれば port
-        let close = rest
-            .find(']')
-            .ok_or_else(|| format!("unterminated IPv6 literal in upstream URL: {}", url))?;
-        let host = &rest[..close];
-        let after = &rest[close + 1..];
-        if after.is_empty() {
-            (host, None)
-        } else if let Some(port_str) = after.strip_prefix(':') {
-            (host, Some(port_str))
-        } else {
-            return Err(format!(
-                "unexpected characters after IPv6 literal in upstream URL: {}",
-                url
-            )
-            .into());
+    let uri = shiguredo_http11::uri::Uri::parse(url)?;
+    let scheme = match uri.scheme().map(|s| s.to_ascii_lowercase()).as_deref() {
+        Some("http") => Scheme::Http,
+        Some("https") => Scheme::Https,
+        _ => {
+            return Err(
+                format!("upstream URL must start with http:// or https://: {}", url).into(),
+            );
         }
-    } else if let Some(colon) = authority.rfind(':') {
-        // IPv4 / reg-name: 末尾の ':' で port を切り出す
-        (&authority[..colon], Some(&authority[colon + 1..]))
-    } else {
-        (authority, None)
     };
 
+    let host = uri
+        .host()
+        .ok_or_else(|| format!("upstream URL has empty host: {}", url))?;
     if host.is_empty() {
         return Err(format!("upstream URL has empty host: {}", url).into());
     }
+    // RFC 3986 の IP-literal はブラケット付きで保持されるため、
+    // TcpStream::connect に渡す裸のホストへ変換する。
+    let host = host
+        .strip_prefix('[')
+        .and_then(|h| h.strip_suffix(']'))
+        .unwrap_or(host);
 
-    let port = match port_opt {
-        Some("") => scheme.default_port(),
-        Some(s) => s
-            .parse::<u16>()
-            .map_err(|e| format!("invalid port in upstream URL: {} ({})", url, e))?,
-        None => scheme.default_port(),
-    };
+    let port = uri.port().unwrap_or(scheme.default_port());
 
     Ok(UpstreamUrl {
         scheme,
@@ -334,13 +308,20 @@ async fn create_connection(
     port: u16,
     tls_connector: &TlsConnector,
 ) -> Result<PooledConnection, Box<dyn std::error::Error + Send + Sync>> {
-    let tcp_stream = TcpStream::connect((host, port)).await?;
+    let tcp_stream = tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect((host, port)))
+        .await
+        .map_err(|_| "upstream TCP connect timed out")??;
     let stream = match scheme {
         Scheme::Http => UpstreamStream::Plain(BufWriter::with_capacity(65536, tcp_stream)),
         Scheme::Https => {
             // RFC 6066 Section 3: SNI / TLS Server Name は裸の host (ブラケット無し) を使う
             let server_name = ServerName::try_from(host.to_string())?;
-            let tls_stream = tls_connector.connect(server_name, tcp_stream).await?;
+            let tls_stream = tokio::time::timeout(
+                CONNECT_TIMEOUT,
+                tls_connector.connect(server_name, tcp_stream),
+            )
+            .await
+            .map_err(|_| "upstream TLS handshake timed out")??;
             UpstreamStream::Tls(Box::new(BufWriter::with_capacity(65536, tls_stream)))
         }
     };
@@ -398,6 +379,57 @@ type SharedPool = mpsc::Sender<PoolCmd>;
 
 /// Graceful shutdown タイムアウト (秒)
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+/// upstream への接続タイムアウト
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// upstream / downstream の読み取りタイムアウト
+const IO_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 読み取りにタイムアウトを付ける。
+async fn read_with_timeout<R: AsyncRead + Unpin>(
+    reader: &mut R,
+    buf: &mut [u8],
+) -> std::io::Result<usize> {
+    match tokio::time::timeout(IO_TIMEOUT, reader.read(buf)).await {
+        Ok(result) => result,
+        Err(_) => Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "read timed out",
+        )),
+    }
+}
+
+/// OWS (SP / HTAB) のみを除去する。
+///
+/// `str::trim()` は NBSP 等の Unicode 空白も除去するため、ライブラリの
+/// `trim_ows` と解釈がずれる。Connection のトークン解析では ASCII OWS のみを
+/// 除去する。
+fn trim_ows(value: &str) -> &str {
+    value.trim_matches(|c| c == ' ' || c == '\t')
+}
+
+/// `Expect: 100-continue` が含まれるか判定する。
+fn has_expect_100_continue(headers: &[(HeaderName, String)]) -> bool {
+    headers
+        .iter()
+        .any(|(name, value)| name == "Expect" && value.eq_ignore_ascii_case("100-continue"))
+}
+
+/// Upgrade リクエストか判定する。
+///
+/// RFC 9110 Section 7.8: `Connection: upgrade` と `Upgrade` の両方が必要。
+fn is_upgrade_request(headers: &[(HeaderName, String)]) -> bool {
+    let has_upgrade_token =
+        headers
+            .iter()
+            .filter(|(name, _)| name == "Connection")
+            .any(|(_, value)| {
+                value
+                    .split(',')
+                    .any(|token| trim_ows(token).eq_ignore_ascii_case("upgrade"))
+            });
+    let has_upgrade_header = headers.iter().any(|(name, _)| name == "Upgrade");
+    has_upgrade_token && has_upgrade_header
+}
 
 /// CTRL+C (SIGINT) または SIGTERM (Unix) を待ち受ける
 ///
@@ -600,7 +632,7 @@ async fn handle_client(
             return Err("decoder buffer full".into());
         }
         let buf = decoder.mut_buf(want)?;
-        let n = socket.read(buf).await?;
+        let n = read_with_timeout(&mut socket, buf).await?;
         if n == 0 {
             decoder.advance_buf(0);
             debug!("client input is empty");
@@ -642,8 +674,24 @@ async fn handle_client(
         return Ok(());
     }
 
-    // リクエストボディを収集
+    // RFC 9110 Section 10.1.1: 100-continue を待つクライアントに対して、
+    // ボディ読み取り前に 100 Continue を返す。proxy 自身が 100 を生成するため、
+    // upstream へは Expect を転送しない (二重 100 を避ける)。
+    let expect_100_continue = has_expect_100_continue(req_head.headers());
+    if matches!(
+        req_body_kind,
+        BodyKind::ContentLength(_) | BodyKind::Chunked
+    ) && expect_100_continue
+    {
+        socket
+            .write_all(b"HTTP/1.1 100 Continue\r\nVia: 1.1 http11_reverse_proxy\r\n\r\n")
+            .await?;
+        socket.flush().await?;
+    }
+
+    // リクエストボディとトレーラーを収集
     let mut request_body = Vec::new();
+    let mut request_trailers = Vec::new();
     if !matches!(req_body_kind, BodyKind::None) {
         'outer: loop {
             loop {
@@ -652,7 +700,10 @@ async fn handle_client(
                         request_body.extend_from_slice(data);
                         let len = data.len();
                         match decoder.consume_body(len)? {
-                            BodyProgress::Complete { .. } => break 'outer,
+                            BodyProgress::Complete { trailers } => {
+                                request_trailers = trailers;
+                                break 'outer;
+                            }
                             // NeedData (chunked CRLF 不足) でも内側ループ継続。
                             // 直後の peek_body() は None を返すため progress 分岐に進む。
                             BodyProgress::Advanced | BodyProgress::NeedData => {}
@@ -661,7 +712,10 @@ async fn handle_client(
                     None => {
                         // peek_body() が None でも progress() で状態遷移を試みる
                         match decoder.progress()? {
-                            BodyProgress::Complete { .. } => break 'outer,
+                            BodyProgress::Complete { trailers } => {
+                                request_trailers = trailers;
+                                break 'outer;
+                            }
                             BodyProgress::Advanced => continue,
                             // バッファ不足: 内側ループを抜けて I/O 読み取りに戻る
                             BodyProgress::NeedData => break,
@@ -675,7 +729,7 @@ async fn handle_client(
                 return Err("decoder buffer full".into());
             }
             let buf = decoder.mut_buf(want)?;
-            let n = socket.read(buf).await?;
+            let n = read_with_timeout(&mut socket, buf).await?;
             if n == 0 {
                 decoder.advance_buf(0);
                 // クライアントが切断した - 不完全なボディを upstream に送信してはいけない
@@ -693,11 +747,13 @@ async fn handle_client(
         .flat_map(|(_, value)| {
             value
                 .split(',')
-                .map(|s| s.trim().to_ascii_lowercase())
+                .map(|s| trim_ows(s).to_ascii_lowercase())
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
         })
         .collect();
+
+    let is_upgrade = is_upgrade_request(req_head.headers());
 
     // 全フィールドを消費して取り出す
     // version は転送せず HTTP/1.1 固定 (RFC 9112 Section 2.3: 仲介者は自身の HTTP-version を送信 MUST)
@@ -714,18 +770,29 @@ async fn handle_client(
         if name == "content-length" {
             continue;
         }
-        if is_hop_by_hop_header(&name, &connection_headers) {
+        // proxy が 100 Continue を生成済みなので、upstream には転送しない。
+        if name == "expect" && expect_100_continue {
+            continue;
+        }
+        if is_hop_by_hop_header(&name, &connection_headers) && !(is_upgrade && name == "upgrade") {
             continue;
         }
         upstream_request.add_header(name, value)?;
     }
 
     upstream_request.add_header("Host", upstream_host_header)?;
-    // Keep-Alive を使用して接続を再利用
-    upstream_request.add_header("Connection", "keep-alive")?;
+    // RFC 9110 Section 7.6.3: 仲介者は Via を付与すべき (SHOULD)。
+    upstream_request.add_header("Via", "1.1 http11_reverse_proxy")?;
+    // Upgrade でない場合は Keep-Alive を使用して接続を再利用する。
+    // Upgrade の場合は hop-by-hop な Connection / Upgrade を upstream へ引き継ぐ。
+    if is_upgrade {
+        upstream_request.add_header("Connection", "upgrade")?;
+    } else {
+        upstream_request.add_header("Connection", "keep-alive")?;
+    }
     // 元リクエストにフレーミングがあった場合のみボディを引き継ぐ。
     // BodyKind::None なら upstream にもボディなしで送る (Content-Length 自動付与もしない)。
-    let upstream_request = if matches!(req_body_kind, BodyKind::None) {
+    let mut upstream_request = if matches!(req_body_kind, BodyKind::None) {
         upstream_request
     } else {
         upstream_request.body(request_body)
@@ -733,13 +800,46 @@ async fn handle_client(
 
     debug!(
         body_size = upstream_request.body_bytes().map(<[u8]>::len).unwrap_or(0),
+        trailer_count = request_trailers.len(),
         "Upstream request body"
     );
+
+    // トレーラーがある場合は chunked で再フレーミングする。HTTP/1.1 の
+    // trailer は chunked の終端チャンク後にしか送れないため、Content-Length
+    // によるフレーミングでは転送できない。
+    let request_bytes = if request_trailers.is_empty() {
+        upstream_request.encode()?
+    } else {
+        upstream_request.add_header("Transfer-Encoding", "chunked")?;
+        if !upstream_request.has_header("Trailer") {
+            let names = request_trailers
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            upstream_request.add_header("Trailer", &names)?;
+        }
+
+        let mut bytes = encode_request_headers(&upstream_request)?;
+        let body = upstream_request.body_bytes().unwrap_or(&[]);
+        if !body.is_empty() {
+            bytes.extend_from_slice(&encode_chunk(body));
+        }
+        bytes.extend_from_slice(b"0\r\n");
+        for (name, value) in &request_trailers {
+            bytes.extend_from_slice(format!("{}: {}\r\n", name, value).as_bytes());
+        }
+        bytes.extend_from_slice(b"\r\n");
+        bytes
+    };
+
+    let request_method = upstream_request.method().to_string();
 
     // 接続プールから接続を取得してリクエストを送信
     let result = stream_upstream_response_pooled(
         &mut socket,
-        &upstream_request,
+        &request_bytes,
+        &request_method,
         upstream,
         pool.clone(),
         &tls_connector,
@@ -756,7 +856,8 @@ async fn handle_client(
 
 async fn stream_upstream_response_pooled(
     downstream: &mut TcpStream,
-    request: &Request,
+    request_bytes: &[u8],
+    request_method: &str,
     upstream: &UpstreamUrl,
     pool: SharedPool,
     tls_connector: &TlsConnector,
@@ -802,9 +903,9 @@ async fn stream_upstream_response_pooled(
     );
 
     // リクエスト送信とレスポンス受信
-    let request_method = request.method().to_string();
     let result =
-        stream_response_on_connection(downstream, request, &request_method, &mut conn.stream).await;
+        stream_response_on_connection(downstream, request_bytes, request_method, &mut conn.stream)
+            .await;
 
     // 接続を再利用するかどうかを判定
     let should_reuse = match &result {
@@ -827,11 +928,41 @@ async fn stream_upstream_response_pooled(
     result.map(|_| ())
 }
 
+/// 1xx (Informational) レスポンスのヘッダーをダウンストリームへ転送する。
+///
+/// 1xx は最終応答ではないため、Content-Length / Transfer-Encoding を除去し、
+/// ボディなしでヘッダーだけを送る。101 の場合は Upgrade / Connection を
+/// 保持してトンネルへ切り替える。
+async fn forward_informational_response(
+    downstream: &mut BufWriter<&mut TcpStream>,
+    head: &ResponseHead,
+    keep_upgrade: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut response = Response::new(head.status_code(), head.reason_phrase())?;
+    response.set_omit_body(true);
+    response.add_header("Via", "1.1 http11_reverse_proxy")?;
+
+    for (name, value) in head.headers() {
+        if name == "content-length" || name == "transfer-encoding" {
+            continue;
+        }
+        if !keep_upgrade && is_hop_by_hop_header(name, &[]) {
+            continue;
+        }
+        response.add_header(name.clone(), value)?;
+    }
+
+    let bytes = encode_response_headers(&response)?;
+    downstream.write_all(&bytes).await?;
+    downstream.flush().await?;
+    Ok(())
+}
+
 /// 接続上でリクエストを送信しレスポンスを転送
 /// 戻り値: 接続を再利用可能かどうか
 async fn stream_response_on_connection(
     downstream: &mut TcpStream,
-    request: &Request,
+    request_bytes: &[u8],
     method: &str,
     upstream: &mut UpstreamStream,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
@@ -839,9 +970,8 @@ async fn stream_response_on_connection(
     let mut downstream = BufWriter::with_capacity(65536, downstream);
 
     // リクエスト送信
-    let request_bytes = request.encode()?;
     debug!(bytes = request_bytes.len(), "Upstream request bytes");
-    upstream.write_all(&request_bytes).await?;
+    upstream.write_all(request_bytes).await?;
     // UpstreamStream は内部で BufWriter を保持しているため明示的に flush する必要がある。
     upstream.flush().await?;
 
@@ -861,12 +991,29 @@ async fn stream_response_on_connection(
     const READ_CHUNK: usize = 8192;
 
     let (resp_head, body_kind) = loop {
+        // 既にバッファに最終応答が揃っている場合は、追加 read せずにデコードする。
+        if let Some((head, body_kind)) = decoder.decode_headers()? {
+            if (100..200).contains(&head.status_code()) {
+                let is_101 = head.status_code() == 101;
+                forward_informational_response(&mut downstream, &head, is_101).await?;
+                if is_101 {
+                    // 101 Switching Protocols の後は HTTP ではなくトンネル。
+                    // 残りのバイトを双方向に転送し、HTTP 接続としては再利用しない。
+                    downstream.flush().await?;
+                    tokio::io::copy_bidirectional(downstream.get_mut(), upstream).await?;
+                    return Ok(false);
+                }
+                continue;
+            }
+            break (head, body_kind);
+        }
+
         let want = decoder.available_buf().min(READ_CHUNK);
         if want == 0 {
             return Err("decoder buffer full".into());
         }
         let dst = decoder.mut_buf(want)?;
-        let n = upstream.read(dst).await?;
+        let n = read_with_timeout(upstream, dst).await?;
         if n == 0 {
             decoder.advance_buf(0);
             return Err("upstream connection closed".into());
@@ -874,10 +1021,6 @@ async fn stream_response_on_connection(
         decoder.advance_buf(n);
 
         debug!(bytes = n, "Upstream received bytes");
-
-        if let Some(result) = decoder.decode_headers()? {
-            break result;
-        }
     };
 
     debug!(
@@ -908,14 +1051,15 @@ async fn stream_response_on_connection(
         .flat_map(|(_, value)| {
             value
                 .split(',')
-                .map(|s| s.trim().to_ascii_lowercase())
+                .map(|s| trim_ows(s).to_ascii_lowercase())
                 .filter(|s| !s.is_empty())
                 .collect::<Vec<_>>()
         })
         .collect();
 
     let use_chunked = matches!(body_kind, BodyKind::Chunked);
-    let is_head = method.eq_ignore_ascii_case("HEAD");
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
+    let is_head = method == "HEAD";
     // HEAD の場合は元のヘッダーから Content-Length を取得 (RFC 9110 Section 9.3.2)
     // resp_head.content_length() は smuggling 検知 (mismatched 複数行 CL 等) で
     // Err を返すため、ここで伝播する。
@@ -929,6 +1073,8 @@ async fn stream_response_on_connection(
     // version は転送せず HTTP/1.1 固定 (RFC 9112 Section 2.3: 仲介者は自身の HTTP-version を送信 MUST)
     let (_version, status_code, reason_phrase, headers) = resp_head.into_parts();
     let mut response_for_headers = Response::new(status_code, reason_phrase)?;
+    // RFC 9110 Section 7.6.3: 仲介者は Via を付与すべき (SHOULD)。
+    response_for_headers.add_header("Via", "1.1 http11_reverse_proxy")?;
     // ボディはストリーミング転送するため、ここではヘッダーのみエンコードする。
     // omit_body(true) により encode_response_headers の Content-Length 整合性検証を
     // スキップさせる (ヘッダー先行送信パターン)。
@@ -988,7 +1134,7 @@ async fn stream_response_on_connection(
         // 2. 続いて upstream から FIN まで直接転送
         let mut buf = [0u8; READ_CHUNK];
         loop {
-            let n = upstream.read(&mut buf).await?;
+            let n = read_with_timeout(upstream, &mut buf).await?;
             if n == 0 {
                 // upstream が閉じた = ボディ終了
                 debug!(
@@ -1057,7 +1203,7 @@ async fn stream_response_on_connection(
                 return Err("decoder buffer full".into());
             }
             let dst = decoder.mut_buf(want)?;
-            let n = upstream.read(dst).await?;
+            let n = read_with_timeout(upstream, dst).await?;
             if n == 0 {
                 decoder.advance_buf(0);
                 // upstream が予期せず切断 - 終端チャンクを送らずにエラーを返す
@@ -1116,4 +1262,78 @@ fn is_hop_by_hop_header(name: &HeaderName, connection_headers: &[String]) -> boo
     }
 
     connection_headers.contains(&name.as_str().to_ascii_lowercase())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_upstream_url_http_default_port() {
+        let parsed = parse_upstream_url("http://example.com/path")
+            .expect("URL のパースは成功するはず (実装バグ)");
+        assert_eq!(parsed.scheme, Scheme::Http);
+        assert_eq!(parsed.host, "example.com");
+        assert_eq!(parsed.port, 80);
+    }
+
+    #[test]
+    fn test_parse_upstream_url_ipv6() {
+        let parsed = parse_upstream_url("https://[::1]:8443/path")
+            .expect("URL のパースは成功するはず (実装バグ)");
+        assert_eq!(parsed.scheme, Scheme::Https);
+        assert_eq!(parsed.host, "::1");
+        assert_eq!(parsed.port, 8443);
+    }
+
+    #[test]
+    fn test_parse_upstream_url_empty_port() {
+        let parsed = parse_upstream_url("http://example.com:/path")
+            .expect("URL のパースは成功するはず (実装バグ)");
+        assert_eq!(parsed.host, "example.com");
+        assert_eq!(parsed.port, 80);
+    }
+
+    #[test]
+    fn test_parse_upstream_url_invalid_port() {
+        assert!(parse_upstream_url("http://example.com:abc/").is_err());
+        assert!(parse_upstream_url("http://example.com:99999/").is_err());
+    }
+
+    #[test]
+    fn test_format_host_header() {
+        assert_eq!(
+            format_host_header(Scheme::Https, "example.com", 443),
+            "example.com"
+        );
+        assert_eq!(
+            format_host_header(Scheme::Http, "example.com", 8080),
+            "example.com:8080"
+        );
+        assert_eq!(format_host_header(Scheme::Http, "::1", 80), "[::1]");
+        assert_eq!(format_host_header(Scheme::Http, "::1", 8080), "[::1]:8080");
+    }
+
+    #[test]
+    fn test_trim_ows_only_ascii_ows() {
+        assert_eq!(trim_ows(" close "), "close");
+        assert_eq!(trim_ows("close\u{00A0}"), "close\u{00A0}");
+    }
+
+    #[test]
+    fn test_expect_and_upgrade_detection() {
+        let headers = vec![
+            (
+                HeaderName::from_static(b"Expect"),
+                "100-continue".to_string(),
+            ),
+            (
+                HeaderName::from_static(b"Connection"),
+                "Upgrade".to_string(),
+            ),
+            (HeaderName::from_static(b"Upgrade"), "websocket".to_string()),
+        ];
+        assert!(has_expect_100_continue(&headers));
+        assert!(is_upgrade_request(&headers));
+    }
 }

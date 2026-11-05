@@ -230,6 +230,7 @@ fn prop_multipart_file_field_roundtrip() -> noprop::TestResult {
         let body = MultipartBuilder::with_boundary("file-boundary")
             .expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name, &filename, "application/octet-stream", &data)
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("file-boundary")
@@ -303,7 +304,9 @@ fn prop_multipart_part_file() -> noprop::TestResult {
         let name = valid_field_name(ctx);
         let filename = valid_filename(ctx);
         let mime_type = valid_mime_type(ctx);
-        let part = Part::file(&name, &filename, &mime_type).with_body(b"content");
+        let part = Part::file(&name, &filename, &mime_type)
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
+            .with_body(b"content");
 
         assert_eq!(part.name(), Some(name.as_str()));
         assert_eq!(part.filename(), Some(filename.as_str()));
@@ -544,6 +547,7 @@ fn prop_multipart_mixed_fields_roundtrip() -> noprop::TestResult {
             .expect("マルチパートのパースは成功するはず (実装バグ)")
             .text_field(&text_name, &text_value)
             .file_field(&file_name, &filename, "application/octet-stream", &data)
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("mixed-boundary")
@@ -593,7 +597,9 @@ fn prop_multipart_multiple_files_roundtrip() -> noprop::TestResult {
         let body = MultipartBuilder::with_boundary("files-boundary")
             .expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name1, &filename1, "text/plain", b"content1")
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .file_field(&name2, &filename2, "image/png", b"content2")
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("files-boundary")
@@ -674,6 +680,7 @@ fn prop_multipart_empty_file_roundtrip() -> noprop::TestResult {
         let body = MultipartBuilder::with_boundary("boundary")
             .expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field(&name, &filename, "application/octet-stream", &[])
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("boundary")

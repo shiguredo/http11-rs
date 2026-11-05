@@ -42,8 +42,6 @@ pub enum UriError {
     InvalidPercentEncoding,
     /// 不正なポート番号
     InvalidPort,
-    /// 不正な文字
-    InvalidCharacter(char),
     /// 不正なスキーム
     InvalidScheme,
     /// 不正なホスト
@@ -66,7 +64,6 @@ impl fmt::Display for UriError {
             UriError::Empty => write!(f, "empty URI"),
             UriError::InvalidPercentEncoding => write!(f, "invalid percent encoding"),
             UriError::InvalidPort => write!(f, "invalid port"),
-            UriError::InvalidCharacter(c) => write!(f, "invalid character: {:?}", c),
             UriError::InvalidScheme => write!(f, "invalid scheme"),
             UriError::InvalidHost => write!(f, "invalid host"),
             UriError::InvalidUtf8 => write!(f, "invalid UTF-8 sequence"),
@@ -205,7 +202,7 @@ fn validate_fragment(fragment: &str) -> Result<(), UriError> {
 /// assert_eq!(percent_encode("日本語"), "%E6%97%A5%E6%9C%AC%E8%AA%9E");
 /// ```
 pub fn percent_encode(input: &str) -> String {
-    let mut result = String::with_capacity(input.len() * 3);
+    let mut result = String::with_capacity(input.len().checked_mul(3).unwrap_or(0));
     for byte in input.bytes() {
         if is_unreserved(byte) {
             result.push(byte as char);
@@ -222,7 +219,7 @@ pub fn percent_encode(input: &str) -> String {
 ///
 /// パス区切り文字 `/` はエンコードしません。
 pub fn percent_encode_path(input: &str) -> String {
-    let mut result = String::with_capacity(input.len() * 3);
+    let mut result = String::with_capacity(input.len().checked_mul(3).unwrap_or(0));
     for byte in input.bytes() {
         if is_unreserved(byte) || byte == b'/' {
             result.push(byte as char);
@@ -239,7 +236,7 @@ pub fn percent_encode_path(input: &str) -> String {
 ///
 /// `=` と `&` はエンコードしません。
 pub fn percent_encode_query(input: &str) -> String {
-    let mut result = String::with_capacity(input.len() * 3);
+    let mut result = String::with_capacity(input.len().checked_mul(3).unwrap_or(0));
     for byte in input.bytes() {
         if is_unreserved(byte) || byte == b'=' || byte == b'&' {
             result.push(byte as char);
@@ -343,6 +340,9 @@ pub struct Uri {
 
 impl Uri {
     /// URI 文字列をパース
+    ///
+    /// RFC 3986 Section 3.2.2 の `port = *DIGIT` に従い、空ポート
+    /// (`http://example.com:/`) はポート指定なしとして受理する。
     ///
     /// # 例
     ///
@@ -636,11 +636,47 @@ fn validate_ip_literal(literal: &str) -> Result<(), UriError> {
     if literal.as_bytes()[0] == b'v' || literal.as_bytes()[0] == b'V' {
         return validate_ipv_future(literal);
     }
+    // RFC 6874 Section 2: IPv6addrz = IPv6address "%25" ZoneID
+    // ZoneID = 1*( unreserved / pct-encoded )
+    if let Some((addr, zone)) = literal.split_once("%25") {
+        if addr.parse::<core::net::Ipv6Addr>().is_err() || !is_valid_zone_id(zone) {
+            return Err(UriError::InvalidHost);
+        }
+        return Ok(());
+    }
     // IPv6address
     if literal.parse::<core::net::Ipv6Addr>().is_err() {
         return Err(UriError::InvalidHost);
     }
     Ok(())
+}
+
+/// RFC 6874 Section 2 の ZoneID を検証する。
+fn is_valid_zone_id(zone: &str) -> bool {
+    let bytes = zone.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if is_unreserved(b) {
+            i += 1;
+            continue;
+        }
+        if b == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return false;
+            }
+            i += 3;
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 /// IPvFuture の検証 (RFC 3986 Section 3.2.2)
@@ -701,6 +737,9 @@ fn validate_userinfo(userinfo: &str) -> Result<(), UriError> {
 
 /// authority をパース
 /// 戻り値: (host_end, port)
+///
+/// RFC 3986 Section 3.2.2: port = *DIGIT のため、空ポートは有効。
+/// 空ポートはポート指定なしとして扱い、host_end はコロン直前を指す。
 fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
     if authority.is_empty() {
         return Ok((0, None));
@@ -723,8 +762,12 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
             if after_bracket.is_empty() {
                 return Ok((authority.len(), None));
             } else if let Some(port_str) = after_bracket.strip_prefix(':') {
-                let port = port_str.parse::<u16>().map_err(|_| UriError::InvalidPort)?;
-                return Ok((authority.len() - after_bracket.len(), Some(port)));
+                let host_end = authority.len() - after_bracket.len();
+                if port_str.is_empty() {
+                    return Ok((host_end, None));
+                }
+                let port = parse_port_strict(port_str)?;
+                return Ok((host_end, Some(port)));
             } else {
                 return Err(UriError::InvalidHost);
             }
@@ -739,21 +782,32 @@ fn parse_authority(authority: &str) -> Result<(usize, Option<u16>), UriError> {
         let port_str = &host_part[colon_pos + 1..];
         // RFC 3986 Section 3.2.2: host の文字種検証
         validate_host(host_str)?;
-        if !port_str.is_empty() {
-            let port = port_str.parse::<u16>().map_err(|_| UriError::InvalidPort)?;
-            let host_end = if let Some(at_pos) = authority.rfind('@') {
-                at_pos + 1 + colon_pos
-            } else {
-                colon_pos
-            };
-            return Ok((host_end, Some(port)));
+        let host_end = if let Some(at_pos) = authority.rfind('@') {
+            at_pos + 1 + colon_pos
+        } else {
+            colon_pos
+        };
+        if port_str.is_empty() {
+            return Ok((host_end, None));
         }
-    } else {
-        // RFC 3986 Section 3.2.2: host の文字種検証
-        validate_host(host_part)?;
+        let port = parse_port_strict(port_str)?;
+        return Ok((host_end, Some(port)));
     }
 
+    // RFC 3986 Section 3.2.2: host の文字種検証
+    validate_host(host_part)?;
     Ok((authority.len(), None))
+}
+
+/// RFC 3986 Section 3.2.2: port = *DIGIT の非空部分を厳格にパースする。
+///
+/// `str::parse::<u16>()` は先頭の `+` や余分な空白を許容するため、
+/// URI の port では ASCII 数字のみを受理する。
+fn parse_port_strict(port_str: &str) -> Result<u16, UriError> {
+    if port_str.is_empty() || !port_str.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(UriError::InvalidPort);
+    }
+    port_str.parse::<u16>().map_err(|_| UriError::InvalidPort)
 }
 
 /// 相対 URI を基底 URI に対して解決

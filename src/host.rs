@@ -55,6 +55,10 @@ pub struct Host {
 
 impl Host {
     /// Host ヘッダーをパース
+    ///
+    /// RFC 3986 Section 3.2.2 の `port = *DIGIT` に従い、空ポート
+    /// (`example.com:`) はポート指定なしとして受理する。
+    /// RFC 6874 の IPv6 zone ID (`[fe80::1%25eth0]`) も受理する。
     pub fn parse(input: &str) -> Result<Self, HostError> {
         let input = trim_ows(input);
         if input.is_empty() {
@@ -125,7 +129,12 @@ fn parse_ipv6_host(input: &str) -> Result<Host, HostError> {
     let port = if rest.is_empty() {
         None
     } else if let Some(port_str) = rest.strip_prefix(':') {
-        Some(parse_port(port_str)?)
+        // RFC 3986 Section 3.2.2: port = *DIGIT のため、空ポートは有効。
+        if port_str.is_empty() {
+            None
+        } else {
+            Some(parse_port(port_str)?)
+        }
     } else {
         return Err(HostError::InvalidHost);
     };
@@ -149,8 +158,10 @@ fn split_host_port(input: &str) -> Result<(&str, Option<u16>), HostError> {
         if host.contains(':') {
             return Err(HostError::InvalidHost);
         }
+        // RFC 3986 Section 3.2.2: port = *DIGIT のため、空ポートは有効。
+        // 空ポートはポート指定なしとして扱う。
         if port_str.is_empty() {
-            return Err(HostError::InvalidPort);
+            return Ok((host, None));
         }
         let port = parse_port(port_str)?;
         return Ok((host, Some(port)));
@@ -169,7 +180,42 @@ fn is_valid_ipv6_or_future(input: &str) -> bool {
     if input.starts_with('v') || input.starts_with('V') {
         return is_valid_ipvfuture(input);
     }
+
+    // RFC 6874 Section 2: IPv6addrz = IPv6address "%25" ZoneID
+    // ZoneID = 1*( unreserved / pct-encoded )
+    if let Some((addr, zone)) = input.split_once("%25") {
+        return addr.parse::<Ipv6Addr>().is_ok() && is_valid_zone_id(zone);
+    }
+
     input.parse::<Ipv6Addr>().is_ok()
+}
+
+/// RFC 6874 Section 2 の ZoneID を検証する。
+fn is_valid_zone_id(zone: &str) -> bool {
+    let bytes = zone.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if is_unreserved_byte(b) {
+            i += 1;
+            continue;
+        }
+        if b == b'%' {
+            if i + 2 >= bytes.len()
+                || !bytes[i + 1].is_ascii_hexdigit()
+                || !bytes[i + 2].is_ascii_hexdigit()
+            {
+                return false;
+            }
+            i += 3;
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 fn is_valid_ipvfuture(input: &str) -> bool {

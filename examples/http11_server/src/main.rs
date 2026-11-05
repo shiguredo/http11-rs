@@ -37,10 +37,11 @@ use shiguredo_http11::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio_rustls::TlsAcceptor;
 
-use compressor::{compress_body, encoding_header, select_encoding};
+use compressor::{EncodingChoice, compress_body, encoding_header, select_encoding};
 use tracing::{error, info};
 
 /// Keep-Alive タイムアウト (秒)
@@ -52,6 +53,10 @@ const DEFAULT_MAX_REQUESTS: u32 = 1000;
 /// 実行中リクエストが完了しない場合 (slow client 等) に備えるタイムアウト。
 /// Keep-Alive タイムアウト (60 秒) より短く、実用的なリクエスト完了に十分な時間。
 const SHUTDOWN_TIMEOUT_SECS: u64 = 30;
+/// 同時接続数の上限
+const MAX_CONNECTIONS: usize = 1024;
+/// TLS ハンドシェイクのタイムアウト
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct ServerOptions {
     port: u16,
@@ -106,6 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = local_addr.to_string();
 
     let shutting_down = Arc::new(AtomicBool::new(false));
+    let connection_limit = Arc::new(Semaphore::new(MAX_CONNECTIONS));
     let mut tasks: JoinSet<()> = JoinSet::new();
 
     if options.tls {
@@ -130,16 +136,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::select! {
                 result = listener.accept() => {
                     let (stream, peer_addr) = result?;
+                    let permit = match connection_limit.clone().try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            info!(peer_addr = %peer_addr, "Connection limit reached");
+                            continue;
+                        }
+                    };
                     let acceptor = acceptor.clone();
                     let shutting_down = shutting_down.clone();
                     tasks.spawn(async move {
-                        match acceptor.accept(stream).await {
-                            Ok(tls_stream) => {
+                        let _permit = permit;
+                        match tokio::time::timeout(TLS_HANDSHAKE_TIMEOUT, acceptor.accept(stream)).await {
+                            Ok(Ok(tls_stream)) => {
                                 if let Err(e) = handle_tls_client(tls_stream, peer_addr, shutting_down).await {
                                     error!(peer_addr = %peer_addr, error = %e, "TLS client error");
                                 }
                             }
-                            Err(e) => error!(peer_addr = %peer_addr, error = %e, "TLS handshake error"),
+                            Ok(Err(e)) => error!(peer_addr = %peer_addr, error = %e, "TLS handshake error"),
+                            Err(_) => error!(peer_addr = %peer_addr, "TLS handshake timeout"),
                         }
                     });
                 }
@@ -156,8 +171,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tokio::select! {
                 result = listener.accept() => {
                     let (stream, peer_addr) = result?;
+                    let permit = match connection_limit.clone().try_acquire_owned() {
+                        Ok(permit) => permit,
+                        Err(_) => {
+                            info!(peer_addr = %peer_addr, "Connection limit reached");
+                            continue;
+                        }
+                    };
                     let shutting_down = shutting_down.clone();
                     tasks.spawn(async move {
+                        let _permit = permit;
                         if let Err(e) = handle_client(stream, peer_addr, shutting_down).await {
                             error!(peer_addr = %peer_addr, error = %e, "Client error");
                         }
@@ -341,6 +364,54 @@ fn stream_body(
     }
 }
 
+/// `Expect` ヘッダーの処理結果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExpectAction {
+    /// Expect なし
+    None,
+    /// 100 Continue を送る
+    Continue,
+    /// 未対応の expectation (417)
+    Unsupported,
+}
+
+/// OWS (SP / HTAB) のみを除去する。
+fn trim_ows(value: &str) -> &str {
+    value.trim_matches(|c| c == ' ' || c == '\t')
+}
+
+/// RFC 9110 Section 10.1.1 に基づき Expect ヘッダーを判定する。
+fn expect_action(head: &RequestHead) -> ExpectAction {
+    // HTTP/1.0 では Expect を無視する。
+    if head.version() != "HTTP/1.1" {
+        return ExpectAction::None;
+    }
+
+    let mut has_100_continue = false;
+    for (name, value) in head.headers() {
+        if name != "Expect" {
+            continue;
+        }
+        for token in value.split(',') {
+            let token = trim_ows(token);
+            if token.is_empty() {
+                return ExpectAction::Unsupported;
+            }
+            if token.eq_ignore_ascii_case("100-continue") {
+                has_100_continue = true;
+            } else {
+                return ExpectAction::Unsupported;
+            }
+        }
+    }
+
+    if has_100_continue {
+        ExpectAction::Continue
+    } else {
+        ExpectAction::None
+    }
+}
+
 /// 1 リクエストを処理し、Keep-Alive を継続するかどうかを返す
 ///
 /// true を返す: 次のリクエストを処理可能
@@ -494,6 +565,25 @@ async fn handle_client(
             if state.head.is_none() {
                 match decoder.decode_headers()? {
                     Some((h, k)) => {
+                        match expect_action(&h) {
+                            ExpectAction::Unsupported => {
+                                let response =
+                                    Response::with_status(StatusCode::EXPECTATION_FAILED)
+                                        .header("Content-Length", "0")?
+                                        .header("Connection", "close")?;
+                                writer.write_all(&response.encode()?).await?;
+                                writer.flush().await?;
+                                return Ok(());
+                            }
+                            ExpectAction::Continue => {
+                                // ボディを持つリクエストでのみ 100 Continue を送る。
+                                if matches!(k, BodyKind::ContentLength(_) | BodyKind::Chunked) {
+                                    writer.write_all(b"HTTP/1.1 100 Continue\r\n\r\n").await?;
+                                    writer.flush().await?;
+                                }
+                            }
+                            ExpectAction::None => {}
+                        }
                         state.head = Some(h);
                         state.body_kind = Some(k);
                     }
@@ -593,6 +683,25 @@ async fn handle_tls_client(
             if state.head.is_none() {
                 match decoder.decode_headers()? {
                     Some((h, k)) => {
+                        match expect_action(&h) {
+                            ExpectAction::Unsupported => {
+                                let response =
+                                    Response::with_status(StatusCode::EXPECTATION_FAILED)
+                                        .header("Content-Length", "0")?
+                                        .header("Connection", "close")?;
+                                writer.write_all(&response.encode()?).await?;
+                                writer.flush().await?;
+                                return Ok(());
+                            }
+                            ExpectAction::Continue => {
+                                // ボディを持つリクエストでのみ 100 Continue を送る。
+                                if matches!(k, BodyKind::ContentLength(_) | BodyKind::Chunked) {
+                                    writer.write_all(b"HTTP/1.1 100 Continue\r\n\r\n").await?;
+                                    writer.flush().await?;
+                                }
+                            }
+                            ExpectAction::None => {}
+                        }
                         state.head = Some(h);
                         state.body_kind = Some(k);
                     }
@@ -646,7 +755,8 @@ fn build_response(
     let date = format_http_date(now);
 
     // RFC 9110 Section 9.3.2: HEAD レスポンスは GET と同じヘッダーを返すがボディは送信しない
-    let is_head = request.method().eq_ignore_ascii_case("HEAD");
+    // RFC 9110 Section 9.1: メソッドトークンは case-sensitive。
+    let is_head = request.method() == "HEAD";
 
     // Accept-Encoding ヘッダーから圧縮方式を選択
     let accept_encoding = HttpHead::headers(request)
@@ -654,7 +764,20 @@ fn build_response(
         .find(|(name, _)| name == "Accept-Encoding")
         .map(|(_, value)| value.as_str());
 
-    let encoding = accept_encoding.and_then(select_encoding);
+    let encoding_choice = accept_encoding
+        .map(select_encoding)
+        .unwrap_or(EncodingChoice::Identity);
+    if matches!(encoding_choice, EncodingChoice::NotAcceptable) {
+        let response = Response::with_status(StatusCode::NOT_ACCEPTABLE)
+            .header("Date", &date)?
+            .header("Content-Length", "0")?
+            .header("Vary", "Accept-Encoding")?;
+        return add_connection_headers(response, should_keep_alive, shutting_down);
+    }
+    let encoding = match encoding_choice {
+        EncodingChoice::Encoding(encoding) => Some(encoding),
+        EncodingChoice::Identity | EncodingChoice::NotAcceptable => None,
+    };
 
     let response = match request.uri() {
         "/" => {
@@ -871,4 +994,36 @@ fn format_http_date(timestamp: u64) -> String {
 
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_expect_action_continue() {
+        let head = RequestHead::new(Method::POST, "/")
+            .expect("RequestHead の構築は成功するはず (実装バグ)")
+            .header("Expect", "100-continue")
+            .expect("Expect の設定は成功するはず (実装バグ)");
+        assert_eq!(expect_action(&head), ExpectAction::Continue);
+    }
+
+    #[test]
+    fn test_expect_action_unsupported() {
+        let head = RequestHead::new(Method::POST, "/")
+            .expect("RequestHead の構築は成功するはず (実装バグ)")
+            .header("Expect", "something-else")
+            .expect("Expect の設定は成功するはず (実装バグ)");
+        assert_eq!(expect_action(&head), ExpectAction::Unsupported);
+    }
+
+    #[test]
+    fn test_expect_action_http10_ignored() {
+        let head = RequestHead::with_version(Method::POST, "/", "HTTP/1.0")
+            .expect("RequestHead の構築は成功するはず (実装バグ)")
+            .header("Expect", "100-continue")
+            .expect("Expect の設定は成功するはず (実装バグ)");
+        assert_eq!(expect_action(&head), ExpectAction::None);
+    }
 }

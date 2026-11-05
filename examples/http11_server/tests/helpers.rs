@@ -36,7 +36,7 @@ const PORT_READ_TIMEOUT: Duration = Duration::from_secs(7);
 
 /// curl が PATH 上にあるか確認する。無ければ panic で即座に失敗する。
 ///
-/// CLAUDE.md「`#[ignore]` を使わない」に従い、環境差での skip ではなく
+/// プロジェクト規約「`#[ignore]` を使わない」に従い、環境差での skip ではなく
 /// 明示的に失敗させて原因を分かりやすくする。
 pub(crate) fn ensure_curl() {
     let status = std::process::Command::new("curl")

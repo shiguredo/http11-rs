@@ -77,7 +77,12 @@ fn build_payload(builder: MultipartBuilder, parts: &[FuzzPart]) -> Vec<u8> {
                 filename,
                 content_type,
                 body,
-            } => builder.file_field(name, filename, content_type, body),
+            } => {
+                let fallback = builder.clone();
+                builder
+                    .file_field(name, filename, content_type, body)
+                    .unwrap_or_else(|_| fallback.part(Part::new(name).with_body(body)))
+            }
             FuzzPart::Raw { name, body } => builder.part(Part::new(name).with_body(body)),
         };
     }

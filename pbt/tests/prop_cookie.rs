@@ -209,6 +209,7 @@ fn prop_set_cookie_with_attributes() -> noprop::TestResult {
         let cookie = SetCookie::new(&name, &value)
             .expect("Cookie のパースは成功するはず (実装バグ)")
             .with_path(&path)
+            .expect("Path の検証は成功するはず (実装バグ)")
             .with_max_age(max_age)
             .with_secure(true)
             .with_http_only(true);
@@ -284,7 +285,8 @@ fn prop_set_cookie_with_domain() -> noprop::TestResult {
 
         let cookie = SetCookie::new(&name, &value)
             .expect("Cookie のパースは成功するはず (実装バグ)")
-            .with_domain(&domain);
+            .with_domain(&domain)
+            .expect("Domain の検証は成功するはず (実装バグ)");
 
         let displayed = cookie.to_string();
         let reparsed =

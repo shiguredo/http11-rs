@@ -125,7 +125,10 @@ impl DayOfWeek {
 ///
 /// 注: RFC 850 / asctime 形式 (obs-date) は一般的に使われていないが、
 /// RFC 9110 Section 5.6.7 の受信者要件 (MUST accept) に準拠するために実装している。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// 注: 曜日は日時から導出可能な冗長情報のため、`PartialEq` / `Ord` の比較対象には
+/// 含めない。同じ日時で曜日だけが異なる値は等価として扱う。
+#[derive(Debug, Clone)]
 pub struct HttpDate {
     /// 曜日
     day_of_week: DayOfWeek,
@@ -142,6 +145,17 @@ pub struct HttpDate {
     /// 秒 (0-60, 60はうるう秒)
     second: u8,
 }
+
+impl PartialEq for HttpDate {
+    fn eq(&self, other: &Self) -> bool {
+        // 曜日は日時から導出可能な冗長情報であり、時刻比較には含めない。
+        // `Ord` と `Eq` の比較対象を一致させ、`a == b` と `a.cmp(b) == Equal`
+        // が同値になるようにする。
+        self.cmp(other) == core::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for HttpDate {}
 
 impl PartialOrd for HttpDate {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
@@ -485,11 +499,16 @@ fn month_name(month: u8) -> &'static str {
 /// that had the same last two digits.」
 fn interpret_two_digit_year(two_digit: u16, reference_year: u16) -> u16 {
     let current_century = (reference_year / 100) * 100;
-    let candidate = current_century + two_digit;
+    // reference_year が 65500 以上の場合、current_century + two_digit が
+    // u16 の範囲を超えるため saturating_add を使う。
+    let candidate = current_century.saturating_add(two_digit);
 
-    // 50 年以上未来なら 100 年引く
-    if candidate > reference_year + 50 {
-        candidate - 100
+    // 50 年以上未来なら 100 年引く。
+    // reference_year が 0 の場合に candidate - 100 が underflow しないよう
+    // saturating_sub を使う。reference_year + 50 の overflow も saturating_add
+    // で防ぐ。
+    if candidate > reference_year.saturating_add(50) {
+        candidate.saturating_sub(100)
     } else {
         candidate
     }
@@ -502,13 +521,18 @@ fn parse_time(s: &str) -> Result<(u8, u8, u8), DateError> {
         return Err(DateError::InvalidFormat);
     }
 
-    let hour = parts[0].parse::<u8>().map_err(|_| DateError::InvalidHour)?;
-    let minute = parts[1]
-        .parse::<u8>()
-        .map_err(|_| DateError::InvalidMinute)?;
-    let second = parts[2]
-        .parse::<u8>()
-        .map_err(|_| DateError::InvalidSecond)?;
+    // RFC 9110 Section 5.6.7: time-of-day = 2DIGIT ":" 2DIGIT ":" 2DIGIT。
+    // `str::parse::<u8>()` は "+8" や "08" を受理するため、桁数を明示的に検証する。
+    let parse_component = |part: &str, error: DateError| -> Result<u8, DateError> {
+        if part.len() != 2 || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return Err(error);
+        }
+        part.parse::<u8>().map_err(|_| error)
+    };
+
+    let hour = parse_component(parts[0], DateError::InvalidHour)?;
+    let minute = parse_component(parts[1], DateError::InvalidMinute)?;
+    let second = parse_component(parts[2], DateError::InvalidSecond)?;
 
     if hour > 23 {
         return Err(DateError::InvalidHour);

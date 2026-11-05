@@ -490,3 +490,31 @@ fn test_ord() {
     assert!(d1 <= d3);
     assert!(d1 >= d3);
 }
+
+/// 曜日だけが異なる同じ日時は Eq / Ord の契約に従い等価になる
+#[test]
+fn test_http_date_eq_ord_consistency_ignores_day_of_week() {
+    let sunday = HttpDate::parse("Sun, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
+    let monday = HttpDate::parse("Mon, 06 Nov 1994 08:49:37 GMT")
+        .expect("日時のパースは成功するはず (実装バグ)");
+
+    assert_eq!(sunday, monday);
+    assert_eq!(sunday.cmp(&monday), core::cmp::Ordering::Equal);
+    assert!(sunday <= monday);
+    assert!(sunday >= monday);
+}
+
+/// reference_year = 0 でも 2 桁年解決で underflow panic しない
+#[test]
+fn test_rfc850_reference_year_zero_no_panic() {
+    let result = HttpDate::parse_rfc850("Sunday, 06-Nov-99 08:49:37 GMT", 0);
+    assert!(result.is_err(), "年 0 は InvalidYear として拒否されるはず");
+}
+
+/// time-of-day は 2DIGIT 固定で、+8 や 1 桁は拒否する
+#[test]
+fn test_time_of_day_requires_two_digits() {
+    assert!(HttpDate::parse("Sun, 06 Nov 1994 +8:49:37 GMT").is_err());
+    assert!(HttpDate::parse("Sun, 06 Nov 1994 8:49:37 GMT").is_err());
+}

@@ -93,6 +93,11 @@ mod response;
 
 // 公開 API
 pub use body::{BodyKind, BodyProgress};
+// クレート内部 API (encoder が TE 解析を共有する)
+pub(crate) use body::{
+    TransferEncodingResult, parse_transfer_encoding_for_request,
+    parse_transfer_encoding_for_response,
+};
 pub use head::{HttpHead, RequestHead, ResponseHead};
 pub use request::RequestDecoder;
 pub use response::ResponseDecoder;

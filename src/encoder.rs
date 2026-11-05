@@ -1,6 +1,9 @@
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
-use crate::decoder::HttpHead;
-use crate::error::EncodeError;
+use crate::decoder::{
+    HttpHead, TransferEncodingResult, parse_transfer_encoding_for_request,
+    parse_transfer_encoding_for_response,
+};
+use crate::error::{EncodeError, Error};
 use crate::header_name::HeaderName;
 use crate::host::Host;
 use crate::request::Request;
@@ -127,6 +130,16 @@ fn estimate_request_capacity(request: &Request) -> Option<usize> {
     if let Some(body) = request.body_bytes() {
         total = total.checked_add(body.len())?;
     }
+    // chunked の場合、各チャンクの overhead (size 行 + CRLF) と終端チャンクを
+    // 見積もりに含める。body が None / 空でも終端チャンク 5 バイトが必要。
+    if parse_transfer_encoding_for_request(HttpHead::headers(request)).unwrap_or(false) {
+        total = total.checked_add(5)?;
+        if request.body_bytes().is_some() {
+            // 1 チャンク分の size 行 + CRLF の上限 (16 進 16 桁 + CRLF = 18)
+            // とデータ末尾 CRLF (2) を加算する。encode_chunks の見積もりと同じ 20。
+            total = total.checked_add(20)?;
+        }
+    }
     Some(total)
 }
 
@@ -154,6 +167,16 @@ fn estimate_response_capacity(response: &Response) -> Option<usize> {
         response_status_has_body(response.status_code()) && !response.is_body_omitted();
     if body_will_be_encoded && let Some(body) = response.body_bytes() {
         total = total.checked_add(body.len())?;
+    }
+    // chunked の場合、各チャンクの overhead と終端チャンクを見積もりに含める。
+    if body_will_be_encoded
+        && parse_transfer_encoding_for_response(HttpHead::headers(response))
+            == Ok(TransferEncodingResult::Chunked)
+    {
+        total = total.checked_add(5)?;
+        if response.body_bytes().is_some() {
+            total = total.checked_add(20)?;
+        }
     }
     Some(total)
 }
@@ -322,6 +345,12 @@ fn validate_request_target_form(method: &str, uri: &str) -> Result<(), EncodeErr
         // absolute-form: http/https は "://" 必須 (RFC 9110 Section 4.2.1/4.2.2)
         (_, RequestTargetForm::Absolute) => {
             reject_http_without_authority_prefix(uri)?;
+            // decoder の absolute-form 検証と同じ URI 構文検証を行い、
+            // path / query の不正文字や authority の不正 port を encoder 側でも
+            // 拒否する。`Uri::parse` は RFC 3986 のコンポーネント検証を行う。
+            crate::uri::Uri::parse(uri).map_err(|_| EncodeError::InvalidRequestTarget {
+                uri: uri.to_string(),
+            })?;
             Ok(())
         }
     }
@@ -373,6 +402,29 @@ fn validate_headers(headers: &[(HeaderName, String)]) -> Result<(), EncodeError>
     Ok(())
 }
 
+/// Transfer-Encoding をリクエスト用に検証する。
+///
+/// decoder と同じ解析を共有し、chunked 以外の coding や重複 chunked、
+/// chunked のパラメータを拒否する。
+fn transfer_encoding_for_request(headers: &[(HeaderName, String)]) -> Result<bool, EncodeError> {
+    parse_transfer_encoding_for_request(headers).map_err(transfer_encoding_error)
+}
+
+/// Transfer-Encoding をレスポンス用に検証する。
+fn transfer_encoding_for_response(
+    headers: &[(HeaderName, String)],
+) -> Result<TransferEncodingResult, EncodeError> {
+    parse_transfer_encoding_for_response(headers).map_err(transfer_encoding_error)
+}
+
+/// decoder の Transfer-Encoding エラーを encoder のエラーに変換する。
+fn transfer_encoding_error(error: Error) -> EncodeError {
+    EncodeError::InvalidHeaderValue {
+        name: "Transfer-Encoding".to_string(),
+        value: error.to_string(),
+    }
+}
+
 /// Host ヘッダーの詳細バリデーション (リクエスト用)
 ///
 /// RFC 9112 Section 3.2:
@@ -380,17 +432,15 @@ fn validate_headers(headers: &[(HeaderName, String)]) -> Result<(), EncodeError>
 /// - Host ヘッダーは重複してはならない
 /// - Host ヘッダーの値は有効な authority でなければならない
 fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
-    if request.version() != "HTTP/1.1" {
-        return Ok(());
-    }
-
     let host_headers: Vec<&str> = HttpHead::headers(request)
         .iter()
         .filter(|(name, _)| *name == "Host")
         .map(|(_, value)| value.as_str())
         .collect();
 
-    if host_headers.is_empty() {
+    // RFC 9112 Section 3.2: Host ヘッダーの欠落が 400 必須なのは HTTP/1.1 のみ。
+    // HTTP/1.0 では Host は任意だが、存在する場合は重複・不正値を検証する。
+    if request.version() == "HTTP/1.1" && host_headers.is_empty() {
         return Err(EncodeError::MissingHostHeader);
     }
 
@@ -398,7 +448,10 @@ fn validate_host_header(request: &Request) -> Result<(), EncodeError> {
         return Err(EncodeError::DuplicateHostHeader);
     }
 
-    let host_value = host_headers[0];
+    // HTTP/1.0 で Host がない場合は、以下の authority 整合性検証もスキップする。
+    let Some(&host_value) = host_headers.first() else {
+        return Ok(());
+    };
     // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2: 空の field-value は許可)
     if !host_value.is_empty() && Host::parse(host_value).is_err() {
         return Err(EncodeError::InvalidHostHeader {
@@ -611,6 +664,10 @@ fn extract_authority_from_uri(uri: &str) -> Option<String> {
 ///
 /// RFC 9112 Section 3.2: HTTP/1.1 リクエストには Host ヘッダーが必須
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
+///
+/// `Transfer-Encoding: chunked` が指定されている場合、body の有無に関わらず
+/// chunked フレーミング (終端チャンクを含む) でエンコードする。リクエストでは
+/// chunked 以外の Transfer-Encoding は拒否する。
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_request_fields(request)?;
@@ -624,6 +681,15 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;
 
+    // Transfer-Encoding の構文検証。リクエストでは chunked のみ許可する。
+    let transfer_encoding_chunked = transfer_encoding_for_request(HttpHead::headers(request))?;
+    if request.has_header("Transfer-Encoding") && !transfer_encoding_chunked {
+        return Err(EncodeError::InvalidHeaderValue {
+            name: "Transfer-Encoding".to_string(),
+            value: "empty or unsupported Transfer-Encoding".to_string(),
+        });
+    }
+
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
         return Err(EncodeError::ConflictingTransferEncodingAndContentLength);
@@ -635,7 +701,7 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 
     // Content-Length ヘッダーの ABNF 検証と body.len() との整合性を検証
     // body == None の場合は body 長 0 として扱う
-    if !request.has_header("Transfer-Encoding")
+    if !transfer_encoding_chunked
         && let Some(header_value) = validate_content_length_headers(HttpHead::headers(request))?
     {
         let body_length = request.body_bytes().map(<[u8]>::len).unwrap_or(0) as u64;
@@ -679,7 +745,12 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
     // ヘッダー終端の空行
     buf.extend_from_slice(b"\r\n");
 
-    if let Some(body) = request.body_bytes() {
+    if transfer_encoding_chunked {
+        // TE が chunked の場合、body の有無に関わらず chunked フレーミングを
+        // 完結させる。body が None / 空でも終端チャンクを送る。
+        let body = request.body_bytes().unwrap_or(&[]);
+        buf.extend_from_slice(&encode_chunks(&[body]));
+    } else if let Some(body) = request.body_bytes() {
         buf.extend_from_slice(body);
     }
 
@@ -691,6 +762,14 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 /// RFC 9112 Section 6.1: 1xx / 204 レスポンスに Transfer-Encoding を含めてはならない
 /// RFC 9112 Section 6.2: Transfer-Encoding と Content-Length は同時に送信してはならない
 ///
+/// # Transfer-Encoding
+///
+/// `Transfer-Encoding: chunked` が指定されている場合、body の有無に関わらず
+/// chunked フレーミング (終端チャンクを含む) でエンコードする。
+/// chunked 以外の Transfer-Encoding が指定されている場合、body は
+/// close-delimited として生のまま送られるため、呼び出し側がレスポンス後に
+/// 接続を close する責務を持つ。
+///
 /// # CONNECT 2xx レスポンスについて
 ///
 /// RFC 9112 Section 6.1 / RFC 9110 Section 8.6 により、CONNECT リクエストへの
@@ -700,6 +779,10 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, EncodeError> {
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_response_fields(response)?;
+
+    // Transfer-Encoding の構文検証。レスポンスでは chunked 以外も
+    // close-delimited として許可される。
+    let transfer_encoding_result = transfer_encoding_for_response(HttpHead::headers(response))?;
 
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {
@@ -804,8 +887,22 @@ pub fn encode_response(response: &Response) -> Result<Vec<u8>, EncodeError> {
 
     // RFC 9110 Section 6.4.1: 1xx/204/304 はボディを含めてはならない
     // HEAD レスポンスでは omit_body: true としてボディ送信を抑止する
-    if body_will_be_encoded && let Some(body) = response.body_bytes() {
-        buf.extend_from_slice(body);
+    if body_will_be_encoded {
+        match transfer_encoding_result {
+            TransferEncodingResult::Chunked => {
+                // TE が chunked の場合、body の有無に関わらず終端チャンクまで
+                // エンコードする。body が None / 空でも終端チャンクを送る。
+                let body = response.body_bytes().unwrap_or(&[]);
+                buf.extend_from_slice(&encode_chunks(&[body]));
+            }
+            TransferEncodingResult::Other | TransferEncodingResult::None => {
+                // chunked 以外の TE は close-delimited であり、body は生のまま送る。
+                // 呼び出し側は接続を close する責務を持つ。
+                if let Some(body) = response.body_bytes() {
+                    buf.extend_from_slice(body);
+                }
+            }
+        }
     }
 
     Ok(buf)
@@ -882,6 +979,11 @@ pub fn encode_chunks(chunks: &[&[u8]]) -> Vec<u8> {
     };
 
     for chunk in chunks {
+        // 空チャンクは zero-length chunk (last-chunk) と同じ意味になるため、
+        // ここでは出力せず、末尾の終端チャンクだけを送る。
+        if chunk.is_empty() {
+            continue;
+        }
         write_hex_usize(&mut buf, chunk.len());
         buf.extend_from_slice(b"\r\n");
         buf.extend_from_slice(chunk);
@@ -924,6 +1026,15 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 
     // Host ヘッダーの詳細バリデーション
     validate_host_header(request)?;
+
+    // Transfer-Encoding の構文検証。リクエストでは chunked のみ許可する。
+    let transfer_encoding_chunked = transfer_encoding_for_request(HttpHead::headers(request))?;
+    if request.has_header("Transfer-Encoding") && !transfer_encoding_chunked {
+        return Err(EncodeError::InvalidHeaderValue {
+            name: "Transfer-Encoding".to_string(),
+            value: "empty or unsupported Transfer-Encoding".to_string(),
+        });
+    }
 
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if request.has_header("Transfer-Encoding") && request.has_header("Content-Length") {
@@ -991,6 +1102,10 @@ pub fn encode_request_headers(request: &Request) -> Result<Vec<u8>, EncodeError>
 pub fn encode_response_headers(response: &Response) -> Result<Vec<u8>, EncodeError> {
     // フィールドバリデーション
     validate_response_fields(response)?;
+
+    // Transfer-Encoding の構文検証。レスポンスでは chunked 以外も
+    // close-delimited として許可される。
+    transfer_encoding_for_response(HttpHead::headers(response))?;
 
     // RFC 9112 Section 6.2: Transfer-Encoding と Content-Length の同時送信は禁止
     if response.has_header("Transfer-Encoding") && response.has_header("Content-Length") {

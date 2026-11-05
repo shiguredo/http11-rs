@@ -6,7 +6,7 @@ use crate::method::Method;
 use crate::status_code::StatusClass;
 use crate::validate::{
     is_valid_field_value, is_valid_protocol_version, is_valid_reason_phrase,
-    is_valid_request_target, is_valid_status_code, trim_ows,
+    is_valid_request_target, is_valid_status_code, is_valid_token, trim_ows,
 };
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -137,7 +137,11 @@ pub trait HttpHead {
     ///
     /// RFC 9110 Section 5.3: 複数の同名ヘッダーは結合して単一のリストとして扱う。
     fn is_chunked(&self) -> bool {
-        let mut last_token: Option<&str> = None;
+        // decoder の `parse_transfer_encoding_for_response` と同じ規則で検証する。
+        // 不正な token、重複 chunked、chunked のパラメータは false を返す。
+        let mut chunked_count = 0usize;
+        let mut last_is_chunked = false;
+
         // get_headers() を使わず headers().iter() で直接走査し allocation を回避する
         for (name, value) in self.headers() {
             if name != "Transfer-Encoding" {
@@ -149,12 +153,31 @@ pub trait HttpHead {
             // HTTP Request Smuggling (CWE-444) の足場となる。
             for token in value.split(',') {
                 let token = trim_ows(token);
-                if !token.is_empty() {
-                    last_token = Some(token);
+                if token.is_empty() {
+                    continue;
+                }
+                let (base_coding, has_parameters) = match token.split_once(';') {
+                    Some((base, _)) => (trim_ows(base), true),
+                    None => (token, false),
+                };
+                if !is_valid_token(base_coding) {
+                    return false;
+                }
+                if base_coding.eq_ignore_ascii_case("chunked") {
+                    if has_parameters {
+                        return false;
+                    }
+                    chunked_count += 1;
+                    if chunked_count > 1 {
+                        return false;
+                    }
+                    last_is_chunked = true;
+                } else {
+                    last_is_chunked = false;
                 }
             }
         }
-        last_token.is_some_and(|t| t.eq_ignore_ascii_case("chunked"))
+        chunked_count == 1 && last_is_chunked
     }
 }
 

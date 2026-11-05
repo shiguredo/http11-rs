@@ -159,11 +159,10 @@ fn test_set_cookie_parse_errors() {
         .expect("Cookie のパースは成功するはず (実装バグ)");
     assert!(cookie.max_age().is_none());
 
-    // 不正な SameSite
-    assert!(matches!(
-        SetCookie::parse("name=value; SameSite=Invalid", 2026),
-        Err(CookieError::InvalidSameSite)
-    ));
+    // 不正な SameSite は RFC 6265bis Section 5.6.7 に従い無視される
+    let cookie = SetCookie::parse("name=value; SameSite=Invalid", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
+    assert!(cookie.same_site().is_none());
 
     // RFC 6265 Section 5.2.1: 不正な Expires は無視される (エラーにならない)
     let cookie = SetCookie::parse("name=value; Expires=not a date", 2026)
@@ -600,6 +599,7 @@ fn test_set_cookie_display() {
     let cookie = SetCookie::new("session", "abc123")
         .expect("Cookie のパースは成功するはず (実装バグ)")
         .with_path("/")
+        .expect("Path の検証は成功するはず (実装バグ)")
         .with_secure(true)
         .with_http_only(true);
     let s = cookie.to_string();
@@ -614,7 +614,9 @@ fn test_set_cookie_builder() {
     let cookie = SetCookie::new("session", "abc123")
         .expect("Cookie のパースは成功するはず (実装バグ)")
         .with_domain("example.com")
+        .expect("Domain の検証は成功するはず (実装バグ)")
         .with_path("/app")
+        .expect("Path の検証は成功するはず (実装バグ)")
         .with_max_age(3600)
         .with_secure(true)
         .with_http_only(true)
@@ -655,4 +657,50 @@ fn test_set_cookie_invalid_max_age_ignored() {
     assert_eq!(cookie.name(), "session");
     assert_eq!(cookie.value(), "abc123");
     assert!(cookie.max_age().is_none());
+}
+
+/// Path 属性の不正値は無視され、builder はエラーを返す
+#[test]
+fn test_set_cookie_invalid_path() {
+    let cookie = SetCookie::parse("name=value; Path=relative", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
+    assert!(cookie.path().is_none());
+
+    let cookie = SetCookie::parse("name=value; Path=/valid", 2026)
+        .expect("Cookie のパースは成功するはず (実装バグ)");
+    assert_eq!(cookie.path(), Some("/valid"));
+
+    let result = SetCookie::new("name", "value")
+        .expect("Cookie の構築は成功するはず (実装バグ)")
+        .with_path("relative");
+    assert!(matches!(result, Err(CookieError::InvalidAttribute)));
+
+    let result = SetCookie::new("name", "value")
+        .expect("Cookie の構築は成功するはず (実装バグ)")
+        .with_path("/bad\tpath");
+    assert!(matches!(result, Err(CookieError::InvalidAttribute)));
+}
+
+/// Domain builder は先頭 "." を除去し小文字化し、不正値は拒否する
+#[test]
+fn test_set_cookie_domain_builder_validation() {
+    let cookie = SetCookie::new("name", "value")
+        .expect("Cookie の構築は成功するはず (実装バグ)")
+        .with_domain(".Example.COM")
+        .expect("Domain の検証は成功するはず (実装バグ)");
+    assert_eq!(cookie.domain(), Some("example.com"));
+
+    let result = SetCookie::new("name", "value")
+        .expect("Cookie の構築は成功するはず (実装バグ)")
+        .with_domain("..example.com");
+    assert!(matches!(result, Err(CookieError::InvalidAttribute)));
+}
+
+/// 負の Max-Age は 0 に clamp される
+#[test]
+fn test_set_cookie_negative_max_age_clamped() {
+    let cookie = SetCookie::new("name", "value")
+        .expect("Cookie の構築は成功するはず (実装バグ)")
+        .with_max_age(-10);
+    assert_eq!(cookie.max_age(), Some(0));
 }

@@ -22,8 +22,8 @@ use alloc::vec::Vec;
 use crate::validate::{is_valid_protocol_version, is_valid_request_target, is_valid_token};
 
 use super::body::{
-    BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line, parse_header_line,
-    parse_request_target_form, resolve_body_headers_for_request,
+    BodyDecoder, BodyKind, BodyProgress, collect_declared_trailers, find_line_from,
+    parse_header_line, parse_request_target_form, resolve_body_headers_for_request,
     validate_request_target_for_method,
 };
 use super::buffer;
@@ -71,6 +71,8 @@ pub struct RequestDecoder<D: Decompressor = NoCompression> {
     decoded_body: Vec<u8>,
     /// 展開器
     decompressor: D,
+    /// 行探索の再開位置 (絶対オフセット)
+    line_scan_offset: usize,
     /// `mut_buf` で確保した未確定領域のバイト数
     pending: usize,
 }
@@ -95,6 +97,7 @@ impl RequestDecoder<NoCompression> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -112,6 +115,7 @@ impl RequestDecoder<NoCompression> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -131,6 +135,7 @@ impl<D: Decompressor> RequestDecoder<D> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -148,6 +153,7 @@ impl<D: Decompressor> RequestDecoder<D> {
             decoded_body_kind: None,
             decoded_body: Vec::new(),
             decompressor,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -257,6 +263,7 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.decoded_body_kind = None;
         self.decoded_body.clear();
         self.decompressor.reset();
+        self.line_scan_offset = 0;
         self.pending = 0;
     }
 
@@ -277,6 +284,7 @@ impl<D: Decompressor> RequestDecoder<D> {
         // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
         // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
         self.pending = 0;
+        self.line_scan_offset = 0;
         core::mem::take(&mut self.buf)
     }
 
@@ -341,11 +349,18 @@ impl<D: Decompressor> RequestDecoder<D> {
         loop {
             match &self.phase {
                 DecodePhase::StartLine => {
-                    if let Some(pos) = find_line(&self.buf) {
+                    if let Some(pos) = find_line_from(&self.buf, &mut self.line_scan_offset) {
+                        if pos > self.limits.max_start_line_size {
+                            return Err(Error::StartLineTooLong {
+                                size: pos,
+                                limit: self.limits.max_start_line_size,
+                            });
+                        }
                         let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
                             Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
                         })?;
                         self.buf.drain(..pos + 2);
+                        self.line_scan_offset = 0;
                         if line.contains('\r') || line.contains('\n') {
                             return Err(Error::InvalidData(
                                 "invalid request line: contains CR/LF".to_string(),
@@ -403,44 +418,42 @@ impl<D: Decompressor> RequestDecoder<D> {
                     }
                 }
                 DecodePhase::Headers => {
-                    if let Some(pos) = find_line(&self.buf) {
+                    if let Some(pos) = find_line_from(&self.buf, &mut self.line_scan_offset) {
                         if pos == 0 {
                             // 空行 — ヘッダーセクション終端
                             self.buf.drain(..2);
+                            self.line_scan_offset = 0;
 
                             // RFC 9112 Section 3.2: HTTP/1.1 リクエストでは Host ヘッダーが必須
                             let start_line_ref = self.start_line.as_ref().ok_or_else(|| {
                                 Error::InvalidData("missing request line".to_string())
                             })?;
                             let version = start_line_ref.split(' ').nth(2).unwrap_or("");
-                            if version == "HTTP/1.1" {
-                                let host_headers: Vec<_> = self
-                                    .headers
-                                    .iter()
-                                    .filter(|(name, _)| name == "Host")
-                                    .collect();
-                                if host_headers.is_empty() {
-                                    return Err(Error::InvalidData(
-                                        "HTTP/1.1 request missing Host header".to_string(),
-                                    ));
-                                }
-                                if host_headers.len() > 1 {
-                                    return Err(Error::InvalidData(
-                                        "HTTP/1.1 request contains multiple Host headers"
-                                            .to_string(),
-                                    ));
-                                }
-                                // Host ヘッダー値検証
-                                // 空の Host ヘッダーは許可 (RFC 9112 Section 3.2)
-                                let (_, host_value) = host_headers[0];
-                                if !host_value.is_empty()
-                                    && crate::host::Host::parse(host_value).is_err()
-                                {
-                                    return Err(Error::InvalidData(
-                                        "HTTP/1.1 request contains invalid Host header value"
-                                            .to_string(),
-                                    ));
-                                }
+                            let host_headers: Vec<_> = self
+                                .headers
+                                .iter()
+                                .filter(|(name, _)| name == "Host")
+                                .collect();
+                            // RFC 9112 Section 3.2: Host の欠落が 400 必須なのは
+                            // HTTP/1.1 のみ。HTTP/1.0 では任意だが、存在する場合は
+                            // 重複・不正値を検証する。
+                            if version == "HTTP/1.1" && host_headers.is_empty() {
+                                return Err(Error::InvalidData(
+                                    "HTTP/1.1 request missing Host header".to_string(),
+                                ));
+                            }
+                            if host_headers.len() > 1 {
+                                return Err(Error::InvalidData(
+                                    "request contains multiple Host headers".to_string(),
+                                ));
+                            }
+                            if let Some((_, host_value)) = host_headers.first()
+                                && !host_value.is_empty()
+                                && crate::host::Host::parse(host_value).is_err()
+                            {
+                                return Err(Error::InvalidData(
+                                    "request contains invalid Host header value".to_string(),
+                                ));
                             }
 
                             // RFC 9110 Section 9.3.6:
@@ -542,6 +555,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                                     Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
                                 })?;
                             self.buf.drain(..pos + 2);
+                            self.line_scan_offset = 0;
 
                             let (name, value) = parse_header_line(&line)?;
                             self.headers
@@ -558,6 +572,7 @@ impl<D: Decompressor> RequestDecoder<D> {
                     self.headers.clear();
                     self.body_decoder.reset();
                     self.decompressor.reset();
+                    self.line_scan_offset = 0;
                     continue;
                 }
                 DecodePhase::Tunnel => {
@@ -774,6 +789,7 @@ impl<D: Decompressor> RequestDecoder<D> {
         self.decoded_body.clear();
         self.body_decoder.reset();
         self.decompressor.reset();
+        self.line_scan_offset = 0;
 
         Ok(Some(Request::from_raw_parts(
             head.method,

@@ -14,6 +14,8 @@ pub enum Error {
     TooManyHeaders { count: usize, limit: usize },
     /// ヘッダー行が長すぎる
     HeaderLineTooLong { size: usize, limit: usize },
+    /// start-line が長すぎる
+    StartLineTooLong { size: usize, limit: usize },
     /// ボディサイズ超過
     BodyTooLarge { size: u64, limit: u64 },
     /// チャンクサイズ行が長すぎる
@@ -34,6 +36,9 @@ impl fmt::Display for Error {
             }
             Error::HeaderLineTooLong { size, limit } => {
                 write!(f, "header line too long: {} > {}", size, limit)
+            }
+            Error::StartLineTooLong { size, limit } => {
+                write!(f, "start line too long: {} > {}", size, limit)
             }
             Error::BodyTooLarge { size, limit } => {
                 write!(f, "body too large: {} > {}", size, limit)

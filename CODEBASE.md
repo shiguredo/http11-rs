@@ -14,6 +14,9 @@
 - RFC を確認する際は refs/ 以下を利用すること
 - サンプルは RFC に準拠していること
 - obs-text (0x80-FF) は opaque data として保持すること (RFC 9110 Section 5.5)
+  - 本ライブラリはヘッダー値を Rust の `String` として扱うため、非 UTF-8 バイト列は
+    受信時に拒否する。obs-text のうち UTF-8 として有効な Unicode scalar のみ保持する
+    (README.md の「RFC 非準拠」に明記する)
   - 対象は quoted-string / reason-phrase / field-value など obs-text を許容する全経路
   - 受信時は `char_indices()` ベースで走査し UTF-8 不変条件を保つこと (1 バイトずつ `as char` で String に push する経路は Latin-1 mojibake の原因になるため禁止)
   - char 単位走査では Unicode scalar `U+0080..=U+10FFFF` (surrogate 除く) まで opaque char として保持する (ABNF のオクテット表現を Unicode scalar に拡張解釈する)

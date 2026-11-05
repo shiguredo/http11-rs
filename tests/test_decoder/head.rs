@@ -8,7 +8,7 @@
 //! - Content-Length パース (Unicode 空白拒否、`HttpHead::content_length` 厳格パース)
 //! - `RequestDecoder::default()` / `ResponseDecoder::default()` の挙動
 
-use shiguredo_http11::{RequestDecoder, ResponseDecoder};
+use shiguredo_http11::{BodyKind, DecoderLimits, Error, HttpHead, RequestDecoder, ResponseDecoder};
 
 // ========================================
 // ヘッダー値の制御文字エラーのテスト
@@ -523,10 +523,10 @@ fn test_request_head_into_parts_obs_text_uri_error() {
 }
 
 /// 空 reason-phrase を into_parts() で取り出して
-/// Response::new() に渡すと Err が返ることを検証する
+/// Response::new() に渡しても受理されることを検証する
 #[test]
-fn test_response_head_into_parts_empty_reason_phrase_error() {
-    use shiguredo_http11::{EncodeError, Response, ResponseHead};
+fn test_response_head_into_parts_empty_reason_phrase_ok() {
+    use shiguredo_http11::{Response, ResponseHead};
 
     // ResponseHead::new は空 reason-phrase を許容する (RFC 9112 Section 4 の absent 扱い)
     let head =
@@ -534,10 +534,119 @@ fn test_response_head_into_parts_empty_reason_phrase_error() {
 
     let (_version, status_code, reason_phrase, _headers) = head.into_parts();
 
-    // Response::new は送信側ポリシーとして空 reason-phrase を拒否する
-    let result = Response::new(status_code, reason_phrase);
-    match result {
-        Err(EncodeError::InvalidReasonPhrase { .. }) => {}
-        other => panic!("InvalidReasonPhrase を期待したが {:?} が返った", other),
+    // Response::new も reason-phrase absent を再送信できるよう空文字列を許容する
+    let response = Response::new(status_code, reason_phrase)
+        .expect("空 reason-phrase は Response 構築時に許容される");
+    assert_eq!(response.reason_phrase(), "");
+}
+
+// ========================================
+// Host ヘッダーのバージョン非依存検証
+// ========================================
+
+/// HTTP/1.0 でも重複 Host は拒否する
+#[test]
+fn test_http10_duplicate_host_error() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET / HTTP/1.0\r\nHost: a.example\r\nHost: b.example\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert!(decoder.decode_headers().is_err());
+}
+
+/// HTTP/1.0 でも不正な Host は拒否する
+#[test]
+fn test_http10_invalid_host_error() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET / HTTP/1.0\r\nHost: a:b:c\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert!(decoder.decode_headers().is_err());
+}
+
+/// HTTP/1.0 では Host 欠落を許可する
+#[test]
+fn test_http10_missing_host_ok() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET / HTTP/1.0\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.version(), "HTTP/1.0");
+    assert_eq!(body_kind, BodyKind::None);
+}
+
+/// HTTP/1.1 でも空ポート付き Host は RFC 3986 に従い受理する
+#[test]
+fn test_http11_empty_port_host_ok() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET / HTTP/1.1\r\nHost: example.com:\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    let (head, body_kind) = decoder
+        .decode_headers()
+        .expect("結果は存在するはず (実装バグ)")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert_eq!(head.get_header("Host"), Some("example.com:"));
+    assert_eq!(body_kind, BodyKind::None);
+}
+
+// ========================================
+// status-code / request-target の追加検証
+// ========================================
+
+/// status-code は 3DIGIT のみ受理する
+#[test]
+fn test_response_status_code_not_three_digits_error() {
+    for line in ["HTTP/1.1 +200 OK", "HTTP/1.1 0200 OK", "HTTP/1.1 2000 OK"] {
+        let mut decoder = ResponseDecoder::new();
+        decoder
+            .feed(format!("{line}\r\n\r\n").as_bytes())
+            .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+        assert!(
+            decoder.decode_headers().is_err(),
+            "3 桁の ASCII 数字以外は拒否するはず: {line}"
+        );
     }
+}
+
+/// absolute-form の authority に不正な port があると拒否する
+#[test]
+fn test_absolute_form_invalid_authority_port_error() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://example.com:abc/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert!(decoder.decode_headers().is_err());
+}
+
+/// absolute-form の入れ子 IPv6 ブラケットを拒否する
+#[test]
+fn test_absolute_form_nested_ipv6_brackets_error() {
+    let mut decoder = RequestDecoder::new();
+    decoder
+        .feed(b"GET http://[[::1]]/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    assert!(decoder.decode_headers().is_err());
+}
+
+/// start-line が上限を超えるとエラー
+#[test]
+fn test_start_line_too_long_error() {
+    let limits = DecoderLimits {
+        max_start_line_size: 16,
+        ..DecoderLimits::default()
+    };
+    let mut decoder = RequestDecoder::with_limits(limits);
+    decoder
+        .feed(b"GET /this/is/a/long/path HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .expect("ヘッダーのデコードは成功するはず (実装バグ)");
+    let result = decoder.decode_headers();
+    assert!(
+        matches!(result, Err(Error::StartLineTooLong { .. })),
+        "start-line 長超過を検出するはず: {result:?}"
+    );
 }

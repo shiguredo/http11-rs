@@ -26,10 +26,10 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
       - run: rustup show
-      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@27c6a25432cf731e39887c8cd77b10f5465cb24c # main
         with:
           os: ${{ matrix.os }}
-          toolchain: "1.93"
+          toolchain: "1.95"
       - run: cargo fmt --all --check
       # fuzz と io_uring example は workspace から exclude されており
       # `cargo fmt --all` の対象外のため個別に確認する
@@ -41,6 +41,17 @@ jobs:
       - name: Check fuzz crate
         if: matrix.os == 'ubuntu-24.04'
         run: cargo check --manifest-path fuzz/Cargo.toml
+      - name: Clippy fuzz crate
+        if: matrix.os == 'ubuntu-24.04'
+        run: cargo clippy --manifest-path fuzz/Cargo.toml -- -D warnings
+      - name: Clippy io_uring example
+        if: matrix.os == 'ubuntu-24.04'
+        run: cargo clippy --manifest-path examples/http11_server_io_uring/Cargo.toml -- -D warnings
+      - name: Security audit
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # examples の integration test は外部依存 (curl / Docker) を要求するため
       # 別 job (e2e-test) に分離し、ここでは除外する
@@ -56,10 +67,10 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
       - run: rustup show
-      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@27c6a25432cf731e39887c8cd77b10f5465cb24c # main
         with:
           os: ubuntu-24.04
-          toolchain: "1.93"
+          toolchain: "1.95"
       - run: cargo test -p http11_client -p http11_server
 
   slack_notify:
@@ -71,7 +82,7 @@ jobs:
       actions: read
     steps:
       - name: Slack Notification
-        uses: shiguredo/github-actions/.github/actions/slack-notify@main
+        uses: shiguredo/github-actions/.github/actions/slack-notify@27c6a25432cf731e39887c8cd77b10f5465cb24c # main
         with:
           status: ${{ job.status }}
           slack_webhook: ${{ secrets.SLACK_WEBHOOK }}

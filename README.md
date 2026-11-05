@@ -195,6 +195,7 @@ let last = encode_chunk(b""); // 終端チャンク
 - `encode_chunk` - 単一チャンクをエンコード
   - 終端は `b""`
 - `encode_chunks` - 複数チャンクをまとめてエンコード
+  - 空チャンクは無視し、終端チャンクのみを出力する
 - `RequestEncoder` / `ResponseEncoder` - 圧縮器を組み込んだエンコーダー
   - 圧縮器は `Compressor` トレイトで提供
 
@@ -289,6 +290,11 @@ loop {
   - RFC 9112 が specialized service 向けと明記、一般的に使われていない
   - 受信時は内容を破棄
 - ストリーミング送信用のチャンクエンコード API
+- `encode_request` / `encode_response` は `Transfer-Encoding: chunked` 指定時に
+  body を自動的に chunked 化し、終端チャンクまで付与する
+- リクエストでは chunked 以外の Transfer-Encoding を拒否する
+- レスポンスで chunked 以外の Transfer-Encoding を指定した場合、body は
+  close-delimited として生で送られるため、呼び出し側が接続を close する
 
 ### Content-Length
 
@@ -309,6 +315,8 @@ loop {
 - Transfer-Encoding: chunked が最優先
 - Content-Length による固定長ボディ
 - ステータスコード 1xx/204/304 はボディなし
+- 1xx (Informational) の後も元リクエストのメソッドを保持し、最終応答の
+  HEAD / CONNECT 判定を維持する
 - 205 Reset Content はエンコード時にボディ禁止
   - RFC 9110 Section 15.3.6
   - Transfer-Encoding 禁止

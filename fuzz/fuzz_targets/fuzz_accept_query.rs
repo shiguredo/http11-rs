@@ -10,15 +10,15 @@ use libfuzzer_sys::fuzz_target;
 use shiguredo_http11::accept_query::AcceptQuery;
 
 fuzz_target!(|data: &[u8]| {
-    if let Ok(s) = std::str::from_utf8(data) {
-        if let Ok(value) = AcceptQuery::parse(s) {
-            for item in value.items() {
-                let _ = item.media_type();
-                let _ = item.subtype();
-                let _ = item.parameters();
-            }
-            let displayed = value.to_string();
-            let _ = AcceptQuery::parse(&displayed);
+    if let Ok(s) = std::str::from_utf8(data)
+        && let Ok(value) = AcceptQuery::parse(s)
+    {
+        for item in value.items() {
+            let _ = item.media_type();
+            let _ = item.subtype();
+            let _ = item.parameters();
         }
+        let displayed = value.to_string();
+        let _ = AcceptQuery::parse(&displayed);
     }
 });

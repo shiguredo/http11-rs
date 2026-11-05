@@ -34,7 +34,7 @@ fuzz_target!(|data: &[u8]| {
         };
 
         // assert を回避する事前検証 (assert 経路は単体テストの #[should_panic] でカバー)
-        if start <= end && complete_length.map_or(true, |cl| cl > end) {
+        if start <= end && complete_length.is_none_or(|cl| cl > end) {
             let cr = ContentRange::new_bytes(start, end, complete_length);
             let _ = cr.unit();
             let _ = cr.start();

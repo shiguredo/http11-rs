@@ -15,11 +15,9 @@ fn test_response_new_invalid_status_code_zero() {
 }
 #[test]
 fn test_response_new_empty_reason_phrase() {
-    let result = Response::new(200, "");
-    assert!(matches!(
-        result,
-        Err(EncodeError::InvalidReasonPhrase { .. })
-    ));
+    // RFC 9112 Section 4: reason-phrase absent を再送信できるよう空文字列を許容する。
+    let response = Response::new(200, "").expect("空 reason-phrase は許容されるはず (実装バグ)");
+    assert_eq!(response.reason_phrase(), "");
 }
 
 #[test]

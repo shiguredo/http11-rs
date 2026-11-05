@@ -1449,13 +1449,19 @@ fn prop_is_chunked_multiple_te_headers() -> noprop::TestResult {
     let mut runner = noprop::Runner::new(seed);
 
     runner.run(256, |ctx| {
-        // 複数の Transfer-Encoding: chunked ヘッダー → 最後のトークンが chunked → true
+        // 複数の Transfer-Encoding ヘッダーで最後のトークンが chunked → true。
+        // 重複 chunked は RFC 9112 Section 6.1 違反なので、gzip を並べて
+        // 最後だけ chunked にする。
         let count = noprop::sample_usize_in(ctx, 2..5);
         let headers: Vec<(HeaderName, String)> = (0..count)
-            .map(|_| {
+            .map(|i| {
                 (
                     HeaderName::from_static(b"Transfer-Encoding"),
-                    "chunked".to_string(),
+                    if i + 1 == count {
+                        "chunked".to_string()
+                    } else {
+                        "gzip".to_string()
+                    },
                 )
             })
             .collect();

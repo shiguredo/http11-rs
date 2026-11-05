@@ -710,18 +710,18 @@ fn prop_response_invalid_reason_phrase() -> noprop::TestResult {
     Ok(())
 }
 
-// 空の reason_phrase も構築時に拒否される
-/// 空の reason_phrase は構築時に拒否される
+// 空の reason_phrase は reason-phrase absent として許容される
+/// 空の reason_phrase は構築時に許容される
 #[test]
-fn prop_response_empty_reason_phrase_rejected() -> noprop::TestResult {
+fn prop_response_empty_reason_phrase_allowed() -> noprop::TestResult {
     let seed = noprop::seed_from_env_or_time("HTTP11_PBT_SEED")?;
     let mut runner = noprop::Runner::new(seed);
 
     runner.run(256, |ctx| {
         let code = status_code(ctx);
         let result = Response::new(code, "");
-        let is_invalid = matches!(result, Err(EncodeError::InvalidReasonPhrase { .. }));
-        assert!(is_invalid);
+        let response = result.expect("空 reason-phrase は許容されるはず (実装バグ)");
+        assert_eq!(response.reason_phrase(), "");
         Ok(())
     })?;
 

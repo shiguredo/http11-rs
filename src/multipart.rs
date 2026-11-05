@@ -27,7 +27,7 @@
 
 use crate::content_disposition::ContentDisposition;
 use crate::content_type::ContentType;
-use crate::validate::{is_token_char, trim_ows};
+use crate::validate::{is_token_char, is_valid_field_value, is_valid_header_name, trim_ows};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::fmt;
@@ -54,6 +54,8 @@ pub enum MultipartError {
     /// Content-Disposition に name パラメータが欠落している
     /// RFC 7578 Section 4.2: "name" パラメータを含まなければならない
     MissingName,
+    /// Content-Type が不正
+    InvalidContentType,
     /// バッファサイズが上限を超えた
     BufferOverflow {
         /// 超過後のサイズ
@@ -89,6 +91,7 @@ impl fmt::Display for MultipartError {
                     "Content-Disposition must contain name parameter (RFC 7578 Section 4.2)"
                 )
             }
+            MultipartError::InvalidContentType => write!(f, "invalid part Content-Type"),
             MultipartError::BufferOverflow { size, limit } => {
                 write!(f, "buffer overflow: size={size}, limit={limit}")
             }
@@ -126,18 +129,22 @@ impl Part {
     }
 
     /// ファイルパートを作成
-    pub fn file(name: &str, filename: &str, content_type: &str) -> Self {
-        let ct = ContentType::parse(content_type).ok();
-        Part {
+    ///
+    /// `content_type` が RFC 9110 Section 8.3 の media-type として不正な場合は
+    /// `MultipartError::InvalidContentType` を返す。
+    pub fn file(name: &str, filename: &str, content_type: &str) -> Result<Self, MultipartError> {
+        let ct =
+            ContentType::parse(content_type).map_err(|_| MultipartError::InvalidContentType)?;
+        Ok(Part {
             content_disposition: Some(
                 ContentDisposition::new(crate::content_disposition::DispositionType::FormData)
                     .with_name(name)
                     .with_filename(filename),
             ),
-            content_type: ct,
+            content_type: Some(ct),
             headers: Vec::new(),
             body: Vec::new(),
-        }
+        })
     }
 
     /// ボディを設定
@@ -214,6 +221,11 @@ pub struct MultipartParser {
     finished: bool,
     /// バッファ最大サイズ (デフォルト: 10MB)
     max_buffer_size: usize,
+    /// part ヘッダー終端 (`\r\n\r\n`) 検索の再開位置 (絶対オフセット)
+    ///
+    /// 断片 feed ごとにヘッダー終端を先頭から再走査すると O(N²) になる。
+    /// 前回走査した末尾位置を保持し、次回はその位置から再開する。
+    header_scan_offset: usize,
     /// boundary 検索 (`first_delimiter` / `inner_delimiter`) の再開位置 (絶対オフセット)
     ///
     /// `find_bytes` で境界が見つからず `Incomplete` を返す前に「次回はどこから
@@ -294,6 +306,7 @@ impl MultipartParser {
             state: ParserState::Initial,
             finished: false,
             max_buffer_size: 10 * 1024 * 1024,
+            header_scan_offset: 0,
             boundary_scan_offset: 0,
         })
     }
@@ -376,6 +389,7 @@ impl MultipartParser {
                                 self.pos = padded + 2;
                                 // 状態遷移したので scan_offset を pos に揃える
                                 self.boundary_scan_offset = self.pos;
+                                self.header_scan_offset = self.pos;
                                 self.state = ParserState::InPart;
                             } else if head == b"--" {
                                 // 終了境界
@@ -406,10 +420,16 @@ impl MultipartParser {
                     }
                 }
                 ParserState::InPart => {
-                    // ヘッダーとボディの区切りを `buffer[pos..]` から相対位置で探す
-                    let view = &self.buffer[self.pos..];
+                    // ヘッダーとボディの区切りを前回の走査位置から探す。
+                    // drain 後に offset が buffer 長を超える可能性に備えて clamp する。
+                    let header_start = if self.header_scan_offset > self.buffer.len() {
+                        self.pos
+                    } else {
+                        self.pos.max(self.header_scan_offset)
+                    };
+                    let view = &self.buffer[header_start..];
                     if let Some(header_end_rel) = find_bytes(view, b"\r\n\r\n") {
-                        let header_end = self.pos + header_end_rel;
+                        let header_end = header_start + header_end_rel;
                         let header_bytes = &self.buffer[self.pos..header_end];
                         let body_start = header_end + 4;
 
@@ -425,17 +445,29 @@ impl MultipartParser {
                             if line.is_empty() {
                                 continue;
                             }
-                            if let Some((name, value)) = line.split_once(':') {
-                                let name = trim_ows(name);
-                                let value = trim_ows(value);
+                            let (name, value) =
+                                line.split_once(':').ok_or(MultipartError::InvalidHeader)?;
+                            let name = trim_ows(name);
+                            let value = trim_ows(value);
 
-                                if name.eq_ignore_ascii_case("Content-Disposition") {
-                                    content_disposition = ContentDisposition::parse(value).ok();
-                                } else if name.eq_ignore_ascii_case("Content-Type") {
-                                    content_type = ContentType::parse(value).ok();
-                                } else {
-                                    headers.push((name.to_string(), value.to_string()));
-                                }
+                            // MIME part ヘッダーも HTTP の field-name / field-value と
+                            // 同じ文字集合で検証し、不正な名前や制御文字を拒否する。
+                            if !is_valid_header_name(name) || !is_valid_field_value(value) {
+                                return Err(MultipartError::InvalidHeader);
+                            }
+
+                            if name.eq_ignore_ascii_case("Content-Disposition") {
+                                content_disposition = Some(
+                                    ContentDisposition::parse(value)
+                                        .map_err(|_| MultipartError::InvalidHeader)?,
+                                );
+                            } else if name.eq_ignore_ascii_case("Content-Type") {
+                                content_type = Some(
+                                    ContentType::parse(value)
+                                        .map_err(|_| MultipartError::InvalidHeader)?,
+                                );
+                            } else {
+                                headers.push((name.to_string(), value.to_string()));
                             }
                         }
 
@@ -491,6 +523,7 @@ impl MultipartParser {
                             }
                             // 次のパート検索は新しい開始位置から行うので scan_offset を pos に揃える
                             self.boundary_scan_offset = self.pos;
+                            self.header_scan_offset = self.pos;
 
                             // 累積コピー量を amortized O(N) に抑える前詰め
                             // 発動条件は `pos` が物理バッファの過半を超えたときのみ
@@ -501,6 +534,8 @@ impl MultipartParser {
                                 // 前詰めしたので scan_offset も同じだけ前に移動
                                 self.boundary_scan_offset =
                                     self.boundary_scan_offset.saturating_sub(drained);
+                                self.header_scan_offset =
+                                    self.header_scan_offset.saturating_sub(drained);
                             }
 
                             return Ok(Some(Part {
@@ -516,9 +551,15 @@ impl MultipartParser {
                             let overlap = self.inner_delimiter.len().saturating_sub(1);
                             self.boundary_scan_offset =
                                 self.buffer.len().saturating_sub(overlap).max(body_start);
+                            // ヘッダーは既に見つかっているので、次回も同じ位置から
+                            // ヘッダー終端を探せるように pos に揃える。
+                            self.header_scan_offset = self.pos;
                             return Err(MultipartError::Incomplete);
                         }
                     } else {
+                        // ヘッダー終端 (CRLF CRLF) が見つからなかった。
+                        // 部分一致に備えて末尾 3 バイトを含む位置まで走査済みとして記録する。
+                        self.header_scan_offset = self.buffer.len().saturating_sub(3).max(self.pos);
                         return Err(MultipartError::Incomplete);
                     }
                 }
@@ -545,6 +586,7 @@ impl MultipartParser {
                     } else if head == b"\r\n" {
                         self.pos = padded + 2;
                         self.boundary_scan_offset = self.pos;
+                        self.header_scan_offset = self.pos;
                         self.state = ParserState::InPart;
                         continue;
                     } else {
@@ -634,10 +676,10 @@ impl MultipartBuilder {
         filename: &str,
         content_type: &str,
         data: &[u8],
-    ) -> Self {
-        let part = Part::file(name, filename, content_type).with_body(data);
+    ) -> Result<Self, MultipartError> {
+        let part = Part::file(name, filename, content_type)?.with_body(data);
         self.parts.push(part);
-        self
+        Ok(self)
     }
 
     /// パートを追加
@@ -845,6 +887,7 @@ mod tests {
         let body = MultipartBuilder::with_boundary("boundary")
             .expect("マルチパートのパースは成功するはず (実装バグ)")
             .file_field("file", "test.txt", "text/plain", b"content")
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let body_str = String::from_utf8_lossy(&body);
@@ -863,6 +906,7 @@ mod tests {
             .text_field("name", "John")
             .text_field("age", "30")
             .file_field("photo", "photo.jpg", "image/jpeg", b"\xFF\xD8\xFF\xE0")
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("test-boundary")
@@ -921,7 +965,9 @@ mod tests {
 
     #[test]
     fn test_part_file() {
-        let part = Part::file("upload", "file.txt", "text/plain").with_body(b"data");
+        let part = Part::file("upload", "file.txt", "text/plain")
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
+            .with_body(b"data");
         assert_eq!(part.name(), Some("upload"));
         assert_eq!(part.filename(), Some("file.txt"));
         assert!(part.is_file());
@@ -947,6 +993,7 @@ mod tests {
                 "application/octet-stream",
                 &binary_data,
             )
+            .expect("Content-Type の検証は成功するはず (実装バグ)")
             .build();
 
         let mut parser = MultipartParser::new("boundary")

@@ -349,3 +349,19 @@ fn test_expires_display() {
     assert!(s.contains("1994"));
     assert!(s.contains("Nov"));
 }
+
+/// RFC 9111 Section 4.2.1: 同じ directive が複数ある場合は最初の出現を使う
+#[test]
+fn test_cache_control_duplicate_max_age_first_wins() {
+    let cc = CacheControl::parse("max-age=10, max-age=20")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+    assert_eq!(cc.max_age(), Some(10));
+}
+
+/// 重複した max-stale も最初の出現を採用する
+#[test]
+fn test_cache_control_duplicate_max_stale_first_wins() {
+    let cc = CacheControl::parse("max-stale=10, max-stale=20")
+        .expect("キャッシュ制御のパースは成功するはず (実装バグ)");
+    assert_eq!(cc.max_stale(), Some(10));
+}

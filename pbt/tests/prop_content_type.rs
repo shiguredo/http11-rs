@@ -569,7 +569,8 @@ fn prop_content_type_display_roundtrip() -> noprop::TestResult {
     runner.run(256, |ctx| {
         let media_type = lower_string(ctx, 8);
         let subtype = lower_dash_digit_string(ctx, 8);
-        let ct = ContentType::new(&media_type, &subtype);
+        let ct = ContentType::new(&media_type, &subtype)
+            .expect("Content-Type の構築は成功するはず (実装バグ)");
         let displayed = ct.to_string();
         let reparsed =
             ContentType::parse(&displayed).expect("Content-Type のパースは成功するはず (実装バグ)");
@@ -597,7 +598,10 @@ fn prop_content_type_display_with_param_roundtrip() -> noprop::TestResult {
         let media_type = lower_string(ctx, 8);
         let subtype = lower_string(ctx, 8);
         let param_value = alpha_dash_string(ctx, 16);
-        let ct = ContentType::new(&media_type, &subtype).with_parameter("charset", &param_value);
+        let ct = ContentType::new(&media_type, &subtype)
+            .expect("Content-Type の構築は成功するはず (実装バグ)")
+            .with_parameter("charset", &param_value)
+            .expect("パラメータの構築は成功するはず (実装バグ)");
         let displayed = ct.to_string();
         let reparsed =
             ContentType::parse(&displayed).expect("Content-Type のパースは成功するはず (実装バグ)");
@@ -626,7 +630,10 @@ fn prop_content_type_display_quoted_roundtrip() -> noprop::TestResult {
         let media_type = lower_string(ctx, 8);
         let subtype = lower_string(ctx, 8);
         let value = value_needing_quotes(ctx);
-        let ct = ContentType::new(&media_type, &subtype).with_parameter("name", &value);
+        let ct = ContentType::new(&media_type, &subtype)
+            .expect("Content-Type の構築は成功するはず (実装バグ)")
+            .with_parameter("name", &value)
+            .expect("パラメータの構築は成功するはず (実装バグ)");
         let displayed = ct.to_string();
         let reparsed =
             ContentType::parse(&displayed).expect("Content-Type のパースは成功するはず (実装バグ)");
@@ -861,8 +868,11 @@ fn prop_content_type_new_with_params() -> noprop::TestResult {
         let charset = lower_string(ctx, 8);
         let boundary = boundary_value(ctx);
         let ct = ContentType::new(&media_type, &subtype)
+            .expect("Content-Type の構築は成功するはず (実装バグ)")
             .with_parameter("charset", &charset)
-            .with_parameter("boundary", &boundary);
+            .expect("パラメータの構築は成功するはず (実装バグ)")
+            .with_parameter("boundary", &boundary)
+            .expect("パラメータの構築は成功するはず (実装バグ)");
 
         assert_eq!(ct.media_type(), media_type.as_str());
         assert_eq!(ct.subtype(), subtype.as_str());
@@ -892,8 +902,11 @@ fn prop_content_type_parameters_accessor() -> noprop::TestResult {
         let value1 = lower_string(ctx, 8);
         let value2 = lower_string(ctx, 8);
         let ct = ContentType::new(&media_type, &subtype)
+            .expect("Content-Type の構築は成功するはず (実装バグ)")
             .with_parameter("param1", &value1)
-            .with_parameter("param2", &value2);
+            .expect("パラメータの構築は成功するはず (実装バグ)")
+            .with_parameter("param2", &value2)
+            .expect("パラメータの構築は成功するはず (実装バグ)");
 
         let params = ct.parameters();
         assert_eq!(params.len(), 2);

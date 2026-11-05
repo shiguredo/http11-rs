@@ -18,7 +18,7 @@ use crate::validate::{is_valid_protocol_version, is_valid_reason_phrase, is_vali
 
 use super::body::{
     BodyDecoder, BodyKind, BodyProgress, TransferEncodingResult, collect_declared_trailers,
-    find_line, parse_header_line, resolve_body_headers_for_response,
+    find_line_from, parse_header_line, resolve_body_headers_for_response,
 };
 use super::buffer;
 use super::head::ResponseHead;
@@ -67,6 +67,14 @@ pub struct ResponseDecoder<D: Decompressor = NoCompression> {
     decompressor: D,
     /// リクエストメソッド (HEAD/CONNECT 判定用)
     request_method: Option<String>,
+    /// 直前の応答のステータスコード
+    ///
+    /// 1xx の後に最終応答をデコードする場合、`request_method` を保持する
+    /// 必要がある。`Complete` 遷移時に直前の応答が 1xx かどうかを判定する
+    /// ために保持する。
+    last_status_code: Option<u16>,
+    /// 行探索の再開位置 (絶対オフセット)
+    line_scan_offset: usize,
     /// `mut_buf` で確保した未確定領域のバイト数
     pending: usize,
 }
@@ -92,6 +100,8 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            last_status_code: None,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -110,6 +120,8 @@ impl ResponseDecoder<NoCompression> {
             decoded_body: Vec::new(),
             decompressor: NoCompression::new(),
             request_method: None,
+            last_status_code: None,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -130,6 +142,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            last_status_code: None,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -148,6 +162,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
             decoded_body: Vec::new(),
             decompressor,
             request_method: None,
+            last_status_code: None,
+            line_scan_offset: 0,
             pending: 0,
         }
     }
@@ -182,6 +198,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // release ビルドで debug_assert! が消えた状態で契約違反 (pending > 0 で
         // 呼ばれた場合) でも、内部状態の整合性を保つために明示的にリセットする。
         self.pending = 0;
+        self.line_scan_offset = 0;
         core::mem::take(&mut self.buf)
     }
 
@@ -298,6 +315,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
         self.decoded_body.clear();
         self.decompressor.reset();
         self.request_method = None;
+        self.last_status_code = None;
+        self.line_scan_offset = 0;
         self.pending = 0;
     }
 
@@ -430,6 +449,10 @@ impl<D: Decompressor> ResponseDecoder<D> {
     /// ヘッダーが完了したら `Some((ResponseHead, BodyKind))` を返す
     /// データ不足の場合は `None` を返す
     /// 既にヘッダーデコード済みの場合はエラー
+    ///
+    /// 1xx (Informational) を返した場合、`set_request_method` で設定した
+    /// メソッドは保持される。呼び出し側は再度 `decode_headers` を呼び、
+    /// 最終応答 (2xx 以降) を取得すること。
     pub fn decode_headers(&mut self) -> Result<Option<(ResponseHead, BodyKind)>, Error> {
         debug_assert!(
             self.pending == 0,
@@ -438,11 +461,18 @@ impl<D: Decompressor> ResponseDecoder<D> {
         loop {
             match &self.phase {
                 DecodePhase::StartLine => {
-                    if let Some(pos) = find_line(&self.buf) {
+                    if let Some(pos) = find_line_from(&self.buf, &mut self.line_scan_offset) {
+                        if pos > self.limits.max_start_line_size {
+                            return Err(Error::StartLineTooLong {
+                                size: pos,
+                                limit: self.limits.max_start_line_size,
+                            });
+                        }
                         let line = String::from_utf8(self.buf[..pos].to_vec()).map_err(|e| {
                             Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
                         })?;
                         self.buf.drain(..pos + 2);
+                        self.line_scan_offset = 0;
 
                         // CR/LF チェック (埋め込まれた改行を拒否)
                         if line.contains('\r') || line.contains('\n') {
@@ -452,11 +482,24 @@ impl<D: Decompressor> ResponseDecoder<D> {
                         }
 
                         // Parse: VERSION SP STATUS-CODE SP REASON-PHRASE CRLF
+                        // RFC 9112 Section 4: reason-phrase が absent でも SP は必要だが、
+                        // 受信側のロバストネス原則として `HTTP/1.1 200` のような
+                        // SP なしの status-line も受理する。
                         let parts: Vec<&str> = line.splitn(3, ' ').collect();
                         if parts.len() < 2 {
                             return Err(Error::InvalidData(alloc::format!(
                                 "invalid status line: {}",
                                 line
+                            )));
+                        }
+
+                        // RFC 9112 Section 4: status-code = 3DIGIT。
+                        // `str::parse::<u16>()` は "+200" や "0200" を受理するため、
+                        // 3 文字の ASCII 数字であることを明示的に検証する。
+                        if parts[1].len() != 3 || !parts[1].bytes().all(|b| b.is_ascii_digit()) {
+                            return Err(Error::InvalidData(alloc::format!(
+                                "invalid status line: invalid status code: {}",
+                                parts[1]
                             )));
                         }
 
@@ -500,10 +543,11 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     }
                 }
                 DecodePhase::Headers => {
-                    if let Some(pos) = find_line(&self.buf) {
+                    if let Some(pos) = find_line_from(&self.buf, &mut self.line_scan_offset) {
                         if pos == 0 {
                             // 空行 — ヘッダーセクション終端
                             self.buf.drain(..2);
+                            self.line_scan_offset = 0;
 
                             // ステータスコードを取得
                             let start_line = self.start_line.as_ref().ok_or_else(|| {
@@ -518,6 +562,8 @@ impl<D: Decompressor> ResponseDecoder<D> {
                             })?;
 
                             let body_kind = self.determine_body_kind(status_code)?;
+                            // Complete 遷移時に 1xx かどうかを判定できるよう記録する。
+                            self.last_status_code = Some(status_code);
 
                             // ヘッダー完了、ボディフェーズに遷移
                             match body_kind {
@@ -587,6 +633,7 @@ impl<D: Decompressor> ResponseDecoder<D> {
                                     Error::InvalidData(alloc::format!("invalid UTF-8: {e}"))
                                 })?;
                             self.buf.drain(..pos + 2);
+                            self.line_scan_offset = 0;
 
                             let (name, value) = parse_header_line(&line)?;
                             self.headers
@@ -604,10 +651,17 @@ impl<D: Decompressor> ResponseDecoder<D> {
                     self.body_decoder.reset();
                     self.decompressor.reset();
                     // request_method は元のリクエストごとに設定し直す前提で
-                    // ここでクリアする。クリアしないと Keep-Alive 接続で前回の
-                    // CONNECT などが残り、次のレスポンスを誤ってトンネル判定
-                    // してしまう状態漏れバグになる。
-                    self.request_method = None;
+                    // 通常はここでクリアする。ただし 1xx の直後は同じリクエストの
+                    // 最終応答が続くため、HEAD / CONNECT の判定を維持する必要がある。
+                    // 1xx 以外の完了時のみクリアする。
+                    let preserve_request_method = self
+                        .last_status_code
+                        .is_some_and(|code| (100..200).contains(&code));
+                    if !preserve_request_method {
+                        self.request_method = None;
+                    }
+                    self.last_status_code = None;
+                    self.line_scan_offset = 0;
                     continue;
                 }
                 DecodePhase::Tunnel => {
@@ -862,7 +916,12 @@ impl<D: Decompressor> ResponseDecoder<D> {
         // request_method は元のリクエストごとに設定し直す前提でクリアする。
         // クリアしないと Keep-Alive 接続で前回の CONNECT などが残り、次のレス
         // ポンスを誤ってトンネル判定してしまう状態漏れバグになる。
-        self.request_method = None;
+        // ただし 1xx の直後は同じリクエストの最終応答が続くため保持する。
+        if !(100..200).contains(&head.status_code) {
+            self.request_method = None;
+        }
+        self.last_status_code = None;
+        self.line_scan_offset = 0;
 
         Ok(Some(Response::from_raw_parts(
             head.version,

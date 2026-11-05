@@ -23,6 +23,7 @@ fn limits() -> DecoderLimits {
         max_buffer_size: 64 * 1024,
         max_headers_count: MAX_HEADERS_COUNT,
         max_header_line_size: MAX_HEADER_LINE_SIZE,
+        max_start_line_size: MAX_HEADER_LINE_SIZE,
         max_body_size: 64 * 1024,
         max_chunk_line_size: 64,
     }

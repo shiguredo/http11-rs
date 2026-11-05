@@ -14,7 +14,6 @@ fn test_uri_error_display() {
         (UriError::Empty, "empty URI"),
         (UriError::InvalidPercentEncoding, "invalid percent encoding"),
         (UriError::InvalidPort, "invalid port"),
-        (UriError::InvalidCharacter('!'), "invalid character: '!'"),
         (UriError::InvalidScheme, "invalid scheme"),
         (UriError::InvalidHost, "invalid host"),
         (UriError::InvalidUtf8, "invalid UTF-8 sequence"),
@@ -547,12 +546,23 @@ fn test_uri_parse_valid_userinfo() {
 
 #[test]
 fn test_uri_empty_port() {
+    // RFC 3986 Section 3.2.2: port = *DIGIT のため、空ポートは有効。
     let uri =
         Uri::parse("http://example.com:/path").expect("URI のパースは成功するはず (実装バグ)");
-    // 空ポートの場合、host には : が含まれる (実装の動作)
-    assert_eq!(uri.host(), Some("example.com:"));
+    assert_eq!(uri.host(), Some("example.com"));
     assert_eq!(uri.port(), None);
     assert_eq!(uri.path(), "/path");
+
+    // userinfo 付きでも host に余分な ":" を含めない
+    let uri = Uri::parse("http://user:pass@example.com:/path")
+        .expect("URI のパースは成功するはず (実装バグ)");
+    assert_eq!(uri.host(), Some("example.com"));
+    assert_eq!(uri.port(), None);
+
+    // IPv6 リテラルの空ポート
+    let uri = Uri::parse("http://[::1]:/path").expect("URI のパースは成功するはず (実装バグ)");
+    assert_eq!(uri.host(), Some("[::1]"));
+    assert_eq!(uri.port(), None);
 }
 
 // ========================================
@@ -730,4 +740,22 @@ fn test_scheme_eq_is_case_insensitive() {
     let h3 = Scheme::new(b"Http").expect("URI のパースは成功するはず (実装バグ)");
     assert_eq!(h1, h2);
     assert_eq!(h2, h3);
+}
+
+/// RFC 3986 Section 3.2.2: port は ASCII 数字のみで、先頭の "+" は拒否する
+#[test]
+fn test_uri_port_plus_sign_rejected() {
+    assert!(matches!(
+        Uri::parse("http://example.com:+80/"),
+        Err(UriError::InvalidPort)
+    ));
+}
+
+/// RFC 6874 の IPv6 zone ID を URI でも受理する
+#[test]
+fn test_uri_ipv6_zone_id() {
+    let uri = Uri::parse("http://[fe80::1%25eth0]:8080/path")
+        .expect("IPv6 zone ID は有効なはず (実装バグ)");
+    assert_eq!(uri.host(), Some("[fe80::1%25eth0]"));
+    assert_eq!(uri.port(), Some(8080));
 }

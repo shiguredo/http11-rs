@@ -10,6 +10,8 @@ jobs:
     name: "Create GitHub Release"
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
     steps:
@@ -59,7 +61,7 @@ jobs:
       actions: read
     steps:
       - name: Slack Notification
-        uses: shiguredo/github-actions/.github/actions/slack-notify@main
+        uses: shiguredo/github-actions/.github/actions/slack-notify@27c6a25432cf731e39887c8cd77b10f5465cb24c # main
         with:
           status: ${{ job.status }}
           slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
