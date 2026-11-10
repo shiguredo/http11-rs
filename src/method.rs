@@ -91,16 +91,25 @@ impl fmt::Display for MethodError {
 impl core::error::Error for MethodError {}
 
 impl Method {
-    /// 標準メソッド定数
+    /// `GET` メソッド (RFC 9110 Section 9.3.1)
     pub const GET: Self = Self::from_static(b"GET");
+    /// `POST` メソッド (RFC 9110 Section 9.3.3)
     pub const POST: Self = Self::from_static(b"POST");
+    /// `PUT` メソッド (RFC 9110 Section 9.3.4)
     pub const PUT: Self = Self::from_static(b"PUT");
+    /// `DELETE` メソッド (RFC 9110 Section 9.3.5)
     pub const DELETE: Self = Self::from_static(b"DELETE");
+    /// `HEAD` メソッド (RFC 9110 Section 9.3.2)
     pub const HEAD: Self = Self::from_static(b"HEAD");
+    /// `OPTIONS` メソッド (RFC 9110 Section 9.3.7)
     pub const OPTIONS: Self = Self::from_static(b"OPTIONS");
+    /// `CONNECT` メソッド (RFC 9110 Section 9.3.6)
     pub const CONNECT: Self = Self::from_static(b"CONNECT");
+    /// `TRACE` メソッド (RFC 9110 Section 9.3.8)
     pub const TRACE: Self = Self::from_static(b"TRACE");
+    /// `PATCH` メソッド (RFC 5789)
     pub const PATCH: Self = Self::from_static(b"PATCH");
+    /// `QUERY` メソッド (RFC 10008 Section 2)
     pub const QUERY: Self = Self::from_static(b"QUERY");
 
     /// ランタイム検査つきで構築する

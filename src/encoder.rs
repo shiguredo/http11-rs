@@ -1,3 +1,5 @@
+//! リクエストとレスポンスをバイト列へエンコードする
+
 use crate::compression::{CompressionError, CompressionStatus, Compressor, NoCompression};
 use crate::decoder::{
     HttpHead, TransferEncodingResult, parse_transfer_encoding_for_request,

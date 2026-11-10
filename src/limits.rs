@@ -1,3 +1,5 @@
+//! デコーダーが受け付けるサイズと個数の上限
+
 /// デコーダーの制限設定
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecoderLimits {

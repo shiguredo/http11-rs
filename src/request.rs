@@ -1,3 +1,5 @@
+//! HTTP リクエストの構築とフィールド参照
+
 use crate::decoder::HttpHead;
 use crate::error::EncodeError;
 use crate::header_name::HeaderName;

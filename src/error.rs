@@ -1,3 +1,5 @@
+//! デコードとエンコードのエラー型
+
 use alloc::string::String;
 use core::fmt;
 

@@ -66,6 +66,8 @@
 
 ### misc
 
+- [UPDATE] モジュール責務の doc と `Method` / `Scheme` 定数の doc を補う
+  - @voluntas
 - [UPDATE] PBT 基盤を proptest から noprop に置き換える
   - `pbt/Cargo.toml` の依存を `noprop = "0.2"` に置き換え、`pbt/tests/prop_*.rs` の全テストを noprop の命令型スタイル (素の Rust クロージャ) で書き直す
   - ジェネレータを valid-by-construction にし、空振り検証を防ぐカバレッジゲートと `rejected_cases == 0` の検証を各テストに追加する

@@ -1158,10 +1158,15 @@ const fn is_scheme_char(b: u8) -> bool {
 }
 
 impl Scheme {
+    /// `http` スキーム
     pub const HTTP: Self = Self::from_static(b"http");
+    /// `https` スキーム
     pub const HTTPS: Self = Self::from_static(b"https");
+    /// `ws` スキーム
     pub const WS: Self = Self::from_static(b"ws");
+    /// `wss` スキーム
     pub const WSS: Self = Self::from_static(b"wss");
+    /// `rtsp` スキーム
     pub const RTSP: Self = Self::from_static(b"rtsp");
 
     /// ランタイム検査つきで構築する
