@@ -31,7 +31,7 @@ use io_uring::{IoUring, Probe};
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, SupportedCipherSuite};
-use shiguredo_http11::{EncodeError, HeaderName, HttpHead, RequestDecoder, Response, StatusCode};
+use shiguredo_http11::{EncodeError, HttpHead, RequestDecoder, Response, StatusCode};
 use slab::Slab;
 use tracing::{error, info};
 
@@ -802,7 +802,7 @@ fn handle_read(
                     let keep_alive = conn.current_write_should_keep_alive;
                     conn.pending_writes.push_front((buf, keep_alive));
                     conn.write_offset = 0;
-                    return Err(e);
+                    return Err(e.into());
                 }
             } else {
                 // リクエストがまだ完全ではない
@@ -918,7 +918,7 @@ fn handle_write(
                     let keep_alive = conn.current_write_should_keep_alive;
                     conn.pending_writes.push_front((buf, keep_alive));
                     conn.write_offset = 0;
-                    return Err(e);
+                    return Err(e.into());
                 }
             } else {
                 conn.state = ConnectionState::Reading;
@@ -973,7 +973,7 @@ fn handle_setsockopt_complete(
                 let keep_alive = conn.current_write_should_keep_alive;
                 conn.pending_writes.push_front((buf, keep_alive));
                 conn.write_offset = 0;
-                return Err(e);
+                return Err(e.into());
             }
         } else {
             conn.state = ConnectionState::Reading;

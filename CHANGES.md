@@ -34,6 +34,10 @@
   - @voluntas
 - [UPDATE] GitHub Actions の外部 action と prek の外部 hook をコミットハッシュで固定し、fuzz / io_uring example の clippy と cargo audit を CI に追加する
   - @voluntas
+- [FIX] `examples/http11_server_io_uring` がコンパイルできない問題を修正する
+  - 未使用の `HeaderName` インポートを削除する
+  - `submit_write` 失敗時の `io::Error` を `Box<dyn Error>` へ変換して返す
+  - @voluntas
 - [FIX] `ResponseDecoder` が 1xx の後に `request_method` をクリアし、HEAD / CONNECT の最終応答を誤判定する問題を修正する
   - 1xx の直後はメソッドを保持し、最終応答の完了時のみクリアする
   - @voluntas
