@@ -34,6 +34,8 @@
   - @voluntas
 - [UPDATE] GitHub Actions の外部 action と prek の外部 hook をコミットハッシュで固定し、fuzz / io_uring example の clippy と cargo audit を CI に追加する
   - @voluntas
+- [UPDATE] rustls 0.23.46、rustls-webpki 0.103.16、webpki-root-certs 1.0.11、zstd 0.13.4 に更新し cargo audit の脆弱性指摘を解消する
+  - @voluntas
 - [FIX] `examples/http11_server_io_uring` がコンパイルできない問題を修正する
   - 未使用の `HeaderName` インポートを削除する
   - `submit_write` 失敗時の `io::Error` を `Box<dyn Error>` へ変換して返す
