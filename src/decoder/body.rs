@@ -61,7 +61,10 @@ pub enum BodyProgress {
     /// 呼び出し側はループを抜けてネットワーク I/O に戻る。
     NeedData,
     /// 完了（トレーラーがある場合は含む）
-    Complete { trailers: Vec<(HeaderName, String)> },
+    Complete {
+        /// 受信したトレーラーフィールド
+        trailers: Vec<(HeaderName, String)>,
+    },
 }
 
 /// ボディデコーダー (内部用)

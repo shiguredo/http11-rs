@@ -613,8 +613,11 @@ impl fmt::Display for BearerChallenge {
 /// Authorization ヘッダー
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Authorization {
+    /// Basic 認証のクレデンシャル (RFC 7617)
     Basic(BasicAuth),
+    /// Digest 認証のクレデンシャル (RFC 7616)
     Digest(DigestAuth),
+    /// Bearer トークン (RFC 6750)
     Bearer(BearerToken),
 }
 
@@ -659,8 +662,11 @@ impl fmt::Display for Authorization {
 /// WWW-Authenticate / Proxy-Authenticate 用チャレンジ
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthChallenge {
+    /// Basic 認証のチャレンジ (RFC 7617)
     Basic(WwwAuthenticate),
+    /// Digest 認証のチャレンジ (RFC 7616)
     Digest(DigestChallenge),
+    /// Bearer 認証のチャレンジ (RFC 6750)
     Bearer(BearerChallenge),
 }
 

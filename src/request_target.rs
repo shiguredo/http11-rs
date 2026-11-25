@@ -9,7 +9,7 @@ pub enum RequestTargetForm {
     /// 例: /path/to/resource?query=value
     Origin,
     /// absolute-form: absolute-URI
-    /// 例: http://example.com/path
+    /// 例: <http://example.com/path>
     Absolute,
     /// authority-form: uri-host ":" port (CONNECT のみ)
     /// 例: example.com:443

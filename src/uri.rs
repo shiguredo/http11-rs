@@ -1129,9 +1129,17 @@ pub enum SchemeError {
     /// 空のスキーム
     Empty,
     /// 先頭バイトが ALPHA でない
-    InvalidFirstByte { byte: u8 },
+    InvalidFirstByte {
+        /// 先頭の不正なバイト
+        byte: u8,
+    },
     /// 不正なバイトを含む
-    InvalidByte { byte: u8, position: usize },
+    InvalidByte {
+        /// 不正だったバイト
+        byte: u8,
+        /// 不正なバイトの位置 (0 始まり、バイト単位)
+        position: usize,
+    },
 }
 
 impl fmt::Display for SchemeError {

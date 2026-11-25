@@ -232,7 +232,7 @@ fn validate_request_fields(request: &Request) -> Result<(), EncodeError> {
 ///
 /// RFC 9112 Section 3.2:
 /// - origin-form: "/" で始まる (例: /path?query)
-/// - absolute-form: absolute-URI (例: http://host/path, urn:isbn:0451450523)
+/// - absolute-form: absolute-URI (例: `http://host/path`, `urn:isbn:0451450523`)
 /// - authority-form: uri-host ":" port (例: host:port)
 /// - asterisk-form: "*" のみ
 ///

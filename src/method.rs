@@ -40,11 +40,17 @@ pub struct Method(Cow<'static, [u8]>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MethodError {
     /// 空のメソッド
-    Empty { input: String },
+    Empty {
+        /// 空だった入力
+        input: String,
+    },
     /// 不正なバイトを含む
     InvalidByte {
+        /// 不正だったバイト
         byte: u8,
+        /// 不正なバイトの位置 (0 始まり、バイト単位)
         position: usize,
+        /// 入力全体
         input: String,
     },
 }

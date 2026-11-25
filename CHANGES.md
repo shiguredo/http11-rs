@@ -66,6 +66,9 @@
 
 ### misc
 
+- [UPDATE] 公開 API のフィールドと variant の doc を補い、`missing_docs` lint を有効化する
+  - クレート直下の doc にデコーダーのストリーミング利用例を移し、docs.rs で参照できるようにする
+  - @voluntas
 - [UPDATE] モジュール責務の doc と `Method` / `Scheme` 定数の doc を補う
   - @voluntas
 - [UPDATE] PBT 基盤を proptest から noprop に置き換える

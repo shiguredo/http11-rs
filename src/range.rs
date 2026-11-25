@@ -64,13 +64,24 @@ impl core::error::Error for RangeError {}
 pub enum RangeSpec {
     /// 開始位置から終了位置まで (両端含む)
     /// bytes=0-499 → Range { start: 0, end: 499 }
-    Range { start: u64, end: u64 },
+    Range {
+        /// 開始位置 (0 始まり)
+        start: u64,
+        /// 終了位置 (両端含む)
+        end: u64,
+    },
     /// 開始位置から末尾まで
     /// bytes=500- → FromStart { start: 500 }
-    FromStart { start: u64 },
+    FromStart {
+        /// 開始位置 (0 始まり)
+        start: u64,
+    },
     /// 末尾から n バイト
     /// bytes=-500 → Suffix { length: 500 }
-    Suffix { length: u64 },
+    Suffix {
+        /// 末尾から取得するバイト数
+        length: u64,
+    },
 }
 
 impl RangeSpec {

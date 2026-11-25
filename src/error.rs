@@ -11,17 +11,47 @@ pub enum Error {
     /// 不正なデータ
     InvalidData(String),
     /// バッファサイズ超過
-    BufferOverflow { size: usize, limit: usize },
+    BufferOverflow {
+        /// 必要なバッファサイズ (バイト)
+        size: usize,
+        /// 設定されている上限 (バイト)
+        limit: usize,
+    },
     /// ヘッダー数超過
-    TooManyHeaders { count: usize, limit: usize },
+    TooManyHeaders {
+        /// 受信したヘッダー数
+        count: usize,
+        /// 設定されている上限数
+        limit: usize,
+    },
     /// ヘッダー行が長すぎる
-    HeaderLineTooLong { size: usize, limit: usize },
+    HeaderLineTooLong {
+        /// ヘッダー行の長さ (バイト)
+        size: usize,
+        /// 設定されている上限 (バイト)
+        limit: usize,
+    },
     /// start-line が長すぎる
-    StartLineTooLong { size: usize, limit: usize },
+    StartLineTooLong {
+        /// start-line の長さ (バイト)
+        size: usize,
+        /// 設定されている上限 (バイト)
+        limit: usize,
+    },
     /// ボディサイズ超過
-    BodyTooLarge { size: u64, limit: u64 },
+    BodyTooLarge {
+        /// ボディサイズ (バイト)
+        size: u64,
+        /// 設定されている上限 (バイト)
+        limit: u64,
+    },
     /// チャンクサイズ行が長すぎる
-    ChunkLineTooLong { size: usize, limit: usize },
+    ChunkLineTooLong {
+        /// チャンクサイズ行の長さ (バイト)
+        size: usize,
+        /// 設定されている上限 (バイト)
+        limit: usize,
+    },
     /// 圧縮/展開エラー
     Compression(CompressionError),
 }
@@ -73,50 +103,111 @@ pub enum EncodeError {
     /// 1xx / 204 レスポンスで Transfer-Encoding が設定されている
     /// RFC 9112 Section 6.1: サーバーは 1xx または 204 レスポンスに
     /// Transfer-Encoding を含めてはならない (MUST NOT)
-    ForbiddenTransferEncoding { status_code: u16 },
+    ForbiddenTransferEncoding {
+        /// 対象レスポンスのステータスコード
+        status_code: u16,
+    },
     /// 不正なメソッド名
-    InvalidMethod { method: String },
+    InvalidMethod {
+        /// 不正だったメソッド名
+        method: String,
+    },
     /// 不正なリクエストターゲット
-    InvalidRequestTarget { uri: String },
+    InvalidRequestTarget {
+        /// 不正だった request-target
+        uri: String,
+    },
     /// 不正な HTTP バージョン
-    InvalidVersion { version: String },
+    InvalidVersion {
+        /// 不正だった HTTP バージョン
+        version: String,
+    },
     /// 不正なヘッダー名
-    InvalidHeaderName { name: String },
+    InvalidHeaderName {
+        /// 不正だったヘッダー名
+        name: String,
+    },
     /// 不正なヘッダー値
-    InvalidHeaderValue { name: String, value: String },
+    InvalidHeaderValue {
+        /// 対象のヘッダー名
+        name: String,
+        /// 不正だったヘッダー値
+        value: String,
+    },
     /// 不正なステータスコード
-    InvalidStatusCode { code: u16 },
+    InvalidStatusCode {
+        /// 不正だったステータスコード
+        code: u16,
+    },
     /// 不正な reason-phrase
-    InvalidReasonPhrase { phrase: String },
+    InvalidReasonPhrase {
+        /// 不正だった reason-phrase
+        phrase: String,
+    },
     /// Host ヘッダーが重複している
     DuplicateHostHeader,
     /// Host ヘッダーの値が不正
-    InvalidHostHeader { value: String },
+    InvalidHostHeader {
+        /// 不正だった Host ヘッダーの値
+        value: String,
+    },
     /// Host ヘッダーと request-target の authority が一致しない
-    HostAuthorityMismatch { host: String, authority: String },
+    HostAuthorityMismatch {
+        /// Host ヘッダーの値
+        host: String,
+        /// request-target の authority
+        authority: String,
+    },
     /// 205 Reset Content レスポンスにボディが含まれている
     /// RFC 9110 Section 15.3.6: 205 レスポンスはボディを生成してはならない
     ForbiddenBodyFor205,
     /// 1xx / 204 レスポンスで Content-Length が設定されている
     /// RFC 9110 Section 8.6: サーバーは 1xx または 204 レスポンスに
     /// Content-Length を含めてはならない (MUST NOT)
-    ForbiddenContentLength { status_code: u16 },
+    ForbiddenContentLength {
+        /// 対象レスポンスのステータスコード
+        status_code: u16,
+    },
     /// Content-Length ヘッダーの値と実際のボディサイズが一致しない
-    ContentLengthMismatch { header_value: u64, body_length: u64 },
+    ContentLengthMismatch {
+        /// Content-Length ヘッダーの値
+        header_value: u64,
+        /// 実際のボディ長
+        body_length: u64,
+    },
     /// メソッドと request-target 形式が不整合
     /// RFC 9112 Section 3.2: CONNECT は authority-form、OPTIONS * は asterisk-form のみ
-    InvalidRequestTargetForm { method: String, uri: String },
+    InvalidRequestTargetForm {
+        /// メソッド名
+        method: String,
+        /// request-target
+        uri: String,
+    },
     /// http/https URI に userinfo が含まれている
     /// RFC 9110 Section 4.2.4: 送信者は http/https URI に userinfo を生成してはならない (MUST NOT)
-    UserinfoInHttpUri { uri: String },
+    UserinfoInHttpUri {
+        /// userinfo を含んでいた URI
+        uri: String,
+    },
     /// authority がない target URI で Host ヘッダーが非空
     /// RFC 9112 Section 3.2: authority がない場合、Host は空でなければならない (MUST)
-    NonEmptyHostWithoutAuthority { host: String, uri: String },
+    NonEmptyHostWithoutAuthority {
+        /// Host ヘッダーの値
+        host: String,
+        /// authority を持たない target URI
+        uri: String,
+    },
     /// http/https URI の host が空
     /// RFC 9110 Section 4.2.1/4.2.2: 空 host 識別子を生成してはならない (MUST NOT)
-    EmptyHostInHttpUri { uri: String },
+    EmptyHostInHttpUri {
+        /// host が空だった http/https URI
+        uri: String,
+    },
     /// Content-Length の値が RFC 9110 Section 8.6 の ABNF (1*DIGIT) に違反
-    InvalidContentLengthValue { value: String },
+    InvalidContentLengthValue {
+        /// 不正だった Content-Length ヘッダーの値
+        value: String,
+    },
     /// Content-Length ヘッダーが複数存在し、値が不一致
     /// RFC 9110 Section 8.6 / RFC 9112 Section 6.3
     DuplicateContentLength,

@@ -50,10 +50,15 @@ impl core::error::Error for ContentEncodingError {}
 /// コンテント コーディング (Content Coding)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContentCoding {
+    /// gzip コーディング (RFC 9110 Section 8.4.1.3)
     Gzip,
+    /// deflate コーディング (zlib 形式、RFC 9110 Section 8.4.1.2)
     Deflate,
+    /// compress コーディング (LZW、RFC 9110 Section 8.4.1.1)
     Compress,
+    /// 無変換 (Content-Encoding がない場合と同じ)
     Identity,
+    /// 未知のコーディング名
     Other(String),
 }
 

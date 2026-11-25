@@ -10,7 +10,12 @@ use core::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompressionError {
     /// 出力バッファが小さすぎる
-    BufferTooSmall { required: usize, available: usize },
+    BufferTooSmall {
+        /// 処理に必要な出力バイト数
+        required: usize,
+        /// 出力バッファの残りバイト数
+        available: usize,
+    },
     /// 入力データが不正
     InvalidData(String),
     /// 内部エラー
