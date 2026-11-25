@@ -1,6 +1,10 @@
-# Clippy 設定 (lint レベルは Cargo.toml。デフォルト warn 群は変更せず、ここは挙動のみ)
+# Clippy の挙動設定
+#
+# Cargo.toml の [lints] では unwrap_used / expect_used / panic を deny していないため、
+# 現時点では以下の設定は効果を持たない。将来これらを deny したときに、テストコードでの
+# unwrap / expect / panic を許可するための設定として残す。
 
-# #[test] 関数と #[cfg(test)] 内の unwrap を許可する (Cargo.toml で deny している場合のみ有効)
+# #[test] 関数と #[cfg(test)] 内の unwrap を許可する
 allow-unwrap-in-tests = true
 # #[test] 関数と #[cfg(test)] 内の expect を許可する (tests/ の非 #[test] ヘルパは対象外)
 allow-expect-in-tests = true
